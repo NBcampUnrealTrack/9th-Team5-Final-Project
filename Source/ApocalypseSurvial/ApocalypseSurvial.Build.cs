@@ -16,10 +16,24 @@ public class ApocalypseSurvial : ModuleRules
 			"EnhancedInput",
 			"AIModule",
 			"NavigationSystem",
+
+			// MVVM
+			"UMG",
+			"ModelViewViewModel",
+
+			// StateTree
 			"StateTreeModule",
 			"GameplayStateTreeModule",
+
+			// GAS
+			"GameplayAbilities",
+			"GameplayTags",
+			"GameplayTasks",
+
+			// Mass Framework
+			"MassEntity",
+
 			"Niagara",
-			"UMG",
 			"Slate"
 		});
 
