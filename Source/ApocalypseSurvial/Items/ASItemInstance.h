@@ -5,6 +5,7 @@
 #include "ASItemInstance.generated.h"
 
 class UASItemDefinition;
+class UASInventoryComponent;
 
 /**
  * Mutable runtime state for an item owned by an inventory or loot container.
@@ -50,6 +51,8 @@ public:
 	int32 RemoveQuantity(int32 RequestedQuantity);
 
 private:
+	friend class UASInventoryComponent;
+
 	/** Stable identity for this runtime item instance. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	FGuid InstanceId;

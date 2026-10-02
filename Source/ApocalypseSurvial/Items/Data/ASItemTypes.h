@@ -9,7 +9,7 @@ enum class EASItemType : uint8
 {
 	Weapon UMETA(DisplayName = "Weapon"),
 	Ammo UMETA(DisplayName = "Ammo"),
-	Healing UMETA(DisplayName = "Healing")
+	Consumable UMETA(DisplayName = "Consumable")
 };
 
 /** Weapon behavior category. Only meaningful when ItemType is Weapon. */

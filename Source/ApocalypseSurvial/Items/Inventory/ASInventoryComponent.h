@@ -45,6 +45,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 RemoveItemInstance(UASItemInstance* ItemInstance, int32 RequestedQuantity = 1);
 
+	/**
+	 * Moves as much of an owned instance as possible to another inventory.
+	 * Instance properties are copied when a stack must be split.
+	 * @return The quantity actually transferred.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 TransferItemTo(
+		UASInventoryComponent* TargetInventory,
+		UASItemInstance* ItemInstance,
+		int32 RequestedQuantity);
+
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	int32 GetItemCount(const UASItemDefinition* ItemDefinition) const;
 

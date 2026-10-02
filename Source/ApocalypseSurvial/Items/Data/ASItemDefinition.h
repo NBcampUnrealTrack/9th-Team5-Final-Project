@@ -43,7 +43,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Visual")
 	TSoftObjectPtr<UStaticMesh> WorldMesh;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Tags")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Tags", meta = (Categories = "Item"))
 	FGameplayTagContainer ItemTags;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon",
@@ -61,8 +61,8 @@ public:
 	TArray<TSoftClassPtr<UGameplayAbility>> GrantedAbilities;
 
 	/** Ability activated when a consumable item is used. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|GAS",
-		meta = (EditCondition = "ItemType == EASItemType::Healing", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
+		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	TSoftClassPtr<UGameplayAbility> UseAbility;
 
 	/** Base damage supplied to the equipped weapon ability. */
@@ -71,7 +71,7 @@ public:
 	float BaseDamage = 0.0f;
 
 	/** Health restored when this healing item is used. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Healing",
-		meta = (ClampMin = "0.0", EditCondition = "ItemType == EASItemType::Healing", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|Healing",
+		meta = (ClampMin = "0.0", EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	float HealAmount = 0.0f;
 };

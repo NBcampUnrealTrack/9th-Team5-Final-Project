@@ -2,6 +2,7 @@
 
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/ASItemInstance.h"
+#include "UObject/UObjectGlobals.h"
 
 UASInventoryComponent::UASInventoryComponent()
 {
@@ -124,6 +125,83 @@ int32 UASInventoryComponent::RemoveItemInstance(UASItemInstance* ItemInstance, c
 
 	OnInventoryChanged.Broadcast();
 	return RemovedQuantity;
+}
+
+int32 UASInventoryComponent::TransferItemTo(
+	UASInventoryComponent* TargetInventory,
+	UASItemInstance* ItemInstance,
+	const int32 RequestedQuantity)
+{
+	if (!IsValid(TargetInventory)
+		|| TargetInventory == this
+		|| !IsValid(ItemInstance)
+		|| RequestedQuantity <= 0
+		|| Items.IndexOfByKey(ItemInstance) == INDEX_NONE
+		|| !ItemInstance->IsValidItemInstance())
+	{
+		return 0;
+	}
+
+	TargetInventory->RemoveEmptyAndInvalidInstances();
+
+	const int32 QuantityToTransfer = FMath::Min(RequestedQuantity, ItemInstance->GetQuantity());
+	int32 RemainingQuantity = QuantityToTransfer;
+
+	// Merge only with compatible instances. CanStackWith must be extended when
+	// durability or other per-instance properties affect stacking compatibility.
+	for (UASItemInstance* TargetItem : TargetInventory->Items)
+	{
+		if (RemainingQuantity <= 0)
+		{
+			break;
+		}
+
+		if (IsValid(TargetItem) && TargetItem->CanStackWith(ItemInstance))
+		{
+			const int32 AddedQuantity = TargetItem->AddQuantity(RemainingQuantity);
+			ItemInstance->RemoveQuantity(AddedQuantity);
+			RemainingQuantity -= AddedQuantity;
+		}
+	}
+
+	// A duplicated UObject preserves all current and future UPROPERTY state. A
+	// split stack receives a new identity, while a completely moved instance
+	// retains its original identity.
+	if (RemainingQuantity > 0 && TargetInventory->HasFreeSlot())
+	{
+		const int32 NewInstanceQuantity = FMath::Min(RemainingQuantity, ItemInstance->GetQuantity());
+		UASItemInstance* TransferredInstance = DuplicateObject<UASItemInstance>(ItemInstance, TargetInventory);
+
+		if (IsValid(TransferredInstance))
+		{
+			const bool bMovedWholeRemainingInstance = NewInstanceQuantity == ItemInstance->GetQuantity();
+			TransferredInstance->Quantity = NewInstanceQuantity;
+
+			if (!bMovedWholeRemainingInstance)
+			{
+				TransferredInstance->InstanceId = FGuid::NewGuid();
+			}
+
+			TargetInventory->Items.Add(TransferredInstance);
+			ItemInstance->RemoveQuantity(NewInstanceQuantity);
+			RemainingQuantity -= NewInstanceQuantity;
+		}
+	}
+
+	const int32 TransferredQuantity = QuantityToTransfer - RemainingQuantity;
+	if (TransferredQuantity <= 0)
+	{
+		return 0;
+	}
+
+	if (!ItemInstance->IsValidItemInstance())
+	{
+		Items.RemoveSingle(ItemInstance);
+	}
+
+	OnInventoryChanged.Broadcast();
+	TargetInventory->OnInventoryChanged.Broadcast();
+	return TransferredQuantity;
 }
 
 int32 UASInventoryComponent::GetItemCount(const UASItemDefinition* ItemDefinition) const
