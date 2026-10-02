@@ -1,0 +1,67 @@
+#include "Items/ASItemInstance.h"
+
+#include "Items/Data/ASItemDefinition.h"
+
+void UASItemInstance::Initialize(UASItemDefinition* InItemDefinition, const int32 InQuantity)
+{
+	ItemDefinition = InItemDefinition;
+	InstanceId = FGuid::NewGuid();
+
+	if (!IsValid(ItemDefinition))
+	{
+		Quantity = 0;
+		return;
+	}
+
+	const int32 MaxStackSize = FMath::Max(1, ItemDefinition->MaxStackSize);
+	Quantity = FMath::Clamp(InQuantity, 1, MaxStackSize);
+}
+
+bool UASItemInstance::IsValidItemInstance() const
+{
+	return IsValid(ItemDefinition) && Quantity > 0 && InstanceId.IsValid();
+}
+
+int32 UASItemInstance::GetRemainingStackSpace() const
+{
+	if (!IsValid(ItemDefinition))
+	{
+		return 0;
+	}
+
+	const int32 MaxStackSize = FMath::Max(1, ItemDefinition->MaxStackSize);
+	return FMath::Max(0, MaxStackSize - Quantity);
+}
+
+bool UASItemInstance::CanStackWith(const UASItemInstance* Other) const
+{
+	return IsValid(Other)
+		&& IsValidItemInstance()
+		&& Other->IsValidItemInstance()
+		&& ItemDefinition == Other->ItemDefinition
+		&& GetRemainingStackSpace() > 0;
+}
+
+int32 UASItemInstance::AddQuantity(const int32 RequestedQuantity)
+{
+	if (RequestedQuantity <= 0 || !IsValidItemInstance())
+	{
+		return 0;
+	}
+
+	const int32 AddedQuantity = FMath::Min(RequestedQuantity, GetRemainingStackSpace());
+	Quantity += AddedQuantity;
+	return AddedQuantity;
+}
+
+int32 UASItemInstance::RemoveQuantity(const int32 RequestedQuantity)
+{
+	if (RequestedQuantity <= 0 || !IsValidItemInstance())
+	{
+		return 0;
+	}
+
+	const int32 RemovedQuantity = FMath::Min(RequestedQuantity, Quantity);
+	Quantity -= RemovedQuantity;
+	return RemovedQuantity;
+}
