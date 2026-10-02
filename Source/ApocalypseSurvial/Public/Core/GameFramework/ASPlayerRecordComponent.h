@@ -1,6 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -13,15 +11,30 @@ class APOCALYPSESURVIAL_API UASPlayerRecordComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
-	// Sets default values for this component's properties
 	UASPlayerRecordComponent();
+	
+	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// 서버 전용
+	void AddDeath();
+	void AddKill();
+	
+	UFUNCTION(BlueprintPure, Category = "Record")
+	int32 GetDeathCount() const {return DeathCount;}
+	
+	UFUNCTION(BlueprintPure, Category = "Record")
+	int32 GetKillCount() const {return KillCount;}
 
 protected:
-	// Called when the game starts
 	virtual void BeginPlay() override;
+	
+	UPROPERTY(Replicated)
+	int32 DeathCount = 0;
+	
+	UPROPERTY(Replicated)
+	int32 KillCount = 0;
 
 public:
-	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
 };
