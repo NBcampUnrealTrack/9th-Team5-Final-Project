@@ -25,9 +25,35 @@ public:
 	FOnNightStarted OnNightStarted;
 	FOnNightEnded OnNightEnded;
 	
+	// AI쪽에서 호출 (서버 전용)
+	// 이번 밤에 스폰한 적 수를 알려줌 (웨이브 결과 계산용)
+	UFUNCTION(BlueprintCallable, Category = "GameFlow")
+	void ReportWaveSpawned(int32 Count);
+	
+	// 적이 죽었을 때 호출. Killer는 처치한 플레이어의 컨트롤러 (없으면 nullptr)
+	UFUNCTION(BlueprintCallable, Category = "GameFlow")
+	void OnEnemyKilled(AController* Killer);
+	
+	// 보스가 죽었을 때 호출
+	UFUNCTION(BlueprintCallable, Category = "GameFlow")
+	void OnBossDefeated();
+	
+	// 밤이 끝날 때 웨이브 결과 (보상 시스템 등이 참조)
+	UPROPERTY(BlueprintAssignable, Category = "GameFlow")
+	FOnWaveEnded OnWaveEnded;
+	
 	// 디버그 (콘솔에서 입력)
 	UFUNCTION(Exec)
 	void DebugSkipPhase();
+	
+	UFUNCTION(Exec)
+	void DebugSpawnWave(int32 Count);
+	
+	UFUNCTION(Exec)
+	void DebugKillEnemy();
+	
+	UFUNCTION(Exec)
+	void DebugKillBoss();
 	
 protected:
 	virtual void HandleMatchHasStarted() override;
@@ -60,6 +86,9 @@ protected:
 	void OnDayTimeUp();
 	void OnNightTimeUp();
 	void EndGame(bool bVictory);
+	
+	bool IsGameEnded() const;
+	FWaveResult BuildWaveResult() const;
 	
 	AASGameState* GetASGameState() const;
 	

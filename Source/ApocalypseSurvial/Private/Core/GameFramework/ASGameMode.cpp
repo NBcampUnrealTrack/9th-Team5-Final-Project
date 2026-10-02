@@ -1,6 +1,8 @@
 #include "Core/GameFramework/ASGameMode.h"
 #include "Core/GameFramework/ASGameState.h"
 #include "TimerManager.h"
+#include "GameFramework/PlayerState.h"
+#include "Core/GameFramework/ASPlayerRecordComponent.h"
 
 AASGameMode::AASGameMode()
 {
@@ -100,6 +102,12 @@ void AASGameMode::OnNightTimeUp()
 	
 	OnNightEnded.Broadcast(Day);
 	
+	// 웨이브 결과 방송
+	const FWaveResult Result = BuildWaveResult();
+	OnWaveEnded.Broadcast(Result);
+	UE_LOG(LogTemp, Log, TEXT("[Gamemode] %d일차 웨이브 결과: %d/%d 처치 (올클리어: %s)"),
+		Result.Day, Result.KilledCount, Result.SpawnedCount, Result.bAllCleared ? TEXT("O") : TEXT("X"));
+	
 	// 보스 밤이 끝날 때까지 보스를 못잡으면 패배
 	// 보스를 잡으면 그 다음 시점에 바로 승리 처리
 	if (IsBossDay(Day))
@@ -144,4 +152,101 @@ void AASGameMode::DebugSkipPhase()
 	default:
 		break;	// Victory, Defeat에서는 아무것도 하지 않음
 	}
+}
+
+// 게임 상태 확인
+bool AASGameMode::IsGameEnded() const
+{
+	const AASGameState* GS = GetASGameState();
+	if (!GS) return true;
+	
+	const EGamePhase Phase = GS->GetCurrentPhase();
+	return Phase == EGamePhase::Victory || Phase == EGamePhase::Defeat;
+}
+
+FWaveResult AASGameMode::BuildWaveResult() const
+{
+	FWaveResult Result;
+	if (const AASGameState* GS = GetASGameState())
+	{
+		Result.Day = GS->GetCurrentDay();
+		Result.SpawnedCount = GS->GetWaveSpawnedCount();
+		Result.KilledCount = GS->GetWaveKilledCount();
+		Result.bAllCleared = Result.SpawnedCount > 0 && Result.KilledCount >= Result.SpawnedCount;
+	}
+	return Result;
+}
+
+// AI 쪽에서 호출
+void AASGameMode::ReportWaveSpawned(int32 Count)
+{
+	if (IsGameEnded() || Count <= 0) return;
+	
+	AASGameState* GS = GetASGameState();
+	if (!GS || GS->GetCurrentPhase() != EGamePhase::Night) return;
+	
+	GS->AddWaveSpawned(Count);
+}
+
+void AASGameMode::OnEnemyKilled(AController* Killer)
+{
+	if (IsGameEnded()) return;
+	
+	AASGameState* GS = GetASGameState();
+	if (!GS) return;
+	
+	// 웨이브 처치 수는 밤에만 집계
+	if (GS->GetCurrentPhase() == EGamePhase::Night)
+	{
+		GS->AddWaveKilled();
+	}
+	
+	// 개인 처치 수 (PlayerState에 컴포넌트가 붙어 있을 때만)
+	if (Killer && Killer->PlayerState)
+	{
+		if (UASPlayerRecordComponent* Record = Killer->PlayerState->FindComponentByClass<UASPlayerRecordComponent>())
+		{
+			Record->AddKill();
+		}
+	}
+}
+
+void AASGameMode::OnBossDefeated()
+{
+	if (IsGameEnded()) return;
+	
+	AASGameState* GS = GetASGameState();
+	if (!GS) return;
+	
+	// 보스 날 밤에 잡았을 때만 승리
+	if (GS->GetCurrentPhase() == EGamePhase::Night && IsBossDay(GS->GetCurrentDay()))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] 보스 처치"));
+		EndGame(true);
+	}
+}
+
+// 디버그
+
+void AASGameMode::DebugSpawnWave(int32 Count)
+{
+	ReportWaveSpawned(Count);
+	if (const AASGameState* GS = GetASGameState())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Debug] 스폰 보고: 누적 %d"), GS->GetWaveSpawnedCount());
+	}
+}
+
+void AASGameMode::DebugKillEnemy()
+{
+	OnEnemyKilled(nullptr);
+	if (const AASGameState* GS = GetASGameState())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Debug] 처치: %d/%d"), GS->GetWaveKilledCount(), GS->GetWaveSpawnedCount());
+	}
+}
+
+void AASGameMode::DebugKillBoss()
+{
+	OnBossDefeated();
 }
