@@ -41,6 +41,18 @@ namespace ASMapManagerPrivate
 			}
 		}));
 
+	static FAutoConsoleCommandWithWorldAndArgs WallCommand(
+		TEXT("AS.Map.WallOcclusion"),
+		TEXT("AS.Map.WallOcclusion <0|1>: toggle wall occlusion for all players."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (AASMapSystemManager* Manager = FindManagerOrWarn(World))
+			{
+				const bool bEnabled = Args.Num() > 0 ? FCString::Atoi(*Args[0]) != 0 : true;
+				Manager->SetWallOcclusionEnabled(bEnabled);
+			}
+		}));
+
 	static FAutoConsoleCommandWithWorldAndArgs StepCommand(
 		TEXT("AS.Map.Step"),
 		TEXT("AS.Map.Step <Day> <Day|Night>: send a step directly (bypasses the GameMode clock)."),
@@ -154,6 +166,7 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 	RuleEngine.ResetMatch(0, Snapshot);
 	Snapshot.bMapReady = true;
 	Snapshot.bMapRunning = false;
+	Snapshot.bWallOcclusionEnabled = MapDefinition->Vision.bWallOcclusionByDefault;
 	State->ServerWriteSnapshot(Snapshot);
 
 	bMapReady = true;
@@ -233,6 +246,15 @@ FName AASMapSystemManager::FindZoneAtLocation(const FVector& Location) const
 	return Subsystem ? Subsystem->FindZoneIdAtLocation(Location) : NAME_None;
 }
 
+void AASMapSystemManager::SetWallOcclusionEnabled(bool bEnabled)
+{
+	if (UASMapStateComponent* State = MapState.Get())
+	{
+		State->SetWallOcclusionEnabled(bEnabled);
+		UE_LOG(LogApocalypseSurvial, Log, TEXT("Wall occlusion %s."), bEnabled ? TEXT("enabled") : TEXT("disabled"));
+	}
+}
+
 void AASMapSystemManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopMap();
@@ -284,7 +306,8 @@ void AASMapSystemManager::WriteSnapshot(const FASMapStateSnapshot& WorkingState)
 		|| Current.CurrentPhase != WorkingState.CurrentPhase
 		|| Current.MatchId != WorkingState.MatchId
 		|| Current.bMapReady != WorkingState.bMapReady
-		|| Current.bMapRunning != WorkingState.bMapRunning;
+		|| Current.bMapRunning != WorkingState.bMapRunning
+		|| Current.bWallOcclusionEnabled != WorkingState.bWallOcclusionEnabled;
 
 	if (bChanged)
 	{
@@ -467,9 +490,9 @@ void AASMapSystemManager::DumpState() const
 	}
 
 	const FASMapStateSnapshot& Snapshot = State->GetSnapshot();
-	UE_LOG(LogApocalypseSurvial, Log, TEXT("=== Map state: ready=%d running=%d seed=%d match=%d phase=%s ==="),
+	UE_LOG(LogApocalypseSurvial, Log, TEXT("=== Map state: ready=%d running=%d seed=%d match=%d phase=%s wall=%d ==="),
 		Snapshot.bMapReady ? 1 : 0, Snapshot.bMapRunning ? 1 : 0, MatchSeed, Snapshot.MatchId,
-		*Snapshot.CurrentPhase.GetPhaseKey().ToString());
+		*Snapshot.CurrentPhase.GetPhaseKey().ToString(), Snapshot.bWallOcclusionEnabled ? 1 : 0);
 
 	for (const FASZoneRuntimeState& Zone : Snapshot.Zones)
 	{

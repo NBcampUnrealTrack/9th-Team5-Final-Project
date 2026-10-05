@@ -6,12 +6,13 @@
 #include "Map/Core/ASMapTypes.h"
 #include "ASMapGameFlowComponent.generated.h"
 
+class AASFogOfWarManager;
 class AASGameState;
 class AASMapSystemManager;
 class UASMapDefinition;
 
 /**
- * 구역 기능을 연결하는 서버 전용 통합 지점.
+ * 구역과 시야 기능을 연결하는 서버 전용 통합 지점.
  * AASGameState의 단계를 맵 시스템에 전달한다.
  * GameMode의 기본 서브오브젝트로 추가한 뒤 맵 설정을 구성한다.
  * 매니저를 스폰하고 공유 맵 상태를 초기화하며, 준비되면 맵을 시작한다.
@@ -41,6 +42,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Map")
 	TSubclassOf<AASMapSystemManager> MapManagerClass;
+
+	/** 레벨에 이미 존재하지 않으면 스폰한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Map")
+	TSubclassOf<AASFogOfWarManager> FogOfWarManagerClass;
 
 	/** 0이면 시작 시 무작위 시드를 고른다. 같은 선택을 재현하려면 값을 지정한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Map")

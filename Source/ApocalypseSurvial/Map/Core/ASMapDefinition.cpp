@@ -35,6 +35,11 @@ bool UASMapDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		OutErrors.Add(FString::Printf(TEXT("%s: DangerColors needs %d entries."), *AssetName, ASMap::MaxDangerLevel));
 	}
 
+	if (Vision.DefaultVisionRadius <= 0.0f || Vision.UpdateHz <= 0.0f || Vision.AttackRevealSeconds < 0.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: vision radius, update rate and reveal time must be positive."), *AssetName));
+	}
+
 	return OutErrors.Num() == InitialErrorCount;
 }
 

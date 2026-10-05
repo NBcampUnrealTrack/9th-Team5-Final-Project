@@ -3,15 +3,18 @@
 #include "ApocalypseSurvial.h"
 #include "Core/GameFramework/ASGameState.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Map/Core/ASMapDefinition.h"
 #include "Map/Core/ASMapFunctionLibrary.h"
 #include "Map/Manager/ASMapSystemManager.h"
+#include "Map/Vision/ASFogOfWarManager.h"
 
 UASMapGameFlowComponent::UASMapGameFlowComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
 	MapManagerClass = AASMapSystemManager::StaticClass();
+	FogOfWarManagerClass = AASFogOfWarManager::StaticClass();
 }
 
 void UASMapGameFlowComponent::BeginPlay()
@@ -41,6 +44,12 @@ void UASMapGameFlowComponent::BeginPlay()
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = Owner;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	TActorIterator<AASFogOfWarManager> ExistingFog(World);
+	if (!ExistingFog && FogOfWarManagerClass)
+	{
+		World->SpawnActor<AASFogOfWarManager>(FogOfWarManagerClass, FTransform::Identity, SpawnParams);
+	}
 
 	MapManager = World->SpawnActor<AASMapSystemManager>(
 		MapManagerClass ? MapManagerClass.Get() : AASMapSystemManager::StaticClass(),

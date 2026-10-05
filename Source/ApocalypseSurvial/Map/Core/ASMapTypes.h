@@ -85,7 +85,45 @@ struct APOCALYPSESURVIAL_API FASMapStateSnapshot
 	UPROPERTY(BlueprintReadOnly, Category = "Map")
 	bool bMapRunning = false;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Map")
+	bool bWallOcclusionEnabled = true;
+
 	const FASZoneRuntimeState* FindZone(FName ZoneId) const;
+};
+
+USTRUCT(BlueprintType)
+struct APOCALYPSESURVIAL_API FASVisionSettings
+{
+	GENERATED_BODY()
+
+	/** 자체 반경이 0 이하인 시야 소스에 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
+	float DefaultVisionRadius = 1500.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "1.0", ClampMax = "60.0"))
+	float UpdateHz = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision")
+	bool bWallOcclusionByDefault = true;
+
+	/** 수풀 안의 공격자가 노출 상태를 유지하는 시간. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "s"))
+	float AttackRevealSeconds = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "64", ClampMax = "2048"))
+	int32 MaskResolution = 512;
+
+	/** 클라이언트에서 차폐된 시야 마스크를 그릴 때 시야 소스당 광선 수. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "16", ClampMax = "512"))
+	int32 OcclusionRayCount = 96;
+
+	/** 시야 트레이스를 위해 액터 위치에 더하는 높이. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (Units = "cm"))
+	float TraceHeightOffset = 50.0f;
+
+	/** 벽 표면도 그리도록 벽 충돌 지점 너머로 드러내는 추가 거리. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
+	float WallRevealPadding = 50.0f;
 };
 
 /** HUD 위젯을 위한 특정 위치의 간편 정보. */

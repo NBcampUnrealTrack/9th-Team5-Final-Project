@@ -68,6 +68,18 @@ void UASMapStateComponent::ServerWriteSnapshot(const FASMapStateSnapshot& NewSna
 	BroadcastDifference(OldSnapshot, Snapshot);
 }
 
+void UASMapStateComponent::SetWallOcclusionEnabled(bool bEnabled)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || Snapshot.bWallOcclusionEnabled == bEnabled)
+	{
+		return;
+	}
+
+	FASMapStateSnapshot NewSnapshot = Snapshot;
+	NewSnapshot.bWallOcclusionEnabled = bEnabled;
+	ServerWriteSnapshot(NewSnapshot);
+}
+
 void UASMapStateComponent::OnRep_Snapshot(const FASMapStateSnapshot& OldSnapshot)
 {
 	BroadcastDifference(OldSnapshot, Snapshot);
@@ -87,6 +99,11 @@ void UASMapStateComponent::BroadcastDifference(const FASMapStateSnapshot& OldSna
 		{
 			OnZoneStateChanged.Broadcast(NewState.ZoneId, NewState);
 		}
+	}
+
+	if (OldSnapshot.bWallOcclusionEnabled != NewSnapshot.bWallOcclusionEnabled)
+	{
+		OnWallOcclusionChanged.Broadcast(NewSnapshot.bWallOcclusionEnabled);
 	}
 
 	if (!OldSnapshot.bMapReady && NewSnapshot.bMapReady)
