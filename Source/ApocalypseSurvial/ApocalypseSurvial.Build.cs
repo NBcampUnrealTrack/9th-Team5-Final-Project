@@ -34,7 +34,8 @@ public class ApocalypseSurvial : ModuleRules
 			"MassEntity",
 
 			"Niagara",
-			"Slate"
+			"Slate",
+			"SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
