@@ -42,6 +42,20 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "GameFlow")
 	FOnWaveEnded OnWaveEnded;
 	
+	// 스폰 위치 (AI쪽에서 호출)
+	// 살아 있는 플레이어 중 한 명 주변에서 스폰 위치를 찾음 (설정값의 최소·최대 거리 사용)
+	UFUNCTION(BlueprintCallable, Category = "Spawn")
+	bool FindSpawnLocation(FVector& OutLocation) const;
+    
+	// 지정한 위치 주변에서 스폰 위치를 찾음 (거리를 직접 지정)
+	UFUNCTION(BlueprintCallable, Category = "Spawn")
+	bool FindSpawnLocationAround(const FVector& Center,float MinDistance, float MaxDistance, FVector& OutLocation) const;
+    
+	// 살아 있는 플레이어 Pawn 중 하나를 랜덤으로 반환 (없으면 nullptr)
+	UFUNCTION(BlueprintCallable, Category = "Spawn")
+	APawn* GetRandomAlivePlayerPawn() const;
+    
+    
 	// 디버그 (콘솔에서 입력)
 	UFUNCTION(Exec)
 	void DebugSkipPhase();
@@ -54,6 +68,9 @@ public:
 	
 	UFUNCTION(Exec)
 	void DebugKillBoss();
+	
+	UFUNCTION(Exec)
+	void DebugShowSpawnPoints(int32 Count);
 	
 protected:
 	virtual void HandleMatchHasStarted() override;
@@ -79,6 +96,18 @@ protected:
 	// 0 = 무제한
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
 	float RespawnSelectTimeLimit = 0.f;
+	
+	// 플레이어로부터 최소 스폰 거리 (cm, 화면 밖)
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
+	float SpawnMinDistance = 2500.f;
+	
+	// 플레이어로부터 최대 스폰 거리 (cm)
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
+	float SpawnMaxDistance = 4000.f;
+	
+	// 위치를 찾을 때 시도 횟수
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
+	int32 SpawnFindAttempts = 10;
 	
 	// 단계 진행
 	void StartDay(int32 Day);
