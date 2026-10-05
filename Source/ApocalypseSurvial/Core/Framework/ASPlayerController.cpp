@@ -3,9 +3,12 @@
 #include "ApocalypseSurvial.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Framework/Application/SlateApplication.h"
+#include "InputActionValue.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
 #include "NiagaraFunctionLibrary.h"
@@ -19,10 +22,31 @@ AASPlayerController::AASPlayerController()
 	DefaultMouseCursor = EMouseCursor::Default;
 }
 
+void AASPlayerController::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// BeginPlay 가 아니라 여기서 연결한다. 클라이언트에서는 폰이 첫 복제 묶음에
+	// 실려 와서 BeginPlay 보다 먼저 알림이 나갈 수 있기 때문이다.
+	OnPossessedPawnChanged.AddDynamic(this, &AASPlayerController::HandlePossessedPawnChanged);
+}
+
+void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
+{
+	// 길찾기 컴포넌트는 자기가 움직일 폰의 이동 컴포넌트를 기억해 둬야 한다.
+	// 엔진은 그 계기가 되는 알림(OnNewPawn)을 서버의 Possess 에서만 보낸다.
+	// 클라이언트는 폰을 복제로 받기 때문에 알림이 오지 않고, 그대로 두면
+	// "SimpleMove failed: movement not allowed" 로 이동이 전부 실패한다.
+	// 이 알림은 서버와 클라이언트 양쪽에서 오므로 여기서 다시 찾게 한다.
+	PathFollowingComponent->UpdateCachedComponents();
+}
+
 void AASPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
+	// 입력은 화면 앞에 사람이 있는 컨트롤러에만 건다.
+	// 리슨 서버에는 다른 플레이어의 컨트롤러도 존재한다.
 	if (!IsLocalPlayerController())
 	{
 		return;
@@ -40,6 +64,7 @@ void AASPlayerController::SetupInputComponent()
 		return;
 	}
 
+	// Started 는 누른 순간 한 번, Triggered 는 누르고 있는 동안 매 프레임 온다.
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Started, this, &AASPlayerController::OnMoveStarted);
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AASPlayerController::OnMoveHeld);
 	EnhancedInputComponent->BindAction(StopAction, ETriggerEvent::Started, this, &AASPlayerController::OnStop);
@@ -48,6 +73,25 @@ void AASPlayerController::SetupInputComponent()
 	EnhancedInputComponent->BindAction(CameraCenterAction, ETriggerEvent::Started, this, &AASPlayerController::OnCameraCenterStarted);
 	EnhancedInputComponent->BindAction(CameraCenterAction, ETriggerEvent::Completed, this, &AASPlayerController::OnCameraCenterCompleted);
 	EnhancedInputComponent->BindAction(CameraCenterAction, ETriggerEvent::Canceled, this, &AASPlayerController::OnCameraCenterCompleted);
+	EnhancedInputComponent->BindAction(CameraZoomAction, ETriggerEvent::Triggered, this, &AASPlayerController::OnCameraZoom);
+}
+
+void AASPlayerController::ReceivedPlayer()
+{
+	Super::ReceivedPlayer();
+
+	if (!IsLocalController() || !IsValid(GetLocalPlayer()))
+	{
+		return;
+	}
+
+	// 커서가 보이는 채로 플레이하고, 커서는 창 밖으로 나가면 안 된다.
+	// 가장자리 스크롤은 커서가 테두리에서 멈춰야 동작하고,
+	// 전투 중에 다른 창을 클릭하면 게임이 포커스를 잃는다.
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
 }
 
 void AASPlayerController::PlayerTick(const float DeltaTime)
@@ -87,8 +131,8 @@ void AASPlayerController::RequestMoveTo(const FVector& Destination)
 		return;
 	}
 
-	// Clicks on walls or outside the walkable area still move the pawn as
-	// close as it can get instead of being ignored.
+	// 벽이나 이동할 수 없는 곳을 클릭해도 무시하지 않고,
+	// 갈 수 있는 가장 가까운 지점까지 가게 한다.
 	FNavLocation NavLocation;
 	if (!NavSys->ProjectPointToNavigation(Destination, NavLocation, NavProjectExtent))
 	{
@@ -117,7 +161,7 @@ void AASPlayerController::OnMoveStarted()
 
 void AASPlayerController::OnMoveHeld()
 {
-	// Path finding every frame is wasteful, so held input is throttled.
+	// 매 프레임 길을 다시 찾는 것은 낭비라서 누르고 있는 동안에는 간격을 둔다.
 	if (GetWorld()->GetTimeSeconds() - LastMoveRequestTime < HeldMoveInterval)
 	{
 		return;
@@ -159,6 +203,14 @@ void AASPlayerController::OnCameraCenterCompleted()
 	}
 }
 
+void AASPlayerController::OnCameraZoom(const FInputActionValue& Value)
+{
+	if (AASPlayerCameraManager* CameraManager = GetASPlayerCameraManager())
+	{
+		CameraManager->AddZoomInput(Value.Get<float>());
+	}
+}
+
 void AASPlayerController::UpdateCameraEdgeScroll(const float DeltaTime)
 {
 	AASPlayerCameraManager* CameraManager = GetASPlayerCameraManager();
@@ -167,19 +219,35 @@ void AASPlayerController::UpdateCameraEdgeScroll(const float DeltaTime)
 		return;
 	}
 
-	// Fails while the cursor is outside the viewport, which also keeps the
-	// camera still when the game window is not under the mouse.
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!GetMousePosition(MouseX, MouseY))
+	// 게임 창이 활성 상태가 아니면(Alt+Tab 등) 스크롤하지 않는다.
+	const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	const FViewport* Viewport = IsValid(LocalPlayer) && IsValid(LocalPlayer->ViewportClient) ? LocalPlayer->ViewportClient->Viewport : nullptr;
+	if (Viewport == nullptr || !FSlateApplication::Get().IsActive())
 	{
 		return;
 	}
 
-	int32 ViewportSizeX = 0;
-	int32 ViewportSizeY = 0;
-	GetViewportSize(ViewportSizeX, ViewportSizeY);
-	if (ViewportSizeX <= 0 || ViewportSizeY <= 0)
+	const FIntPoint ViewportSize = Viewport->GetSizeXY();
+	if (ViewportSize.X <= 0 || ViewportSize.Y <= 0)
+	{
+		return;
+	}
+
+	// GetMousePosition 이 아니라 하드웨어 커서 위치를 직접 읽는다.
+	// 뷰포트는 커서가 밖으로 나갔다는 알림을 받으면 기억해 둔 커서 위치를 지우고,
+	// 다음에 마우스가 움직일 때에야 되살린다. 이 알림은 화면 가장자리에서 나는데,
+	// 가장자리에 붙은 커서는 더 움직이지 않는다. 그래서 GetMousePosition 을 쓰면
+	// 플레이어가 마우스를 흔들 때까지 스크롤이 멈춘다.
+	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+	const FVector2D Normalized = Viewport->VirtualDesktopPixelToViewport(FIntPoint(FMath::RoundToInt32(CursorPos.X), FMath::RoundToInt32(CursorPos.Y)));
+	const double MouseX = Normalized.X * ViewportSize.X;
+	const double MouseY = Normalized.Y * ViewportSize.Y;
+
+	// 커서는 뷰포트에 갇혀 있어서 밖으로 나가도 몇 픽셀 수준이다.
+	// 그보다 멀리 있으면 잠금이 풀린 것이고(PIE 의 Shift+F1 등),
+	// 플레이어가 다른 일을 하고 있다는 뜻이다.
+	if (MouseX < -EdgeScrollOvershoot || MouseX > ViewportSize.X + EdgeScrollOvershoot
+		|| MouseY < -EdgeScrollOvershoot || MouseY > ViewportSize.Y + EdgeScrollOvershoot)
 	{
 		return;
 	}
@@ -189,17 +257,17 @@ void AASPlayerController::UpdateCameraEdgeScroll(const float DeltaTime)
 	{
 		PanDirection.X = -1.0;
 	}
-	else if (MouseX >= ViewportSizeX - EdgeScrollMargin)
+	else if (MouseX >= ViewportSize.X - EdgeScrollMargin)
 	{
 		PanDirection.X = 1.0;
 	}
 
-	// Viewport Y grows downwards.
+	// 뷰포트의 Y 는 아래로 갈수록 커진다. 화면 위쪽이 +Y 가 되도록 뒤집는다.
 	if (MouseY <= EdgeScrollMargin)
 	{
 		PanDirection.Y = 1.0;
 	}
-	else if (MouseY >= ViewportSizeY - EdgeScrollMargin)
+	else if (MouseY >= ViewportSize.Y - EdgeScrollMargin)
 	{
 		PanDirection.Y = -1.0;
 	}

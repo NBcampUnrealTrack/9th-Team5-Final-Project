@@ -7,13 +7,13 @@ AASPlayerState::AASPlayerState()
 {
 	AbilitySystemComponent = CreateDefaultSubobject<UASAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
-	// Mixed: the owning client receives full effect data for prediction and UI,
-	// other clients only receive tags, cues and attribute values.
+	// Mixed: 본인 클라이언트는 효과 정보를 전부 받는다(예측과 UI 에 필요하다).
+	// 다른 클라이언트는 태그·연출·어트리뷰트 값만 받는다.
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
 	AttributeSet = CreateDefaultSubobject<UASAttributeSet>(TEXT("AttributeSet"));
 
-	// PlayerState replicates slowly by default, which delays attribute updates.
+	// PlayerState 는 기본 복제 주기가 느려서 그대로 두면 어트리뷰트 갱신이 늦게 보인다.
 	SetNetUpdateFrequency(100.0f);
 }
 

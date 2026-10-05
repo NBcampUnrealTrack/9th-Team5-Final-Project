@@ -6,10 +6,12 @@
 #include "ASAttributeSet.generated.h"
 
 /**
- * Attributes shared by every combat character (players and enemies).
+ * 전투에 참여하는 모든 캐릭터(플레이어·적)가 공유하는 어트리뷰트.
  *
- * Current values are clamped to [0, Max]. All attributes replicate to every
- * connection so remote clients can drive health bars and movement speed.
+ * 현재값(체력·스태미나·마나)은 항상 [0, 최대치] 안으로 강제된다.
+ *
+ * 전부 모든 접속자에게 복제한다. 남의 체력바를 그려야 하고, 이동 속도는 각자의
+ * 화면에서 다른 캐릭터를 움직일 때도 필요하기 때문이다.
  */
 UCLASS()
 class APOCALYPSESURVIAL_API UASAttributeSet : public UAttributeSet
@@ -20,8 +22,14 @@ public:
 	UASAttributeSet();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** 값이 실제로 바뀌기 직전에 불린다. 여기서 범위를 강제한다. */
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+
+	/** GameplayEffect 실행 직후(서버 전용). 즉발 효과가 바꾼 기본값의 범위를 강제한다. */
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
+
+	// ── 체력 ──────────────────────────────────────────────
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Attributes|Vital")
 	FGameplayAttributeData Health;
@@ -31,7 +39,9 @@ public:
 	FGameplayAttributeData MaxHealth;
 	ATTRIBUTE_ACCESSORS_BASIC(UASAttributeSet, MaxHealth)
 
-	/** Spent by dodges, melee attacks and physical skills. */
+	// ── 스태미나 ──────────────────────────────────────────
+
+	/** 회피, 근접 공격, 물리 스킬이 소모한다. */
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Stamina, Category = "Attributes|Vital")
 	FGameplayAttributeData Stamina;
 	ATTRIBUTE_ACCESSORS_BASIC(UASAttributeSet, Stamina)
@@ -40,7 +50,9 @@ public:
 	FGameplayAttributeData MaxStamina;
 	ATTRIBUTE_ACCESSORS_BASIC(UASAttributeSet, MaxStamina)
 
-	/** Spent by psychic and magic skills. */
+	// ── 마나 ──────────────────────────────────────────────
+
+	/** 이능·마법 스킬이 소모한다. */
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Mana, Category = "Attributes|Vital")
 	FGameplayAttributeData Mana;
 	ATTRIBUTE_ACCESSORS_BASIC(UASAttributeSet, Mana)
@@ -49,7 +61,9 @@ public:
 	FGameplayAttributeData MaxMana;
 	ATTRIBUTE_ACCESSORS_BASIC(UASAttributeSet, MaxMana)
 
-	/** Ground speed in cm/s. Characters mirror this into their movement component. */
+	// ── 전투 ──────────────────────────────────────────────
+
+	/** 지상 이동 속도(cm/s). 캐릭터가 이 값을 자기 이동 컴포넌트에 그대로 옮겨 쓴다. */
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MoveSpeed, Category = "Attributes|Combat")
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS_BASIC(UASAttributeSet, MoveSpeed)
@@ -59,6 +73,8 @@ public:
 	ATTRIBUTE_ACCESSORS_BASIC(UASAttributeSet, AttackPower)
 
 protected:
+	// OnRep 은 GAMEPLAYATTRIBUTE_REPNOTIFY 를 불러야 예측 보정이 올바르게 동작한다.
+
 	UFUNCTION()
 	void OnRep_Health(const FGameplayAttributeData& OldValue);
 
@@ -84,6 +100,6 @@ protected:
 	void OnRep_AttackPower(const FGameplayAttributeData& OldValue);
 
 private:
-	/** Keeps a current value inside [0, Max] for the attributes that have a max. */
+	/** 최대치가 있는 어트리뷰트의 현재값을 [0, 최대치] 안으로 맞춘다. */
 	void ClampAttribute(const FGameplayAttribute& Attribute, float& NewValue) const;
 };
