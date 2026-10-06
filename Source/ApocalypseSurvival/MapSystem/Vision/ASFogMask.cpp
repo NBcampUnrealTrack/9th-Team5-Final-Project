@@ -64,3 +64,44 @@ void ASFogMask::BlurAlpha(TArray<uint8>& InOut, int32 Width, int32 Height, int32
 		}
 	}
 }
+
+bool ASFogMask::StepToward(TArray<uint8>& Shown, const TArray<uint8>& Target, int32 Width, int32 Height, int32 MaxStep, FIntRect& OutDirty)
+{
+	OutDirty = FIntRect(0, 0, 0, 0);
+	if (Width <= 0 || Height <= 0 || static_cast<int64>(Width) * Height != Shown.Num()
+		|| Shown.Num() != Target.Num() || MaxStep <= 0)
+	{
+		return false;
+	}
+
+	MaxStep = FMath::Min(MaxStep, 255);
+	int32 MinX = Width;
+	int32 MinY = Height;
+	int32 MaxX = 0;
+	int32 MaxY = 0;
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			const int32 Index = Y * Width + X;
+			const int32 Delta = static_cast<int32>(Target[Index]) - Shown[Index];
+			if (Delta == 0)
+			{
+				continue;
+			}
+
+			Shown[Index] = static_cast<uint8>(Shown[Index] + FMath::Clamp(Delta, -MaxStep, MaxStep));
+			MinX = FMath::Min(MinX, X);
+			MinY = FMath::Min(MinY, Y);
+			MaxX = FMath::Max(MaxX, X + 1);
+			MaxY = FMath::Max(MaxY, Y + 1);
+		}
+	}
+
+	if (MinX == Width)
+	{
+		return false;
+	}
+	OutDirty = FIntRect(MinX, MinY, MaxX, MaxY);
+	return true;
+}

@@ -16,8 +16,45 @@
 
 UASFogDisplayComponent::UASFogDisplayComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.bAllowTickOnDedicatedServer = false;
 	SetIsReplicatedByDefault(false);
+}
+
+bool UASFogDisplayComponent::HasLocalPlayer() const
+{
+	const UWorld* World = GetWorld();
+	return GetNetMode() != NM_DedicatedServer && World && World->GetFirstLocalPlayerFromController() != nullptr;
+}
+
+void UASFogDisplayComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!VisionDefinition || !HasLocalPlayer())
+	{
+		SetComponentTickEnabled(false);
+		return;
+	}
+
+	const float FadeSeconds = VisionDefinition->Settings.FogFadeSeconds;
+	const int32 MaxStep = FadeSeconds <= 0.0f ? 255
+		: FMath::Max(1, FMath::CeilToInt(255.0f * FMath::Clamp(DeltaTime / FadeSeconds, 0.0f, 1.0f)));
+	StepShownAlpha(MaxStep);
+}
+
+void UASFogDisplayComponent::StepShownAlpha(int32 MaxStep)
+{
+	FIntRect Dirty;
+	if (ASFogMask::StepToward(ShownAlpha, TargetAlpha, ResolutionX, ResolutionY, MaxStep, Dirty))
+	{
+		UploadTexture(Dirty);
+	}
+	if (ShownAlpha == TargetAlpha)
+	{
+		SetComponentTickEnabled(false);
+	}
 }
 
 void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
@@ -36,10 +73,13 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 		VisibleCells.Init(0, CellCount);
 		PreviousVisibleCells.Init(0, CellCount);
 		ExploredCells.Init(0, CellCount);
-		DisplayAlpha.SetNumUninitialized(CellCount);
+		TargetAlpha.SetNumUninitialized(CellCount);
+		ShownAlpha.SetNumUninitialized(CellCount);
 		BlurScratch.SetNumUninitialized(CellCount);
 		OcclusionPoints.Reserve(512);
 		bMaskDirty = true;
+		bInitializeShownAlpha = true;
+		SetComponentTickEnabled(false);
 
 		if (GetNetMode() != NM_DedicatedServer)
 		{
@@ -120,6 +160,12 @@ void UASFogDisplayComponent::UpdateLocalMask()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(ASFogOfWar_LocalMask);
 
+	if (!HasLocalPlayer())
+	{
+		SetComponentTickEnabled(false);
+		return;
+	}
+
 	const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
 	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
 	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
@@ -196,10 +242,25 @@ void UASFogDisplayComponent::UpdateLocalMask()
 		const uint8 Unexplored = static_cast<uint8>(FMath::Clamp(UnexploredAlpha, 0, 255));
 		for (int32 Index = 0; Index < VisibleCells.Num(); ++Index)
 		{
-			DisplayAlpha[Index] = VisibleCells[Index] ? 0 : (ExploredCells[Index] ? Explored : Unexplored);
+			TargetAlpha[Index] = VisibleCells[Index] ? 0 : (ExploredCells[Index] ? Explored : Unexplored);
 		}
-		ASFogMask::BlurAlpha(DisplayAlpha, ResolutionX, ResolutionY, Settings.FogEdgeBlurTexels, BlurScratch);
-		UploadTexture();
+		ASFogMask::BlurAlpha(TargetAlpha, ResolutionX, ResolutionY, Settings.FogEdgeBlurTexels, BlurScratch);
+		if (bInitializeShownAlpha)
+		{
+			// 초기 표시에는 검은 화면에서 시작하는 페이드를 적용하지 않는다.
+			FMemory::Memcpy(ShownAlpha.GetData(), TargetAlpha.GetData(), TargetAlpha.Num());
+			bInitializeShownAlpha = false;
+			SetComponentTickEnabled(false);
+			UploadTexture(FIntRect(0, 0, ResolutionX, ResolutionY));
+		}
+		else if (Settings.FogFadeSeconds <= 0.0f)
+		{
+			StepShownAlpha(255);
+		}
+		else
+		{
+			SetComponentTickEnabled(ShownAlpha != TargetAlpha);
+		}
 	}
 }
 
@@ -312,31 +373,35 @@ void UASFogDisplayComponent::RasterizeTriangle(const FVector2D& A, const FVector
 	}
 }
 
-void UASFogDisplayComponent::UploadTexture()
+void UASFogDisplayComponent::UploadTexture(const FIntRect& Dirty)
 {
-	if (!FogTexture || ResolutionX <= 0 || ResolutionY <= 0)
+	if (!FogTexture || ResolutionX <= 0 || ResolutionY <= 0 || Dirty.Width() <= 0 || Dirty.Height() <= 0)
 	{
 		return;
 	}
 
-	const int32 CellCount = ResolutionX * ResolutionY;
-	uint8* Pixels = new uint8[CellCount * 4];
-
-	for (int32 Index = 0; Index < CellCount; ++Index)
+	// 변경 사각형만 별도 버퍼로 복사하고 렌더 스레드의 완료 콜백에서 해제한다.
+	const int32 Width = Dirty.Width();
+	const int32 Height = Dirty.Height();
+	uint8* Pixels = new uint8[Width * Height * 4];
+	for (int32 Y = 0; Y < Height; ++Y)
 	{
-		uint8* Pixel = Pixels + Index * 4;
-		Pixel[0] = 0; // B
-		Pixel[1] = 0; // G
-		Pixel[2] = 0; // R
-		Pixel[3] = DisplayAlpha[Index];
+		for (int32 X = 0; X < Width; ++X)
+		{
+			uint8* Pixel = Pixels + (Y * Width + X) * 4;
+			Pixel[0] = 0; // B
+			Pixel[1] = 0; // G
+			Pixel[2] = 0; // R
+			Pixel[3] = ShownAlpha[(Dirty.Min.Y + Y) * ResolutionX + Dirty.Min.X + X];
+		}
 	}
 
-	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, ResolutionX, ResolutionY);
+	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(Dirty.Min.X, Dirty.Min.Y, 0, 0, Width, Height);
 	FogTexture->UpdateTextureRegions(
 		0,
 		1,
 		Region,
-		static_cast<uint32>(ResolutionX * 4),
+		static_cast<uint32>(Width * 4),
 		4,
 		Pixels,
 		[](uint8* SrcData, const FUpdateTextureRegion2D* Regions)

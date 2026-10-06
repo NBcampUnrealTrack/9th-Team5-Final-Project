@@ -29,6 +29,11 @@ bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		OutErrors.Add(FString::Printf(TEXT("%s: FogEdgeBlurTexels must be in 0..8."), *AssetName));
 	}
 
+	if (!FMath::IsFinite(Settings.FogFadeSeconds) || Settings.FogFadeSeconds < 0.0f || Settings.FogFadeSeconds > 2.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: FogFadeSeconds must be finite and in 0..2."), *AssetName));
+	}
+
 	if (!FMath::IsFinite(FogWorldMin.X) || !FMath::IsFinite(FogWorldMin.Y)
 		|| !FMath::IsFinite(FogWorldMax.X) || !FMath::IsFinite(FogWorldMax.Y)
 		|| FogWorldMax.X <= FogWorldMin.X || FogWorldMax.Y <= FogWorldMin.Y)

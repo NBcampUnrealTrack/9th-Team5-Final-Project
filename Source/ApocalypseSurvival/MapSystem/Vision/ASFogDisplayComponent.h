@@ -18,6 +18,8 @@ class APOCALYPSESURVIVAL_API UASFogDisplayComponent : public UActorComponent
 public:
 	UASFogDisplayComponent();
 
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 	void Configure(UASVisionDefinition* Definition);
 	UTexture2D* GetFogTexture() const { return FogTexture; }
 	bool IsLocationExplored(const FVector& Location) const;
@@ -34,7 +36,9 @@ private:
 	int32 GridIndexAt(const FVector& Location) const;
 	void RasterizeEllipse(const FVector2D& Center, const FVector2D& Radii);
 	void RasterizeTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C);
-	void UploadTexture();
+	bool HasLocalPlayer() const;
+	void StepShownAlpha(int32 MaxStep);
+	void UploadTexture(const FIntRect& Dirty);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "255"))
 	int32 ExploredAlpha = 150;
@@ -61,7 +65,8 @@ private:
 	TArray<uint8> VisibleCells;
 	TArray<uint8> PreviousVisibleCells;
 	TArray<uint8> ExploredCells;
-	TArray<uint8> DisplayAlpha;
+	TArray<uint8> TargetAlpha;
+	TArray<uint8> ShownAlpha;
 	TArray<uint8> BlurScratch;
 	TArray<FVector2D> OcclusionPoints;
 	/** U는 월드 Y를, V는 월드 X를 따른다. */
@@ -70,4 +75,6 @@ private:
 	FVector2D ConfiguredFogWorldMin = FVector2D::ZeroVector;
 	FVector2D ConfiguredFogWorldMax = FVector2D::ZeroVector;
 	bool bMaskDirty = true;
+	/** 첫 표시와 텍스처 재생성은 페이드 없이 현재 목표 전체를 업로드한다. */
+	bool bInitializeShownAlpha = true;
 };

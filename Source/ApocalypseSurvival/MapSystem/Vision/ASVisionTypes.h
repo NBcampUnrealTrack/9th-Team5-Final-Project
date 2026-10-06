@@ -30,6 +30,10 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0", ClampMax = "8"))
 	int32 FogEdgeBlurTexels = 2;
 
+	/** 표시 안개가 새 시야 상태에 도달하는 시간. 0이면 즉시 적용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0", ClampMax = "2", Units = "s"))
+	float FogFadeSeconds = 0.15f;
+
 	/** 클라이언트에서 차폐된 시야 마스크를 그릴 때 시야 소스당 광선 수. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "16", ClampMax = "512"))
 	int32 OcclusionRayCount = 96;
