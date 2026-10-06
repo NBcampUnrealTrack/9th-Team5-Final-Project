@@ -13,6 +13,9 @@
 #include "Items/ASItemInstance.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/UI/ASLootEntryWidget.h"
+#include "Items/Interaction/ASItemInteractionComponent.h"
+#include "Items/Loot/ASLootChest.h"
+#include "GameFramework/PlayerController.h"
 
 TSharedRef<SWidget> UASLootWidget::RebuildWidget()
 {
@@ -77,6 +80,7 @@ void UASLootWidget::NativeDestruct()
 	}
 
 	Super::NativeDestruct();
+	OnLootClosed.Broadcast();
 }
 
 void UASLootWidget::SetLootContext(
@@ -152,7 +156,13 @@ void UASLootWidget::HandleItemClicked(UASItemInstance* ItemInstance)
 		return;
 	}
 
-	LootInventory->TransferItemTo(PlayerInventory, ItemInstance, ItemInstance->GetQuantity());
+	APlayerController* PC = GetOwningPlayer();
+	AASLootChest* Chest = Cast<AASLootChest>(LootInventory->GetOwner());
+	UASItemInteractionComponent* Interaction = PC ? PC->FindComponentByClass<UASItemInteractionComponent>() : nullptr;
+	if (Interaction && IsValid(Chest))
+	{
+		Interaction->RequestLoot(Chest, ItemInstance->GetInstanceId(), ItemInstance->GetQuantity());
+	}
 }
 
 void UASLootWidget::HandleCloseClicked()

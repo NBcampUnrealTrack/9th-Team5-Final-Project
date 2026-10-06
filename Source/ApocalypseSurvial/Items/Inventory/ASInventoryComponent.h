@@ -2,10 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "ASInventoryComponent.generated.h"
 
 class UASItemDefinition;
 class UASItemInstance;
+class UAbilitySystemComponent;
+class APawn;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASInventoryChangedSignature);
 
@@ -23,6 +26,28 @@ class APOCALYPSESURVIAL_API UASInventoryComponent : public UActorComponent
 
 public:
 	UASInventoryComponent();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual bool ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
+	virtual void ReadyForReplication() override;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	UASItemInstance* FindItemById(FGuid InstanceId) const;
+
+	/** Authority-only gameplay operations. Clients request these through ASPlayerController. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
+	bool UseItem(FGuid InstanceId, APawn* Avatar);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
+	bool EquipItem(FGuid InstanceId, APawn* Avatar);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
+	void UnequipItem();
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
+	UASItemInstance* GetEquippedItem() const { return EquippedItem; }
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
+	AActor* GetEquippedActor() const { return EquippedActor; }
 
 	/**
 	 * Adds items using the supplied definition.
@@ -82,7 +107,19 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory")
 	FASInventoryChangedSignature OnInventoryChanged;
 
+protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 private:
+	bool HasInventoryAuthority() const;
+	UAbilitySystemComponent* ResolveAbilitySystem(APawn* Avatar) const;
+	void NotifyInventoryChanged();
+	void SyncReplicatedItems();
+	void ClearEquipment();
+
+	UFUNCTION()
+	void OnRep_Items();
+
 	bool HasFreeSlot() const;
 	void RemoveEmptyAndInvalidInstances();
 
@@ -91,6 +128,19 @@ private:
 	int32 MaxSlots = 0;
 
 	/** Runtime instances owned by this component. */
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(ReplicatedUsing = OnRep_Items, VisibleInstanceOnly, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<UASItemInstance>> Items;
+
+	UPROPERTY(ReplicatedUsing = OnRep_Items)
+	TObjectPtr<UASItemInstance> EquippedItem;
+
+	UPROPERTY(Replicated)
+	TObjectPtr<AActor> EquippedActor;
+
+	// Strong references keep removed subobjects alive until they are unregistered.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UASItemInstance>> RegisteredItems;
+
+	TWeakObjectPtr<UAbilitySystemComponent> EquippedAbilitySystem;
+	TArray<FGameplayAbilitySpecHandle> EquippedAbilityHandles;
 };
