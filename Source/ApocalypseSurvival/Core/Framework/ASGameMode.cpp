@@ -49,6 +49,9 @@ void AASGameMode::HandleMatchHasStarted()
 {
 	Super::HandleMatchHasStarted();
 	
+	// 맵의 NavMesh 위에 적 스폰 포인트 자동 생성
+	GenerateEnemySpawnPoints();
+	
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
 	
@@ -389,13 +392,121 @@ APawn* AASGameMode::GetRandomAlivePlayerPawn() const
 	return Pawns[FMath::RandRange(0, Pawns.Num() - 1)];
 }
 
-bool AASGameMode::FindSpawnLocation(FVector& OutLocation) const
+bool AASGameMode::FindSpawnLocation(int32 EnemyCount, TArray<FVector>& OutLocations) const
 {
+	/* [이전] 플레이어 주변 링에서 랜덤 위치
 	const APawn* Target = GetRandomAlivePlayerPawn();
 	if (!Target) return false;
 	
 	return FindSpawnLocationAround(Target->GetActorLocation(),
 		SpawnMinDistance, SpawnMaxDistance, OutLocation);
+	*/
+	
+	OutLocations.Reset();
+	if (EnemyCount <= 0) return false;
+	
+	TArray<FVector> Candidates = GetAvailableEnemySpawnPoints();
+	if (Candidates.Num() == 0) return false;
+	
+	// 적 수에 비례해서 사용할 포인트 수 (포인트 1개당 EnemiesPerSpawnPoint마리, 최소1개, 최대 후보수)
+	const int32 PointCount = FMath::Clamp(FMath::DivideAndRoundUp(EnemyCount, FMath::Max(1, EnemiesPerSpawnPoint)), 1, Candidates.Num());
+	
+	// 후보 순서를 섞고 앞에서부터 사용 (겹치지 않게 랜덤 선택)
+	for (int32 i = Candidates.Num() - 1; i > 0; --i)
+	{
+		Candidates.Swap(i, FMath::RandRange(0, i));
+	}
+	
+	const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	
+	// 적을 선택된 포인트들에 나눠 배정하고, 포인트 주변에 흩뿌림
+	for (int32 i = 0; i < EnemyCount; ++i)
+	{
+		const FVector& Point = Candidates[i % PointCount];
+		FVector Location = Point;
+		
+		if (NavSys)
+		{
+			const FVector2D Offset = FMath::RandPointInCircle(SpawnScatterRadius);
+			FNavLocation NavLocation;
+			if (NavSys->ProjectPointToNavigation(Point + FVector(Offset, 0.f), NavLocation, FVector(100.f, 100.f, 500.f)))
+			{
+				Location = NavLocation.Location;
+			}
+		}
+		
+		OutLocations.Add(Location);
+	}
+	
+	return true;
+}
+
+void AASGameMode::GenerateEnemySpawnPoints()
+{
+	EnemySpawnPoints.Reset();
+	
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	if (!NavSys)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GameMode] NavMesh가 없어 적 스폰 포인트를 만들지 못함"));
+		return;
+	}
+	
+	// 간격 조건 때문에 실패할 시 재시도
+	const int32 MaxAttempts = SpawnPointCount * 20;
+	for (int32 i = 0; i < MaxAttempts && EnemySpawnPoints.Num() < SpawnPointCount; ++i)
+	{
+		FNavLocation RandomPoint;
+		if (!NavSys->GetRandomPoint(RandomPoint)) continue;
+		
+		// 다른 포인트와 너무 가까우면 버림
+		bool bTooCloseToOther = false;
+		for (const FVector& Existing : EnemySpawnPoints)
+		{
+			if (FVector::Dist2D(Existing, RandomPoint.Location) < SpawnPointMinSpacing)
+			{
+				bTooCloseToOther = true;
+				break;
+			}
+		}
+		
+		if (!bTooCloseToOther)
+		{
+			EnemySpawnPoints.Add(RandomPoint.Location);
+		}
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] 적 스폰 포인트 %d개 생성"), EnemySpawnPoints.Num());
+}
+
+bool AASGameMode::IsNearAnyPlayer(const FVector& Location) const
+{
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PC = It->Get();
+		const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+		
+		if (Pawn && FVector::Dist2D(Pawn->GetActorLocation(), Location) < SpawnMinDistance)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+TArray<FVector> AASGameMode::GetAvailableEnemySpawnPoints() const
+{
+	TArray<FVector> Result;
+	for (const FVector& Point : EnemySpawnPoints)
+	{
+		if (!IsNearAnyPlayer(Point))
+		{
+			Result.Add(Point);
+		}
+	}
+	
+	// 전부 플레이어 근처라면 전체 사용
+	return Result.Num() > 0 ? Result : EnemySpawnPoints;
 }
 
 bool AASGameMode::FindSpawnLocationAround(const FVector& Center, float MinDistance, float MaxDistance, FVector& OutLocation) const
@@ -458,4 +569,40 @@ void AASGameMode::DebugShowSpawnPoints(int32 Count)
 	}
 	
 	UE_LOG(LogTemp, Log, TEXT("[Debug] 스폰 위치 %d/%d개 찾음"), Found, Count);
+}
+
+void AASGameMode::DebugShowEnemySpawnPoints(int32 EnemyCount)
+{
+	UWorld* World = GetWorld();
+	
+	// 플레이어 주변 최소 거리 (초록 원)
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PC = It->Get();
+		if (const APawn* Pawn = PC ? PC->GetPawn() : nullptr)
+		{
+			DrawDebugCircle(World, Pawn->GetActorLocation(), SpawnMinDistance, 64, FColor::Green, false, 10.f, 0, 10.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
+		}
+	}
+	
+	// 전체 포인트: 사용 가능 파랑, 제외 빨강
+	int32 Available = 0;
+	for (const FVector& Point : EnemySpawnPoints)
+	{
+		const bool bNear = IsNearAnyPlayer(Point);
+		DrawDebugSphere(World, Point, 150.f, 12, bNear ? FColor::Red : FColor::Blue, false, 10.f, 0, 5.f);
+		if (!bNear) ++Available;
+	}
+	
+	// 이번 요청으로 정해진 적 위치 (노랑)
+	TArray<FVector> Locations;
+	if (EnemyCount > 0 && FindSpawnLocation(EnemyCount, Locations))
+	{
+		for (const FVector& Location : Locations)
+		{
+			DrawDebugSphere(World, Location, 40.f, 8, FColor::Yellow, false, 10.f, 0, 3.f);
+		}
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("[Debug] 적 스폰 포인트 %d개 중 사용 가능 %d개, 적 %d마리 위치 표시"), EnemySpawnPoints.Num(), Available, Locations.Num());
 }
