@@ -1,0 +1,55 @@
+﻿#pragma once
+
+#include "CoreMinimal.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
+#include "MapSystem/Zone/Core/ASMapTypes.h"
+#include "ASMapFunctionLibrary.generated.h"
+
+class AASMapSystemManager;
+class APawn;
+class UASMapDefinition;
+class UASMapStateComponent;
+
+/** 모든 머신에서 사용할 수 있는 맵 조회. */
+UCLASS()
+class APOCALYPSESURVIVAL_API UASMapFunctionLibrary : public UBlueprintFunctionLibrary
+{
+	GENERATED_BODY()
+
+public:
+	/** 현재 GameState의 MapState 컴포넌트 (있는 경우). */
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static UASMapStateComponent* GetMapStateComponent(const UObject* WorldContextObject);
+
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static UASMapDefinition* GetMapDefinition(const UObject* WorldContextObject);
+
+	/** 서버 전용 매니저. 클라이언트에서는 null을 반환한다. */
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static AASMapSystemManager* GetMapSystemManager(const UObject* WorldContextObject);
+
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static FName FindZoneIdAtLocation(const UObject* WorldContextObject, const FVector& Location);
+
+	/** 월드 공간 스폰 지점. 알 수 없는 구역이면 빈 목록을 반환한다. */
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static TArray<FTransform> GetZoneSpawnTransforms(const UObject* WorldContextObject, FName ZoneId);
+
+	/** 월드 공간 리스폰 지점. 알 수 없는 구역이면 빈 목록을 반환한다. */
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static TArray<FTransform> GetZoneRespawnTransforms(const UObject* WorldContextObject, FName ZoneId);
+
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static FText GetZoneDisplayName(const UObject* WorldContextObject, FName ZoneId);
+
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static FLinearColor GetDangerColor(const UObject* WorldContextObject, int32 DangerLevel);
+
+	/** 공유 스냅샷에서 가져온 특정 위치의 구역 이름과 위험도. */
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static FASZoneHudInfo GetZoneHudInfoAtLocation(const UObject* WorldContextObject, const FVector& Location);
+
+	/** 첫 번째 로컬 PlayerController의 Pawn. */
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static APawn* GetLocalPlayerPawn(const UObject* WorldContextObject);
+};
