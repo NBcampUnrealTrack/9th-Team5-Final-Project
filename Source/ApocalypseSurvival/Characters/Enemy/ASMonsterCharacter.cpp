@@ -133,8 +133,9 @@ void AASMonsterCharacter::HandleDeath()
 		return;
 	}
 
-	// Minimal 복제 모드에서도 태그는 복제된다. 일반 Loose 태그는 서버에만 남으므로 복제 버전을 쓴다.
-	OwnedAbilitySystemComponent->AddReplicatedLooseGameplayTag(ASGameplayTags::State_Monster_Dead);
+	// Minimal 복제 모드에서는 GameplayEffect가 주는 태그처럼 TagOnly 상태로 복제해야 한다.
+	// 사망 GameplayEffect를 만들기 전까지는 이 API로 Dead 태그를 모든 클라이언트에 전달한다.
+	OwnedAbilitySystemComponent->AddMinimalReplicationGameplayTag(ASGameplayTags::State_Monster_Dead);
 
 	StopMovementAndAI();
 }
