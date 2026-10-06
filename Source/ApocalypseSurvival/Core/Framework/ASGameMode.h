@@ -6,6 +6,8 @@
 #include "ASGameMode.generated.h"
 
 class AASGameState;
+class AASRespawnPoint;
+class UASPlayerRecordComponent;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -42,6 +44,15 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "GameFlow")
 	FOnWaveEnded OnWaveEnded;
 	
+	// 사망과 리스폰 (플레이어 쪽에서 호출)
+	// 플레이어가 죽었을 때 호출. 데스카운트 초과면 패배, 아니면 리스폰
+	UFUNCTION(BlueprintCallable, Category = "Death")
+	void OnPlayerDied(AController* DeadController);
+		
+	// 맵에 배치된 리스폰 포인트 목록
+	TArray<AASRespawnPoint*> GetAvailableRespawnPoints() const;
+		
+	
 	// 스폰 위치 (AI쪽에서 호출)
 	// 살아 있는 플레이어 중 한 명 주변에서 스폰 위치를 찾음 (설정값의 최소·최대 거리 사용)
 	UFUNCTION(BlueprintCallable, Category = "Spawn")
@@ -72,8 +83,12 @@ public:
 	UFUNCTION(Exec)
 	void DebugShowSpawnPoints(int32 Count);
 	
+	UFUNCTION(Exec)
+	void DebugKillPlayer();
+	
 protected:
 	virtual void HandleMatchHasStarted() override;
+	virtual void PostLogin(APlayerController* NewPlayer) override;
 	
 	// 게임 시작 전 대기 시간 (초)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Time")
@@ -97,6 +112,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
 	float RespawnSelectTimeLimit = 0.f;
 	
+	// 사망 후 리스폰까지 대기 시간 (초)
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
+	float RespawnDelay = 3.f;
+	
 	// 플레이어로부터 최소 스폰 거리 (cm, 화면 밖)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
 	float SpawnMinDistance = 2500.f;
@@ -115,6 +134,13 @@ protected:
 	void OnDayTimeUp();
 	void OnNightTimeUp();
 	void EndGame(bool bVictory);
+	
+	// 사망과 리스폰
+	UASPlayerRecordComponent* GetOrCreateRecord(AController* Controller) const;
+	void RespawnPlayer(AController* Controller);
+	
+	// 리스폰 시 바닥에 박히지 않도록 높이 보간 (캡슐 절반 높이, 없으면 100cm)
+	float GetSpawnHeightOffset(AController* Controller);
 	
 	bool IsGameEnded() const;
 	FWaveResult BuildWaveResult() const;

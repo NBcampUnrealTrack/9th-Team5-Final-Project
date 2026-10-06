@@ -2,9 +2,13 @@
 #include "Core/Framework/ASGameState.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/Character.h"
 #include "Core/Framework/ASPlayerRecordComponent.h"
+#include "Core/Framework/ASRespawnPoint.h"
+#include "EngineUtils.h"
 #include "NavigationSystem.h"
 #include "DrawDebugHelpers.h"
+#include "Components/CapsuleComponent.h"
 
 AASGameMode::AASGameMode()
 {
@@ -203,13 +207,10 @@ void AASGameMode::OnEnemyKilled(AController* Killer)
 		GS->AddWaveKilled();
 	}
 	
-	// 개인 처치 수 (PlayerState에 컴포넌트가 붙어 있을 때만)
-	if (Killer && Killer->PlayerState)
+	// 개인 처치 수 (처치자가 플레이어일 때만)
+	if (UASPlayerRecordComponent* Record = GetOrCreateRecord(Killer))
 	{
-		if (UASPlayerRecordComponent* Record = Killer->PlayerState->FindComponentByClass<UASPlayerRecordComponent>())
-		{
-			Record->AddKill();
-		}
+		Record->AddKill();
 	}
 }
 
@@ -226,6 +227,117 @@ void AASGameMode::OnBossDefeated()
 		UE_LOG(LogTemp, Log, TEXT("[GameMode] 보스 처치"));
 		EndGame(true);
 	}
+}
+
+// 사망과 리스폰
+
+void AASGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+	
+	// 접속한 플레이어에게 기록 컴포넌트 미리 붙이기
+	GetOrCreateRecord(NewPlayer);
+}
+
+UASPlayerRecordComponent* AASGameMode::GetOrCreateRecord(AController* Controller) const
+{
+	if (!Controller) return nullptr;
+	
+	APlayerState* PS = Controller->GetPlayerState<APlayerState>();
+	if (!PS) return nullptr;
+	
+	// 이미 붙어 있으면 그대로 사용
+	if (UASPlayerRecordComponent* Record = PS->FindComponentByClass<UASPlayerRecordComponent>())
+	{
+		return Record;
+	}
+	
+	// 없으면 새로 만들어서 붙이기
+	UASPlayerRecordComponent* NewRecord = NewObject<UASPlayerRecordComponent>(PS, TEXT("PlayerRecord"));
+	NewRecord->RegisterComponent();
+	return NewRecord;
+}
+
+void AASGameMode::OnPlayerDied(AController* DeadController)
+{
+	if (!DeadController || IsGameEnded()) return;
+	
+	if (IsDeathCountEnabled())
+	{
+		if (UASPlayerRecordComponent* Record = GetOrCreateRecord(DeadController))
+		{
+			Record->AddDeath();
+			UE_LOG(LogTemp, Log, TEXT("[GameMode] 사망 %d회 / 허용 %d회"), Record->GetDeathCount(), MaxDeathCount);
+			
+			// 허용 횟수를 넘으면 패배
+			if (Record->GetDeathCount() > MaxDeathCount)
+			{
+				EndGame(false);
+				return;
+			}
+		}
+	}
+	
+	// 대기 시간 후 리스폰
+	FTimerHandle RespawnHandle;
+	FTimerDelegate RespawnDelegate = FTimerDelegate::CreateUObject(this, &AASGameMode::RespawnPlayer, DeadController);
+	GetWorldTimerManager().SetTimer(RespawnHandle, RespawnDelegate, RespawnDelay, false);
+}
+
+void AASGameMode::RespawnPlayer(AController* Controller)
+{
+	if (!Controller || IsGameEnded()) return;
+	
+	// 기존 Pawn 정리
+	if (APawn* OldPawn = Controller->GetPawn())
+	{
+		Controller->UnPossess();
+		OldPawn->Destroy();
+	}
+	
+	// 리스폰 포인트 중 랜덤 (선택 UI는 미니맵 이후)
+	TArray<AASRespawnPoint*> Points = GetAvailableRespawnPoints();
+	if (Points.Num() > 0)
+	{
+		AASRespawnPoint* Point = Points[FMath::RandRange(0, Points.Num() - 1)];
+		// 포인트는 바닥 높이라 캡슐 절반만큼 올려서 생성
+		FTransform SpawnTransForm = Point->GetActorTransform();
+		SpawnTransForm.AddToTranslation(FVector(0.f, 0.f, GetSpawnHeightOffset(Controller)));
+		RestartPlayerAtTransform(Controller, SpawnTransForm);
+	}
+	else
+	{
+		// 포인트가 없으면 PlayerStart에서
+		RestartPlayer(Controller);
+	}
+}
+
+TArray<AASRespawnPoint*> AASGameMode::GetAvailableRespawnPoints() const
+{
+	TArray<AASRespawnPoint*> Result;
+	for (TActorIterator<AASRespawnPoint> It(GetWorld()); It; ++It)
+	{
+		Result.Add(*It);
+	}
+	return Result;
+}
+
+float AASGameMode::GetSpawnHeightOffset(AController* Controller)
+{
+	// 캡슐 바닥이 지면에 붙으면 충돌로 판정될 수 있어서 여유를 둠
+	constexpr float Margin = 10.f;
+	constexpr float FallbackHeight = 100.f;
+	
+	UClass* PawnClass = GetDefaultPawnClassForController(Controller);
+	const ACharacter* CharacterCDO = PawnClass ? Cast<ACharacter>(PawnClass->GetDefaultObject()) : nullptr;
+	
+	if (CharacterCDO && CharacterCDO->GetCapsuleComponent())
+	{
+		return CharacterCDO->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + Margin;
+	}
+	
+	// 캐릭터가 아니거나 캡슐이 없으면 기본값
+	return FallbackHeight;
 }
 
 // 디버그
@@ -251,6 +363,11 @@ void AASGameMode::DebugKillEnemy()
 void AASGameMode::DebugKillBoss()
 {
 	OnBossDefeated();
+}
+
+void AASGameMode::DebugKillPlayer()
+{
+	OnPlayerDied(GetWorld()->GetFirstPlayerController());
 }
 
 // 스폰 위치
