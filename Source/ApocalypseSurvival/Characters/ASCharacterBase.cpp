@@ -2,7 +2,7 @@
 
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
-#include "GAS/Attributes/ASAttributeSet.h"
+#include "GAS/Attributes/ASCombatAttributeSet.h"
 
 AASCharacterBase::AASCharacterBase()
 {
@@ -23,9 +23,9 @@ void AASCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void AASCharacterBase::InitAbilitySystem(UASAbilitySystemComponent* InAbilitySystemComponent, UASAttributeSet* InAttributeSet, AActor* InOwnerActor)
+void AASCharacterBase::InitAbilitySystem(UASAbilitySystemComponent* InAbilitySystemComponent, AActor* InOwnerActor)
 {
-	if (!IsValid(InAbilitySystemComponent) || !IsValid(InAttributeSet))
+	if (!IsValid(InAbilitySystemComponent))
 	{
 		return;
 	}
@@ -34,17 +34,19 @@ void AASCharacterBase::InitAbilitySystem(UASAbilitySystemComponent* InAbilitySys
 	UnbindAttributeDelegates();
 
 	AbilitySystemComponent = InAbilitySystemComponent;
-	AttributeSet = InAttributeSet;
 	AbilitySystemComponent->InitAbilityActorInfo(InOwnerActor, this);
 
 	// MoveSpeed 는 모든 접속자에게 복제된다. 그래서 각 머신이 변경 알림을 받아
 	// 자기 이동 컴포넌트에 옮기기만 하면 되고, 속도를 따로 복제할 필요가 없다.
 	MoveSpeedChangedHandle = AbilitySystemComponent
-		->GetGameplayAttributeValueChangeDelegate(UASAttributeSet::GetMoveSpeedAttribute())
+		->GetGameplayAttributeValueChangeDelegate(UASCombatAttributeSet::GetMoveSpeedAttribute())
 		.AddUObject(this, &AASCharacterBase::HandleMoveSpeedChanged);
 
 	// 알림은 "바뀔 때"만 온다. 연결한 시점의 값은 직접 한 번 넣어 줘야 한다.
-	GetCharacterMovement()->MaxWalkSpeed = AttributeSet->GetMoveSpeed();
+	if (const UASCombatAttributeSet* CombatAttributes = AbilitySystemComponent->GetSet<UASCombatAttributeSet>())
+	{
+		GetCharacterMovement()->MaxWalkSpeed = CombatAttributes->GetMoveSpeed();
+	}
 
 	OnAbilitySystemInitialized();
 }
@@ -58,7 +60,7 @@ void AASCharacterBase::UnbindAttributeDelegates()
 	if (IsValid(AbilitySystemComponent) && MoveSpeedChangedHandle.IsValid())
 	{
 		AbilitySystemComponent
-			->GetGameplayAttributeValueChangeDelegate(UASAttributeSet::GetMoveSpeedAttribute())
+			->GetGameplayAttributeValueChangeDelegate(UASCombatAttributeSet::GetMoveSpeedAttribute())
 			.Remove(MoveSpeedChangedHandle);
 	}
 
