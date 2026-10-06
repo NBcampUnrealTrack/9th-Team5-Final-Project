@@ -4,6 +4,7 @@
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
+#include "MapSystem/Vision/ASFogMask.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
 #include "MapSystem/Vision/ASVisionEvaluatorComponent.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
@@ -21,21 +22,28 @@ UASFogDisplayComponent::UASFogDisplayComponent()
 
 void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 {
-	const int32 WantedResolution = FMath::Clamp(Definition->Settings.MaskResolution, 64, 2048);
-	if (Definition != VisionDefinition || WantedResolution != Resolution)
+	const FIntPoint WantedResolution = ASFogMask::ComputeResolution(Definition->GetFogWorldSize(), Definition->Settings.MaskResolution);
+	if (Definition != VisionDefinition || WantedResolution.X != ResolutionX || WantedResolution.Y != ResolutionY
+		|| Definition->FogWorldMin != ConfiguredFogWorldMin || Definition->FogWorldMax != ConfiguredFogWorldMax)
 	{
 		VisionDefinition = Definition;
-		Resolution = WantedResolution;
+		ResolutionX = WantedResolution.X;
+		ResolutionY = WantedResolution.Y;
+		ConfiguredFogWorldMin = Definition->FogWorldMin;
+		ConfiguredFogWorldMax = Definition->FogWorldMax;
 
-		const int32 CellCount = Resolution * Resolution;
+		const int32 CellCount = ResolutionX * ResolutionY;
 		VisibleCells.Init(0, CellCount);
 		PreviousVisibleCells.Init(0, CellCount);
 		ExploredCells.Init(0, CellCount);
+		DisplayAlpha.SetNumUninitialized(CellCount);
+		BlurScratch.SetNumUninitialized(CellCount);
+		OcclusionPoints.Reserve(512);
 		bMaskDirty = true;
 
 		if (GetNetMode() != NM_DedicatedServer)
 		{
-			FogTexture = UTexture2D::CreateTransient(Resolution, Resolution, PF_B8G8R8A8);
+			FogTexture = UTexture2D::CreateTransient(ResolutionX, ResolutionY, PF_B8G8R8A8);
 			if (FogTexture)
 			{
 				FogTexture->SRGB = false;
@@ -116,7 +124,7 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
 	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
 	// 로컬 플레이어가 죽거나 관전 중이어도 계속 갱신한다. 팀원은 여전히 시야를 공유한다.
-	if (!Subsystem || !Manager || !Evaluator || !VisionDefinition || Resolution <= 0)
+	if (!Subsystem || !Manager || !Evaluator || !VisionDefinition || ResolutionX <= 0 || ResolutionY <= 0)
 	{
 		return;
 	}
@@ -143,14 +151,13 @@ void UASFogDisplayComponent::UpdateLocalMask()
 		if (!bWallOcclusion)
 		{
 			// U는 월드 Y를, V는 월드 X를 따른다.
-			const FVector2D Radii(Radius / WorldSize.Y * Resolution, Radius / WorldSize.X * Resolution);
+			const FVector2D Radii(Radius / WorldSize.Y * ResolutionX, Radius / WorldSize.X * ResolutionY);
 			RasterizeEllipse(CenterGrid, Radii);
 			continue;
 		}
 
 		const int32 RayCount = FMath::Clamp(Settings.OcclusionRayCount, 16, 512);
-		TArray<FVector2D> Points;
-		Points.Reserve(RayCount);
+		OcclusionPoints.Reset();
 
 		for (int32 RayIndex = 0; RayIndex < RayCount; ++RayIndex)
 		{
@@ -166,12 +173,12 @@ void UASFogDisplayComponent::UpdateLocalMask()
 				EndPoint = Origin + Direction * Distance;
 			}
 
-			Points.Add(WorldToGrid(EndPoint));
+			OcclusionPoints.Add(WorldToGrid(EndPoint));
 		}
 
-		for (int32 Index = 0; Index < Points.Num(); ++Index)
+		for (int32 Index = 0; Index < OcclusionPoints.Num(); ++Index)
 		{
-			RasterizeTriangle(CenterGrid, Points[Index], Points[(Index + 1) % Points.Num()]);
+			RasterizeTriangle(CenterGrid, OcclusionPoints[Index], OcclusionPoints[(Index + 1) % OcclusionPoints.Num()]);
 		}
 	}
 
@@ -184,18 +191,31 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	{
 		FMemory::Memcpy(PreviousVisibleCells.GetData(), VisibleCells.GetData(), VisibleCells.Num());
 		bMaskDirty = false;
+		// 게임 판정용 셀은 이진 상태를 유지하고 표시 알파만 부드럽게 만든다.
+		const uint8 Explored = static_cast<uint8>(FMath::Clamp(ExploredAlpha, 0, 255));
+		const uint8 Unexplored = static_cast<uint8>(FMath::Clamp(UnexploredAlpha, 0, 255));
+		for (int32 Index = 0; Index < VisibleCells.Num(); ++Index)
+		{
+			DisplayAlpha[Index] = VisibleCells[Index] ? 0 : (ExploredCells[Index] ? Explored : Unexplored);
+		}
+		ASFogMask::BlurAlpha(DisplayAlpha, ResolutionX, ResolutionY, Settings.FogEdgeBlurTexels, BlurScratch);
 		UploadTexture();
 	}
 }
 
 FVector2D UASFogDisplayComponent::WorldToGrid(const FVector& Location) const
 {
-	return VisionDefinition ? VisionDefinition->WorldToFogUV(Location) * static_cast<double>(Resolution) : FVector2D::ZeroVector;
+	if (!VisionDefinition)
+	{
+		return FVector2D::ZeroVector;
+	}
+	const FVector2D UV = VisionDefinition->WorldToFogUV(Location);
+	return FVector2D(UV.X * ResolutionX, UV.Y * ResolutionY);
 }
 
 int32 UASFogDisplayComponent::GridIndexAt(const FVector& Location) const
 {
-	if (Resolution <= 0)
+	if (ResolutionX <= 0 || ResolutionY <= 0)
 	{
 		return INDEX_NONE;
 	}
@@ -203,12 +223,12 @@ int32 UASFogDisplayComponent::GridIndexAt(const FVector& Location) const
 	const FVector2D Grid = WorldToGrid(Location);
 	const int32 X = FMath::FloorToInt(Grid.X);
 	const int32 Y = FMath::FloorToInt(Grid.Y);
-	if (X < 0 || Y < 0 || X >= Resolution || Y >= Resolution)
+	if (X < 0 || Y < 0 || X >= ResolutionX || Y >= ResolutionY)
 	{
 		return INDEX_NONE;
 	}
 
-	return Y * Resolution + X;
+	return Y * ResolutionX + X;
 }
 
 bool UASFogDisplayComponent::IsLocationExplored(const FVector& Location) const
@@ -231,9 +251,9 @@ void UASFogDisplayComponent::RasterizeEllipse(const FVector2D& Center, const FVe
 	}
 
 	const int32 MinX = FMath::Max(0, FMath::FloorToInt(Center.X - Radii.X));
-	const int32 MaxX = FMath::Min(Resolution - 1, FMath::CeilToInt(Center.X + Radii.X));
+	const int32 MaxX = FMath::Min(ResolutionX - 1, FMath::CeilToInt(Center.X + Radii.X));
 	const int32 MinY = FMath::Max(0, FMath::FloorToInt(Center.Y - Radii.Y));
-	const int32 MaxY = FMath::Min(Resolution - 1, FMath::CeilToInt(Center.Y + Radii.Y));
+	const int32 MaxY = FMath::Min(ResolutionY - 1, FMath::CeilToInt(Center.Y + Radii.Y));
 
 	for (int32 Y = MinY; Y <= MaxY; ++Y)
 	{
@@ -243,7 +263,7 @@ void UASFogDisplayComponent::RasterizeEllipse(const FVector2D& Center, const FVe
 			const double DX = (X + 0.5 - Center.X) / Radii.X;
 			if (DX * DX + DY * DY <= 1.0)
 			{
-				VisibleCells[Y * Resolution + X] = 1;
+				VisibleCells[Y * ResolutionX + X] = 1;
 			}
 		}
 	}
@@ -252,9 +272,9 @@ void UASFogDisplayComponent::RasterizeEllipse(const FVector2D& Center, const FVe
 void UASFogDisplayComponent::RasterizeTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C)
 {
 	const int32 MinX = FMath::Max(0, FMath::FloorToInt(FMath::Min3(A.X, B.X, C.X)));
-	const int32 MaxX = FMath::Min(Resolution - 1, FMath::CeilToInt(FMath::Max3(A.X, B.X, C.X)));
+	const int32 MaxX = FMath::Min(ResolutionX - 1, FMath::CeilToInt(FMath::Max3(A.X, B.X, C.X)));
 	const int32 MinY = FMath::Max(0, FMath::FloorToInt(FMath::Min3(A.Y, B.Y, C.Y)));
-	const int32 MaxY = FMath::Min(Resolution - 1, FMath::CeilToInt(FMath::Max3(A.Y, B.Y, C.Y)));
+	const int32 MaxY = FMath::Min(ResolutionY - 1, FMath::CeilToInt(FMath::Max3(A.Y, B.Y, C.Y)));
 	if (MinX > MaxX || MinY > MaxY)
 	{
 		return;
@@ -286,7 +306,7 @@ void UASFogDisplayComponent::RasterizeTriangle(const FVector2D& A, const FVector
 
 			if (bInside)
 			{
-				VisibleCells[Y * Resolution + X] = 1;
+				VisibleCells[Y * ResolutionX + X] = 1;
 			}
 		}
 	}
@@ -294,15 +314,13 @@ void UASFogDisplayComponent::RasterizeTriangle(const FVector2D& A, const FVector
 
 void UASFogDisplayComponent::UploadTexture()
 {
-	if (!FogTexture || Resolution <= 0)
+	if (!FogTexture || ResolutionX <= 0 || ResolutionY <= 0)
 	{
 		return;
 	}
 
-	const int32 CellCount = Resolution * Resolution;
+	const int32 CellCount = ResolutionX * ResolutionY;
 	uint8* Pixels = new uint8[CellCount * 4];
-	const uint8 Explored = static_cast<uint8>(FMath::Clamp(ExploredAlpha, 0, 255));
-	const uint8 Unexplored = static_cast<uint8>(FMath::Clamp(UnexploredAlpha, 0, 255));
 
 	for (int32 Index = 0; Index < CellCount; ++Index)
 	{
@@ -310,15 +328,15 @@ void UASFogDisplayComponent::UploadTexture()
 		Pixel[0] = 0; // B
 		Pixel[1] = 0; // G
 		Pixel[2] = 0; // R
-		Pixel[3] = VisibleCells[Index] ? 0 : (ExploredCells[Index] ? Explored : Unexplored);
+		Pixel[3] = DisplayAlpha[Index];
 	}
 
-	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, Resolution, Resolution);
+	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, ResolutionX, ResolutionY);
 	FogTexture->UpdateTextureRegions(
 		0,
 		1,
 		Region,
-		static_cast<uint32>(Resolution * 4),
+		static_cast<uint32>(ResolutionX * 4),
 		4,
 		Pixels,
 		[](uint8* SrcData, const FUpdateTextureRegion2D* Regions)

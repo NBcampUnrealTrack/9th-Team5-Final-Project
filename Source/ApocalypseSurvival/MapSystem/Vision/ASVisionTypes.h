@@ -22,8 +22,13 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "s"))
 	float AttackRevealSeconds = 3.0f;
 
+	/** 안개 영역의 짧은 변 해상도. 긴 변은 가로세로 비율에 맞춰 정사각형 셀이 되도록 늘린다 (각 변 16..2048). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "64", ClampMax = "2048"))
 	int32 MaskResolution = 512;
+
+	/** 안개 경계의 흐림 반경 (텍셀). 0이면 흐림을 적용하지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0", ClampMax = "8"))
+	int32 FogEdgeBlurTexels = 2;
 
 	/** 클라이언트에서 차폐된 시야 마스크를 그릴 때 시야 소스당 광선 수. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "16", ClampMax = "512"))

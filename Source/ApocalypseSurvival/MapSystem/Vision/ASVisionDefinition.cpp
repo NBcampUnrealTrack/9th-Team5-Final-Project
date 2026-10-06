@@ -24,6 +24,11 @@ bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		OutErrors.Add(FString::Printf(TEXT("%s: AttackRevealSeconds must be non-negative."), *AssetName));
 	}
 
+	if (Settings.FogEdgeBlurTexels < 0 || Settings.FogEdgeBlurTexels > 8)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: FogEdgeBlurTexels must be in 0..8."), *AssetName));
+	}
+
 	if (!FMath::IsFinite(FogWorldMin.X) || !FMath::IsFinite(FogWorldMin.Y)
 		|| !FMath::IsFinite(FogWorldMax.X) || !FMath::IsFinite(FogWorldMax.Y)
 		|| FogWorldMax.X <= FogWorldMin.X || FogWorldMax.Y <= FogWorldMin.Y)

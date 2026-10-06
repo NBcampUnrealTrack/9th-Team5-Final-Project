@@ -61,6 +61,13 @@ private:
 	TArray<uint8> VisibleCells;
 	TArray<uint8> PreviousVisibleCells;
 	TArray<uint8> ExploredCells;
-	int32 Resolution = 0;
+	TArray<uint8> DisplayAlpha;
+	TArray<uint8> BlurScratch;
+	TArray<FVector2D> OcclusionPoints;
+	/** U는 월드 Y를, V는 월드 X를 따른다. */
+	int32 ResolutionX = 0;
+	int32 ResolutionY = 0;
+	FVector2D ConfiguredFogWorldMin = FVector2D::ZeroVector;
+	FVector2D ConfiguredFogWorldMax = FVector2D::ZeroVector;
 	bool bMaskDirty = true;
 };
