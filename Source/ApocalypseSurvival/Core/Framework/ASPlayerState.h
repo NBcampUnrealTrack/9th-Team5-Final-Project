@@ -7,7 +7,7 @@
 
 class UASAbilitySystemComponent;
 class UASCombatAttributeSet;
-class UASCommonAttributeSet;
+class UASHealthAttributeSet;
 class UASPlayerAttributeSet;
 
 /**
@@ -38,7 +38,7 @@ private:
 	TObjectPtr<UASAbilitySystemComponent> AbilitySystemComponent;
 
 	UPROPERTY()
-	TObjectPtr<UASCommonAttributeSet> CommonAttributeSet;
+	TObjectPtr<UASHealthAttributeSet> HealthAttributeSet;
 
 	UPROPERTY()
 	TObjectPtr<UASCombatAttributeSet> CombatAttributeSet;

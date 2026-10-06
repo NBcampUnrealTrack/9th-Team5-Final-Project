@@ -2,7 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
-#include "GAS/Attributes/ASCommonAttributeSet.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
@@ -24,7 +24,7 @@ bool UASItemUseAbility::CheckCost(const FGameplayAbilitySpecHandle Handle,
 		|| Item->GetItemDefinition()->ItemType != EASItemType::Consumable) return false;
 	if (!bHasBlueprintActivate)
 	{
-		const UASCommonAttributeSet* Attributes = ASC->GetSet<UASCommonAttributeSet>();
+		const UASHealthAttributeSet* Attributes = ASC->GetSet<UASHealthAttributeSet>();
 		if (!Attributes || Item->GetItemDefinition()->HealAmount <= 0.0f
 			|| Attributes->GetHealth() <= 0.0f || Attributes->GetHealth() >= Attributes->GetMaxHealth()) return false;
 	}
@@ -62,7 +62,7 @@ void UASItemUseAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage());
 	Effect->DurationPolicy = EGameplayEffectDurationType::Instant;
 	FGameplayModifierInfo& Modifier = Effect->Modifiers.AddDefaulted_GetRef();
-	Modifier.Attribute = UASCommonAttributeSet::GetHealthAttribute();
+	Modifier.Attribute = UASHealthAttributeSet::GetHealthAttribute();
 	Modifier.ModifierOp = EGameplayModOp::Additive;
 	Modifier.ModifierMagnitude = FScalableFloat(HealAmount);
 	UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();

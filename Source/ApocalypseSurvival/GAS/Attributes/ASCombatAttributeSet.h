@@ -8,9 +8,9 @@
 /**
  * 전투 계산에 쓰이는 어트리뷰트. 플레이어와 몬스터가 모두 갖는다.
  *
- * 피해 계산 클래스가 공격자 쪽에서 읽는 값을 여기에 모은다. 피해 전달용
- * 어트리뷰트(IncomingDamage)도 피해 경로를 만들 때 여기에 추가한다.
- * 세트를 나눈 이유는 UASCommonAttributeSet 머리말에 있다.
+ * 피해 계산 클래스가 공격자 쪽에서 읽는 값을 여기에 모은다. 피해를 받는 쪽의
+ * 어트리뷰트(IncomingDamage)는 여기가 아니라 UASHealthAttributeSet 에 둔다.
+ * 세트를 나눈 이유는 UASHealthAttributeSet 머리말에 있다.
  */
 UCLASS()
 class APOCALYPSESURVIVAL_API UASCombatAttributeSet : public UAttributeSet

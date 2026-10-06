@@ -1,26 +1,26 @@
-#include "GAS/Attributes/ASCommonAttributeSet.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
 
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 
-UASCommonAttributeSet::UASCommonAttributeSet()
+UASHealthAttributeSet::UASHealthAttributeSet()
 {
 	// 캐릭터별 데이터가 생기기 전까지 쓰는 임시 기본값이다.
 	InitHealth(100.0f);
 	InitMaxHealth(100.0f);
 }
 
-void UASCommonAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+void UASHealthAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	// COND_None + REPNOTIFY_Always 는 GAS 의 표준 설정이다.
 	// 값이 같아도 알림을 받아야 예측이 빗나갔을 때 되돌릴 수 있다.
-	DOREPLIFETIME_CONDITION_NOTIFY(UASCommonAttributeSet, Health, COND_None, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(UASCommonAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UASHealthAttributeSet, Health, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UASHealthAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 }
 
-void UASCommonAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
+void UASHealthAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
@@ -30,7 +30,7 @@ void UASCommonAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribu
 	}
 }
 
-void UASCommonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+void UASHealthAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
 
@@ -42,12 +42,12 @@ void UASCommonAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCa
 	}
 }
 
-void UASCommonAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
+void UASHealthAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
 {
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UASCommonAttributeSet, Health, OldValue);
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UASHealthAttributeSet, Health, OldValue);
 }
 
-void UASCommonAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldValue)
+void UASHealthAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldValue)
 {
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UASCommonAttributeSet, MaxHealth, OldValue);
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UASHealthAttributeSet, MaxHealth, OldValue);
 }
