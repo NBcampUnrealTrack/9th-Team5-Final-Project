@@ -5,7 +5,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GenericTeamAgentInterface.h"
-#include "GAS/Attributes/ASAttributeSet.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 
 UASMonsterTargetingComponent::UASMonsterTargetingComponent()
@@ -105,7 +105,7 @@ bool UASMonsterTargetingComponent::IsLivingPlayerTarget(const APawn* Pawn) const
 
 	const IAbilitySystemInterface* AbilitySystemOwner = Cast<IAbilitySystemInterface>(Pawn);
 	const UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemOwner ? AbilitySystemOwner->GetAbilitySystemComponent() : nullptr;
-	return AbilitySystemComponent && AbilitySystemComponent->GetNumericAttribute(UASAttributeSet::GetHealthAttribute()) > 0.0f;
+	return AbilitySystemComponent && AbilitySystemComponent->GetNumericAttribute(UASHealthAttributeSet::GetHealthAttribute()) > 0.0f;
 }
 
 bool UASMonsterTargetingComponent::HasValidTarget() const

@@ -9,7 +9,8 @@
 #include "GameplayAbilitySpec.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
-#include "GAS/Attributes/ASAttributeSet.h"
+#include "GAS/Attributes/ASCombatAttributeSet.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
 
 AASMonsterCharacter::AASMonsterCharacter()
 {
@@ -24,7 +25,8 @@ AASMonsterCharacter::AASMonsterCharacter()
 	OwnedAbilitySystemComponent = CreateDefaultSubobject<UASAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	// 일반 몬스터는 소유 클라이언트가 없으므로 전체 Effect 목록 대신 태그/큐/Attribute만 동기화한다.
 	OwnedAbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
-	OwnedAttributeSet = CreateDefaultSubobject<UASAttributeSet>(TEXT("AttributeSet"));
+	OwnedHealthAttributeSet = CreateDefaultSubobject<UASHealthAttributeSet>(TEXT("HealthAttributeSet"));
+	OwnedCombatAttributeSet = CreateDefaultSubobject<UASCombatAttributeSet>(TEXT("CombatAttributeSet"));
 
 	TargetingComponent = CreateDefaultSubobject<UASMonsterTargetingComponent>(TEXT("TargetingComponent"));
 	CombatComponent = CreateDefaultSubobject<UASMonsterCombatComponent>(TEXT("CombatComponent"));
@@ -41,7 +43,7 @@ void AASMonsterCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	// 적은 ASC와 Avatar가 모두 자기 자신이다.
-	InitAbilitySystem(OwnedAbilitySystemComponent, OwnedAttributeSet, this);
+	InitAbilitySystem(OwnedAbilitySystemComponent, this);
 
 	if (HasAuthority())
 	{
@@ -70,7 +72,7 @@ void AASMonsterCharacter::OnAbilitySystemInitialized()
 	// 다시 불려도 구독이 겹치지 않게 먼저 푼다.
 	UnbindHealthDelegate();
 	HealthChangedHandle = OwnedAbilitySystemComponent
-		->GetGameplayAttributeValueChangeDelegate(UASAttributeSet::GetHealthAttribute())
+		->GetGameplayAttributeValueChangeDelegate(UASHealthAttributeSet::GetHealthAttribute())
 		.AddUObject(this, &AASMonsterCharacter::HandleHealthChanged);
 }
 
@@ -99,10 +101,10 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
 	}
 
 	const FASMonsterInitialAttributes& InitialAttributes = MonsterDefinition->InitialAttributes;
-	OwnedAttributeSet->InitMaxHealth(InitialAttributes.MaxHealth);
-	OwnedAttributeSet->InitHealth(InitialAttributes.MaxHealth);
-	OwnedAttributeSet->InitMoveSpeed(InitialAttributes.MoveSpeed);
-	OwnedAttributeSet->InitAttackPower(InitialAttributes.AttackPower);
+	OwnedHealthAttributeSet->InitMaxHealth(InitialAttributes.MaxHealth);
+	OwnedHealthAttributeSet->InitHealth(InitialAttributes.MaxHealth);
+	OwnedCombatAttributeSet->InitMoveSpeed(InitialAttributes.MoveSpeed);
+	OwnedCombatAttributeSet->InitAttackPower(InitialAttributes.AttackPower);
 	GetCharacterMovement()->MaxWalkSpeed = InitialAttributes.MoveSpeed;
 
 	CombatComponent->Configure(MonsterDefinition->AttackRange, MonsterDefinition->AttackAbilityTag);
@@ -157,7 +159,7 @@ void AASMonsterCharacter::UnbindHealthDelegate()
 	if (IsValid(OwnedAbilitySystemComponent) && HealthChangedHandle.IsValid())
 	{
 		OwnedAbilitySystemComponent
-			->GetGameplayAttributeValueChangeDelegate(UASAttributeSet::GetHealthAttribute())
+			->GetGameplayAttributeValueChangeDelegate(UASHealthAttributeSet::GetHealthAttribute())
 			.Remove(HealthChangedHandle);
 	}
 

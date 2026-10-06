@@ -5,7 +5,8 @@
 #include "ASMonsterCharacter.generated.h"
 
 class UASAbilitySystemComponent;
-class UASAttributeSet;
+class UASCombatAttributeSet;
+class UASHealthAttributeSet;
 class UASMonsterCombatComponent;
 class UASMonsterDefinition;
 class UASMonsterTargetingComponent;
@@ -61,7 +62,7 @@ protected:
 	/** 자기 체력 변화를 구독한다. 베이스가 ASC 연결을 마친 뒤 모든 머신에서 불린다. */
 	virtual void OnAbilitySystemInitialized() override;
 
-	/** Definition 값을 공통 AttributeSet과 컴포넌트에 적용하고 기본 Ability를 부여한다. */
+	/** Definition 값을 Health/Combat AttributeSet과 컴포넌트에 적용하고 기본 Ability를 부여한다. */
 	void ApplyMonsterDefinition();
 
 	/**
@@ -87,7 +88,10 @@ protected:
 	TObjectPtr<UASAbilitySystemComponent> OwnedAbilitySystemComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UASAttributeSet> OwnedAttributeSet;
+	TObjectPtr<UASHealthAttributeSet> OwnedHealthAttributeSet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASCombatAttributeSet> OwnedCombatAttributeSet;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASMonsterTargetingComponent> TargetingComponent;
