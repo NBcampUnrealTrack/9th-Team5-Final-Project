@@ -2,11 +2,14 @@
 
 #include "Components/CapsuleComponent.h"
 #include "Core/Framework/ASPlayerState.h"
+#include "Core/Team/ASTeamTypes.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
 
 AASPlayerCharacter::AASPlayerCharacter()
 {
+	TeamId = ASTeam::Player();
+
 	GetCapsuleComponent()->InitCapsuleSize(42.0f, 96.0f);
 
 	// 카메라가 회전하지 않으므로 캐릭터는 컨트롤러 방향이 아니라 걷는 방향을 본다.
