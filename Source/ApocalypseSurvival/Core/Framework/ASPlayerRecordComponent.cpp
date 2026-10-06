@@ -7,17 +7,6 @@ UASPlayerRecordComponent::UASPlayerRecordComponent()
 	SetIsReplicatedByDefault(true);
 }
 
-void UASPlayerRecordComponent::BeginPlay()
-{
-	Super::BeginPlay();
-}
-
-void UASPlayerRecordComponent::TickComponent(float DeltaTime, ELevelTick TickType,
-                                             FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-}
-
 void UASPlayerRecordComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
