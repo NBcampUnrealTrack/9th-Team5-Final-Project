@@ -5,6 +5,8 @@
 #include "Core/GameFramework/ASPlayerRecordComponent.h"
 #include "NavigationSystem.h"
 #include "DrawDebugHelpers.h"
+#include "EngineUtils.h"
+#include "Core/GameFramework/ASRespawnPoint.h"
 
 AASGameMode::AASGameMode()
 {
@@ -203,13 +205,10 @@ void AASGameMode::OnEnemyKilled(AController* Killer)
 		GS->AddWaveKilled();
 	}
 	
-	// 개인 처치 수 (PlayerState에 컴포넌트가 붙어 있을 때만)
-	if (Killer && Killer->PlayerState)
+	// 처치 수 (PlayerState에 컴포넌트가 붙어 있을 때만)
+	if (UASPlayerRecordComponent* Record = GetOrCreateRecord(Killer))
 	{
-		if (UASPlayerRecordComponent* Record = Killer->PlayerState->FindComponentByClass<UASPlayerRecordComponent>())
-		{
-			Record->AddKill();
-		}
+		Record->AddKill();
 	}
 }
 
@@ -341,4 +340,102 @@ void AASGameMode::DebugShowSpawnPoints(int32 Count)
 	}
 	
 	UE_LOG(LogTemp, Log, TEXT("[Debug] 스폰 위치 %d/%d개 찾음"), Found, Count);
+}
+
+// 플레이어 기록
+void AASGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+	
+	GetOrCreateRecord(NewPlayer);
+}
+
+UASPlayerRecordComponent* AASGameMode::GetOrCreateRecord(AController* Controller) const
+{
+	if (!Controller || !Controller->PlayerState) return nullptr;
+	
+	APlayerState* PS = Controller->PlayerState;
+	if (UASPlayerRecordComponent* Existing = PS->FindComponentByClass<UASPlayerRecordComponent>())
+	{
+		return Existing;
+	}
+	
+	// 캐릭터 쪽 PlayerState BP에 붙어 있지 않으면 코드로 붙임
+	UASPlayerRecordComponent* NewRecord = NewObject<UASPlayerRecordComponent>(PS, TEXT("PlayerRecord"));
+	NewRecord->RegisterComponent();
+	return NewRecord;
+}
+
+// 사망과 리스폰
+void AASGameMode::OnPlayerDied(AController* DeadController)
+{
+	if (IsGameEnded() || !DeadController) return;
+	
+	if (IsDeathCountEnabled())
+	{
+		UASPlayerRecordComponent* Record = GetOrCreateRecord(DeadController);
+		if (!Record) return;
+		
+		Record->AddDeath();
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] 플레이어 사망 (데스카운트 %d / %d)"),
+			Record->GetDeathCount(), MaxDeathCount);
+		
+		if (Record->GetDeathCount() > MaxDeathCount)
+		{
+			EndGame(false);
+			return;
+		}
+	}
+	// TODO 멀티는 기절 부활 방식
+	
+	// 일정 시간 뒤 리스폰
+	FTimerHandle RespawnHandle;
+	FTimerDelegate RespawnDelegate = FTimerDelegate::CreateUObject(this,
+		&AASGameMode::RespawnPlayer, DeadController);
+	GetWorldTimerManager().SetTimer(RespawnHandle, RespawnDelegate, RespawnDelay, false);
+}
+
+void AASGameMode::RespawnPlayer(AController* Controller)
+{
+	if (IsGameEnded() || !IsValid(Controller)) return;
+	
+	// 시체 처리
+	if (APawn* OldPawn = Controller->GetPawn())
+	{
+		Controller->UnPossess();
+		OldPawn->Destroy();
+	}
+	
+	const TArray<AASRespawnPoint*> Points = GetAvailableRespawnPoints();
+	if (Points.Num() > 0)
+	{
+		const AASRespawnPoint* Point = Points[FMath::RandRange(0, Points.Num() -1)];
+		RestartPlayerAtTransform(Controller, Point->GetActorTransform());
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] 리스폰: %s"), *Point->DisplayName.ToString());
+	}
+	else
+	{
+		// 리스폰 포인트가 없으면 PlayerStart에서
+		RestartPlayer(Controller);
+		UE_LOG(LogTemp, Warning, TEXT("[GameMode] 리스폰 포인트 없음, PlayerStart에서 리스폰"));
+	}
+}
+
+TArray<AASRespawnPoint*> AASGameMode::GetAvailableRespawnPoints() const
+{
+	// TODO: 구역 시스템이 생기면 맵 쪽 조회 함수로 교체
+	TArray<AASRespawnPoint*> Points;
+	for (TActorIterator<AASRespawnPoint> It(GetWorld()); It; ++It)
+	{
+		Points.Add(*It);
+	}
+	return Points;
+}
+
+void AASGameMode::DebugKillPlayer()
+{
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		OnPlayerDied(PC);
+	}
 }
