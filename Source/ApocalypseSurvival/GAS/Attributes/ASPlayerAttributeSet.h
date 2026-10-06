@@ -9,7 +9,7 @@
  * 플레이어만 갖는 어트리뷰트. 행동 자원이다.
  *
  * 몬스터에게는 붙이지 않는다. 몬스터의 공격은 쿨타임만으로 제한하고 자원을 쓰지 않는다.
- * 세트를 나눈 이유는 UASCommonAttributeSet 머리말에 있다.
+ * 세트를 나눈 이유는 UASHealthAttributeSet 머리말에 있다.
  */
 UCLASS()
 class APOCALYPSESURVIVAL_API UASPlayerAttributeSet : public UAttributeSet
