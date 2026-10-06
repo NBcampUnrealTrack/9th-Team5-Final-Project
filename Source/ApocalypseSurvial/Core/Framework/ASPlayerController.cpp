@@ -12,10 +12,12 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Items/Interaction/ASItemInteractionComponent.h"
 
 AASPlayerController::AASPlayerController()
 {
 	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("PathFollowingComponent"));
+	ItemInteractionComponent = CreateDefaultSubobject<UASItemInteractionComponent>(TEXT("ItemInteractionComponent"));
 	PlayerCameraManagerClass = AASPlayerCameraManager::StaticClass();
 
 	bShowMouseCursor = true;
@@ -33,6 +35,8 @@ void AASPlayerController::PostInitializeComponents()
 
 void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
 {
+	ItemInteractionComponent->CancelPendingInteraction();
+	ItemInteractionComponent->CloseLoot();
 	// 길찾기 컴포넌트는 자기가 움직일 폰의 이동 컴포넌트를 기억해 둬야 한다.
 	// 엔진은 그 계기가 되는 알림(OnNewPawn)을 서버의 Possess 에서만 보낸다.
 	// 클라이언트는 폰을 복제로 받기 때문에 알림이 오지 않고, 그대로 두면
@@ -67,6 +71,8 @@ void AASPlayerController::SetupInputComponent()
 	// Started 는 누른 순간 한 번, Triggered 는 누르고 있는 동안 매 프레임 온다.
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Started, this, &AASPlayerController::OnMoveStarted);
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AASPlayerController::OnMoveHeld);
+	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &AASPlayerController::OnMoveCompleted);
+	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &AASPlayerController::OnMoveCompleted);
 	EnhancedInputComponent->BindAction(StopAction, ETriggerEvent::Started, this, &AASPlayerController::OnStop);
 
 	EnhancedInputComponent->BindAction(CameraLockToggleAction, ETriggerEvent::Started, this, &AASPlayerController::OnCameraLockToggled);
@@ -145,6 +151,16 @@ void AASPlayerController::RequestMoveTo(const FVector& Destination)
 
 void AASPlayerController::OnMoveStarted()
 {
+	bInteractionClickHeld = false;
+	if (ItemInteractionComponent->IsLootOpen()) return;
+	FHitResult Hit;
+	if (GetHitResultUnderCursor(CursorTraceChannel, true, Hit)
+		&& ItemInteractionComponent->TryInteractWith(Hit.GetActor()))
+	{
+		bInteractionClickHeld = true;
+		return;
+	}
+	ItemInteractionComponent->CancelPendingInteraction();
 	FVector Destination;
 	if (!GetCursorWorldLocation(Destination))
 	{
@@ -161,6 +177,7 @@ void AASPlayerController::OnMoveStarted()
 
 void AASPlayerController::OnMoveHeld()
 {
+	if (bInteractionClickHeld || ItemInteractionComponent->HasPendingInteraction() || ItemInteractionComponent->IsLootOpen()) return;
 	// 매 프레임 길을 다시 찾는 것은 낭비라서 누르고 있는 동안에는 간격을 둔다.
 	if (GetWorld()->GetTimeSeconds() - LastMoveRequestTime < HeldMoveInterval)
 	{
@@ -174,8 +191,14 @@ void AASPlayerController::OnMoveHeld()
 	}
 }
 
+void AASPlayerController::OnMoveCompleted()
+{
+	bInteractionClickHeld = false;
+}
+
 void AASPlayerController::OnStop()
 {
+	ItemInteractionComponent->CancelPendingInteraction();
 	StopMovement();
 }
 
@@ -213,6 +236,7 @@ void AASPlayerController::OnCameraZoom(const FInputActionValue& Value)
 
 void AASPlayerController::UpdateCameraEdgeScroll(const float DeltaTime)
 {
+	if (ItemInteractionComponent->IsLootOpen()) return;
 	AASPlayerCameraManager* CameraManager = GetASPlayerCameraManager();
 	if (!IsValid(CameraManager))
 	{

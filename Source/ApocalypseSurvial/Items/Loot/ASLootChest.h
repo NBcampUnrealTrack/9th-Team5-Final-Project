@@ -11,6 +11,7 @@ class UASInventoryComponent;
 class UBoxComponent;
 class USceneComponent;
 class UStaticMeshComponent;
+class APawn;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FASLootInteractionRequestedSignature,
@@ -28,6 +29,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Loot")
 	UASInventoryComponent* GetLootInventory() const { return LootInventory; }
+
+	/** Server revalidates range, recipient ownership and remaining quantity for every pickup. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
+	int32 TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInventory, FGuid InstanceId, int32 Quantity);
 
 	virtual bool CanInteract_Implementation(AActor* Interactor) const override;
 	virtual void Interact_Implementation(AActor* Interactor) override;

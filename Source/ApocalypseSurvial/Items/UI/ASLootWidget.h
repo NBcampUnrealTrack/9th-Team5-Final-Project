@@ -10,6 +10,8 @@ class UASLootEntryWidget;
 class UButton;
 class UPanelWidget;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASLootClosedSignature);
+
 /** Displays a loot inventory and transfers clicked items to a player inventory. */
 UCLASS(Blueprintable)
 class APOCALYPSESURVIAL_API UASLootWidget : public UUserWidget
@@ -22,6 +24,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void RefreshLoot();
+
+	UPROPERTY(BlueprintAssignable, Category = "Loot")
+	FASLootClosedSignature OnLootClosed;
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;

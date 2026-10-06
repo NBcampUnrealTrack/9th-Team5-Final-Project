@@ -55,12 +55,16 @@ public:
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
 	TSoftClassPtr<AActor> EquippedActorClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon",
+		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
+	FName EquippedSocketName = NAME_None;
+
 	/** Abilities granted while this weapon is equipped. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|GAS",
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
 	TArray<TSoftClassPtr<UGameplayAbility>> GrantedAbilities;
 
-	/** Ability activated when a consumable item is used. */
+	/** Must derive from ASItemUseAbility to consume one unit on CommitAbility. Null uses the default healing ability. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
 		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	TSoftClassPtr<UGameplayAbility> UseAbility;
