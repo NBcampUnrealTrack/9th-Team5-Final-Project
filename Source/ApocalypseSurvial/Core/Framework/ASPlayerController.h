@@ -9,6 +9,7 @@ class UInputAction;
 class UInputMappingContext;
 class UNiagaraSystem;
 class UPathFollowingComponent;
+class UASItemInteractionComponent;
 struct FInputActionValue;
 
 /**
@@ -39,6 +40,9 @@ public:
 
 	AASPlayerCameraManager* GetASPlayerCameraManager() const;
 
+	UFUNCTION(BlueprintPure, Category = "Item")
+	UASItemInteractionComponent* GetItemInteractionComponent() const { return ItemInteractionComponent; }
+
 protected:
 	virtual void PostInitializeComponents() override;
 	virtual void SetupInputComponent() override;
@@ -55,6 +59,7 @@ private:
 
 	void OnMoveStarted();
 	void OnMoveHeld();
+	void OnMoveCompleted();
 	void OnStop();
 	void OnCameraLockToggled();
 	void OnCameraCenterStarted();
@@ -67,6 +72,9 @@ private:
 	/** 조종 중인 폰이 내비메시 경로를 따라가게 한다. */
 	UPROPERTY(VisibleDefaultsOnly, Category = "AI")
 	TObjectPtr<UPathFollowingComponent> PathFollowingComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASItemInteractionComponent> ItemInteractionComponent;
 
 	// ── 입력 ──────────────────────────────────────────────
 	// C++ 에서 에셋을 직접 참조하지 않는다. BP 자식에서 지정한다.
@@ -122,4 +130,5 @@ private:
 	FVector NavProjectExtent = FVector(400.0f, 400.0f, 500.0f);
 
 	double LastMoveRequestTime = 0.0;
+	bool bInteractionClickHeld = false;
 };

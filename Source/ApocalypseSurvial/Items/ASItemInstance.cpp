@@ -1,6 +1,30 @@
 #include "Items/ASItemInstance.h"
 
 #include "Items/Data/ASItemDefinition.h"
+#include "Items/Inventory/ASInventoryComponent.h"
+#include "Net/UnrealNetwork.h"
+
+void UASItemInstance::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(UASItemInstance, InstanceId);
+	DOREPLIFETIME(UASItemInstance, ItemDefinition);
+	DOREPLIFETIME(UASItemInstance, Quantity);
+}
+
+UWorld* UASItemInstance::GetWorld() const
+{
+	return GetOuter() ? GetOuter()->GetWorld() : nullptr;
+}
+
+void UASItemInstance::PostNetReceive()
+{
+	Super::PostNetReceive();
+	if (UASInventoryComponent* Inventory = GetTypedOuter<UASInventoryComponent>())
+	{
+		Inventory->OnInventoryChanged.Broadcast();
+	}
+}
 
 void UASItemInstance::Initialize(UASItemDefinition* InItemDefinition, const int32 InQuantity)
 {
