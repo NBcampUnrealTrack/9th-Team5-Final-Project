@@ -5,10 +5,15 @@
 #include "Components/StaticMeshComponent.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
+#include "Items/ASItemInstance.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
 
 AASLootChest::AASLootChest()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	bReplicates = true;
+	bReplicateUsingRegisteredSubObjectList = true;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
@@ -30,6 +35,7 @@ AASLootChest::AASLootChest()
 void AASLootChest::BeginPlay()
 {
 	Super::BeginPlay();
+	if (!HasAuthority()) return;
 
 	for (const FASItemGrant& Grant : InitialLoot)
 	{
@@ -47,7 +53,7 @@ bool AASLootChest::CanInteract_Implementation(AActor* Interactor) const
 
 void AASLootChest::Interact_Implementation(AActor* Interactor)
 {
-	if (!CanInteract_Implementation(Interactor) || !IsWithinInteractionRange(Interactor))
+	if (!HasAuthority() || !IASInteractable::Execute_CanInteract(this, Interactor) || !IsWithinInteractionRange(Interactor))
 	{
 		return;
 	}
@@ -73,4 +79,14 @@ bool AASLootChest::IsWithinInteractionRange(const AActor* Interactor) const
 	return IsValid(Interactor)
 		&& FVector::DistSquared(Interactor->GetActorLocation(), GetInteractionLocation_Implementation())
 		<= FMath::Square(InteractionRange);
+}
+
+int32 AASLootChest::TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInventory,
+	const FGuid InstanceId, const int32 Quantity)
+{
+	if (!HasAuthority() || !IsValid(Interactor) || !IsValid(TargetInventory) || !InstanceId.IsValid() || Quantity <= 0
+		|| (TargetInventory->GetOwner() != Interactor && TargetInventory->GetOwner() != Interactor->GetPlayerState())
+		|| !IsWithinInteractionRange(Interactor) || !IASInteractable::Execute_CanInteract(this, Interactor)) return 0;
+	UASItemInstance* Item = LootInventory->FindItemById(InstanceId);
+	return Item ? LootInventory->TransferItemTo(TargetInventory, Item, Quantity) : 0;
 }

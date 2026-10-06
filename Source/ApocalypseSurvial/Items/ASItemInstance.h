@@ -20,6 +20,11 @@ class APOCALYPSESURVIAL_API UASItemInstance : public UObject
 	GENERATED_BODY()
 
 public:
+	virtual bool IsSupportedForNetworking() const override { return true; }
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual UWorld* GetWorld() const override;
+	virtual void PostNetReceive() override;
+
 	/** Initializes a newly created instance. Intended to be called by its owning container. */
 	void Initialize(UASItemDefinition* InItemDefinition, int32 InQuantity = 1);
 
@@ -54,14 +59,14 @@ private:
 	friend class UASInventoryComponent;
 
 	/** Stable identity for this runtime item instance. */
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	FGuid InstanceId;
 
 	/** Shared, immutable definition of this item. */
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASItemDefinition> ItemDefinition;
 
 	/** Number of identical units represented by this instance. */
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
 	int32 Quantity = 0;
 };
