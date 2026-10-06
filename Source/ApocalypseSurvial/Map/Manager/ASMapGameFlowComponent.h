@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Core/GameFramework/ASGameTypes.h"
+#include "Core/Framework/ASGameTypes.h"
 #include "Map/Core/ASMapTypes.h"
 #include "ASMapGameFlowComponent.generated.h"
 

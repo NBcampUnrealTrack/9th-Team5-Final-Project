@@ -1,7 +1,7 @@
 ﻿#include "Map/Manager/ASMapGameFlowComponent.h"
 
 #include "ApocalypseSurvial.h"
-#include "Core/GameFramework/ASGameState.h"
+#include "Core/Framework/ASGameState.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Map/Core/ASMapDefinition.h"
