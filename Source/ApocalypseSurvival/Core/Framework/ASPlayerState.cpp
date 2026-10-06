@@ -2,7 +2,7 @@
 
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
-#include "GAS/Attributes/ASCommonAttributeSet.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 
 AASPlayerState::AASPlayerState()
@@ -13,7 +13,7 @@ AASPlayerState::AASPlayerState()
 	// 다른 클라이언트는 태그·연출·어트리뷰트 값만 받는다.
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
-	CommonAttributeSet = CreateDefaultSubobject<UASCommonAttributeSet>(TEXT("CommonAttributeSet"));
+	HealthAttributeSet = CreateDefaultSubobject<UASHealthAttributeSet>(TEXT("HealthAttributeSet"));
 	CombatAttributeSet = CreateDefaultSubobject<UASCombatAttributeSet>(TEXT("CombatAttributeSet"));
 	PlayerAttributeSet = CreateDefaultSubobject<UASPlayerAttributeSet>(TEXT("PlayerAttributeSet"));
 
