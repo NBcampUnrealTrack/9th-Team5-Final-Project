@@ -57,5 +57,5 @@ void AASPlayerCharacter::InitAbilitySystemFromPlayerState()
 	}
 
 	// ASC 의 주인은 PlayerState, 아바타는 이 캐릭터다.
-	InitAbilitySystem(ASPlayerState->GetASAbilitySystemComponent(), ASPlayerState->GetAttributeSet(), ASPlayerState);
+	InitAbilitySystem(ASPlayerState->GetASAbilitySystemComponent(), ASPlayerState);
 }

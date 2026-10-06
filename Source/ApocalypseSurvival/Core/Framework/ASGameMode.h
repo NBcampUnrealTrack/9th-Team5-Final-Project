@@ -6,6 +6,8 @@
 #include "ASGameMode.generated.h"
 
 class AASGameState;
+class AASRespawnPoint;
+class UASPlayerRecordComponent;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -42,10 +44,19 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "GameFlow")
 	FOnWaveEnded OnWaveEnded;
 	
-	// 스폰 위치 (AI쪽에서 호출)
-	// 살아 있는 플레이어 중 한 명 주변에서 스폰 위치를 찾음 (설정값의 최소·최대 거리 사용)
+	// 사망과 리스폰 (플레이어 쪽에서 호출)
+	// 플레이어가 죽었을 때 호출. 데스카운트 초과면 패배, 아니면 리스폰
+	UFUNCTION(BlueprintCallable, Category = "Death")
+	void OnPlayerDied(AController* DeadController);
+		
+	// 맵에 배치된 리스폰 포인트 목록
+	TArray<AASRespawnPoint*> GetAvailableRespawnPoints() const;
+		
+	
+	// 웨이브용: 적 수만큼의 스폰 위치를 한 번에 반환(동시 스폰)
+	// 플레이어 근처 포인트는 제외하고, 남은 포인트 중 랜덤으로 적 수에 비례한 개수를 골라 나눠 배치
 	UFUNCTION(BlueprintCallable, Category = "Spawn")
-	bool FindSpawnLocation(FVector& OutLocation) const;
+	bool FindSpawnLocation(int32 EnemyCount, TArray<FVector>& OutLocations) const;
     
 	// 지정한 위치 주변에서 스폰 위치를 찾음 (거리를 직접 지정)
 	UFUNCTION(BlueprintCallable, Category = "Spawn")
@@ -72,8 +83,15 @@ public:
 	UFUNCTION(Exec)
 	void DebugShowSpawnPoints(int32 Count);
 	
+	UFUNCTION(Exec)
+	void DebugKillPlayer();
+	
+	UFUNCTION(Exec)
+	void DebugShowEnemySpawnPoints(int32 EnemyCount);
+	
 protected:
 	virtual void HandleMatchHasStarted() override;
+	virtual void PostLogin(APlayerController* NewPlayer) override;
 	
 	// 게임 시작 전 대기 시간 (초)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Time")
@@ -97,6 +115,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
 	float RespawnSelectTimeLimit = 0.f;
 	
+	// 사망 후 리스폰까지 대기 시간 (초)
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
+	float RespawnDelay = 3.f;
+	
 	// 플레이어로부터 최소 스폰 거리 (cm, 화면 밖)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
 	float SpawnMinDistance = 2500.f;
@@ -109,12 +131,43 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
 	int32 SpawnFindAttempts = 10;
 	
+	// 게임 시작 시 자동 생성할 적 스폰 포인트 수
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
+	int32 SpawnPointCount = 30;
+	
+	// 스폰 포인트끼리 최소 간격 (cm)
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
+	float SpawnPointMinSpacing = 1500.f;
+	
+	// 스폰 포인트 1개당 적 수 (적 수에 비례해서 사용할 포인트 수 결정)
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
+	int32 EnemiesPerSpawnPoint = 5;
+	
+	// 포인트 주변에 적을 흩뿌리는 반경 (cm, 겹침 방지)
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
+	float SpawnScatterRadius = 300.f;
+	
 	// 단계 진행
 	void StartDay(int32 Day);
 	void StartNight();
 	void OnDayTimeUp();
 	void OnNightTimeUp();
 	void EndGame(bool bVictory);
+	
+	// 사망과 리스폰
+	UASPlayerRecordComponent* GetOrCreateRecord(AController* Controller) const;
+	void RespawnPlayer(AController* Controller);
+	
+	// 적 스폰 포인트
+	void GenerateEnemySpawnPoints();
+	bool IsNearAnyPlayer(const FVector& Location) const;
+	TArray<FVector> GetAvailableEnemySpawnPoints() const;
+	
+	// 게임 시작 시 자동 생성된 적 스폰 포인트
+	TArray<FVector> EnemySpawnPoints;
+	
+	// 리스폰 시 바닥에 박히지 않도록 높이 보간 (캡슐 절반 높이, 없으면 100cm)
+	float GetSpawnHeightOffset(AController* Controller);
 	
 	bool IsGameEnded() const;
 	FWaveResult BuildWaveResult() const;
