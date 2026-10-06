@@ -5,8 +5,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameStateBase.h"
-#include "Map/Core/ASMapDefinition.h"
-#include "Map/Core/ASMapFunctionLibrary.h"
+#include "Map/Vision/ASVisionDefinition.h"
+#include "Map/Vision/ASFogOfWarManager.h"
 #include "Map/Vision/ASVisionFunctionLibrary.h"
 #include "Map/Vision/ASVisionWorldSubsystem.h"
 #include "Net/UnrealNetwork.h"
@@ -96,8 +96,10 @@ void UASVisibilityComponent::NotifyAttackStarted(float RevealSeconds)
 
 	if (RevealSeconds < 0.0f)
 	{
-		const UASMapDefinition* Definition = UASMapFunctionLibrary::GetMapDefinition(this);
-		RevealSeconds = Definition ? Definition->Vision.AttackRevealSeconds : 3.0f;
+		const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
+		const AASFogOfWarManager* Manager = Subsystem ? Subsystem->GetFogOfWarManager() : nullptr;
+		const UASVisionDefinition* Definition = Manager ? Manager->GetVisionDefinition() : nullptr;
+		RevealSeconds = Definition ? Definition->Settings.AttackRevealSeconds : 3.0f;
 	}
 
 	const AGameStateBase* GameState = World->GetGameState();

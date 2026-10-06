@@ -2,9 +2,9 @@
 
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "Map/Core/ASMapDefinition.h"
-#include "Map/Core/ASMapFunctionLibrary.h"
-#include "Map/Core/ASMapStateComponent.h"
+#include "GameFramework/GameStateBase.h"
+#include "Map/Vision/ASFogOfWarManager.h"
+#include "Map/Vision/ASVisionDefinition.h"
 #include "Map/Vision/ASVisibilityComponent.h"
 #include "Map/Vision/ASVisionSourceComponent.h"
 #include "Map/Vision/ASVisionWorldSubsystem.h"
@@ -16,9 +16,9 @@ UASVisionEvaluatorComponent::UASVisionEvaluatorComponent()
 	SetIsReplicatedByDefault(false);
 }
 
-void UASVisionEvaluatorComponent::Configure(UASMapDefinition* Definition)
+void UASVisionEvaluatorComponent::Configure(UASVisionDefinition* Definition)
 {
-	MapDefinition = Definition;
+	VisionDefinition = Definition;
 }
 
 bool UASVisionEvaluatorComponent::CanSourceSeeTarget(
@@ -29,14 +29,14 @@ bool UASVisionEvaluatorComponent::CanSourceSeeTarget(
 {
 	const AActor* SourceActor = Source ? Source->GetOwner() : nullptr;
 	const AActor* TargetActor = Target ? Target->GetOwner() : nullptr;
-	if (!SourceActor || !TargetActor || !MapDefinition)
+	if (!SourceActor || !TargetActor || !VisionDefinition)
 	{
 		return false;
 	}
 
 	const FVector SourceLocation = SourceActor->GetActorLocation();
 	const FVector TargetLocation = TargetActor->GetActorLocation();
-	const float Radius = Source->GetVisionRadius(MapDefinition->Vision.DefaultVisionRadius);
+	const float Radius = Source->GetVisionRadius(VisionDefinition->Settings.DefaultVisionRadius);
 
 	if (FVector::DistSquared2D(SourceLocation, TargetLocation) > FMath::Square(Radius))
 	{
@@ -68,20 +68,20 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 	TRACE_CPUPROFILER_EVENT_SCOPE(ASFogOfWar_ServerEvaluate);
 
 	const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
-	const UASMapStateComponent* MapState = UASMapFunctionLibrary::GetMapStateComponent(this);
+	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
 	const UWorld* World = GetWorld();
-	if (!Subsystem || !MapState || !World)
+	if (!Subsystem || !Manager || !Manager->HasAuthority() || !VisionDefinition || !World)
 	{
 		return;
 	}
 
-	const bool bWallOcclusion = MapState->IsWallOcclusionEnabled();
-	const double Now = MapState->GetServerTimeSeconds();
+	const bool bWallOcclusion = Manager->IsWallOcclusionEnabled();
+	const double Now = GetServerTimeSeconds();
 
 	TMap<int32, TArray<UASVisionSourceComponent*>> SourcesByTeam;
 	for (UASVisionSourceComponent* Source : Subsystem->GetVisionSources())
 	{
-		if (Source->IsProvidingVision(MapDefinition->DeadStateTag))
+		if (Source->IsProvidingVision(VisionDefinition->DeadStateTag))
 		{
 			SourcesByTeam.FindOrAdd(Source->GetTeamId()).Add(Source);
 		}
@@ -127,7 +127,7 @@ bool UASVisionEvaluatorComponent::IsBlockedByWall(const FVector& From, const FVe
 
 FVector UASVisionEvaluatorComponent::GetTraceLocation(const AActor* Actor) const
 {
-	const float Offset = MapDefinition ? MapDefinition->Vision.TraceHeightOffset : 50.0f;
+	const float Offset = VisionDefinition ? VisionDefinition->Settings.TraceHeightOffset : 50.0f;
 	return Actor ? Actor->GetActorLocation() + FVector(0.0, 0.0, Offset) : FVector::ZeroVector;
 }
 
@@ -135,4 +135,11 @@ bool UASVisionEvaluatorComponent::TraceVisionWall(FHitResult& Hit, const FVector
 {
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASFogOfWarLocalMask), false, IgnoreActor);
 	return GetWorld()->LineTraceSingleByChannel(Hit, From, To, VisionWallChannel, Params);
+}
+
+double UASVisionEvaluatorComponent::GetServerTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	return GameState ? GameState->GetServerWorldTimeSeconds() : (World ? World->GetTimeSeconds() : 0.0);
 }

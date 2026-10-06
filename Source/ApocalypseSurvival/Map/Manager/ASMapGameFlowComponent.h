@@ -10,6 +10,7 @@ class AASFogOfWarManager;
 class AASGameState;
 class AASMapSystemManager;
 class UASMapDefinition;
+class UASVisionDefinition;
 
 /**
  * 구역과 시야 기능을 연결하는 서버 전용 통합 지점.
@@ -39,6 +40,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Map")
 	TObjectPtr<UASMapDefinition> MapDefinition;
+
+	UPROPERTY(EditAnywhere, Category = "Vision")
+	TObjectPtr<UASVisionDefinition> VisionDefinition;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Map")
 	TSubclassOf<AASMapSystemManager> MapManagerClass;

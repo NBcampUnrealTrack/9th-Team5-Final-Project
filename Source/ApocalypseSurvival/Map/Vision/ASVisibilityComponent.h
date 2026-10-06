@@ -41,7 +41,7 @@ public:
 	/** 서버: 최신 시야 평가 결과. */
 	void ServerSetVisibleTeamMask(uint8 NewMask);
 
-	/** 서버: 수풀 은폐를 일시 해제한다. 거리와 벽은 계속 적용된다. 음수이면 맵 기본값을 사용한다. */
+	/** 서버: 수풀 은폐를 일시 해제한다. 거리와 벽은 계속 적용된다. 음수이면 시야 기본값을 사용한다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
 	void NotifyAttackStarted(float RevealSeconds = -1.0f);
 

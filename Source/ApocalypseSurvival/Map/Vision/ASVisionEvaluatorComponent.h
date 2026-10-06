@@ -5,7 +5,7 @@
 #include "Engine/EngineTypes.h"
 #include "ASVisionEvaluatorComponent.generated.h"
 
-class UASMapDefinition;
+class UASVisionDefinition;
 class UASVisibilityComponent;
 class UASVisionSourceComponent;
 
@@ -18,7 +18,7 @@ class APOCALYPSESURVIVAL_API UASVisionEvaluatorComponent : public UActorComponen
 public:
 	UASVisionEvaluatorComponent();
 
-	void Configure(UASMapDefinition* Definition);
+	void Configure(UASVisionDefinition* Definition);
 	void ServerEvaluateVisibility();
 	bool CanSourceSeeTarget(
 		const UASVisionSourceComponent* Source,
@@ -31,10 +31,12 @@ public:
 	bool TraceVisionWall(FHitResult& Hit, const FVector& From, const FVector& To, const AActor* IgnoreActor) const;
 
 private:
+	double GetServerTimeSeconds() const;
+
 	/** 시야 벽이 차단하는 트레이스 채널 (Project Settings > Collision > ASVisionWall). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true"))
 	TEnumAsByte<ECollisionChannel> VisionWallChannel = ECC_GameTraceChannel1;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UASMapDefinition> MapDefinition;
+	TObjectPtr<UASVisionDefinition> VisionDefinition;
 };

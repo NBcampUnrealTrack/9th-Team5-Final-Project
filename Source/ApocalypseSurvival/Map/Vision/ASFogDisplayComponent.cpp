@@ -3,9 +3,7 @@
 #include "Engine/PostProcessVolume.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
-#include "Map/Core/ASMapDefinition.h"
-#include "Map/Core/ASMapFunctionLibrary.h"
-#include "Map/Core/ASMapStateComponent.h"
+#include "Map/Vision/ASVisionDefinition.h"
 #include "Map/Vision/ASFogOfWarManager.h"
 #include "Map/Vision/ASVisionEvaluatorComponent.h"
 #include "Map/Vision/ASVisionFunctionLibrary.h"
@@ -21,12 +19,12 @@ UASFogDisplayComponent::UASFogDisplayComponent()
 	SetIsReplicatedByDefault(false);
 }
 
-void UASFogDisplayComponent::Configure(UASMapDefinition* Definition)
+void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 {
-	const int32 WantedResolution = FMath::Clamp(Definition->Vision.MaskResolution, 64, 2048);
-	if (Definition != MapDefinition || WantedResolution != Resolution)
+	const int32 WantedResolution = FMath::Clamp(Definition->Settings.MaskResolution, 64, 2048);
+	if (Definition != VisionDefinition || WantedResolution != Resolution)
 	{
-		MapDefinition = Definition;
+		VisionDefinition = Definition;
 		Resolution = WantedResolution;
 
 		const int32 CellCount = Resolution * Resolution;
@@ -52,7 +50,7 @@ void UASFogDisplayComponent::Configure(UASMapDefinition* Definition)
 
 void UASFogDisplayComponent::UpdateWorldFog()
 {
-	UMaterialInterface* FogMaterial = MapDefinition ? MapDefinition->WorldFogMaterial.Get() : nullptr;
+	UMaterialInterface* FogMaterial = VisionDefinition ? VisionDefinition->WorldFogMaterial.Get() : nullptr;
 	if (!bApplyWorldFog || !FogMaterial || !FogTexture)
 	{
 		RemoveWorldFog();
@@ -69,10 +67,10 @@ void UASFogDisplayComponent::UpdateWorldFog()
 		}
 	}
 
-	// 맵 정의나 해상도가 바뀌면 텍스처를 다시 생성한다.
+	// 시야 정의나 해상도가 바뀌면 텍스처를 다시 생성한다.
 	WorldFogMaterial->SetTextureParameterValue(TEXT("FogTexture"), FogTexture);
-	const FVector2D WorldSize = MapDefinition->GetMapWorldSize();
-	WorldFogMaterial->SetVectorParameterValue(TEXT("MapWorldMin"), FLinearColor(MapDefinition->MapWorldMin.X, MapDefinition->MapWorldMin.Y, 0.0f, 0.0f));
+	const FVector2D WorldSize = VisionDefinition->GetFogWorldSize();
+	WorldFogMaterial->SetVectorParameterValue(TEXT("MapWorldMin"), FLinearColor(VisionDefinition->FogWorldMin.X, VisionDefinition->FogWorldMin.Y, 0.0f, 0.0f));
 	WorldFogMaterial->SetVectorParameterValue(TEXT("MapWorldSize"), FLinearColor(WorldSize.X, WorldSize.Y, 0.0f, 0.0f));
 
 	if (!WorldFogVolume)
@@ -115,25 +113,24 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	TRACE_CPUPROFILER_EVENT_SCOPE(ASFogOfWar_LocalMask);
 
 	const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
-	const UASMapStateComponent* MapState = UASMapFunctionLibrary::GetMapStateComponent(this);
 	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
 	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
 	// 로컬 플레이어가 죽거나 관전 중이어도 계속 갱신한다. 팀원은 여전히 시야를 공유한다.
-	if (!Subsystem || !MapState || !Evaluator || Resolution <= 0)
+	if (!Subsystem || !Manager || !Evaluator || !VisionDefinition || Resolution <= 0)
 	{
 		return;
 	}
 
-	const FASVisionSettings& Settings = MapDefinition->Vision;
-	const bool bWallOcclusion = MapState->IsWallOcclusionEnabled();
+	const FASVisionSettings& Settings = VisionDefinition->Settings;
+	const bool bWallOcclusion = Manager->IsWallOcclusionEnabled();
 	const int32 LocalTeam = UASVisionFunctionLibrary::GetLocalTeamId(this);
-	const FVector2D WorldSize = MapDefinition->GetMapWorldSize();
+	const FVector2D WorldSize = VisionDefinition->GetFogWorldSize();
 
 	FMemory::Memzero(VisibleCells.GetData(), VisibleCells.Num());
 
 	for (const UASVisionSourceComponent* Source : Subsystem->GetVisionSources())
 	{
-		if (Source->GetTeamId() != LocalTeam || !Source->IsProvidingVision(MapDefinition->DeadStateTag))
+		if (Source->GetTeamId() != LocalTeam || !Source->IsProvidingVision(VisionDefinition->DeadStateTag))
 		{
 			continue;
 		}
@@ -193,7 +190,7 @@ void UASFogDisplayComponent::UpdateLocalMask()
 
 FVector2D UASFogDisplayComponent::WorldToGrid(const FVector& Location) const
 {
-	return MapDefinition ? MapDefinition->WorldToMapUV(Location) * static_cast<double>(Resolution) : FVector2D::ZeroVector;
+	return VisionDefinition ? VisionDefinition->WorldToFogUV(Location) * static_cast<double>(Resolution) : FVector2D::ZeroVector;
 }
 
 int32 UASFogDisplayComponent::GridIndexAt(const FVector& Location) const

@@ -1,13 +1,27 @@
 #include "Map/Vision/ASVisionFunctionLibrary.h"
 
 #include "GameFramework/Pawn.h"
-#include "Map/Core/ASMapFunctionLibrary.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Map/Vision/ASVisibilityComponent.h"
 #include "Map/Vision/ASVisionSourceComponent.h"
 
 int32 UASVisionFunctionLibrary::GetLocalTeamId(const UObject* WorldContextObject)
 {
-	if (const APawn* Pawn = UASMapFunctionLibrary::GetLocalPlayerPawn(WorldContextObject))
+	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	const APlayerController* LocalController = nullptr;
+	if (World)
+	{
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (const APlayerController* Controller = It->Get(); Controller && Controller->IsLocalController())
+			{
+				LocalController = Controller;
+				break;
+			}
+		}
+	}
+	if (const APawn* Pawn = LocalController ? LocalController->GetPawn() : nullptr)
 	{
 		if (const UASVisionSourceComponent* Source = Pawn->FindComponentByClass<UASVisionSourceComponent>())
 		{

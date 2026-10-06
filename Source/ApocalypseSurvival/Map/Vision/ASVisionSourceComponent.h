@@ -22,7 +22,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	int32 GetTeamId() const { return TeamId; }
 
-	/** cm 단위 반경. 0 이하이면 맵 정의의 기본값을 사용한다. */
+	/** cm 단위 반경. 0 이하이면 시야 정의의 기본값을 사용한다. */
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	float GetVisionRadius(float DefaultRadius) const { return VisionRadius > 0.0f ? VisionRadius : DefaultRadius; }
 

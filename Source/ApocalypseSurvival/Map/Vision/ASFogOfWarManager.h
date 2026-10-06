@@ -4,12 +4,14 @@
 #include "GameFramework/Actor.h"
 #include "ASFogOfWarManager.generated.h"
 
-class UASMapDefinition;
+class UASVisionDefinition;
 class UASFogDisplayComponent;
 class UASVisibilityComponent;
 class UASVisionEvaluatorComponent;
 class UASVisionSourceComponent;
 class UTexture2D;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASOnWallOcclusionChangedSignature, bool, bEnabled);
 
 /**
  * 팀 시야와 탐색 영역 추적.
@@ -34,9 +36,36 @@ class APOCALYPSESURVIVAL_API AASFogOfWarManager : public AActor
 public:
 	AASFogOfWarManager();
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** 스폰한 쪽에서 지정하거나 레벨에 배치된 매니저에서 설정한다. */
+	UPROPERTY(EditAnywhere, Replicated, Category = "Vision")
+	TObjectPtr<UASVisionDefinition> VisionDefinition;
+
+	UFUNCTION(BlueprintPure, Category = "AS|Vision")
+	UASVisionDefinition* GetVisionDefinition() const { return VisionDefinition; }
+
+	/** 서버 전용. 맵 상태와 독립적으로 시야 설정을 연결한다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
+	void ServerSetVisionDefinition(UASVisionDefinition* InVisionDefinition);
+
+	UFUNCTION(BlueprintPure, Category = "AS|Vision")
+	bool IsWallOcclusionEnabled() const { return bWallOcclusionEnabled; }
+
+	/** 서버 공유 옵션. 탐색 영역은 유지하고 다음 시야 평가부터 적용한다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
+	void SetWallOcclusionEnabled(bool bEnabled);
+
+	UPROPERTY(BlueprintAssignable, Category = "AS|Vision")
+	FASOnWallOcclusionChangedSignature OnWallOcclusionChanged;
+
+	/** 서버에서 모든 머신의 탐색 데이터를 초기화한다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
+	void ResetExploredForAllPlayers();
+
 	/**
 	 * 로컬 팀이 현재 보는 곳은 투명, 탐색한 곳은 ExploredAlpha,
-	 * 그 외는 UnexploredAlpha이다. RGB는 검정이다. 맵 정의의 MapWorldMin..Max를 덮는다.
+	 * 그 외는 UnexploredAlpha이다. RGB는 검정이다. 시야 정의의 FogWorldMin..Max를 덮는다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	UTexture2D* GetFogTexture() const;
@@ -47,13 +76,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	bool IsLocationVisibleLocally(const FVector& Location) const;
 
-	/** 이 머신의 탐색 데이터를 지운다 (새 매치가 시작될 때도 자동으로 수행). */
+	/** 이 머신의 탐색 데이터를 지운다. */
 	UFUNCTION(BlueprintCallable, Category = "AS|Vision")
 	void ResetExplored();
 
 	/**
 	 * 테스트에 공개된 핵심 시야 규칙.
-	 * @param bWallOcclusion MapState의 공유 옵션.
+	 * @param bWallOcclusion 시야 매니저의 공유 옵션.
 	 */
 	bool CanSourceSeeTarget(
 		const UASVisionSourceComponent* Source,
@@ -70,7 +99,13 @@ protected:
 
 private:
 	void TickVision();
-	bool EnsureConfigured();
+	bool EnsureConfigured(bool bLogMissingDefinition = false);
+
+	UFUNCTION()
+	void OnRep_WallOcclusionEnabled();
+
+	UFUNCTION()
+	void OnRep_ExploredResetCount();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASVisionEvaluatorComponent> VisionEvaluatorComponent;
@@ -78,10 +113,14 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASFogDisplayComponent> FogDisplayComponent;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UASMapDefinition> MapDefinition;
+	UPROPERTY(ReplicatedUsing = OnRep_WallOcclusionEnabled)
+	bool bWallOcclusionEnabled = true;
 
-	int32 LastMatchId = INDEX_NONE;
+	UPROPERTY(ReplicatedUsing = OnRep_ExploredResetCount)
+	int32 ExploredResetCount = 0;
+
+	bool bWallOcclusionInitialized = false;
+	bool bConfigurationErrorLogged = false;
 	float ActiveInterval = 0.0f;
 	FTimerHandle VisionTimerHandle;
 };

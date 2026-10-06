@@ -13,6 +13,7 @@
 #include "Map/Core/ASMapWorldSubsystem.h"
 #include "Map/Vision/ASFogOfWarManager.h"
 #include "Map/Vision/ASVisibilityComponent.h"
+#include "Map/Vision/ASVisionDefinition.h"
 #include "Map/Vision/ASVisionWorldSubsystem.h"
 #include "Map/World/ASMapZone.h"
 #include "Rendering/DrawElements.h"
@@ -231,9 +232,15 @@ int32 UASMapWidget::NativePaint(
 	}
 
 	// 2. 전장의 안개는 지형만 어둡게 한다. 구역 상태는 공유 맵 데이터이므로 그 위에서 읽을 수 있다.
-	if (bShowFog && FogBrush.GetResourceObject())
+	const AASFogOfWarManager* FogManager = VisionSubsystem->GetFogOfWarManager();
+	const UASVisionDefinition* VisionDefinition = FogManager ? FogManager->GetVisionDefinition() : nullptr;
+	if (bShowFog && Definition && VisionDefinition && FogBrush.GetResourceObject())
 	{
-		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, MapTopLeft, MapSize, FLinearColor::White);
+		const FVector2D A = WorldToLocal(FVector(VisionDefinition->FogWorldMin, 0.0));
+		const FVector2D B = WorldToLocal(FVector(VisionDefinition->FogWorldMax, 0.0));
+		const FVector2D FogTopLeft(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y));
+		const FVector2D FogSize(FMath::Abs(A.X - B.X), FMath::Abs(A.Y - B.Y));
+		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, FogTopLeft, FogSize, FLinearColor::White);
 	}
 
 	// 3. 구역: 공유 위험도 채우기와 구역 액터의 이름.

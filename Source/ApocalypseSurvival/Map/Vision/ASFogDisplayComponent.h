@@ -5,7 +5,7 @@
 #include "ASFogDisplayComponent.generated.h"
 
 class APostProcessVolume;
-class UASMapDefinition;
+class UASVisionDefinition;
 class UMaterialInstanceDynamic;
 class UTexture2D;
 
@@ -18,7 +18,7 @@ class APOCALYPSESURVIVAL_API UASFogDisplayComponent : public UActorComponent
 public:
 	UASFogDisplayComponent();
 
-	void Configure(UASMapDefinition* Definition);
+	void Configure(UASVisionDefinition* Definition);
 	UTexture2D* GetFogTexture() const { return FogTexture; }
 	bool IsLocationExplored(const FVector& Location) const;
 	bool IsLocationVisibleLocally(const FVector& Location) const;
@@ -46,9 +46,9 @@ private:
 	TObjectPtr<UTexture2D> FogTexture;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UASMapDefinition> MapDefinition;
+	TObjectPtr<UASVisionDefinition> VisionDefinition;
 
-	/** 팀 시야 밖의 게임 화면을 어둡게 한다 (UASMapDefinition::WorldFogMaterial 필요). */
+	/** 팀 시야 밖의 게임 화면을 어둡게 한다 (UASVisionDefinition::WorldFogMaterial 필요). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true"))
 	bool bApplyWorldFog = true;
 

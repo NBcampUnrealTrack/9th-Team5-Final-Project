@@ -8,7 +8,6 @@
 class UASMapDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FASOnZoneStateChangedSignature, FName, ZoneId, const FASZoneRuntimeState&, State);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASOnWallOcclusionChangedSignature, bool, bEnabled);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASOnMapStateEventSignature);
 
 /**
@@ -43,25 +42,14 @@ public:
 	bool IsMapReady() const { return Snapshot.bMapReady; }
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
-	bool IsWallOcclusionEnabled() const { return Snapshot.bWallOcclusionEnabled; }
-
-	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	UASMapDefinition* GetMapDefinition() const { return MapDefinition; }
 
-	/** 동기화된 서버 시간 (GameState::GetServerWorldTimeSeconds). */
-	UFUNCTION(BlueprintPure, Category = "AS|Map")
-	double GetServerTimeSeconds() const;
-
-	// 서버 측 기록. 벽 옵션을 제외하면 맵 매니저만 호출하는 것을 전제로 한다.
+	// 서버 측 기록. 맵 매니저만 호출하는 것을 전제로 한다.
 
 	void ServerSetMapDefinition(UASMapDefinition* InMapDefinition);
 
 	/** 스냅샷을 교체하고 차이를 로컬에 브로드캐스트한다. 서버 전용. */
 	void ServerWriteSnapshot(const FASMapStateSnapshot& NewSnapshot);
-
-	/** 공유 옵션: 모든 시야 조회가 새 값으로 다시 평가된다. 탐색 영역은 유지된다. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Map")
-	void SetWallOcclusionEnabled(bool bEnabled);
 
 	UPROPERTY(BlueprintAssignable, Category = "AS|Map")
 	FASOnZoneStateChangedSignature OnZoneStateChanged;
@@ -73,12 +61,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "AS|Map")
 	FASOnMapStateEventSignature OnMapStateUpdated;
 
-	/** MatchId 변경: 매치별 클라이언트 데이터 (탐색 안개)를 지워야 한다. */
+	/** MatchId 변경: 새 매치의 시작을 알린다. */
 	UPROPERTY(BlueprintAssignable, Category = "AS|Map")
 	FASOnMapStateEventSignature OnMatchReset;
-
-	UPROPERTY(BlueprintAssignable, Category = "AS|Map")
-	FASOnWallOcclusionChangedSignature OnWallOcclusionChanged;
 
 private:
 	UFUNCTION()

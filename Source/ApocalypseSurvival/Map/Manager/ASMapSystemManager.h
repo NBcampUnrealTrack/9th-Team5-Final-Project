@@ -53,9 +53,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	FName FindZoneAtLocation(const FVector& Location) const;
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Map")
-	void SetWallOcclusionEnabled(bool bEnabled);
-
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	bool IsMapReady() const { return bMapReady; }
 
