@@ -1,0 +1,69 @@
+﻿#include "Skills/Melee/ASSkillMelee.h"
+
+#include "DrawDebugHelpers.h"
+#include "Engine/World.h"
+
+void UASSkillMelee::OnSkillEffect_Implementation()
+{
+	if (!HasSkillAuthority())
+	{
+		return;
+	}
+
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
+	if (!World)
+	{
+		return;
+	}
+
+	FVector Aim = GetAimDirection().GetSafeNormal2D();
+	if (Aim.IsNearlyZero())
+	{
+		Aim = Avatar->GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	const FVector Center = Avatar->GetActorLocation() + Aim * ForwardOffset;
+	const bool bIsCone = Angle < 360.0f;
+
+	TArray<AActor*> Targets = FindSkillTargets(World, Center, Radius, Avatar, bCanHitPlayers);
+
+	if (bIsCone)
+	{
+		const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(Angle * 0.5f));
+
+		Targets.RemoveAll([&](const AActor* Target)
+		{
+			const FVector ToTarget = (Target->GetActorLocation() - Center).GetSafeNormal2D();
+			return !ToTarget.IsNearlyZero() && FVector::DotProduct(Aim, ToTarget) < CosHalfAngle;
+		});
+	}
+
+	if (bDrawDebug)
+	{
+		const FColor Color = Targets.Num() > 0 ? FColor::Red : FColor::Green;
+
+		if (bIsCone)
+		{
+			const float HalfAngleRad = FMath::DegreesToRadians(Angle * 0.5f);
+			DrawDebugCone(World, Center, Aim, Radius, HalfAngleRad, 0.05f, 16, Color, false, 1.0f);
+		}
+		else
+		{
+			DrawDebugSphere(World, Center, Radius, 16, Color, false, 1.0f);
+		}
+	}
+
+	if (Targets.Num() > 0)
+	{
+		OnTargetsHit(Targets);
+	}
+}
+
+void UASSkillMelee::OnTargetsHit_Implementation(const TArray<AActor*>& Targets)
+{
+	for (AActor* Target : Targets)
+	{
+		ApplySkillDamage(Target);
+	}
+}

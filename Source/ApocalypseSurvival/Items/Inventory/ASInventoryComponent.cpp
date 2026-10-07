@@ -368,7 +368,7 @@ UASItemInstance* UASInventoryComponent::FindItemById(const FGuid InstanceId) con
 
 UAbilitySystemComponent* UASInventoryComponent::ResolveAbilitySystem(APawn* Avatar) const
 {
-	if (!IsValid(Avatar) || (GetOwner() != Avatar && GetOwner() != Avatar->GetPlayerState())) return nullptr;
+	if (!IsValid(Avatar) || (GetOwner() != Avatar && GetOwner() != Avatar->GetPlayerState() && GetOwner() != Avatar->GetController())) return nullptr;
 	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Avatar, true);
 	return IsValid(ASC) && ASC->GetAvatarActor() == Avatar ? ASC : nullptr;
 }
