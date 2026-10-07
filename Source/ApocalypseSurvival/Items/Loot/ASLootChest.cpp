@@ -85,7 +85,9 @@ int32 AASLootChest::TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInv
 	const FGuid InstanceId, const int32 Quantity)
 {
 	if (!HasAuthority() || !IsValid(Interactor) || !IsValid(TargetInventory) || !InstanceId.IsValid() || Quantity <= 0
-		|| (TargetInventory->GetOwner() != Interactor && TargetInventory->GetOwner() != Interactor->GetPlayerState())
+		|| (TargetInventory->GetOwner() != Interactor
+			&& TargetInventory->GetOwner() != Interactor->GetPlayerState()
+			&& TargetInventory->GetOwner() != Interactor->GetController())
 		|| !IsWithinInteractionRange(Interactor) || !IASInteractable::Execute_CanInteract(this, Interactor)) return 0;
 	UASItemInstance* Item = LootInventory->FindItemById(InstanceId);
 	return Item ? LootInventory->TransferItemTo(TargetInventory, Item, Quantity) : 0;
