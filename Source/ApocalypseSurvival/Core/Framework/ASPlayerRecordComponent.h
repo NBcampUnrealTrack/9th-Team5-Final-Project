@@ -26,8 +26,6 @@ public:
 	int32 GetKillCount() const {return KillCount;}
 
 protected:
-	virtual void BeginPlay() override;
-	
 	UPROPERTY(Replicated)
 	int32 DeathCount = 0;
 	
@@ -35,6 +33,4 @@ protected:
 	int32 KillCount = 0;
 
 public:
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-	                           FActorComponentTickFunction* ThisTickFunction) override;
 };
