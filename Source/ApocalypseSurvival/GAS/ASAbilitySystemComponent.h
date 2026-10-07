@@ -30,6 +30,9 @@ public:
 	/** 입력 태그가 떼였다. 실행 중인 어빌리티에 "뗌"을 알린다. */
 	void AbilityInputTagReleased(const FGameplayTag& InputTag);
 
+	/** 주인이 죽어 있는가. State.Dead 태그가 있으면 죽은 것이다. */
+	bool IsDead() const;
+
 private:
 	/**
 	 * 이 어빌리티가 그 입력 태그에 반응하는가.

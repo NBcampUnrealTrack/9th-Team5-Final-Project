@@ -1,6 +1,7 @@
 #include "Core/Framework/ASPlayerState.h"
 
 #include "GAS/ASAbilitySystemComponent.h"
+#include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
@@ -34,4 +35,23 @@ void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
 	}
 
 	AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &DefaultAbilityHandles, this);
+}
+
+void AASPlayerState::ResetForRespawn()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	// 붙일 때와 같은 복제 설정으로 떼야 클라이언트에서도 사라진다.
+	if (AbilitySystemComponent->IsDead())
+	{
+		AbilitySystemComponent->RemoveLooseGameplayTag(ASGameplayTags::State_Dead, 1, EGameplayTagReplicationState::TagAndCountToAll);
+	}
+
+	// 기본값을 직접 바꾼다. 효과로 올리면 전투 중 걸린 버프·디버프와 섞이기 때문이다.
+	AbilitySystemComponent->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), HealthAttributeSet->GetMaxHealth());
+	AbilitySystemComponent->SetNumericAttributeBase(UASPlayerAttributeSet::GetStaminaAttribute(), PlayerAttributeSet->GetMaxStamina());
+	AbilitySystemComponent->SetNumericAttributeBase(UASPlayerAttributeSet::GetManaAttribute(), PlayerAttributeSet->GetMaxMana());
 }

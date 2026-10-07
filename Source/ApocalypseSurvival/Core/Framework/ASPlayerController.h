@@ -94,6 +94,9 @@ private:
 	/** 조종 중인 폰이 쓰는 ASC. 플레이어는 PlayerState 의 것이다. 폰이 없으면 null. */
 	UASAbilitySystemComponent* GetPawnAbilitySystemComponent() const;
 
+	/** 조종 중인 폰이 죽어 있는가. 죽은 동안은 클릭 이동과 상호작용을 받지 않는다. 어빌리티 입력은 ASC 가 막는다. */
+	bool IsPawnDead() const;
+
 	/** 커서가 뷰포트 가장자리에 있는 동안 카메라를 그 방향으로 민다. */
 	void UpdateCameraEdgeScroll(float DeltaTime);
 

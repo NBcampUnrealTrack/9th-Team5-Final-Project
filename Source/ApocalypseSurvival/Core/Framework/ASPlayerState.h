@@ -40,6 +40,13 @@ public:
 	 */
 	void GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet);
 
+	/**
+	 * 서버 전용. 새 캐릭터에 빙의할 때 사망 상태를 걷어 낸다.
+	 * ASC 가 여기 남아 있어서 죽은 채로 두면 새 캐릭터도 죽은 상태로 시작한다.
+	 * 사망 태그를 떼고 체력·스태미나·마나를 최대로 채운다. 첫 빙의 때 불려도 해가 없다.
+	 */
+	void ResetForRespawn();
+
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASAbilitySystemComponent> AbilitySystemComponent;

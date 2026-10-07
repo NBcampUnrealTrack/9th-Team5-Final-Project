@@ -3,6 +3,7 @@
 #include "AbilitySystemGlobals.h"
 #include "ApocalypseSurvival.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
 #include "GAS/ASAbilitySystemComponent.h"
@@ -126,6 +127,12 @@ void AASPlayerController::OnAbilityInputReleased(const FGameplayTag InputTag)
 	}
 }
 
+bool AASPlayerController::IsPawnDead() const
+{
+	const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(GetPawn());
+	return IsValid(PlayerCharacter) && PlayerCharacter->IsDead();
+}
+
 UASAbilitySystemComponent* AASPlayerController::GetPawnAbilitySystemComponent() const
 {
 	return Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetPawn()));
@@ -201,7 +208,7 @@ void AASPlayerController::RequestMoveTo(const FVector& Destination)
 void AASPlayerController::OnMoveStarted()
 {
 	bInteractionClickHeld = false;
-	if (ItemInteractionComponent->IsLootOpen()) return;
+	if (IsPawnDead() || ItemInteractionComponent->IsLootOpen()) return;
 	FHitResult Hit;
 	if (GetHitResultUnderCursor(CursorTraceChannel, true, Hit)
 		&& ItemInteractionComponent->TryInteractWith(Hit.GetActor()))
@@ -226,7 +233,7 @@ void AASPlayerController::OnMoveStarted()
 
 void AASPlayerController::OnMoveHeld()
 {
-	if (bInteractionClickHeld || ItemInteractionComponent->HasPendingInteraction() || ItemInteractionComponent->IsLootOpen()) return;
+	if (IsPawnDead() || bInteractionClickHeld || ItemInteractionComponent->HasPendingInteraction() || ItemInteractionComponent->IsLootOpen()) return;
 	// 매 프레임 길을 다시 찾는 것은 낭비라서 누르고 있는 동안에는 간격을 둔다.
 	if (GetWorld()->GetTimeSeconds() - LastMoveRequestTime < HeldMoveInterval)
 	{
