@@ -25,3 +25,13 @@ UAbilitySystemComponent* AASPlayerState::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
 }
+
+void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
+{
+	if (!HasAuthority() || !IsValid(AbilitySet) || !DefaultAbilityHandles.IsEmpty())
+	{
+		return;
+	}
+
+	AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &DefaultAbilityHandles, this);
+}

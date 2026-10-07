@@ -4,6 +4,7 @@
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GAS/ASAbilitySet.h"
 #include "GAS/ASAbilitySystemComponent.h"
 
 AASPlayerCharacter::AASPlayerCharacter()
@@ -39,6 +40,11 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 	Super::PossessedBy(NewController);
 
 	InitAbilitySystemFromPlayerState();
+
+	if (AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>())
+	{
+		ASPlayerState->GrantDefaultAbilitySetOnce(DefaultAbilitySet);
+	}
 }
 
 void AASPlayerCharacter::OnRep_PlayerState()
