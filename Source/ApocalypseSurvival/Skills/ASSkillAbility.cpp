@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
+#include "GenericTeamAgentInterface.h"
 #include "GameplayEffect.h"
 #include "Skills/ASSkillTags.h"
 
@@ -186,6 +187,17 @@ bool UASSkillAbility::IsValidSkillTarget(const AActor* Target, const AActor* Ins
 	if (!bCanHitPlayers)
 	{
 		if (const APawn* Pawn = Cast<APawn>(Target); Pawn && Pawn->IsPlayerControlled())
+		{
+			return false;
+		}
+	}
+
+	// 투사체와 범위 공격 모두 이 함수를 거치므로, 여기서 같은 팀/중립 팀을 한 번에 제외한다.
+	// 공격자는 적대 팀에만 피해를 준다. 따라서 몬스터 투사체는 플레이어만, 플레이어 공격은
+	// 몬스터만 유효 타깃으로 판단한다.
+	if (const IGenericTeamAgentInterface* InstigatorTeam = Cast<IGenericTeamAgentInterface>(Instigator))
+	{
+		if (InstigatorTeam->GetTeamAttitudeTowards(*Target) != ETeamAttitude::Hostile)
 		{
 			return false;
 		}
