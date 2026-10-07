@@ -32,6 +32,7 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
 	void BuildDefaultWidgetTree();
@@ -61,4 +62,8 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CloseButton;
+
+	/** Transparent hit area behind LootPanel so outside mouse input reaches this widget. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> OutsideCloseButton;
 };
