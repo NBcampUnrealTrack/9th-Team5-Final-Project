@@ -1,5 +1,7 @@
 #include "GAS/ASAbilitySystemComponent.h"
 
+#include "GAS/ASAbilityTags.h"
+
 UASAbilitySystemComponent::UASAbilitySystemComponent()
 {
 	// 복제를 켜야 클라이언트가 어트리뷰트와 태그를 받는다.
@@ -8,7 +10,9 @@ UASAbilitySystemComponent::UASAbilitySystemComponent()
 
 void UASAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
-	if (!InputTag.IsValid())
+	// 죽으면 어떤 어빌리티도 입력으로 발동하지 않는다.
+	// 어빌리티마다 차단 태그를 적지 않아도 되도록 입력 입구에서 한 번에 막는다.
+	if (!InputTag.IsValid() || IsDead())
 	{
 		return;
 	}
@@ -64,6 +68,11 @@ void UASAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& Inpu
 			AbilitySpecInputReleased(Spec);
 		}
 	}
+}
+
+bool UASAbilitySystemComponent::IsDead() const
+{
+	return HasMatchingGameplayTag(ASGameplayTags::State_Dead);
 }
 
 bool UASAbilitySystemComponent::DoesSpecMatchInputTag(const FGameplayAbilitySpec& Spec, const FGameplayTag& InputTag)
