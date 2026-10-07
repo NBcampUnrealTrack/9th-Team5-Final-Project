@@ -23,11 +23,11 @@ struct FASMonsterHasValidTargetInstanceData
 };
 
 /**
- * 타깃이 있고 여전히 유효한지 검사한다. 죽었거나, 사라졌거나, LoseTargetRadius 밖이면 거짓이다.
+ * AI Controller가 갱신한 현재 타깃이 있는지 검사한다.
  * 전투 상태를 벗어나는 전이 조건으로 쓴다.
  *
- * 판정은 TargetingComponent::ValidateTarget() 이 한다. 무효하면 그 호출이 타깃도 비운다.
- * 같은 상태를 여러 번 불러도 결과가 같으므로 한 프레임에 여러 번 평가돼도 안전하다.
+ * 거리·생존 판정과 타깃 제거는 AI Controller가 전담한다. StateTree는 결과를 읽기만 하므로
+ * 밤 장거리 추격 중에 LoseTargetRadius를 다시 적용하지 않는다.
  * 서버가 아니면 항상 거짓이다.
  */
 USTRUCT(meta = (DisplayName = "AS Monster Has Valid Target", Category = "AS|Monster"))

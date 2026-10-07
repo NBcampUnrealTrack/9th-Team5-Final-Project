@@ -11,6 +11,9 @@ class UASMonsterCombatComponent;
 class UASMonsterDefinition;
 class UASMonsterTargetingComponent;
 struct FOnAttributeChangeData;
+struct FGameplayEffectSpec;
+struct FActiveGameplayEffectHandle;
+class UAbilitySystemComponent;
 
 /**
  * 일반 몬스터 공통 Character.
@@ -42,6 +45,9 @@ public:
 	 * 원거리 몬스터가 타깃을 보면서 움직일 때 쓴다.
 	 */
 	void SetFaceControllerFocus(bool bFaceControllerFocus);
+
+	/** 서버 전용. 피해를 준 플레이어에게 즉시 어그로를 건다. */
+	void NotifyDamagedBy(AActor* InstigatorActor);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy")
 	UASMonsterDefinition* GetMonsterDefinition() const { return MonsterDefinition; }
@@ -102,8 +108,12 @@ protected:
 private:
 	void UnbindHealthDelegate();
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
+	void UnbindDamageEffectDelegate();
+	void HandleGameplayEffectApplied(UAbilitySystemComponent* TargetAbilitySystemComponent,
+		const FGameplayEffectSpec& AppliedEffect, FActiveGameplayEffectHandle ActiveEffectHandle);
 
 	bool bMonsterInitialized = false;
 
 	FDelegateHandle HealthChangedHandle;
+	FDelegateHandle DamageEffectAppliedHandle;
 };

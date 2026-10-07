@@ -1,8 +1,15 @@
 #include "Characters/Enemy/AI/ASMonsterAIController.h"
 
 #include "Characters/Enemy/ASMonsterCharacter.h"
+#include "Characters/Enemy/Components/ASMonsterCombatComponent.h"
+#include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
 #include "Components/StateTreeAIComponent.h"
+#include "Core/Framework/ASGameMode.h"
+#include "Core/Framework/ASGameState.h"
+#include "Engine/World.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogASMonsterAI, Log, All);
 
@@ -65,10 +72,8 @@ void AASMonsterAIController::OnPossess(APawn* InPawn)
 void AASMonsterAIController::OnUnPossess()
 {
 	StopWaitingForMonster();
-	if (IsValid(StateTreeAIComponent) && StateTreeAIComponent->IsRunning())
-	{
-		StateTreeAIComponent->StopLogic(TEXT("Unpossessed"));
-	}
+	StopAggroLoop();
+	StopStateTree(TEXT("Unpossessed"));
 	ControlledMonster.Reset();
 
 	Super::OnUnPossess();
@@ -77,12 +82,23 @@ void AASMonsterAIController::OnUnPossess()
 void AASMonsterAIController::TryStartAI()
 {
 	AASMonsterCharacter* Monster = ControlledMonster.Get();
-	if (!HasAuthority() || !Monster || !Monster->IsMonsterInitialized() || Monster->IsDead() || IsAILogicRunning())
+	if (!HasAuthority() || !Monster || !Monster->IsMonsterInitialized() || Monster->IsDead())
 	{
 		return;
 	}
 
 	StopWaitingForMonster();
+	StartAggroLoop();
+	UpdateAggroAndMovement();
+}
+
+void AASMonsterAIController::StartStateTree()
+{
+	AASMonsterCharacter* Monster = ControlledMonster.Get();
+	if (!HasAuthority() || !Monster || Monster->IsDead() || IsAILogicRunning())
+	{
+		return;
+	}
 
 	const UASMonsterDefinition* Definition = Monster->GetMonsterDefinition();
 	if (!Definition || !Definition->StateTree)
@@ -93,6 +109,14 @@ void AASMonsterAIController::TryStartAI()
 
 	StateTreeAIComponent->SetStateTree(Definition->StateTree);
 	StateTreeAIComponent->StartLogic();
+}
+
+void AASMonsterAIController::StopStateTree(const FString& Reason)
+{
+	if (IsValid(StateTreeAIComponent) && StateTreeAIComponent->IsRunning())
+	{
+		StateTreeAIComponent->StopLogic(Reason);
+	}
 }
 
 void AASMonsterAIController::StopWaitingForMonster()
@@ -115,13 +139,128 @@ void AASMonsterAIController::StopAI(const FString& Reason)
 	}
 
 	StopWaitingForMonster();
-	if (IsValid(StateTreeAIComponent) && StateTreeAIComponent->IsRunning())
-	{
-		StateTreeAIComponent->StopLogic(Reason);
-	}
+	StopAggroLoop();
+	StopStateTree(Reason);
 
 	StopMovement();
 	ClearCombatFocus();
+}
+
+void AASMonsterAIController::NotifyMonsterDamaged(AActor* InstigatorActor)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (AASMonsterCharacter* Monster = ControlledMonster.Get())
+	{
+		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent(); Targeting && Targeting->ForceAggro(InstigatorActor))
+		{
+			UpdateAggroAndMovement();
+		}
+	}
+}
+
+void AASMonsterAIController::StartAggroLoop()
+{
+	if (!HasAuthority() || !GetWorld())
+	{
+		return;
+	}
+
+	if (AASGameState* GameState = GetWorld()->GetGameState<AASGameState>())
+	{
+		bNightAggressive = GameState->GetCurrentPhase() == EGamePhase::Night;
+	}
+
+	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+	{
+		if (!NightStartedHandle.IsValid())
+		{
+			NightStartedHandle = GameMode->OnNightStarted.AddUObject(this, &AASMonsterAIController::HandleNightStarted);
+		}
+		if (!NightEndedHandle.IsValid())
+		{
+			NightEndedHandle = GameMode->OnNightEnded.AddUObject(this, &AASMonsterAIController::HandleNightEnded);
+		}
+	}
+
+	if (!GetWorld()->GetTimerManager().IsTimerActive(AggroUpdateTimerHandle))
+	{
+		GetWorld()->GetTimerManager().SetTimer(AggroUpdateTimerHandle, this, &AASMonsterAIController::UpdateAggroAndMovement,
+			AggroUpdateInterval, true);
+	}
+}
+
+void AASMonsterAIController::StopAggroLoop()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AggroUpdateTimerHandle);
+		if (AASGameMode* GameMode = World->GetAuthGameMode<AASGameMode>())
+		{
+			if (NightStartedHandle.IsValid())
+			{
+				GameMode->OnNightStarted.Remove(NightStartedHandle);
+			}
+			if (NightEndedHandle.IsValid())
+			{
+				GameMode->OnNightEnded.Remove(NightEndedHandle);
+			}
+		}
+	}
+
+	NightStartedHandle.Reset();
+	NightEndedHandle.Reset();
+	MoveTarget.Reset();
+}
+
+void AASMonsterAIController::UpdateAggroAndMovement()
+{
+	AASMonsterCharacter* Monster = ControlledMonster.Get();
+	UASMonsterTargetingComponent* Targeting = Monster ? Monster->GetTargetingComponent() : nullptr;
+	if (!HasAuthority() || !Monster || Monster->IsDead() || !Targeting)
+	{
+		return;
+	}
+
+	const bool bHasTarget = bNightAggressive
+		? (Targeting->ValidateTarget(true) || Targeting->AcquireTargetAnywhere())
+		: (Targeting->ValidateTarget() || Targeting->AcquireTarget());
+
+	AActor* Target = bHasTarget ? Targeting->GetTargetActor() : nullptr;
+	if (!IsValid(Target))
+	{
+		StopStateTree(TEXT("NoTarget"));
+		StopMovement();
+		ClearCombatFocus();
+		MoveTarget.Reset();
+		return;
+	}
+
+	// 타깃을 얻은 뒤에만 StateTree를 시작한다. 빈 TargetActor가 Move To에 전달되는 것을 차단한다.
+	StartStateTree();
+
+	if (MoveTarget != Target || GetMoveStatus() != EPathFollowingStatus::Moving)
+	{
+		const UASMonsterCombatComponent* Combat = Monster->GetCombatComponent();
+		const float AcceptanceRadius = Combat ? FMath::Max(Combat->GetAttackRange(), 1.0f) : 100.0f;
+		MoveToActor(Target, AcceptanceRadius);
+		MoveTarget = Target;
+	}
+}
+
+void AASMonsterAIController::HandleNightStarted(int32 Day, bool bBossNight)
+{
+	bNightAggressive = true;
+	UpdateAggroAndMovement();
+}
+
+void AASMonsterAIController::HandleNightEnded(int32 Day)
+{
+	bNightAggressive = false;
+	UpdateAggroAndMovement();
 }
 
 void AASMonsterAIController::SetCombatFocus(AActor* Target)

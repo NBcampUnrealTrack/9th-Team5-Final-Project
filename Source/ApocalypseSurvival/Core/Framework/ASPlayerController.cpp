@@ -48,6 +48,12 @@ void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn*
 	// "SimpleMove failed: movement not allowed" 로 이동이 전부 실패한다.
 	// 이 알림은 서버와 클라이언트 양쪽에서 오므로 여기서 다시 찾게 한다.
 	PathFollowingComponent->UpdateCachedComponents();
+
+	// HUD 는 로컬 플레이어에게만 있다. 리슨 서버의 원격 플레이어 컨트롤러는 알리지 않는다.
+	if (IsLocalController())
+	{
+		OnLocalPawnChanged.Broadcast(NewPawn);
+	}
 }
 
 void AASPlayerController::SetupInputComponent()
