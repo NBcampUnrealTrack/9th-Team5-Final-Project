@@ -4,6 +4,8 @@
 #include "Characters/ASCharacterBase.h"
 #include "ASPlayerCharacter.generated.h"
 
+class UASAbilitySet;
+
 /**
  * 플레이어가 조종하는 캐릭터.
  *
@@ -21,7 +23,7 @@ class APOCALYPSESURVIVAL_API AASPlayerCharacter : public AASCharacterBase
 public:
 	AASPlayerCharacter();
 
-	/** 서버: 빙의되는 시점에는 PlayerState 가 이미 있다. */
+	/** 서버: 빙의되는 시점에는 PlayerState 가 이미 있다. 기본 어빌리티도 여기서 부여한다. */
 	virtual void PossessedBy(AController* NewController) override;
 
 	/** 클라이언트: PlayerState 는 복제로 도착한다. */
@@ -29,4 +31,11 @@ public:
 
 private:
 	void InitAbilitySystemFromPlayerState();
+
+	/**
+	 * 이 캐릭터가 처음부터 갖는 어빌리티(회피, 스킬). BP 자식에서 지정한다.
+	 * 부여는 PlayerState 가 한 번만 하므로 리스폰해도 중복되지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "GAS")
+	TObjectPtr<const UASAbilitySet> DefaultAbilitySet;
 };
