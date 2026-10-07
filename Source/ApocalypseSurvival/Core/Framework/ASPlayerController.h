@@ -2,9 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
 #include "ASPlayerController.generated.h"
 
 class AASPlayerCameraManager;
+class UASAbilitySystemComponent;
+class UASInputConfig;
+class UASInventoryComponent;
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraSystem;
@@ -21,6 +25,11 @@ struct FInputActionValue;
  *
  * 시점은 AASPlayerCameraManager 가 만든다. 캐릭터와 따로 움직이는 자유 카메라이고,
  * 이 컨트롤러가 화면 가장자리 스크롤과 휠 입력을 넘겨 준다.
+ *
+ * 어빌리티 입력(공격, 회피, QWER)은 키마다 함수를 두지 않는다. UASInputConfig 에 적힌
+ * "키 → 입력 태그" 대로 핸들러를 걸고, 눌리면 태그만 폰의 ASC 에 넘긴다.
+ *
+ * 인벤토리도 여기에 붙는다. 캐릭터가 죽어도 남고, 본인에게만 복제되기 때문이다. Lyra 와 같다.
  */
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API AASPlayerController : public APlayerController
@@ -42,6 +51,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASItemInteractionComponent* GetItemInteractionComponent() const { return ItemInteractionComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Item")
+	UASInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
 protected:
 	virtual void PostInitializeComponents() override;
@@ -66,6 +78,13 @@ private:
 	void OnCameraCenterCompleted();
 	void OnCameraZoom(const FInputActionValue& Value);
 
+	/** 어빌리티 입력. 태그는 AbilityInputConfig 의 항목에서 바인딩할 때 같이 넘어온다. */
+	void OnAbilityInputPressed(FGameplayTag InputTag);
+	void OnAbilityInputReleased(FGameplayTag InputTag);
+
+	/** 조종 중인 폰이 쓰는 ASC. 플레이어는 PlayerState 의 것이다. 폰이 없으면 null. */
+	UASAbilitySystemComponent* GetPawnAbilitySystemComponent() const;
+
 	/** 커서가 뷰포트 가장자리에 있는 동안 카메라를 그 방향으로 민다. */
 	void UpdateCameraEdgeScroll(float DeltaTime);
 
@@ -76,11 +95,18 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASItemInteractionComponent> ItemInteractionComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASInventoryComponent> InventoryComponent;
+
 	// ── 입력 ──────────────────────────────────────────────
 	// C++ 에서 에셋을 직접 참조하지 않는다. BP 자식에서 지정한다.
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
+
+	/** 어빌리티용 키 목록. 이동·카메라 입력은 아래 액션들이 따로 맡는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UASInputConfig> AbilityInputConfig;
 
 	/** 커서 위치로 이동. 누르고 있으면 커서를 계속 따라간다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")

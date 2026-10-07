@@ -1,8 +1,12 @@
 #include "Core/Framework/ASPlayerController.h"
 
+#include "AbilitySystemGlobals.h"
 #include "ApocalypseSurvival.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
+#include "Core/Input/ASInputConfig.h"
+#include "GAS/ASAbilitySystemComponent.h"
+#include "Items/Inventory/ASInventoryComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "EnhancedInputComponent.h"
@@ -18,6 +22,7 @@ AASPlayerController::AASPlayerController()
 {
 	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("PathFollowingComponent"));
 	ItemInteractionComponent = CreateDefaultSubobject<UASItemInteractionComponent>(TEXT("ItemInteractionComponent"));
+	InventoryComponent = CreateDefaultSubobject<UASInventoryComponent>(TEXT("InventoryComponent"));
 	PlayerCameraManagerClass = AASPlayerCameraManager::StaticClass();
 
 	bShowMouseCursor = true;
@@ -80,6 +85,44 @@ void AASPlayerController::SetupInputComponent()
 	EnhancedInputComponent->BindAction(CameraCenterAction, ETriggerEvent::Completed, this, &AASPlayerController::OnCameraCenterCompleted);
 	EnhancedInputComponent->BindAction(CameraCenterAction, ETriggerEvent::Canceled, this, &AASPlayerController::OnCameraCenterCompleted);
 	EnhancedInputComponent->BindAction(CameraZoomAction, ETriggerEvent::Triggered, this, &AASPlayerController::OnCameraZoom);
+
+	// 어빌리티 입력은 목록을 돌며 건다. 키마다 함수를 만들지 않고, 태그를 인자로 같이 넘긴다.
+	// Started 는 누른 순간 한 번이라 "한 번 누름 = 한 번 발동"이 된다.
+	if (IsValid(AbilityInputConfig))
+	{
+		for (const FASInputTagAction& Entry : AbilityInputConfig->AbilityInputActions)
+		{
+			if (!IsValid(Entry.InputAction) || !Entry.InputTag.IsValid())
+			{
+				continue;
+			}
+
+			EnhancedInputComponent->BindAction(Entry.InputAction, ETriggerEvent::Started, this, &AASPlayerController::OnAbilityInputPressed, Entry.InputTag);
+			EnhancedInputComponent->BindAction(Entry.InputAction, ETriggerEvent::Completed, this, &AASPlayerController::OnAbilityInputReleased, Entry.InputTag);
+			EnhancedInputComponent->BindAction(Entry.InputAction, ETriggerEvent::Canceled, this, &AASPlayerController::OnAbilityInputReleased, Entry.InputTag);
+		}
+	}
+}
+
+void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
+{
+	if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
+	{
+		AbilitySystemComponent->AbilityInputTagPressed(InputTag);
+	}
+}
+
+void AASPlayerController::OnAbilityInputReleased(const FGameplayTag InputTag)
+{
+	if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
+	{
+		AbilitySystemComponent->AbilityInputTagReleased(InputTag);
+	}
+}
+
+UASAbilitySystemComponent* AASPlayerController::GetPawnAbilitySystemComponent() const
+{
+	return Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetPawn()));
 }
 
 void AASPlayerController::ReceivedPlayer()
