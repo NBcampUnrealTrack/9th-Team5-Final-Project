@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
+#include "GenericTeamAgentInterface.h"
 #include "ASCharacterBase.generated.h"
 
 class UASAbilitySystemComponent;
@@ -16,7 +17,7 @@ struct FOnAttributeChangeData;
  * 자식 클래스가 자기 머신에서 ASC 를 알게 된 시점에 InitAbilitySystem 을 부른다.
  */
 UCLASS(Abstract)
-class APOCALYPSESURVIVAL_API AASCharacterBase : public ACharacter, public IAbilitySystemInterface
+class APOCALYPSESURVIVAL_API AASCharacterBase : public ACharacter, public IAbilitySystemInterface, public IGenericTeamAgentInterface
 {
 	GENERATED_BODY()
 
@@ -25,6 +26,12 @@ public:
 
 	/** IAbilitySystemInterface. GAS 가 액터에서 ASC 를 찾을 때 쓰는 표준 경로다. */
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	/**
+	 * IGenericTeamAgentInterface. 팀은 클래스마다 고정이라 복제하지 않는다.
+	 * 각 자식 클래스가 생성자에서 TeamId 를 정하므로 모든 머신이 같은 값을 갖는다.
+	 */
+	virtual FGenericTeamId GetGenericTeamId() const override { return TeamId; }
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -41,6 +48,9 @@ protected:
 
 	/** InitAbilitySystem 이 연결을 마친 뒤 모든 머신에서 불린다. */
 	virtual void OnAbilitySystemInitialized();
+
+	/** 소속 팀. 기본은 NoTeam 이고 자식 클래스가 생성자에서 정한다. */
+	FGenericTeamId TeamId = FGenericTeamId::NoTeam;
 
 private:
 	void UnbindAttributeDelegates();
