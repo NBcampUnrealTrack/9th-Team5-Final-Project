@@ -8,6 +8,7 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/PlayerController.h"
 #include "GameplayEffect.h"
 #include "Skills/ASSkillTags.h"
 
@@ -27,7 +28,7 @@ void UASSkillAbility::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	// 비용, 쿨다운
+	//비용, 쿨다운
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -40,7 +41,19 @@ void UASSkillAbility::ActivateAbility(
 	bWaitingForHitEvent = bWaitForHitEvent;
 	bHitEventReceived = false;
 
-	// 몽타주보다 먼저 대기 시작
+	//조준은 시전 순간에 한 번 확정
+	CachedAimDirection = ComputeAimDirection();
+	bHasCachedAim = true;
+
+	if (bFaceAimDirection)
+	{
+		if (AActor* Avatar = GetAvatarActorFromActorInfo())
+		{
+			Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
+		}
+	}
+
+	//몽타주보다 먼저 대기 시작
 	if (bWaitForHitEvent)
 	{
 		UAbilityTask_WaitGameplayEvent* WaitHitTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -76,7 +89,7 @@ void UASSkillAbility::ActivateAbility(
 		}
 	}
 
-	// 몽타주 없음: 즉시 발동 후 종료
+	//몽타주 없음: 즉시 발동 후 종료
 	OnSkillEffect();
 
 	if (IsActive())
@@ -92,34 +105,14 @@ void UASSkillAbility::EndAbility(
 	bool bReplicatedEndAbility,
 	bool bWasCancelled)
 {
+	bHasCachedAim = false;
+
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
 }
 
 void UASSkillAbility::OnSkillEffect_Implementation()
 {
-	if (!DamageEffectClass)
-	{
-		return;
-	}
-
-	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
-	if (!ActorInfo || !ActorInfo->IsNetAuthority())
-	{
-		return;
-	}
-
-	const AActor* Avatar = GetAvatarActorFromActorInfo();
-	if (!Avatar)
-	{
-		return;
-	}
-
-	const FVector Center = Avatar->GetActorLocation() + Avatar->GetActorForwardVector() * EffectForwardOffset;
-
-	for (AActor* Target : FindTargetsInRadius(Center, EffectRadius))
-	{
-		ApplySkillDamage(Target);
-	}
+	//자식 클래스에서 구현
 }
 
 float UASSkillAbility::CalculateDamage_Implementation() const
@@ -138,24 +131,79 @@ float UASSkillAbility::CalculateDamage_Implementation() const
 	return FMath::Max(0.0f, BaseDamage + AttackPower * AttackPowerScale);
 }
 
+FVector UASSkillAbility::GetAimDirection_Implementation() const
+{
+	return bHasCachedAim ? CachedAimDirection : ComputeAimDirection();
+}
+
+FVector UASSkillAbility::ComputeAimDirection() const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (!Avatar)
+	{
+		return FVector::ForwardVector;
+	}
+
+	//TODO: 임시 커서 조준. 서버는 클라이언트의 커서를 모르므로 멀티에서는 TargetData로 교체 필요
+	if (bAimAtCursor)
+	{
+		const APawn* Pawn = Cast<APawn>(Avatar);
+		const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+
+		FHitResult Hit;
+		if (PC && PC->IsLocalController() && PC->GetHitResultUnderCursor(ECC_Visibility, false, Hit))
+		{
+			const FVector ToCursor = (Hit.ImpactPoint - Avatar->GetActorLocation()).GetSafeNormal2D();
+			if (!ToCursor.IsNearlyZero())
+			{
+				return ToCursor;
+			}
+		}
+	}
+
+	return Avatar->GetActorForwardVector().GetSafeNormal2D();
+}
+
 ACharacter* UASSkillAbility::GetOwnerCharacter() const
 {
-	// Owner는 PlayerState일 수 있음
+	//Owner는 PlayerState일 수 있음
 	return Cast<ACharacter>(GetAvatarActorFromActorInfo());
 }
 
-TArray<AActor*> UASSkillAbility::FindTargetsInRadius(const FVector& Center, float Radius) const
+bool UASSkillAbility::HasSkillAuthority() const
+{
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+	return ActorInfo && ActorInfo->IsNetAuthority();
+}
+
+bool UASSkillAbility::IsValidSkillTarget(const AActor* Target, const AActor* Instigator, bool bCanHitPlayers)
+{
+	if (!IsValid(Target) || Target == Instigator)
+	{
+		return false;
+	}
+
+	if (!bCanHitPlayers)
+	{
+		if (const APawn* Pawn = Cast<APawn>(Target); Pawn && Pawn->IsPlayerControlled())
+		{
+			return false;
+		}
+	}
+
+	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Target)) != nullptr;
+}
+
+TArray<AActor*> UASSkillAbility::FindSkillTargets(const UWorld* World, const FVector& Center, float Radius, const AActor* Instigator, bool bCanHitPlayers)
 {
 	TArray<AActor*> Targets;
 
-	AActor* Avatar = GetAvatarActorFromActorInfo();
-	UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
 	if (!World || Radius <= 0.0f)
 	{
 		return Targets;
 	}
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASSkillFindTargets), false, Avatar);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASSkillFindTargets), false, Instigator);
 
 	TArray<FOverlapResult> Overlaps;
 	World->OverlapMultiByObjectType(
@@ -169,28 +217,36 @@ TArray<AActor*> UASSkillAbility::FindTargetsInRadius(const FVector& Center, floa
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
 		AActor* Actor = Overlap.GetActor();
-		if (!IsValid(Actor) || Actor == Avatar || Targets.Contains(Actor))
+		if (IsValidSkillTarget(Actor, Instigator, bCanHitPlayers))
 		{
-			continue;
+			Targets.AddUnique(Actor);
 		}
-
-		if (!bCanHitPlayers)
-		{
-			if (const APawn* Pawn = Cast<APawn>(Actor); Pawn && Pawn->IsPlayerControlled())
-			{
-				continue;
-			}
-		}
-
-		if (!UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor))
-		{
-			continue;
-		}
-
-		Targets.Add(Actor);
 	}
 
-	if (bDrawDebug)
+	return Targets;
+}
+
+void UASSkillAbility::ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& DamageSpec, AActor* Target)
+{
+	if (!DamageSpec.IsValid() || !Target)
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target))
+	{
+		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
+	}
+}
+
+TArray<AActor*> UASSkillAbility::FindTargetsInRadius(const FVector& Center, float Radius) const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
+
+	TArray<AActor*> Targets = FindSkillTargets(World, Center, Radius, Avatar, bCanHitPlayers);
+
+	if (bDrawDebug && World)
 	{
 		DrawDebugSphere(World, Center, Radius, 16, Targets.Num() > 0 ? FColor::Red : FColor::Green, false, 1.0f);
 	}
@@ -198,31 +254,31 @@ TArray<AActor*> UASSkillAbility::FindTargetsInRadius(const FVector& Center, floa
 	return Targets;
 }
 
-void UASSkillAbility::ApplySkillDamage(AActor* Target)
+FGameplayEffectSpecHandle UASSkillAbility::MakeDamageSpec() const
 {
-	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
-	if (!Target || !DamageEffectClass || !ActorInfo || !ActorInfo->IsNetAuthority())
+	if (!DamageEffectClass)
 	{
-		return;
-	}
-
-	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target);
-	if (!SourceASC || !TargetASC)
-	{
-		return;
+		return FGameplayEffectSpecHandle();
 	}
 
 	FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(DamageEffectClass, GetAbilityLevel());
-	if (!SpecHandle.IsValid())
+	if (SpecHandle.IsValid())
+	{
+		//Health에 더하므로 음수
+		SpecHandle.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_Damage, -CalculateDamage());
+	}
+
+	return SpecHandle;
+}
+
+void UASSkillAbility::ApplySkillDamage(AActor* Target)
+{
+	if (!HasSkillAuthority())
 	{
 		return;
 	}
 
-	// Health에 더하므로 음수
-	SpecHandle.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_Damage, -CalculateDamage());
-
-	SourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
+	ApplyDamageSpecToTarget(MakeDamageSpec(), Target);
 }
 
 void UASSkillAbility::HandleHitEvent(FGameplayEventData Payload)

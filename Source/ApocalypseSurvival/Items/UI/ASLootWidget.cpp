@@ -10,6 +10,8 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Core/Framework/ASPlayerController.h"
+#include "InputCoreTypes.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/UI/ASLootEntryWidget.h"
@@ -31,6 +33,13 @@ void UASLootWidget::BuildDefaultWidgetTree()
 	}
 
 	UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RootCanvas"));
+	OutsideCloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("OutsideCloseButton"));
+	OutsideCloseButton->SetRenderOpacity(0.0f);
+	UCanvasPanelSlot* OutsideButtonSlot = RootCanvas->AddChildToCanvas(OutsideCloseButton);
+	OutsideButtonSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+	OutsideButtonSlot->SetOffsets(FMargin(0.0f));
+	OutsideButtonSlot->SetZOrder(-1);
+
 	UBorder* LootPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("LootPanel"));
 	LootPanel->SetPadding(FMargin(16.0f));
 	UVerticalBox* RootColumn = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("RootColumn"));
@@ -81,6 +90,35 @@ void UASLootWidget::NativeDestruct()
 
 	Super::NativeDestruct();
 	OnLootClosed.Broadcast();
+}
+
+FReply UASLootWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.GetEffectingButton() != EKeys::RightMouseButton)
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
+	UWidget* LootPanel = IsValid(WidgetTree) ? WidgetTree->FindWidget(TEXT("LootPanel")) : nullptr;
+	if (!IsValid(LootPanel))
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
+	// Right clicks inside the panel stay in the UI. Outside clicks only issue movement;
+	// the interaction component closes the widget once the pawn actually leaves range.
+	if (!LootPanel->GetCachedGeometry().IsUnderLocation(InMouseEvent.GetScreenSpacePosition()))
+	{
+		if (AASPlayerController* PC = Cast<AASPlayerController>(GetOwningPlayer()))
+		{
+			FVector Destination;
+			if (PC->GetCursorWorldLocation(Destination))
+			{
+				PC->RequestMoveTo(Destination);
+			}
+		}
+	}
+	return FReply::Handled();
 }
 
 void UASLootWidget::SetLootContext(
