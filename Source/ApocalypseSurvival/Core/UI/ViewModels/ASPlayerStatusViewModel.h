@@ -4,7 +4,10 @@
 #include "MVVMViewModelBase.h"
 #include "ASPlayerStatusViewModel.generated.h"
 
+class AActor;
 class UTexture2D;
+class UAbilitySystemComponent;
+struct FOnAttributeChangeData;
 
 /** 플레이어 초상화, 레벨, 체력 및 마나 표시용 MVVM 데이터 모델이다. */
 UCLASS(BlueprintType)
@@ -13,6 +16,18 @@ class APOCALYPSESURVIVAL_API UASPlayerStatusViewModel : public UMVVMViewModelBas
 	GENERATED_BODY()
 
 public:
+	/** 지정한 ASC의 Health/MaxHealth/Mana/MaxMana 변화를 구독하고 현재값을 즉시 반영한다. */
+	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
+	void Initialize(UAbilitySystemComponent* InAbilitySystemComponent);
+
+	/** AbilitySystemInterface를 구현한 액터(Pawn 또는 PlayerState)로 초기화하는 편의 함수다. */
+	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
+	void InitializeFromActor(AActor* InAbilitySystemOwner);
+
+	/** 등록한 GAS 델리게이트를 해제한다. 위젯 또는 플레이어가 사라질 때 호출한다. */
+	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
+	void Deinitialize();
+
 	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
 	void SetHealth(float InCurrentHealth, float InMaxHealth);
 
@@ -61,4 +76,17 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UTexture2D> PortraitTexture = nullptr;
+
+	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleManaChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleMaxManaChanged(const FOnAttributeChangeData& ChangeData);
+	void RefreshHealth();
+	void RefreshMana();
+
+	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+	FDelegateHandle HealthChangedHandle;
+	FDelegateHandle MaxHealthChangedHandle;
+	FDelegateHandle ManaChangedHandle;
+	FDelegateHandle MaxManaChangedHandle;
 };
