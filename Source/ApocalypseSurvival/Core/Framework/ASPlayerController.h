@@ -16,6 +16,8 @@ class UPathFollowingComponent;
 class UASItemInteractionComponent;
 struct FInputActionValue;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASLocalPawnChangedSignature, APawn*, NewPawn);
+
 /**
  * 클릭 이동 방식의 플레이어 컨트롤러.
  *
@@ -54,6 +56,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	/**
+	 * 로컬 플레이어가 조종하는 폰이 바뀌었을 때. 이 머신의 화면을 가진 컨트롤러에서만 방송한다.
+	 * HUD 가 새 폰의 ASC 로 다시 연결할 때 쓴다. 빙의가 풀리면 NewPawn 은 null 이다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Pawn")
+	FASLocalPawnChangedSignature OnLocalPawnChanged;
 
 protected:
 	virtual void PostInitializeComponents() override;
