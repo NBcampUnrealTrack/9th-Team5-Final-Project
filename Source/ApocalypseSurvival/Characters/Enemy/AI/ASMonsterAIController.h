@@ -5,6 +5,8 @@
 #include "ASMonsterAIController.generated.h"
 
 class AASMonsterCharacter;
+class UASMonsterCombatComponent;
+class UASMonsterTargetingComponent;
 class UStateTreeAIComponent;
 
 /**
@@ -43,6 +45,9 @@ public:
 	/** 서버 전용. 시선 고정을 풀고 다시 이동 방향을 바라보게 한다. */
 	void ClearCombatFocus();
 
+	/** 서버 전용. 플레이어에게 피해를 받았을 때 즉시 공격자를 타깃으로 삼는다. */
+	void NotifyMonsterDamaged(AActor* InstigatorActor);
+
 protected:
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
@@ -50,6 +55,15 @@ protected:
 private:
 	/** 조건이 갖춰졌을 때만 StateTree 를 시작한다. 여러 번 불려도 안전하다. */
 	void TryStartAI();
+	void StartStateTree();
+	void StopStateTree(const FString& Reason);
+
+	/** 낮/밤 전역 규칙과 실제 추격 이동을 StateTree 밖에서 갱신한다. */
+	void StartAggroLoop();
+	void StopAggroLoop();
+	void UpdateAggroAndMovement();
+	void HandleNightStarted(int32 Day, bool bBossNight);
+	void HandleNightEnded(int32 Day);
 
 	void StopWaitingForMonster();
 
@@ -59,4 +73,15 @@ private:
 	TWeakObjectPtr<AASMonsterCharacter> ControlledMonster;
 
 	FDelegateHandle MonsterInitializedHandle;
+	FDelegateHandle NightStartedHandle;
+	FDelegateHandle NightEndedHandle;
+
+	FTimerHandle AggroUpdateTimerHandle;
+	TWeakObjectPtr<AActor> MoveTarget;
+
+	/** 밤에는 거리와 무관하게 즉시 플레이어를 추격한다. */
+	bool bNightAggressive = false;
+
+	/** 타깃 검증·재탐색 주기. 개별 몬스터가 매 프레임 플레이어를 훑지 않게 한다. */
+	float AggroUpdateInterval = 0.25f;
 };

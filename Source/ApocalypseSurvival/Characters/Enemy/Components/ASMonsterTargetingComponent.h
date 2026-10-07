@@ -40,12 +40,19 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Targeting")
 	bool AcquireTarget();
 
+	/** 서버 전용. 거리 제한 없이 가장 가까운 살아 있는 플레이어를 찾는다. 밤 추격에 사용한다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Targeting")
+	bool AcquireTargetAnywhere();
+
 	/**
 	 * 서버 전용. 현재 타깃이 죽었거나, 유효하지 않거나, 해제 반경 밖이면 비운다.
 	 * 타깃이 계속 유효하면 true.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Targeting")
-	bool ValidateTarget();
+	bool ValidateTarget(bool bIgnoreLoseTargetRadius = false);
+
+	/** 서버 전용. 유효한 플레이어 공격자에게 즉시 어그로를 건다. */
+	bool ForceAggro(AActor* Aggressor);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Targeting")
 	AActor* GetTargetActor() const { return TargetActor; }
