@@ -8,6 +8,7 @@
 class AASGameState;
 class AASRespawnPoint;
 class UASPlayerRecordComponent;
+class UDataTable;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -146,6 +147,10 @@ protected:
 	// 포인트 주변에 적을 흩뿌리는 반경 (cm, 겹침 방지)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
 	float SpawnScatterRadius = 300.f;
+
+	// 행 이름 Wave_01, Wave_02 ... 에 따라 날짜별 스웜을 정의한 DataTable.
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Wave")
+	TObjectPtr<UDataTable> WaveDataTable;
 	
 	// 단계 진행
 	void StartDay(int32 Day);
