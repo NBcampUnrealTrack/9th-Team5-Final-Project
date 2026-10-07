@@ -1,5 +1,6 @@
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
+#include "Core/Spawn/ASSpawnSubsystem.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
@@ -95,8 +96,14 @@ void AASGameMode::StartNight()
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 밤 시작 (%.0f초, 보스: %s)"),
 		Day, Duration, bBossNight ? TEXT("O") : TEXT("X"));
 	
-	// AI 쪽에 알림 (스폰 수와 보스 스폰은 AI 쪽에서 결정)
+	// AI/보스 시스템에 밤 시작을 알린다.
 	OnNightStarted.Broadcast(Day, bBossNight);
+
+	// 몬스터가 살아 있는 수와 관계없이 목표 물량이 모두 생성될 때까지 스웜을 계속 투입한다.
+	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
+	{
+		SpawnSubsystem->StartWave(Day, WaveDataTable);
+	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnNightTimeUp, Duration, false);
 }
@@ -105,6 +112,11 @@ void AASGameMode::OnNightTimeUp()
 {
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
+
+	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
+	{
+		SpawnSubsystem->StopWave();
+	}
 	
 	const int32 Day = GS->GetCurrentDay();
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 밤 종료"), Day);
@@ -131,6 +143,10 @@ void AASGameMode::OnNightTimeUp()
 void AASGameMode::EndGame(bool bVictory)
 {
 	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
+	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
+	{
+		SpawnSubsystem->StopWave();
+	}
 	
 	if (AASGameState* GS = GetASGameState())
 	{

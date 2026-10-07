@@ -75,8 +75,9 @@ bool FASMonsterContextGlobalTask::UpdateTargetOutputs(FInstanceDataType& Instanc
 		return false;
 	}
 
-	// 유효성 규칙은 TargetingComponent 한 곳에만 있다. 죽었거나 해제 반경 밖이면 여기서 타깃이 비워진다.
-	if (Targeting->ValidateTarget())
+	// 거리·생존 검증은 AIController의 주기 갱신이 전담한다.
+	// StateTree가 다시 LoseTargetRadius를 적용하면 밤 장거리 추격 타깃을 지우게 된다.
+	if (Targeting->HasValidTarget())
 	{
 		AActor* Target = Targeting->GetTargetActor();
 		InstanceData.TargetActor = Target;

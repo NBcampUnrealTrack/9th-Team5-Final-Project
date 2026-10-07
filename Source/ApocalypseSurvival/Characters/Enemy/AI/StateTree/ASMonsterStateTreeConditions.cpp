@@ -14,7 +14,8 @@ bool FASMonsterHasValidTargetCondition::TestCondition(FStateTreeExecutionContext
 		return false;
 	}
 
-	return Targeting->ValidateTarget() != InstanceData.bInvert;
+	// 타깃 거리·생존 판정은 AIController가 주기적으로 갱신한다. 여기서는 그 결과만 읽는다.
+	return Targeting->HasValidTarget() != InstanceData.bInvert;
 }
 
 bool FASMonsterTargetInAttackRangeCondition::TestCondition(FStateTreeExecutionContext& Context) const

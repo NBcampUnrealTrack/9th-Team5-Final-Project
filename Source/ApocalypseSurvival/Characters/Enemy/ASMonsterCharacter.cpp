@@ -7,10 +7,13 @@
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "GameplayAbilitySpec.h"
+#include "GameplayEffect.h"
+#include "GameplayEffectTypes.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "Skills/ASSkillTags.h"
 
 AASMonsterCharacter::AASMonsterCharacter()
 {
@@ -61,6 +64,7 @@ void AASMonsterCharacter::BeginPlay()
 void AASMonsterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnbindHealthDelegate();
+	UnbindDamageEffectDelegate();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -74,6 +78,10 @@ void AASMonsterCharacter::OnAbilitySystemInitialized()
 	HealthChangedHandle = OwnedAbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UASHealthAttributeSet::GetHealthAttribute())
 		.AddUObject(this, &AASMonsterCharacter::HandleHealthChanged);
+
+	UnbindDamageEffectDelegate();
+	DamageEffectAppliedHandle = OwnedAbilitySystemComponent->OnGameplayEffectAppliedDelegateToSelf
+		.AddUObject(this, &AASMonsterCharacter::HandleGameplayEffectApplied);
 }
 
 bool AASMonsterCharacter::IsDead() const
@@ -93,6 +101,19 @@ void AASMonsterCharacter::SetFaceControllerFocus(bool bFaceControllerFocus)
 	MovementComponent->bUseControllerDesiredRotation = bFaceControllerFocus;
 }
 
+void AASMonsterCharacter::NotifyDamagedBy(AActor* InstigatorActor)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (AASMonsterAIController* AIController = Cast<AASMonsterAIController>(GetController()))
+	{
+		AIController->NotifyMonsterDamaged(InstigatorActor);
+	}
+}
+
 void AASMonsterCharacter::ApplyMonsterDefinition()
 {
 	if (!MonsterDefinition)
@@ -109,6 +130,11 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
 
 	CombatComponent->Configure(MonsterDefinition->AttackRange, MonsterDefinition->AttackAbilityTag);
 	TargetingComponent->Configure(MonsterDefinition->DetectionRadius, MonsterDefinition->LoseTargetRadius);
+	if (MonsterDefinition->GrantedAbilities.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Monster] %s has no GrantedAbilities. Configure a monster attack Ability in its Definition."),
+			*GetNameSafe(MonsterDefinition));
+	}
 
 	for (const TSubclassOf<UGameplayAbility>& AbilityClass : MonsterDefinition->GrantedAbilities)
 	{
@@ -164,4 +190,40 @@ void AASMonsterCharacter::UnbindHealthDelegate()
 	}
 
 	HealthChangedHandle.Reset();
+}
+
+void AASMonsterCharacter::UnbindDamageEffectDelegate()
+{
+	if (IsValid(OwnedAbilitySystemComponent) && DamageEffectAppliedHandle.IsValid())
+	{
+		OwnedAbilitySystemComponent->OnGameplayEffectAppliedDelegateToSelf.Remove(DamageEffectAppliedHandle);
+	}
+
+	DamageEffectAppliedHandle.Reset();
+}
+
+void AASMonsterCharacter::HandleGameplayEffectApplied(UAbilitySystemComponent* TargetAbilitySystemComponent,
+	const FGameplayEffectSpec& AppliedEffect, FActiveGameplayEffectHandle ActiveEffectHandle)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	// 프로젝트의 피해 Effect는 Data.Damage를 음수로 넣어 Health에 더한다.
+	const float DamageMagnitude = AppliedEffect.GetSetByCallerMagnitude(ASGameplayTags::Data_Damage, false, 0.0f);
+	if (DamageMagnitude >= 0.0f)
+	{
+		return;
+	}
+
+	const FGameplayEffectContextHandle& EffectContext = AppliedEffect.GetContext();
+	AActor* InstigatorActor = EffectContext.GetOriginalInstigator();
+	if (!IsValid(InstigatorActor))
+	{
+		InstigatorActor = EffectContext.GetInstigator();
+	}
+
+	// 투사체가 이미 파괴됐더라도 OriginalInstigator(발사한 플레이어)를 우선 사용한다.
+	NotifyDamagedBy(InstigatorActor);
 }
