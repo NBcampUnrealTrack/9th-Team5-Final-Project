@@ -25,6 +25,7 @@ UASInventoryComponent* UASItemInteractionComponent::GetPlayerInventory() const
 {
 	const AASPlayerController* PC = GetASController();
 	if (!PC || !IsValid(PC->GetPawn())) return nullptr;
+	if (UASInventoryComponent* Inventory = PC->GetInventoryComponent()) return Inventory;
 	if (UASInventoryComponent* Inventory = PC->GetPawn()->FindComponentByClass<UASInventoryComponent>()) return Inventory;
 	return PC->PlayerState ? PC->PlayerState->FindComponentByClass<UASInventoryComponent>() : nullptr;
 }
