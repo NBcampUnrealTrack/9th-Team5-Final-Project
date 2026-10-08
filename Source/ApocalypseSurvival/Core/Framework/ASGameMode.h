@@ -159,6 +159,9 @@ protected:
 	void OnNightTimeUp();
 	void EndGame(bool bVictory);
 	
+	// 맵에 살아 있는 몬스터 수 (낮에 남은 몬스터를 밤 웨이브에 포함하기 위해)
+	int32 CountAliveMonsters() const;
+	
 	// 사망과 리스폰
 	UASPlayerRecordComponent* GetOrCreateRecord(AController* Controller) const;
 	void RespawnPlayer(AController* Controller);

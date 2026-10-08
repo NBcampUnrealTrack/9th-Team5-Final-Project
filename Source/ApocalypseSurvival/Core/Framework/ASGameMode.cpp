@@ -10,6 +10,10 @@
 #include "NavigationSystem.h"
 #include "DrawDebugHelpers.h"
 #include "Components/CapsuleComponent.h"
+#include "Characters/Enemy/ASMonsterCharacter.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
 
 AASGameMode::AASGameMode()
 {
@@ -106,6 +110,22 @@ void AASGameMode::StartNight()
 	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnNightTimeUp, Duration, false);
+}
+
+int32 AASGameMode::CountAliveMonsters() const
+{
+	int32 Count = 0;
+	for (TActorIterator<AASMonsterCharacter> It(GetWorld()); It; ++It)
+	{
+		const AASMonsterCharacter* Monster = *It;
+		
+		// 죽었지만 제거 전(사망연출)인 몬스터 제외
+		if (IsValid(Monster) && !Monster->IsActorBeingDestroyed() && !Monster->IsDead())
+		{
+			++Count;
+		}
+	}
+	return Count;
 }
 
 void AASGameMode::OnNightTimeUp()
@@ -386,7 +406,18 @@ void AASGameMode::DebugKillBoss()
 
 void AASGameMode::DebugKillPlayer()
 {
-	OnPlayerDied(GetWorld()->GetFirstPlayerController());
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	APlayerState* PS = PC ? PC->GetPlayerState<APlayerState>() : nullptr;
+	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS);
+	if (!ASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Debug] 플레이어 ASC를 찾지 못해 사망 처리를 할 수 없음"));
+		return;
+	}
+	
+	// 체력을 0으로 만들어 실제 사망 과정(사망 태그 -> OnPlayerDied)를 그대로 탐
+	// 이미 죽어 있으면 캐릭터 쪽에서 무시
+	ASC->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), 0.f);
 }
 
 // 스폰 위치
