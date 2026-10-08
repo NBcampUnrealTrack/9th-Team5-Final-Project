@@ -64,6 +64,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Pawn")
 	FASLocalPawnChangedSignature OnLocalPawnChanged;
 
+	/**
+	 * 디버그. 장착 UI 가 생기기 전까지 콘솔로 장착을 시험한다.
+	 * 인벤토리의 첫 번째 무기를 장착한다. 클라이언트에서 쳐도 서버 RPC 로 전달된다.
+	 */
+	UFUNCTION(Exec)
+	void ASEquipWeapon();
+
+	UFUNCTION(Exec)
+	void ASUnequipWeapon();
+
 protected:
 	virtual void PostInitializeComponents() override;
 	virtual void SetupInputComponent() override;

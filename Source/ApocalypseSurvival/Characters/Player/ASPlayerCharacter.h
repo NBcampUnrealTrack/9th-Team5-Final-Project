@@ -6,6 +6,7 @@
 #include "ASPlayerCharacter.generated.h"
 
 class UASAbilitySet;
+class UASEquipmentComponent;
 struct FOnAttributeChangeData;
 
 /**
@@ -38,6 +39,9 @@ public:
 	/** 죽어 있는가. 모든 머신에서 같은 답을 준다. */
 	UFUNCTION(BlueprintPure, Category = "Death")
 	bool IsDead() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	UASEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -76,6 +80,13 @@ private:
 
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle DeadTagChangedHandle;
+
+	/**
+	 * 무기를 몸에 다는 컴포넌트. 인벤토리(컨트롤러)가 인터페이스로 이 컴포넌트를 찾아 장착을 맡긴다.
+	 * 액터 부착과 공격 어빌리티 부여는 캐릭터 수명을 따라야 해서 여기에 둔다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASEquipmentComponent> EquipmentComponent;
 
 	/**
 	 * 이 캐릭터가 처음부터 갖는 어빌리티(회피, 스킬). BP 자식에서 지정한다.

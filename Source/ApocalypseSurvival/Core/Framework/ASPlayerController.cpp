@@ -7,6 +7,8 @@
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
 #include "GAS/ASAbilitySystemComponent.h"
+#include "Items/ASItemInstance.h"
+#include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
@@ -125,6 +127,27 @@ void AASPlayerController::OnAbilityInputReleased(const FGameplayTag InputTag)
 	{
 		AbilitySystemComponent->AbilityInputTagReleased(InputTag);
 	}
+}
+
+void AASPlayerController::ASEquipWeapon()
+{
+	for (const UASItemInstance* Item : InventoryComponent->GetItemInstances())
+	{
+		const UASItemDefinition* Definition = IsValid(Item) ? Item->GetItemDefinition() : nullptr;
+		if (IsValid(Definition) && Definition->ItemType == EASItemType::Weapon)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Equip] %s 장착 요청"), *Definition->DisplayName.ToString());
+			ItemInteractionComponent->RequestEquipItem(Item->GetInstanceId());
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Equip] 인벤토리에 무기가 없다. 상자에서 먼저 주워야 한다."));
+}
+
+void AASPlayerController::ASUnequipWeapon()
+{
+	ItemInteractionComponent->RequestUnequipItem();
 }
 
 bool AASPlayerController::IsPawnDead() const

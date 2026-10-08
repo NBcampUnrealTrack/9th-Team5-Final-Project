@@ -9,6 +9,7 @@
 class UASAbilitySystemComponent;
 class UASCombatAttributeSet;
 class UASHealthAttributeSet;
+class UASItemInstance;
 class UASPlayerAttributeSet;
 
 /**
@@ -47,6 +48,14 @@ public:
 	 */
 	void ResetForRespawn();
 
+	/**
+	 * 서버 전용. 장착 컴포넌트가 "지금 든 무기"를 여기에 적어 둔다.
+	 * 장착 컴포넌트는 캐릭터와 함께 사라지므로, 리스폰한 캐릭터는 이 기록을 보고 다시 단다.
+	 * 아이템 인스턴스는 컨트롤러의 인벤토리가 소유해 캐릭터보다 오래 산다.
+	 */
+	void SetEquippedItemRecord(UASItemInstance* Item);
+	UASItemInstance* GetEquippedItemRecord() const;
+
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASAbilitySystemComponent> AbilitySystemComponent;
@@ -63,4 +72,7 @@ private:
 	/** 기본 세트가 부여한 어빌리티 핸들. 비어 있으면 아직 부여 전이다. */
 	UPROPERTY()
 	FASAbilitySet_GrantedHandles DefaultAbilityHandles;
+
+	/** 약참조다. 인벤토리에서 버려진 아이템을 붙들어 두면 안 된다. */
+	TWeakObjectPtr<UASItemInstance> EquippedItemRecord;
 };
