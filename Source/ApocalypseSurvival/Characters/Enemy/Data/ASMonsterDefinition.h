@@ -9,6 +9,35 @@ class UGameplayAbility;
 class UGameplayEffect;
 class UStateTree;
 
+/** 몬스터가 상황에 따라 선택해서 실행하는 공격 패턴 하나. */
+USTRUCT(BlueprintType)
+struct FASMonsterAttackPattern
+{
+	GENERATED_BODY()
+
+	/** 패턴 식별자. 쿨다운 추적과 디버그 로그에 사용한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (Categories = "Ability.Monster.Attack"))
+	FGameplayTag PatternId;
+
+	/** 이 패턴이 선택됐을 때 서버가 부여·활성화할 Ability. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern")
+	TSubclassOf<UGameplayAbility> AbilityClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "cm"))
+	float MinRange = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "cm"))
+	float MaxRange = 200.0f;
+
+	/** 사용 가능한 패턴끼리 선택할 때의 상대 확률. 0이면 선택 후보에서 제외된다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0"))
+	float SelectionWeight = 1.0f;
+
+	/** 동일 패턴을 다시 선택할 수 있기까지의 시간. Ability 활성화 성공 시점부터 잰다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "s"))
+	float Cooldown = 1.0f;
+};
+
 /** 일반 몬스터 원형의 초기 전투 수치. */
 USTRUCT(BlueprintType)
 struct FASMonsterInitialAttributes
@@ -61,6 +90,13 @@ public:
 	/** 서버에서 이 몬스터 ASC에 한 번 부여할 기본 Ability 목록. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<UGameplayAbility>> GrantedAbilities;
+
+	/**
+	 * 엘리트·보스가 상황에 따라 선택하는 공격 목록. 비어 있으면 기존 AttackAbilityTag 단일 공격을 쓴다.
+	 * 여기의 AbilityClass는 GrantedAbilities에 중복해서 넣지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (TitleProperty = "PatternId"))
+	TArray<FASMonsterAttackPattern> AttackPatterns;
 
 	/** 피해를 입고 살아남았을 때 자신에게 적용할 짧은 경직 GameplayEffect. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reaction")
