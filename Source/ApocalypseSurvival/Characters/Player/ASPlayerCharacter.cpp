@@ -6,6 +6,7 @@
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameplayEffectExtension.h"
 #include "GAS/ASAbilitySet.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
@@ -160,9 +161,32 @@ void AASPlayerCharacter::UnbindDeathDelegates()
 
 void AASPlayerCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
-	if (Data.NewValue <= 0.0f)
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (Data.NewValue > 0.0f || !HasAuthority() || !IsValid(ASC) || IsDead())
 	{
+		return;
+	}
+
+	// 누가 죽였는지를 이벤트에 싣는다. 효과로 깎인 경우에만 알 수 있고, 디버그 명령처럼 직접 바꾼 경우는 비어 있다.
+	FGameplayEventData Payload;
+	Payload.EventTag = ASGameplayTags::GameplayEvent_Death;
+	Payload.Target = this;
+	if (Data.GEModData != nullptr)
+	{
+		Payload.ContextHandle = Data.GEModData->EffectSpec.GetEffectContext();
+		Payload.Instigator = Payload.ContextHandle.GetOriginalInstigator();
+		Payload.OptionalObject = Data.GEModData->EffectSpec.Def;
+	}
+
+	// 사망 어빌리티가 이 이벤트로 켜진다. 돌려주는 값은 켜진 어빌리티 수다.
+	const int32 ActivatedCount = ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
+	if (ActivatedCount == 0)
+	{
+		// 어빌리티 세트에 사망 어빌리티가 없다. 연출 없이 바로 죽인다. 리스폰이 막히는 것보다 낫다.
+		UE_LOG(LogTemp, Warning, TEXT("[Player] %s 사망 어빌리티가 없어 연출 없이 사망 처리한다. DA_AbilitySet_Player 에 GA_Death 를 넣어야 한다."), *GetName());
+		ASC->CancelAllAbilities();
 		StartDeath();
+		FinishDeath();
 	}
 }
 
@@ -189,12 +213,18 @@ void AASPlayerCharacter::StartDeath()
 		return;
 	}
 
-	// 회피나 스킬 도중에 죽으면 그 어빌리티를 끊는다. 서버가 끊으면 클라이언트에도 전달된다.
-	ASC->CancelAllAbilities();
-
 	// 모든 머신에 복제되는 태그다. Minimal 방식은 Mixed 모드에서 본인 클라이언트가 받지 못해 쓰지 않는다.
-	// 이 줄에서 서버의 HandleDeadTagChanged 가 바로 불린다.
+	// 이 줄에서 서버의 HandleDeadTagChanged 가 바로 불린다. 다른 어빌리티 취소는 사망 어빌리티가 맡는다.
 	ASC->AddLooseGameplayTag(ASGameplayTags::State_Dead, 1, EGameplayTagReplicationState::TagAndCountToAll);
+}
+
+void AASPlayerCharacter::FinishDeath()
+{
+	if (!HasAuthority() || !IsDead() || bDeathFinished)
+	{
+		return;
+	}
+	bDeathFinished = true;
 
 	// 데스카운트와 리스폰은 게임모드 규칙이다. 테스트 게임모드처럼 다른 클래스면 리스폰은 없다.
 	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())

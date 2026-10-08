@@ -16,4 +16,10 @@ namespace ASGameplayTags
 	 * 모든 머신에 복제되므로 입력 차단과 사망 연출은 이 태그만 보고 각자 처리한다.
 	 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
+
+	/** 체력이 0 이 되었을 때 ASC 에 보내는 이벤트. 사망 어빌리티가 이 태그로 켜진다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Death);
+
+	/** 이 태그가 붙은 어빌리티는 죽어도 취소되지 않는다. 사망 어빌리티 자신이 대표적이다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
 }
