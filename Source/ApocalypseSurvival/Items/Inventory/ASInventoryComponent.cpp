@@ -4,19 +4,22 @@
 #include "Items/ASItemInstance.h"
 #include "UObject/UObjectGlobals.h"
 #include "AbilitySystemComponent.h"
-#include "AbilitySystemGlobals.h"
-#include "Abilities/GameplayAbility.h"
-#include "Components/SkeletalMeshComponent.h"
 #include "Engine/ActorChannel.h"
-#include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Controller.h"
 #include "GameFramework/PlayerState.h"
-#include "Items/GAS/ASItemUseAbility.h"
+#include "Items/GAS/ASItemAbilityLibrary.h"
+#include "Items/Use/ASItemUseComponent.h"
+#include "Items/Equipment/ASItemEquipmentInterface.h"
+
+#include "GAS/ASAbilityTags.h"
+
 #include "Net/UnrealNetwork.h"
 
 UASInventoryComponent::UASInventoryComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+
 	SetIsReplicatedByDefault(true);
 	bReplicateUsingRegisteredSubObjectList = true;
 }
@@ -302,8 +305,6 @@ void UASInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UASInventoryComponent, Items);
-	DOREPLIFETIME(UASInventoryComponent, EquippedItem);
-	DOREPLIFETIME(UASInventoryComponent, EquippedActor);
 }
 
 bool UASInventoryComponent::ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags)
@@ -342,10 +343,6 @@ void UASInventoryComponent::SyncReplicatedItems()
 
 void UASInventoryComponent::NotifyInventoryChanged()
 {
-	if (IsValid(EquippedItem) && (!Items.Contains(EquippedItem) || !EquippedItem->IsValidItemInstance()))
-	{
-		ClearEquipment();
-	}
 	SyncReplicatedItems();
 	GetOwner()->FlushNetDormancy();
 	GetOwner()->ForceNetUpdate();
@@ -366,110 +363,133 @@ UASItemInstance* UASInventoryComponent::FindItemById(const FGuid InstanceId) con
 	return nullptr;
 }
 
-UAbilitySystemComponent* UASInventoryComponent::ResolveAbilitySystem(APawn* Avatar) const
-{
-	if (!IsValid(Avatar) || (GetOwner() != Avatar && GetOwner() != Avatar->GetPlayerState() && GetOwner() != Avatar->GetController())) return nullptr;
-	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Avatar, true);
-	return IsValid(ASC) && ASC->GetAvatarActor() == Avatar ? ASC : nullptr;
-}
-
 bool UASInventoryComponent::UseItem(const FGuid InstanceId, APawn* Avatar)
 {
 	if (!HasInventoryAuthority()) return false;
-	UASItemInstance* Item = FindItemById(InstanceId);
-	UAbilitySystemComponent* ASC = ResolveAbilitySystem(Avatar);
-	if (!IsValid(Item) || !ASC || Item->GetItemDefinition()->ItemType != EASItemType::Consumable) return false;
-	UClass* AbilityClass = Item->GetItemDefinition()->UseAbility.IsNull()
-		? UASItemUseAbility::StaticClass() : Item->GetItemDefinition()->UseAbility.LoadSynchronous();
-	// The item-use base class charges one unit on GAS CommitAbility, never merely on activation.
-	if (!AbilityClass || !AbilityClass->IsChildOf(UASItemUseAbility::StaticClass())) return false;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	if (!IsValid(ItemUseComponent))
 	{
-		if (Spec.SourceObject.Get() == Item && Spec.IsActive()) return false;
+		ItemUseComponent = GetOwner()->FindComponentByClass<UASItemUseComponent>();
+		if (!ItemUseComponent)
+		{
+			ItemUseComponent = NewObject<UASItemUseComponent>(GetOwner());
+			ItemUseComponent->RegisterComponent();
+		}
 	}
-	const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1, INDEX_NONE, Item));
-	const bool bActivated = ASC->TryActivateAbility(Handle);
-	if (bActivated) ASC->SetRemoveAbilityOnEnd(Handle);
-	else ASC->ClearAbility(Handle);
-	return bActivated;
+	return ItemUseComponent->UseItem(this, InstanceId, Avatar);
+}
+
+bool UASInventoryComponent::TryConsumeItem(UASItemDefinition* Definition, const int32 Quantity)
+{
+	if (!HasInventoryAuthority() || Quantity <= 0 || !HasItem(Definition, Quantity)) return false;
+	return RemoveItem(Definition, Quantity) == Quantity;
+}
+
+bool UASInventoryComponent::TryConsumeItemInstance(UASItemInstance* Item, const int32 Quantity)
+{
+	if (!HasInventoryAuthority() || !IsValid(Item) || Quantity <= 0
+		|| !Items.Contains(Item) || !Item->IsValidItemInstance() || Item->GetQuantity() < Quantity) return false;
+	return RemoveItemInstance(Item, Quantity) == Quantity;
+}
+
+bool UASInventoryComponent::CanCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar) const
+{
+	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
+	if (!HasInventoryAuthority() || bCommittingWeaponAttack || !ASC
+		|| ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+		|| !IsValid(Weapon) || !Weapon->IsValidItemInstance() || !Items.Contains(Weapon)
+		|| Avatar != GetInventoryAvatar() || GetEquippedItem() != Weapon
+		|| !GetWorld() || GetWorld()->GetTimeSeconds() < NextWeaponAttackTime) return false;
+	const UASItemDefinition* Definition = Weapon->GetItemDefinition();
+	if (Definition->ItemType != EASItemType::Weapon) return false;
+	if (!Definition->bUsesAmmo) return true;
+	return Definition->WeaponType == EASWeaponType::Ranged
+		&& IsValid(Definition->AmmoDefinition) && Definition->AmmoDefinition->ItemType == EASItemType::Ammo
+		&& Definition->AmmoPerShot > 0 && HasItem(Definition->AmmoDefinition, Definition->AmmoPerShot);
+}
+
+bool UASInventoryComponent::TryCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar)
+{
+	if (!CanCommitWeaponAttack(Weapon, Avatar)) return false;
+	TGuardValue<bool> Guard(bCommittingWeaponAttack, true);
+	const UASItemDefinition* Definition = Weapon->GetItemDefinition();
+	const double PreviousTime = NextWeaponAttackTime;
+	// Establish the interval before inventory callbacks can request another attack.
+	NextWeaponAttackTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.01f, Definition->AttackInterval);
+	if (Definition->bUsesAmmo && !TryConsumeItem(Definition->AmmoDefinition, Definition->AmmoPerShot))
+	{
+		NextWeaponAttackTime = PreviousTime;
+		return false;
+	}
+	return true;
 }
 
 bool UASInventoryComponent::EquipItem(const FGuid InstanceId, APawn* Avatar)
 {
 	if (!HasInventoryAuthority()) return false;
 	UASItemInstance* Item = FindItemById(InstanceId);
-	UAbilitySystemComponent* ASC = ResolveAbilitySystem(Avatar);
-	if (!IsValid(Item) || !ASC || Item->GetItemDefinition()->ItemType != EASItemType::Weapon) return false;
-	if (EquippedItem == Item && EquippedAbilitySystem == ASC) return true;
-
-	UASItemDefinition* Definition = Item->GetItemDefinition();
-	TArray<UClass*> AbilityClasses;
-	for (const TSoftClassPtr<UGameplayAbility>& SoftClass : Definition->GrantedAbilities)
-	{
-		UClass* AbilityClass = SoftClass.LoadSynchronous();
-		if (!AbilityClass) return false;
-		AbilityClasses.Add(AbilityClass);
-	}
-	UClass* ActorClass = Definition->EquippedActorClass.IsNull() ? nullptr : Definition->EquippedActorClass.LoadSynchronous();
-	if (!Definition->EquippedActorClass.IsNull() && !ActorClass) return false;
-	AActor* NewActor = nullptr;
-	if (ActorClass)
-	{
-		FActorSpawnParameters Params;
-		Params.Owner = Avatar;
-		Params.Instigator = Avatar;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		NewActor = GetWorld()->SpawnActor<AActor>(ActorClass, Avatar->GetActorTransform(), Params);
-		if (!NewActor) return false;
-		NewActor->SetReplicates(true);
-		USceneComponent* AttachComponent = Avatar->GetRootComponent();
-		if (ACharacter* Character = Cast<ACharacter>(Avatar)) AttachComponent = Character->GetMesh();
-		if (!AttachComponent || !NewActor->AttachToComponent(AttachComponent,
-			FAttachmentTransformRules::SnapToTargetNotIncludingScale, Definition->EquippedSocketName))
-		{
-			NewActor->Destroy();
-			return false;
-		}
-	}
-	ClearEquipment();
-	EquippedItem = Item;
-	EquippedActor = NewActor;
-	EquippedAbilitySystem = ASC;
-	for (UClass* AbilityClass : AbilityClasses)
-	{
-		EquippedAbilityHandles.Add(ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1, INDEX_NONE, Item)));
-	}
-	NotifyInventoryChanged();
-	return true;
+	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
+	if (!Item || !ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+		|| Item->GetItemDefinition()->ItemType != EASItemType::Weapon) return false;
+	if (Avatar != GetInventoryAvatar()) return false;
+	UActorComponent* Provider = GetEquipmentProvider();
+	return Provider && IASItemEquipmentInterface::Execute_EquipInventoryItem(Provider, this, Item, Avatar);
 }
 
 void UASInventoryComponent::UnequipItem()
 {
 	if (!HasInventoryAuthority()) return;
-	ClearEquipment();
-	NotifyInventoryChanged();
+	APawn* Avatar = GetInventoryAvatar();
+	if (UActorComponent* Provider = GetEquipmentProvider())
+	{
+		IASItemEquipmentInterface::Execute_UnequipInventoryItem(Provider, this, Avatar);
+	}
 }
 
-void UASInventoryComponent::ClearEquipment()
+UASItemInstance* UASInventoryComponent::GetEquippedItem() const
 {
-	if (UAbilitySystemComponent* ASC = EquippedAbilitySystem.Get())
+	UActorComponent* Provider = GetEquipmentProvider();
+	UASItemInstance* Item = Provider ? IASItemEquipmentInterface::Execute_GetEquippedInventoryItem(Provider, this) : nullptr;
+	return IsValid(Item) && Item->IsValidItemInstance() && Items.Contains(Item)
+		&& Item->GetItemDefinition()->ItemType == EASItemType::Weapon ? Item : nullptr;
+}
+
+AActor* UASInventoryComponent::GetEquippedActor() const
+{
+	if (!GetEquippedItem()) return nullptr;
+	UActorComponent* Provider = GetEquipmentProvider();
+	AActor* Actor = Provider ? IASItemEquipmentInterface::Execute_GetEquippedInventoryActor(Provider, this) : nullptr;
+	return IsValid(Actor) ? Actor : nullptr;
+}
+
+APawn* UASInventoryComponent::GetInventoryAvatar() const
+{
+	if (APawn* Pawn = Cast<APawn>(GetOwner())) return Pawn;
+	if (AController* Controller = Cast<AController>(GetOwner())) return Controller->GetPawn();
+	if (APlayerState* State = Cast<APlayerState>(GetOwner())) return State->GetPawn();
+	return nullptr;
+}
+
+UActorComponent* UASInventoryComponent::GetEquipmentProvider() const
+{
+	// Prototype contract: the equipment component lives on the current player pawn.
+	APawn* Avatar = GetInventoryAvatar();
+	if (!IsValid(Avatar)) return nullptr;
+	TArray<UActorComponent*> Components;
+	Avatar->GetComponents(Components);
+	UActorComponent* Result = nullptr;
+	for (UActorComponent* Component : Components)
 	{
-		for (const FGameplayAbilitySpecHandle Handle : EquippedAbilityHandles)
-		{
-			ASC->CancelAbilityHandle(Handle);
-			ASC->ClearAbility(Handle);
-		}
+		if (!IsValid(Component) || !Component->IsRegistered()
+			|| !Component->Implements<UASItemEquipmentInterface>()) continue;
+		if (Result) return nullptr;
+		Result = Component;
 	}
-	EquippedAbilityHandles.Reset();
-	EquippedAbilitySystem.Reset();
-	if (IsValid(EquippedActor)) EquippedActor->Destroy();
-	EquippedActor = nullptr;
-	EquippedItem = nullptr;
+	return Result;
 }
 
 void UASInventoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (HasInventoryAuthority()) ClearEquipment();
+	// Equipment owns teardown of its actors and GAS grants.
 	for (UASItemInstance* Item : RegisteredItems) RemoveReplicatedSubObject(Item);
 	RegisteredItems.Reset();
 	Super::EndPlay(EndPlayReason);
