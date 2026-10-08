@@ -177,6 +177,7 @@ void UASFogDisplayComponent::UpdateLocalMask()
 
 	const FASVisionSettings& Settings = VisionDefinition->Settings;
 	const bool bWallOcclusion = Manager->IsWallOcclusionEnabled();
+	const float NightAlpha = Manager->GetNightAlpha();
 	const int32 LocalTeam = UASVisionFunctionLibrary::GetLocalTeamId(this);
 	const FVector2D WorldSize = VisionDefinition->GetFogWorldSize();
 
@@ -191,7 +192,7 @@ void UASFogDisplayComponent::UpdateLocalMask()
 
 		const AActor* SourceActor = Source->GetOwner();
 		const FVector Origin = Evaluator->GetTraceLocation(SourceActor);
-		const float Radius = Source->GetVisionRadius(Settings.DefaultVisionRadius);
+		const float Radius = Source->GetVisionRadius(Settings, NightAlpha);
 		const FVector2D CenterGrid = WorldToGrid(Origin);
 
 		if (!bWallOcclusion)

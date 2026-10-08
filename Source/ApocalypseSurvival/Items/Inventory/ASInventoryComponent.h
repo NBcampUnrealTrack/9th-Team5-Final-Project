@@ -8,6 +8,7 @@ class UASItemDefinition;
 class UASItemInstance;
 class APawn;
 class UASItemUseComponent;
+class AASDroppedItem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASInventoryChangedSignature);
 
@@ -40,6 +41,10 @@ public:
 	/** Swap positions only. Reject requests whose displayed items have since changed. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool SwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFromItem, FGuid ExpectedToItem);
+
+	/** Drop the entire current stack near the owning player's avatar. Returns null when refused. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	AASDroppedItem* DropSlot(int32 SlotIndex, FGuid ExpectedItem, APawn* Avatar);
 
 	/** Authority-only gameplay operations. Clients request these through ASPlayerController. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")

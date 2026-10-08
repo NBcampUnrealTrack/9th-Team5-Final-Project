@@ -1,5 +1,6 @@
 ﻿#include "MapSystem/Vision/ASVisionSetupComponent.h"
 
+#include "Core/Framework/ASGameState.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
@@ -44,6 +45,58 @@ void UASVisionSetupComponent::BeginPlay()
 	}
 
 	FogOfWarManager = FogManager;
+	if (FogManager)
+	{
+		GameState = World->GetGameState<AASGameState>();
+		if (AASGameState* GS = GameState.Get())
+		{
+			GS->OnPhaseChanged.AddDynamic(this, &UASVisionSetupComponent::HandlePhaseChanged);
+			// 시작 단계가 밤이면 낮에서 전환하지 않고 바로 밤 반경을 적용한다.
+			ApplyPhase(GS->GetCurrentPhase(), true);
+		}
+	}
+}
+
+void UASVisionSetupComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (AASGameState* GS = GameState.Get())
+	{
+		GS->OnPhaseChanged.RemoveDynamic(this, &UASVisionSetupComponent::HandlePhaseChanged);
+	}
+	GameState.Reset();
+	FogOfWarManager.Reset();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void UASVisionSetupComponent::HandlePhaseChanged(EGamePhase NewPhase)
+{
+	ApplyPhase(NewPhase, false);
+}
+
+void UASVisionSetupComponent::ApplyPhase(EGamePhase NewPhase, bool bImmediate)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	if (AASFogOfWarManager* Manager = FogOfWarManager.Get())
+	{
+		switch (NewPhase)
+		{
+		case EGamePhase::Night:
+			Manager->SetNight(true, bImmediate);
+			break;
+		case EGamePhase::Day:
+		case EGamePhase::Ready:
+			Manager->SetNight(false, bImmediate);
+			break;
+		case EGamePhase::Victory:
+		case EGamePhase::Defeat:
+			break;
+		}
+	}
 }
 
 AASFogOfWarManager* UASVisionSetupComponent::GetFogOfWarManager() const

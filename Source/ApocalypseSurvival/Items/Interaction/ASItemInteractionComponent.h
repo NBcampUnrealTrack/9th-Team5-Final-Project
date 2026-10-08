@@ -5,6 +5,7 @@
 #include "ASItemInteractionComponent.generated.h"
 
 class AASLootChest;
+class AASDroppedItem;
 class AASPlayerController;
 class UASInventoryComponent;
 class UASLootWidget;
@@ -20,6 +21,8 @@ class APOCALYPSESURVIVAL_API UASItemInteractionComponent : public UActorComponen
 public:
 	UASItemInteractionComponent();
 	bool TryInteractWith(AActor* Target);
+	bool RequestPickupDroppedItem(AASDroppedItem* Item);
+	void HandleWorldRightClick();
 	void CancelPendingInteraction();
 	bool HasPendingInteraction() const { return PendingTarget.IsValid(); }
 	bool IsLootOpen() const;
@@ -45,6 +48,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
 	void RequestSwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFrom, FGuid ExpectedTo);
 
+	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
+	void RequestDropSlot(int32 SlotIndex, FGuid ExpectedItem);
+
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void CloseLoot();
 
@@ -63,6 +69,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerSwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFrom, FGuid ExpectedTo);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropSlot(int32 SlotIndex, FGuid ExpectedItem);
 
 	UFUNCTION(Server, Reliable)
 	void ServerInteract(AActor* Target);

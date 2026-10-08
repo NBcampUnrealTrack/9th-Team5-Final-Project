@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "MapSystem/Vision/ASVisionTypes.h"
 #include "ASFogOfWarManager.generated.h"
 
 class UASVisionDefinition;
@@ -55,6 +56,14 @@ public:
 	/** 서버 공유 옵션. 탐색 영역은 유지하고 다음 시야 평가부터 적용한다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
 	void SetWallOcclusionEnabled(bool bEnabled);
+
+	/** 서버 전용. 현재 밤 비율에서 새 목표까지 전환하며 즉시 적용할 수도 있다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
+	void SetNight(bool bNight, bool bImmediate = false);
+
+	/** 복제된 서버 시간으로 평가한 현재 밤 비율 (0: 낮, 1: 밤). */
+	UFUNCTION(BlueprintPure, Category = "AS|Vision")
+	float GetNightAlpha() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "AS|Vision")
 	FASOnWallOcclusionChangedSignature OnWallOcclusionChanged;
@@ -115,6 +124,10 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_WallOcclusionEnabled)
 	bool bWallOcclusionEnabled = true;
+
+	/** 늦게 참여한 클라이언트도 서버 시간으로 현재 전환 위치를 계산한다. */
+	UPROPERTY(Replicated)
+	FASVisionNightBlend NightBlend;
 
 	UPROPERTY(ReplicatedUsing = OnRep_ExploredResetCount)
 	int32 ExploredResetCount = 0;

@@ -3,13 +3,14 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "MapSystem/Vision/ASVisionTypes.h"
 #include "ASVisionSourceComponent.generated.h"
 
 /**
  * 팀에 시야를 제공한다. 플레이어 캐릭터에 추가하고 추후 시야 장치에도 추가한다.
  * 서버가 대상 가시성을 판정하고 모든 머신이 같은 소스로 팀 안개를 그리므로
  * 런타임 활성 상태 (bVisionActive)를 복제한다.
- * 팀과 반경은 에디터 기본값이며 런타임에 변경하지 않는다.
+ * 팀과 기본 반경은 에디터 기본값이며, 실제 반경은 낮과 밤에 따라 부드럽게 전환한다.
  */
 UCLASS(ClassGroup = (AS), meta = (BlueprintSpawnableComponent))
 class APOCALYPSESURVIVAL_API UASVisionSourceComponent : public UActorComponent
@@ -22,9 +23,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	int32 GetTeamId() const { return TeamId; }
 
-	/** cm 단위 반경. 0 이하이면 시야 정의의 기본값을 사용한다. */
+	/** cm 단위 실제 반경. 낮/밤 기본 반경이 각각 0 이하이면 시야 정의의 값을 사용한다. */
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
-	float GetVisionRadius(float DefaultRadius) const { return VisionRadius > 0.0f ? VisionRadius : DefaultRadius; }
+	float GetVisionRadius(const FASVisionSettings& Settings, float NightAlpha) const;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -44,8 +45,13 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "7"))
 	int32 TeamId = 0;
 
+	/** 자체 낮 반경. 0 이하이면 시야 정의의 낮 반경을 사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", Units = "cm"))
-	float VisionRadius = 0.0f;
+	float DayVisionRadius = 0.0f;
+
+	/** 자체 밤 반경. 0 이하이면 시야 정의의 밤 반경을 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", Units = "cm"))
+	float NightVisionRadius = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "Vision", meta = (AllowPrivateAccess = "true"))
 	bool bVisionActive = true;

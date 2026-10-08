@@ -19,8 +19,12 @@ class APOCALYPSESURVIVAL_API UASInventorySlotDragDrop : public UDragDropOperatio
 public:
 	UPROPERTY()
 	TObjectPtr<UASInventoryComponent> Inventory;
+	UPROPERTY()
+	TObjectPtr<UASInventoryBarWidget> SourceBar;
 	int32 FromSlot = INDEX_NONE;
 	FGuid ItemId;
+	virtual void Drop_Implementation(const FPointerEvent& PointerEvent) override;
+	virtual void DragCancelled_Implementation(const FPointerEvent& PointerEvent) override;
 };
 
 UCLASS(Blueprintable)
