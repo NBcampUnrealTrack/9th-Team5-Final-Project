@@ -1,6 +1,7 @@
 #include "Characters/Enemy/Components/ASMonsterCombatComponent.h"
 
 #include "AbilitySystemInterface.h"
+#include "Characters/Enemy/Data/ASMonsterDefinition.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/Character.h"
@@ -26,6 +27,25 @@ void UASMonsterCombatComponent::Configure(float InAttackRange, FGameplayTag InAt
 	AttackAbilityTag = InAttackAbilityTag;
 }
 
+void UASMonsterCombatComponent::ConfigurePatterns(const TArray<FASMonsterAttackPattern>& InPatterns,
+	const TArray<FGameplayAbilitySpecHandle>& InAbilityHandles)
+{
+	AttackPatterns = InPatterns;
+	PatternRuntime.Reset();
+	PatternRuntime.Reserve(AttackPatterns.Num());
+	NextAttackAllowedTime = 0.0;
+	bWaitingForPatternAttackEnd = false;
+
+	for (int32 PatternIndex = 0; PatternIndex < AttackPatterns.Num(); ++PatternIndex)
+	{
+		FPatternRuntime& Runtime = PatternRuntime.AddDefaulted_GetRef();
+		if (InAbilityHandles.IsValidIndex(PatternIndex))
+		{
+			Runtime.AbilityHandle = InAbilityHandles[PatternIndex];
+		}
+	}
+}
+
 bool UASMonsterCombatComponent::IsTargetInAttackRange(const AActor* Target) const
 {
 	const AActor* Owner = GetOwner();
@@ -39,9 +59,55 @@ bool UASMonsterCombatComponent::IsTargetInAttackRange(const AActor* Target) cons
 	return SurfaceDistance <= AttackRange;
 }
 
+bool UASMonsterCombatComponent::CanRequestAttack(const AActor* Target) const
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Target))
+	{
+		return false;
+	}
+
+	if (!UsesAttackPatterns())
+	{
+		return IsTargetInAttackRange(Target);
+	}
+
+	// 선딜·돌진·타격 등 현재 패턴 Ability가 끝나기 전에는 어떤 다른 패턴도 요청할 수 없다.
+	// 이 가드가 없으면 StateTree가 공격 상태를 다시 평가하는 프레임에 기본 공격과 범위 공격이 겹칠 수 있다.
+	if (bWaitingForPatternAttackEnd)
+	{
+		return false;
+	}
+
+	const double CurrentTime = GetWorldTimeSeconds();
+	if (CurrentTime < NextAttackAllowedTime)
+	{
+		return false;
+	}
+
+	for (int32 PatternIndex = 0; PatternIndex < AttackPatterns.Num(); ++PatternIndex)
+	{
+		if (IsPatternReady(PatternIndex, CurrentTime) && IsPatternInRange(AttackPatterns[PatternIndex], Target))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool UASMonsterCombatComponent::TryRequestAttack(AActor* Target)
 {
-	if (!GetOwner() || !GetOwner()->HasAuthority() || !AttackAbilityTag.IsValid() || !IsTargetInAttackRange(Target))
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Target))
+	{
+		return false;
+	}
+
+	if (UsesAttackPatterns())
+	{
+		return TryRequestPatternAttack(Target);
+	}
+
+	if (!AttackAbilityTag.IsValid() || !IsTargetInAttackRange(Target))
 	{
 		return false;
 	}
@@ -57,6 +123,121 @@ bool UASMonsterCombatComponent::TryRequestAttack(AActor* Target)
 	FGameplayTagContainer AbilityTags;
 	AbilityTags.AddTag(AttackAbilityTag);
 	return AbilitySystemComponent->TryActivateAbilitiesByTag(AbilityTags, false);
+}
+
+bool UASMonsterCombatComponent::IsPatternAttackActive() const
+{
+	if (!bWaitingForPatternAttackEnd)
+	{
+		return false;
+	}
+
+	const UASAbilitySystemComponent* AbilitySystemComponent = GetOwnerAbilitySystemComponent();
+	return IsValid(AbilitySystemComponent)
+		&& AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Attacking);
+}
+
+void UASMonsterCombatComponent::NotifyPatternAttackFinished()
+{
+	if (!bWaitingForPatternAttackEnd)
+	{
+		return;
+	}
+
+	bWaitingForPatternAttackEnd = false;
+	NextAttackAllowedTime = GetWorldTimeSeconds() + FMath::Max(0.0f, PostAttackRecovery);
+}
+
+bool UASMonsterCombatComponent::IsPatternInRange(const FASMonsterAttackPattern& Pattern, const AActor* Target) const
+{
+	const AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !IsValid(Target))
+	{
+		return false;
+	}
+
+	const float SurfaceDistance = FVector::Dist2D(Owner->GetActorLocation(), Target->GetActorLocation())
+		- GetCapsuleRadius(Owner) - GetCapsuleRadius(Target);
+	const float MinRange = FMath::Max(0.0f, Pattern.MinRange);
+	const float MaxRange = FMath::Max(MinRange, Pattern.MaxRange);
+	return SurfaceDistance >= MinRange && SurfaceDistance <= MaxRange;
+}
+
+bool UASMonsterCombatComponent::IsPatternReady(int32 PatternIndex, double CurrentTime) const
+{
+	if (!AttackPatterns.IsValidIndex(PatternIndex) || !PatternRuntime.IsValidIndex(PatternIndex))
+	{
+		return false;
+	}
+
+	const FASMonsterAttackPattern& Pattern = AttackPatterns[PatternIndex];
+	const FPatternRuntime& Runtime = PatternRuntime[PatternIndex];
+	return Pattern.SelectionWeight > 0.0f && Runtime.AbilityHandle.IsValid() && CurrentTime >= Runtime.CooldownEndTime;
+}
+
+bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)
+{
+	if (!CanRequestAttack(Target))
+	{
+		return false;
+	}
+
+	UASAbilitySystemComponent* AbilitySystemComponent = GetOwnerAbilitySystemComponent();
+	if (!IsValid(AbilitySystemComponent)
+		|| AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead)
+		|| AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_HitReact))
+	{
+		return false;
+	}
+
+	const double CurrentTime = GetWorldTimeSeconds();
+	TArray<int32> CandidateIndices;
+	float TotalWeight = 0.0f;
+	for (int32 PatternIndex = 0; PatternIndex < AttackPatterns.Num(); ++PatternIndex)
+	{
+		if (IsPatternReady(PatternIndex, CurrentTime) && IsPatternInRange(AttackPatterns[PatternIndex], Target))
+		{
+			CandidateIndices.Add(PatternIndex);
+			TotalWeight += AttackPatterns[PatternIndex].SelectionWeight;
+		}
+	}
+
+	while (!CandidateIndices.IsEmpty() && TotalWeight > 0.0f)
+	{
+		float Roll = FMath::FRandRange(0.0f, TotalWeight);
+		int32 SelectedCandidateArrayIndex = CandidateIndices.Num() - 1;
+		for (int32 CandidateArrayIndex = 0; CandidateArrayIndex < CandidateIndices.Num(); ++CandidateArrayIndex)
+		{
+			const float Weight = AttackPatterns[CandidateIndices[CandidateArrayIndex]].SelectionWeight;
+			if (Roll <= Weight)
+			{
+				SelectedCandidateArrayIndex = CandidateArrayIndex;
+				break;
+			}
+			Roll -= Weight;
+		}
+
+		const int32 PatternIndex = CandidateIndices[SelectedCandidateArrayIndex];
+		const FASMonsterAttackPattern& Pattern = AttackPatterns[PatternIndex];
+		const FPatternRuntime& Runtime = PatternRuntime[PatternIndex];
+		if (AbilitySystemComponent->TryActivateAbility(Runtime.AbilityHandle))
+		{
+			PatternRuntime[PatternIndex].CooldownEndTime = CurrentTime + FMath::Max(0.0f, Pattern.Cooldown);
+			bWaitingForPatternAttackEnd = true;
+			return true;
+		}
+
+		TotalWeight -= Pattern.SelectionWeight;
+		CandidateIndices.RemoveAtSwap(SelectedCandidateArrayIndex);
+	}
+
+	return false;
+}
+
+double UASMonsterCombatComponent::GetWorldTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	return World ? World->GetTimeSeconds() : 0.0;
 }
 
 UASAbilitySystemComponent* UASMonsterCombatComponent::GetOwnerAbilitySystemComponent() const

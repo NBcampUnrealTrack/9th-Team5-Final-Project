@@ -61,6 +61,10 @@ struct FASMonsterRequestAttackInstanceData
 	/** 몬스터 컨텍스트 Global Task 의 TargetingComponent 를 바인딩한다. 타깃은 여기서 직접 읽는다. */
 	UPROPERTY(EditAnywhere, Category = "Input")
 	TObjectPtr<UASMonsterTargetingComponent> TargetingComponent;
+
+	/** 패턴 공격을 정상 요청한 뒤 Ability 종료를 기다리는 중인지. */
+	UPROPERTY(Transient)
+	bool bWaitingForPatternAttack = false;
 };
 
 /**
@@ -72,10 +76,8 @@ struct FASMonsterRequestAttackInstanceData
  *
  * 피해, 쿨다운, GameplayEffect 는 다루지 않는다. 그건 공격 Ability 와 그 Cooldown Effect 의 일이다.
  *
- * 아직 Ability 가 끝날 때까지 기다리지 않는다. 몬스터 공격 Ability 규약이 없기 때문이다.
- * 이후 단계에서 State.Monster.Attacking 태그와 Ability 종료 대기를 추가해, 공격 동작 중에
- * 다시 요청하거나 상태가 바뀌지 않게 할 예정이다. 그 전에는 성공 직후 Ability 가 아직 실행 중일 수
- * 있고, 그동안 재요청은 GAS 가 거절한다.
+ * 패턴 몬스터는 State.Monster.Attacking 태그가 사라질 때까지 Running 상태로 기다린 뒤, CombatComponent에
+ * 공격 종료를 알린다. 이 시점부터 공용 후딜이 시작된다. 기존 단일 공격 몬스터는 이전처럼 요청 성공 직후 끝낸다.
  */
 USTRUCT(meta = (DisplayName = "AS Monster Request Attack", Category = "AS|Monster"))
 struct APOCALYPSESURVIVAL_API FASMonsterRequestAttackTask : public FStateTreeTaskCommonBase
@@ -86,11 +88,12 @@ struct APOCALYPSESURVIVAL_API FASMonsterRequestAttackTask : public FStateTreeTas
 
 	FASMonsterRequestAttackTask()
 	{
-		// 진입 시 한 번만 요청하고 끝나므로 Tick 이 필요 없다.
-		bShouldCallTick = false;
+		// 패턴 Ability의 선딜·돌진·공격 후딜을 기다린다.
+		bShouldCallTick = true;
 	}
 
 	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
 
 	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
+	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
 };
