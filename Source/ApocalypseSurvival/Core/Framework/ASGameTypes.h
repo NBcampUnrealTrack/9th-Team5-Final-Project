@@ -20,7 +20,7 @@ struct FWaveResult
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPhaseChanged, EGamePhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWaveEnded, const FWaveResult&, Result);
 
-// 밤 시작: AI 쪽이 구독해서 스폰 수를 결정 (bBossNight면 보스도 스폰)
+// 밤 시작: 몬스터 AI가 구독해서 공격상태로 전환 (bBossNight면 보스 스폰용)
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnNightStarted, int32 /*Day*/, bool /*bBossNight*/);
 
 // 밤 종료

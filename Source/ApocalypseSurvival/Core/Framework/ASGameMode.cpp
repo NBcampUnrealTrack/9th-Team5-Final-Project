@@ -10,6 +10,11 @@
 #include "NavigationSystem.h"
 #include "DrawDebugHelpers.h"
 #include "Components/CapsuleComponent.h"
+#include "Characters/Enemy/ASMonsterCharacter.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 
 AASGameMode::AASGameMode()
 {
@@ -96,6 +101,15 @@ void AASGameMode::StartNight()
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 밤 시작 (%.0f초, 보스: %s)"),
 		Day, Duration, bBossNight ? TEXT("O") : TEXT("X"));
 	
+	// 낮에 남은 몬스터는 밤이 되면 웨이브 스폰 수에 포함
+	// StartWave 전에 카운팅
+	const int32 LeftoverCount = CountAliveMonsters();
+	if (LeftoverCount > 0)
+	{
+		ReportWaveSpawned(LeftoverCount);
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] 낮에 남은 몬스터 %d마리 웨이브에 포함"), LeftoverCount);
+	}
+	
 	// AI/보스 시스템에 밤 시작을 알린다.
 	OnNightStarted.Broadcast(Day, bBossNight);
 
@@ -106,6 +120,22 @@ void AASGameMode::StartNight()
 	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnNightTimeUp, Duration, false);
+}
+
+int32 AASGameMode::CountAliveMonsters() const
+{
+	int32 Count = 0;
+	for (TActorIterator<AASMonsterCharacter> It(GetWorld()); It; ++It)
+	{
+		const AASMonsterCharacter* Monster = *It;
+		
+		// 죽었지만 제거 전(사망연출)인 몬스터 제외
+		if (IsValid(Monster) && !Monster->IsActorBeingDestroyed() && !Monster->IsDead())
+		{
+			++Count;
+		}
+	}
+	return Count;
 }
 
 void AASGameMode::OnNightTimeUp()
@@ -361,15 +391,6 @@ float AASGameMode::GetSpawnHeightOffset(AController* Controller)
 
 // 디버그
 
-void AASGameMode::DebugSpawnWave(int32 Count)
-{
-	ReportWaveSpawned(Count);
-	if (const AASGameState* GS = GetASGameState())
-	{
-		UE_LOG(LogTemp, Log, TEXT("[Debug] 스폰 보고: 누적 %d"), GS->GetWaveSpawnedCount());
-	}
-}
-
 void AASGameMode::DebugKillEnemy()
 {
 	OnEnemyKilled(nullptr);
@@ -386,38 +407,24 @@ void AASGameMode::DebugKillBoss()
 
 void AASGameMode::DebugKillPlayer()
 {
-	OnPlayerDied(GetWorld()->GetFirstPlayerController());
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	APlayerState* PS = PC ? PC->GetPlayerState<APlayerState>() : nullptr;
+	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS);
+	if (!ASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Debug] 플레이어 ASC를 찾지 못해 사망 처리를 할 수 없음"));
+		return;
+	}
+	
+	// 체력을 0으로 만들어 실제 사망 과정(사망 태그 -> OnPlayerDied)를 그대로 탐
+	// 이미 죽어 있으면 캐릭터 쪽에서 무시
+	ASC->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), 0.f);
 }
 
 // 스폰 위치
-APawn* AASGameMode::GetRandomAlivePlayerPawn() const
-{
-	TArray<APawn*> Pawns;
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-	{
-		if (const APlayerController* PC = It->Get())
-		{
-			if (APawn* Pawn = PC->GetPawn())
-			{
-				Pawns.Add(Pawn);
-			}
-		}
-	}
-	
-	if (Pawns.Num() == 0) return nullptr;
-	return Pawns[FMath::RandRange(0, Pawns.Num() - 1)];
-}
 
 bool AASGameMode::FindSpawnLocation(int32 EnemyCount, TArray<FVector>& OutLocations) const
 {
-	/* [이전] 플레이어 주변 링에서 랜덤 위치
-	const APawn* Target = GetRandomAlivePlayerPawn();
-	if (!Target) return false;
-	
-	return FindSpawnLocationAround(Target->GetActorLocation(),
-		SpawnMinDistance, SpawnMaxDistance, OutLocation);
-	*/
-	
 	OutLocations.Reset();
 	if (EnemyCount <= 0) return false;
 	
@@ -502,6 +509,13 @@ bool AASGameMode::IsNearAnyPlayer(const FVector& Location) const
 		const APlayerController* PC = It->Get();
 		const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 		
+		// 죽은 플레이어 주변은 스폰 제외 대상이 아님
+		const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Pawn);
+		if (PlayerCharacter && PlayerCharacter->IsDead())
+		{
+			continue;
+		}
+		
 		if (Pawn && FVector::Dist2D(Pawn->GetActorLocation(), Location) < SpawnMinDistance)
 		{
 			return true;
@@ -525,77 +539,18 @@ TArray<FVector> AASGameMode::GetAvailableEnemySpawnPoints() const
 	return Result.Num() > 0 ? Result : EnemySpawnPoints;
 }
 
-bool AASGameMode::FindSpawnLocationAround(const FVector& Center, float MinDistance, float MaxDistance, FVector& OutLocation) const
-{
-	const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-	if (!NavSys) return false;
-	
-	for (int32 i = 0; i < SpawnFindAttempts; ++i)
-	{
-		// 링 안에서 랜덤 방향, 랜덤 거리
-		const float Angle = FMath::FRandRange(0.f, 2.f * PI);
-		const float Distance = FMath::FRandRange(MinDistance, MaxDistance);
-		const FVector Candidate = Center + FVector(FMath::Cos(Angle) * Distance,
-			FMath::Sin(Angle) * Distance, 0.f);
-		
-		// 후보 지점을 NavMesh 위로 (위아래 10m 범위)
-		FNavLocation NavLocation;
-		if (NavSys->ProjectPointToNavigation(Candidate, NavLocation, FVector(200.f, 200.f, 1000.f)))
-		{
-			// 맞춘 뒤에도 최소 거리 재확인
-			if (FVector::Dist2D(NavLocation.Location, Center) >= MinDistance)
-			{
-				OutLocation = NavLocation.Location;
-				return true;
-			}
-		}
-	}
-	
-	return false;
-}
-
-void AASGameMode::DebugShowSpawnPoints(int32 Count)
-{
-	const APawn* Target = GetRandomAlivePlayerPawn();
-	if (!Target) return;
-	
-	const FVector Center = Target->GetActorLocation();
-	UWorld* World = GetWorld();
-	
-	// 초록: 최소 거리, 파랑 : 최대 거리
-	DrawDebugCircle(World, Center, SpawnMinDistance, 64, FColor::Green,
-		false, 10.f, 0, 10.f,
-		FVector(1, 0, 0), FVector(0, 1, 0), false);
-	
-	DrawDebugCircle(World, Center, SpawnMaxDistance, 64, FColor::Blue,
-		false, 10.f, 0, 10.f,
-		FVector(1, 0, 0), FVector(0, 1, 0), false);
-	
-	int32 Found = 0;
-	for (int32 i = 0; i < Count; ++i)
-	{
-		FVector Location;
-		if (FindSpawnLocationAround(Center, SpawnMinDistance, SpawnMaxDistance, Location))
-		{
-			DrawDebugSphere(World, Location, 80.f, 12, FColor::Red,
-				false, 10.f, 0, 5.f);
-			
-			++Found;
-		}
-	}
-	
-	UE_LOG(LogTemp, Log, TEXT("[Debug] 스폰 위치 %d/%d개 찾음"), Found, Count);
-}
-
 void AASGameMode::DebugShowEnemySpawnPoints(int32 EnemyCount)
 {
 	UWorld* World = GetWorld();
 	
-	// 플레이어 주변 최소 거리 (초록 원)
+	// 살아 있는 플레이어 주변 최소 거리 (초록 원)
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		const APlayerController* PC = It->Get();
-		if (const APawn* Pawn = PC ? PC->GetPawn() : nullptr)
+		const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+		const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Pawn);
+		
+		if (Pawn && !(PlayerCharacter && PlayerCharacter->IsDead()))
 		{
 			DrawDebugCircle(World, Pawn->GetActorLocation(), SpawnMinDistance, 64, FColor::Green, false, 10.f, 0, 10.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
 		}

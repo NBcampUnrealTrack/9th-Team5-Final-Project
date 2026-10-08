@@ -6,6 +6,7 @@
 #include "ASMonsterDefinition.generated.h"
 
 class UGameplayAbility;
+class UGameplayEffect;
 class UStateTree;
 
 /** 일반 몬스터 원형의 초기 전투 수치. */
@@ -60,6 +61,14 @@ public:
 	/** 서버에서 이 몬스터 ASC에 한 번 부여할 기본 Ability 목록. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<UGameplayAbility>> GrantedAbilities;
+
+	/** 피해를 입고 살아남았을 때 자신에게 적용할 짧은 경직 GameplayEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reaction")
+	TSubclassOf<UGameplayEffect> HitReactEffect;
+
+	/** 사망 시 충돌을 끈 뒤 월드에 남겨 둘 시간. 0이면 즉시 제거한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
+	float DeathDespawnDelay = 1.5f;
 
 	/** 몬스터의 전반 행동을 결정하는 StateTree. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI")

@@ -162,6 +162,18 @@ void AASMonsterAIController::NotifyMonsterDamaged(AActor* InstigatorActor)
 	}
 }
 
+void AASMonsterAIController::NotifyMonsterHitReact()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	StopMovement();
+	ClearCombatFocus();
+	MoveTarget.Reset();
+}
+
 void AASMonsterAIController::StartAggroLoop()
 {
 	if (!HasAuthority() || !GetWorld())
@@ -222,6 +234,15 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 	UASMonsterTargetingComponent* Targeting = Monster ? Monster->GetTargetingComponent() : nullptr;
 	if (!HasAuthority() || !Monster || Monster->IsDead() || !Targeting)
 	{
+		return;
+	}
+
+	// 타이머가 0.25초마다 MoveToActor를 재요청하므로, 태그를 여기서 확인해야 경직 중 이동이 재개되지 않는다.
+	if (Monster->IsHitReacting())
+	{
+		StopMovement();
+		ClearCombatFocus();
+		MoveTarget.Reset();
 		return;
 	}
 
