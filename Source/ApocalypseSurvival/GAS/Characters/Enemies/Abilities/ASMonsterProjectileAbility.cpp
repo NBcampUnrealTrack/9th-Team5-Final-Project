@@ -16,6 +16,8 @@ UASMonsterProjectileAbility::UASMonsterProjectileAbility()
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack_Ranged);
+	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_Dead);
+	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_HitReact);
 }
 
 FVector UASMonsterProjectileAbility::GetAimDirection_Implementation() const
