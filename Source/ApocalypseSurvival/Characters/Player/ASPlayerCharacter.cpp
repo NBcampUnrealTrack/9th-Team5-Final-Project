@@ -1,5 +1,6 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 
+#include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASPlayerState.h"
@@ -9,10 +10,13 @@
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "Items/ASItemInstance.h"
 
 AASPlayerCharacter::AASPlayerCharacter()
 {
 	TeamId = ASTeam::Player();
+
+	EquipmentComponent = CreateDefaultSubobject<UASEquipmentComponent>(TEXT("EquipmentComponent"));
 
 	GetCapsuleComponent()->InitCapsuleSize(42.0f, 96.0f);
 
@@ -57,6 +61,16 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 	if (IsValid(ASPlayerState))
 	{
 		ASPlayerState->GrantDefaultAbilitySetOnce(DefaultAbilitySet);
+	}
+
+	// 리스폰이면 PlayerState 에 장착 기록이 남아 있다. 옛 몸과 함께 사라진 무기를 새 몸에 다시 단다.
+	// ASC 연결 뒤여야 공격 어빌리티를 부여할 수 있어서 맨 마지막에 한다.
+	if (IsValid(ASPlayerState))
+	{
+		if (UASItemInstance* EquippedItem = ASPlayerState->GetEquippedItemRecord())
+		{
+			EquipmentComponent->EquipItem(EquippedItem);
+		}
 	}
 }
 
