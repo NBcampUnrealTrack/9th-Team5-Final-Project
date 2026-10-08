@@ -9,6 +9,8 @@
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
@@ -89,6 +91,11 @@ bool AASMonsterCharacter::IsDead() const
 	return IsValid(OwnedAbilitySystemComponent) && OwnedAbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead);
 }
 
+bool AASMonsterCharacter::IsHitReacting() const
+{
+	return IsValid(OwnedAbilitySystemComponent) && OwnedAbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_HitReact);
+}
+
 void AASMonsterCharacter::SetFaceControllerFocus(bool bFaceControllerFocus)
 {
 	if (!HasAuthority())
@@ -165,7 +172,36 @@ void AASMonsterCharacter::HandleDeath()
 	// 사망 GameplayEffect를 만들기 전까지는 이 API로 Dead 태그를 모든 클라이언트에 전달한다.
 	OwnedAbilitySystemComponent->AddMinimalReplicationGameplayTag(ASGameplayTags::State_Monster_Dead);
 
+	// 사망 직전의 공격 몽타주/타격 이벤트가 계속되는 것을 막는다.
+	FGameplayTagContainer AttackAbilityTags;
+	AttackAbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
+	OwnedAbilitySystemComponent->CancelAbilities(&AttackAbilityTags, nullptr, nullptr);
+
 	StopMovementAndAI();
+	SetCanBeDamaged(false);
+	// CharacterMovement는 Capsule 충돌을 기준으로 이동한다. Actor 플래그뿐 아니라 Capsule을
+	// 직접 끄고 NavMesh 장애물에서도 빼야 사망 대기 중 길막하지 않는다.
+	SetActorEnableCollision(false);
+	if (UCapsuleComponent* CollisionComponent = GetCapsuleComponent())
+	{
+		CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		CollisionComponent->SetCanEverAffectNavigation(false);
+	}
+	if (USkeletalMeshComponent* MeshComponent = GetMesh())
+	{
+		MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MeshComponent->SetCanEverAffectNavigation(false);
+	}
+
+	const float DespawnDelay = MonsterDefinition ? MonsterDefinition->DeathDespawnDelay : 1.5f;
+	if (DespawnDelay <= 0.0f)
+	{
+		Destroy();
+	}
+	else
+	{
+		SetLifeSpan(DespawnDelay);
+	}
 }
 
 void AASMonsterCharacter::StopMovementAndAI()
@@ -178,6 +214,35 @@ void AASMonsterCharacter::StopMovementAndAI()
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
 	MovementComponent->StopMovementImmediately();
 	MovementComponent->DisableMovement();
+}
+
+void AASMonsterCharacter::ApplyHitReact()
+{
+	if (!HasAuthority() || IsDead() || !MonsterDefinition || !MonsterDefinition->HitReactEffect)
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = OwnedAbilitySystemComponent->MakeEffectContext();
+	EffectContext.AddSourceObject(this);
+	const FGameplayEffectSpecHandle HitReactSpec = OwnedAbilitySystemComponent->MakeOutgoingSpec(
+		MonsterDefinition->HitReactEffect, 1.0f, EffectContext);
+	if (!HitReactSpec.IsValid())
+	{
+		return;
+	}
+
+	OwnedAbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*HitReactSpec.Data.Get());
+
+	// 새 공격은 HitReact 태그로 막고, 이미 진행 중인 공격은 즉시 끝낸다.
+	FGameplayTagContainer AttackAbilityTags;
+	AttackAbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
+	OwnedAbilitySystemComponent->CancelAbilities(&AttackAbilityTags, nullptr, nullptr);
+
+	if (AASMonsterAIController* AIController = Cast<AASMonsterAIController>(GetController()))
+	{
+		AIController->NotifyMonsterHitReact();
+	}
 }
 
 void AASMonsterCharacter::UnbindHealthDelegate()
@@ -217,6 +282,12 @@ void AASMonsterCharacter::HandleGameplayEffectApplied(UAbilitySystemComponent* T
 		return;
 	}
 
+	// 치명타는 체력 변경 콜백에서 이미 Dead 상태가 됐으므로 경직과 어그로를 만들지 않는다.
+	if (IsDead())
+	{
+		return;
+	}
+
 	const FGameplayEffectContextHandle& EffectContext = AppliedEffect.GetContext();
 	AActor* InstigatorActor = EffectContext.GetOriginalInstigator();
 	if (!IsValid(InstigatorActor))
@@ -226,4 +297,5 @@ void AASMonsterCharacter::HandleGameplayEffectApplied(UAbilitySystemComponent* T
 
 	// 투사체가 이미 파괴됐더라도 OriginalInstigator(발사한 플레이어)를 우선 사용한다.
 	NotifyDamagedBy(InstigatorActor);
+	ApplyHitReact();
 }

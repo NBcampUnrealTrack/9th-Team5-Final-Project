@@ -48,6 +48,9 @@ public:
 	/** 서버 전용. 플레이어에게 피해를 받았을 때 즉시 공격자를 타깃으로 삼는다. */
 	void NotifyMonsterDamaged(AActor* InstigatorActor);
 
+	/** 서버 전용. 피격 경직이 시작됐을 때 현재 경로 이동과 시선 고정을 멈춘다. */
+	void NotifyMonsterHitReact();
+
 protected:
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
