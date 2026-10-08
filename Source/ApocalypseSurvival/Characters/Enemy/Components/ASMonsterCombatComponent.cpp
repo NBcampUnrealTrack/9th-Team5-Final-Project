@@ -47,7 +47,9 @@ bool UASMonsterCombatComponent::TryRequestAttack(AActor* Target)
 	}
 
 	UASAbilitySystemComponent* AbilitySystemComponent = GetOwnerAbilitySystemComponent();
-	if (!IsValid(AbilitySystemComponent) || AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead))
+	if (!IsValid(AbilitySystemComponent)
+		|| AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead)
+		|| AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_HitReact))
 	{
 		return false;
 	}
