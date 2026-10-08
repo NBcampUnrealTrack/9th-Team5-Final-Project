@@ -8,7 +8,7 @@
 class ACharacter;
 class UAnimMontage;
 class UGameplayEffect;
-class UImage;
+class UTexture2D;
 
 /*
  * Base for Skills
@@ -44,7 +44,7 @@ public:
 	static void ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& DamageSpec, AActor* Target);
 	
 	//스킬 아이콘 반환
-	UImage* GetSkillIcon() const;
+	UTexture2D* GetSkillIcon() const;
 	
 protected:
 	//스킬 효과. 타격 타이밍마다 호출
@@ -117,7 +117,7 @@ protected:
 
 	//스킬 아이콘
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Icon")
-	TObjectPtr<UImage> SkillIcon;
+	TObjectPtr<UTexture2D> SkillIcon;
 	
 	UFUNCTION()
 	virtual void OnMontageCompleted();
