@@ -28,7 +28,7 @@ public:
 	FOnNightStarted OnNightStarted;
 	FOnNightEnded OnNightEnded;
 	
-	// AI쪽에서 호출 (서버 전용)
+	// 스폰 시스템에서 호출 (서버 전용)
 	// 이번 밤에 스폰한 적 수를 알려줌 (웨이브 결과 계산용)
 	UFUNCTION(BlueprintCallable, Category = "GameFlow")
 	void ReportWaveSpawned(int32 Count);
@@ -59,30 +59,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Spawn")
 	bool FindSpawnLocation(int32 EnemyCount, TArray<FVector>& OutLocations) const;
     
-	// 지정한 위치 주변에서 스폰 위치를 찾음 (거리를 직접 지정)
-	UFUNCTION(BlueprintCallable, Category = "Spawn")
-	bool FindSpawnLocationAround(const FVector& Center,float MinDistance, float MaxDistance, FVector& OutLocation) const;
-    
-	// 살아 있는 플레이어 Pawn 중 하나를 랜덤으로 반환 (없으면 nullptr)
-	UFUNCTION(BlueprintCallable, Category = "Spawn")
-	APawn* GetRandomAlivePlayerPawn() const;
-    
-    
 	// 디버그 (콘솔에서 입력)
 	UFUNCTION(Exec)
 	void DebugSkipPhase();
-	
-	UFUNCTION(Exec)
-	void DebugSpawnWave(int32 Count);
 	
 	UFUNCTION(Exec)
 	void DebugKillEnemy();
 	
 	UFUNCTION(Exec)
 	void DebugKillBoss();
-	
-	UFUNCTION(Exec)
-	void DebugShowSpawnPoints(int32 Count);
 	
 	UFUNCTION(Exec)
 	void DebugKillPlayer();
@@ -123,14 +108,6 @@ protected:
 	// 플레이어로부터 최소 스폰 거리 (cm, 화면 밖)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
 	float SpawnMinDistance = 2500.f;
-	
-	// 플레이어로부터 최대 스폰 거리 (cm)
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
-	float SpawnMaxDistance = 4000.f;
-	
-	// 위치를 찾을 때 시도 횟수
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
-	int32 SpawnFindAttempts = 10;
 	
 	// 게임 시작 시 자동 생성할 적 스폰 포인트 수
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")

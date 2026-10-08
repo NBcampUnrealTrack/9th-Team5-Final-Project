@@ -390,15 +390,6 @@ float AASGameMode::GetSpawnHeightOffset(AController* Controller)
 
 // 디버그
 
-void AASGameMode::DebugSpawnWave(int32 Count)
-{
-	ReportWaveSpawned(Count);
-	if (const AASGameState* GS = GetASGameState())
-	{
-		UE_LOG(LogTemp, Log, TEXT("[Debug] 스폰 보고: 누적 %d"), GS->GetWaveSpawnedCount());
-	}
-}
-
 void AASGameMode::DebugKillEnemy()
 {
 	OnEnemyKilled(nullptr);
@@ -430,34 +421,9 @@ void AASGameMode::DebugKillPlayer()
 }
 
 // 스폰 위치
-APawn* AASGameMode::GetRandomAlivePlayerPawn() const
-{
-	TArray<APawn*> Pawns;
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-	{
-		if (const APlayerController* PC = It->Get())
-		{
-			if (APawn* Pawn = PC->GetPawn())
-			{
-				Pawns.Add(Pawn);
-			}
-		}
-	}
-	
-	if (Pawns.Num() == 0) return nullptr;
-	return Pawns[FMath::RandRange(0, Pawns.Num() - 1)];
-}
 
 bool AASGameMode::FindSpawnLocation(int32 EnemyCount, TArray<FVector>& OutLocations) const
 {
-	/* [이전] 플레이어 주변 링에서 랜덤 위치
-	const APawn* Target = GetRandomAlivePlayerPawn();
-	if (!Target) return false;
-	
-	return FindSpawnLocationAround(Target->GetActorLocation(),
-		SpawnMinDistance, SpawnMaxDistance, OutLocation);
-	*/
-	
 	OutLocations.Reset();
 	if (EnemyCount <= 0) return false;
 	
@@ -563,68 +529,6 @@ TArray<FVector> AASGameMode::GetAvailableEnemySpawnPoints() const
 	
 	// 전부 플레이어 근처라면 전체 사용
 	return Result.Num() > 0 ? Result : EnemySpawnPoints;
-}
-
-bool AASGameMode::FindSpawnLocationAround(const FVector& Center, float MinDistance, float MaxDistance, FVector& OutLocation) const
-{
-	const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-	if (!NavSys) return false;
-	
-	for (int32 i = 0; i < SpawnFindAttempts; ++i)
-	{
-		// 링 안에서 랜덤 방향, 랜덤 거리
-		const float Angle = FMath::FRandRange(0.f, 2.f * PI);
-		const float Distance = FMath::FRandRange(MinDistance, MaxDistance);
-		const FVector Candidate = Center + FVector(FMath::Cos(Angle) * Distance,
-			FMath::Sin(Angle) * Distance, 0.f);
-		
-		// 후보 지점을 NavMesh 위로 (위아래 10m 범위)
-		FNavLocation NavLocation;
-		if (NavSys->ProjectPointToNavigation(Candidate, NavLocation, FVector(200.f, 200.f, 1000.f)))
-		{
-			// 맞춘 뒤에도 최소 거리 재확인
-			if (FVector::Dist2D(NavLocation.Location, Center) >= MinDistance)
-			{
-				OutLocation = NavLocation.Location;
-				return true;
-			}
-		}
-	}
-	
-	return false;
-}
-
-void AASGameMode::DebugShowSpawnPoints(int32 Count)
-{
-	const APawn* Target = GetRandomAlivePlayerPawn();
-	if (!Target) return;
-	
-	const FVector Center = Target->GetActorLocation();
-	UWorld* World = GetWorld();
-	
-	// 초록: 최소 거리, 파랑 : 최대 거리
-	DrawDebugCircle(World, Center, SpawnMinDistance, 64, FColor::Green,
-		false, 10.f, 0, 10.f,
-		FVector(1, 0, 0), FVector(0, 1, 0), false);
-	
-	DrawDebugCircle(World, Center, SpawnMaxDistance, 64, FColor::Blue,
-		false, 10.f, 0, 10.f,
-		FVector(1, 0, 0), FVector(0, 1, 0), false);
-	
-	int32 Found = 0;
-	for (int32 i = 0; i < Count; ++i)
-	{
-		FVector Location;
-		if (FindSpawnLocationAround(Center, SpawnMinDistance, SpawnMaxDistance, Location))
-		{
-			DrawDebugSphere(World, Location, 80.f, 12, FColor::Red,
-				false, 10.f, 0, 5.f);
-			
-			++Found;
-		}
-	}
-	
-	UE_LOG(LogTemp, Log, TEXT("[Debug] 스폰 위치 %d/%d개 찾음"), Found, Count);
 }
 
 void AASGameMode::DebugShowEnemySpawnPoints(int32 EnemyCount)
