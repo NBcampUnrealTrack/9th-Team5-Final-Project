@@ -12,6 +12,7 @@
 #include "GenericTeamAgentInterface.h"
 #include "GameplayEffect.h"
 #include "Skills/ASSkillTags.h"
+#include "Components/Image.h"
 
 UASSkillAbility::UASSkillAbility()
 {
@@ -322,4 +323,9 @@ void UASSkillAbility::FinishSkill(bool bWasCancelled)
 	bWaitingForHitEvent = false;
 
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bWasCancelled);
+}
+
+UImage* UASSkillAbility::GetSkillIcon() const
+{
+	return SkillIcon;
 }
