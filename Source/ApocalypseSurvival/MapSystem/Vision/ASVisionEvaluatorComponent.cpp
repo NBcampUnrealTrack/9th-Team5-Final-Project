@@ -25,7 +25,8 @@ bool UASVisionEvaluatorComponent::CanSourceSeeTarget(
 	const UASVisionSourceComponent* Source,
 	const UASVisibilityComponent* Target,
 	double ServerTime,
-	bool bWallOcclusion) const
+	bool bWallOcclusion,
+	float NightAlpha) const
 {
 	const AActor* SourceActor = Source ? Source->GetOwner() : nullptr;
 	const AActor* TargetActor = Target ? Target->GetOwner() : nullptr;
@@ -36,7 +37,7 @@ bool UASVisionEvaluatorComponent::CanSourceSeeTarget(
 
 	const FVector SourceLocation = SourceActor->GetActorLocation();
 	const FVector TargetLocation = TargetActor->GetActorLocation();
-	const float Radius = Source->GetVisionRadius(VisionDefinition->Settings.DefaultVisionRadius);
+	const float Radius = Source->GetVisionRadius(VisionDefinition->Settings, NightAlpha);
 
 	if (FVector::DistSquared2D(SourceLocation, TargetLocation) > FMath::Square(Radius))
 	{
@@ -77,6 +78,7 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 
 	const bool bWallOcclusion = Manager->IsWallOcclusionEnabled();
 	const double Now = GetServerTimeSeconds();
+	const float NightAlpha = Manager->GetNightAlpha();
 
 	TMap<int32, TArray<UASVisionSourceComponent*>> SourcesByTeam;
 	for (UASVisionSourceComponent* Source : Subsystem->GetVisionSources())
@@ -105,7 +107,7 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 
 			for (const UASVisionSourceComponent* Source : Team.Value)
 			{
-				if (Source->GetOwner() == Target->GetOwner() || CanSourceSeeTarget(Source, Target, Now, bWallOcclusion))
+				if (Source->GetOwner() == Target->GetOwner() || CanSourceSeeTarget(Source, Target, Now, bWallOcclusion, NightAlpha))
 				{
 					Mask |= static_cast<uint8>(1 << Team.Key);
 					break;
