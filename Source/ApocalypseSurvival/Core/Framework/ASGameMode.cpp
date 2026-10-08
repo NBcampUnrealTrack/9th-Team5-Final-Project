@@ -14,6 +14,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 
 AASGameMode::AASGameMode()
 {
@@ -508,6 +509,13 @@ bool AASGameMode::IsNearAnyPlayer(const FVector& Location) const
 		const APlayerController* PC = It->Get();
 		const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 		
+		// 죽은 플레이어 주변은 스폰 제외 대상이 아님
+		const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Pawn);
+		if (PlayerCharacter && PlayerCharacter->IsDead())
+		{
+			continue;
+		}
+		
 		if (Pawn && FVector::Dist2D(Pawn->GetActorLocation(), Location) < SpawnMinDistance)
 		{
 			return true;
@@ -535,11 +543,14 @@ void AASGameMode::DebugShowEnemySpawnPoints(int32 EnemyCount)
 {
 	UWorld* World = GetWorld();
 	
-	// 플레이어 주변 최소 거리 (초록 원)
+	// 살아 있는 플레이어 주변 최소 거리 (초록 원)
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		const APlayerController* PC = It->Get();
-		if (const APawn* Pawn = PC ? PC->GetPawn() : nullptr)
+		const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+		const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Pawn);
+		
+		if (Pawn && !(PlayerCharacter && PlayerCharacter->IsDead()))
 		{
 			DrawDebugCircle(World, Pawn->GetActorLocation(), SpawnMinDistance, 64, FColor::Green, false, 10.f, 0, 10.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
 		}
