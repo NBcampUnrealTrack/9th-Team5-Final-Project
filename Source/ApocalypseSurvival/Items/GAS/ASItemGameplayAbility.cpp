@@ -2,6 +2,7 @@
 
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
+#include "Items/GAS/ASItemAbilityLibrary.h"
 
 UASItemGameplayAbility::UASItemGameplayAbility()
 {
@@ -10,13 +11,13 @@ UASItemGameplayAbility::UASItemGameplayAbility()
 
 UASItemInstance* UASItemGameplayAbility::GetSourceItem() const
 {
-	return Cast<UASItemInstance>(GetCurrentSourceObject());
+	UASItemInstance* CurrentItem = UASItemAbilityLibrary::GetItemFromSourceObject(GetCurrentSourceObject());
+	return CurrentItem ? CurrentItem : ActiveSourceItem.Get();
 }
 
 UASItemDefinition* UASItemGameplayAbility::GetSourceItemDefinition() const
 {
-	const UASItemInstance* Item = GetSourceItem();
-	return IsValid(Item) ? Item->GetItemDefinition() : nullptr;
+	return UASItemAbilityLibrary::GetItemDefinitionFromSourceObject(GetSourceItem());
 }
 
 float UASItemGameplayAbility::GetItemBaseDamage() const
@@ -29,4 +30,29 @@ float UASItemGameplayAbility::GetItemHealAmount() const
 {
 	const UASItemDefinition* Definition = GetSourceItemDefinition();
 	return IsValid(Definition) ? Definition->HealAmount : 0.0f;
+}
+
+float UASItemGameplayAbility::GetWeaponAttackInterval() const
+{
+	const UASItemDefinition* Definition = UASItemAbilityLibrary::GetWeaponDefinitionFromSourceObject(GetSourceItem());
+	return Definition ? FMath::Max(0.01f, Definition->AttackInterval) : 0.0f;
+}
+
+float UASItemGameplayAbility::GetWeaponAttackRange() const
+{
+	const UASItemDefinition* Definition = UASItemAbilityLibrary::GetWeaponDefinitionFromSourceObject(GetSourceItem());
+	return Definition ? FMath::Max(0.0f, Definition->AttackRange) : 0.0f;
+}
+
+void UASItemGameplayAbility::CacheSourceItem()
+{
+	ActiveSourceItem = UASItemAbilityLibrary::GetItemFromSourceObject(GetCurrentSourceObject());
+}
+
+void UASItemGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+	const FGameplayEventData* TriggerEventData)
+{
+	CacheSourceItem();
+	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 }

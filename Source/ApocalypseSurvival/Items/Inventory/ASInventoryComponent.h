@@ -2,13 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "GameplayAbilitySpecHandle.h"
 #include "ASInventoryComponent.generated.h"
 
 class UASItemDefinition;
 class UASItemInstance;
-class UAbilitySystemComponent;
 class APawn;
+class UASItemUseComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASInventoryChangedSignature);
 
@@ -25,6 +24,8 @@ class APOCALYPSESURVIVAL_API UASInventoryComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
+	static constexpr int32 PlayerSlotCount = 10;
+
 	UASInventoryComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual bool ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
@@ -33,10 +34,32 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UASItemInstance* FindItemById(FGuid InstanceId) const;
 
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	UASItemInstance* GetItemAtSlot(int32 SlotIndex) const;
+
+	/** Swap positions only. Reject requests whose displayed items have since changed. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	bool SwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFromItem, FGuid ExpectedToItem);
+
 	/** Authority-only gameplay operations. Clients request these through ASPlayerController. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
 	bool UseItem(FGuid InstanceId, APawn* Avatar);
 
+	/** Entire quantity or no mutation. Server-only, including when called from C++. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	bool TryConsumeItem(UASItemDefinition* ItemDefinition, int32 Quantity);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	bool TryConsumeItemInstance(UASItemInstance* ItemInstance, int32 Quantity);
+
+	/** Shared server attack gate: equipped source, live avatar, interval and ammo. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Weapon")
+	bool CanCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Weapon")
+	bool TryCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar);
+
+	/** Compatibility request bridge. Equipment interface implementation owns actual equipping. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
 	bool EquipItem(FGuid InstanceId, APawn* Avatar);
 
@@ -44,10 +67,10 @@ public:
 	void UnequipItem();
 
 	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
-	UASItemInstance* GetEquippedItem() const { return EquippedItem; }
+	UASItemInstance* GetEquippedItem() const;
 
 	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
-	AActor* GetEquippedActor() const { return EquippedActor; }
+	AActor* GetEquippedActor() const;
 
 	/**
 	 * Adds items using the supplied definition.
@@ -108,19 +131,21 @@ public:
 	FASInventoryChangedSignature OnInventoryChanged;
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	APawn* GetInventoryAvatar() const;
+	UActorComponent* GetEquipmentProvider() const;
 	bool HasInventoryAuthority() const;
-	UAbilitySystemComponent* ResolveAbilitySystem(APawn* Avatar) const;
 	void NotifyInventoryChanged();
 	void SyncReplicatedItems();
-	void ClearEquipment();
 
 	UFUNCTION()
 	void OnRep_Items();
 
 	bool HasFreeSlot() const;
+	int32 FindFreeSlotIndex() const;
 	void RemoveEmptyAndInvalidInstances();
 
 	/** Maximum number of item instances. Zero means unlimited. */
@@ -131,16 +156,14 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_Items, VisibleInstanceOnly, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<UASItemInstance>> Items;
 
-	UPROPERTY(ReplicatedUsing = OnRep_Items)
-	TObjectPtr<UASItemInstance> EquippedItem;
-
-	UPROPERTY(Replicated)
-	TObjectPtr<AActor> EquippedActor;
-
 	// Strong references keep removed subobjects alive until they are unregistered.
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UASItemInstance>> RegisteredItems;
 
-	TWeakObjectPtr<UAbilitySystemComponent> EquippedAbilitySystem;
-	TArray<FGameplayAbilitySpecHandle> EquippedAbilityHandles;
+	UPROPERTY(Transient)
+	TObjectPtr<UASItemUseComponent> ItemUseComponent;
+
+	// Server gate persists across weapon swaps to prevent bypassing the attack interval.
+	double NextWeaponAttackTime = 0.0;
+	bool bCommittingWeaponAttack = false;
 };
