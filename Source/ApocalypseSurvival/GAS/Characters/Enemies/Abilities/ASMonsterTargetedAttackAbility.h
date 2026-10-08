@@ -1,12 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Skills/ASSkillAbility.h"
+#include "GAS/Characters/Enemies/Abilities/ASMonsterPatternAbility.h"
 #include "ASMonsterTargetedAttackAbility.generated.h"
 
 /** 활성화 시점의 현재 타깃 하나를 잠그고 직접 피해를 주는 몬스터 기본 공격. */
 UCLASS(Blueprintable)
-class APOCALYPSESURVIVAL_API UASMonsterTargetedAttackAbility : public UASSkillAbility
+class APOCALYPSESURVIVAL_API UASMonsterTargetedAttackAbility : public UASMonsterPatternAbility
 {
 	GENERATED_BODY()
 

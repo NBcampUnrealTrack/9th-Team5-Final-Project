@@ -1,11 +1,14 @@
 #include "GAS/Characters/Enemies/Abilities/ASMonsterChargeAbility.h"
 
+#include "Characters/Enemy/ASMonsterAttackIndicatorActor.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
+#include "Engine/World.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "TimerManager.h"
 
 UASMonsterChargeAbility::UASMonsterChargeAbility()
@@ -16,6 +19,7 @@ UASMonsterChargeAbility::UASMonsterChargeAbility()
 	BaseDamage = 0.0f;
 	AttackPowerScale = 1.0f;
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
+	IndicatorClass = AASMonsterAttackIndicatorActor::StaticClass();
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack_Charge);
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Attacking);
@@ -72,9 +76,15 @@ void UASMonsterChargeAbility::ActivateAbility(const FGameplayAbilitySpecHandle H
 	ChargeElapsedTime = 0.0f;
 	HitActors.Reset();
 
-	ApplyChargeHitDamage();
-	Character->GetWorldTimerManager().SetTimer(ChargeTimerHandle, this, &UASMonsterChargeAbility::TickCharge,
-		FMath::Max(0.005f, MovementTickInterval), true);
+	if (WindupDuration > 0.0f)
+	{
+		SpawnChargeIndicator();
+		Character->GetWorldTimerManager().SetTimer(WindupTimerHandle, this, &UASMonsterChargeAbility::BeginCharge,
+			WindupDuration, false);
+		return;
+	}
+
+	BeginCharge();
 }
 
 void UASMonsterChargeAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
@@ -83,13 +93,61 @@ void UASMonsterChargeAbility::EndAbility(const FGameplayAbilitySpecHandle Handle
 {
 	if (ACharacter* Character = GetOwnerCharacter())
 	{
+		Character->GetWorldTimerManager().ClearTimer(WindupTimerHandle);
 		Character->GetWorldTimerManager().ClearTimer(ChargeTimerHandle);
 	}
 
+	DestroyChargeIndicator();
+	EndChargePawnCollisionIgnore();
 	HitActors.Reset();
 	ChargeElapsedTime = 0.0f;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
+}
+
+void UASMonsterChargeAbility::BeginCharge()
+{
+	if (!IsActive())
+	{
+		return;
+	}
+
+	DestroyChargeIndicator();
+	BeginChargePawnCollisionIgnore();
+	ApplyChargeHitDamage();
+
+	if (ACharacter* Character = GetOwnerCharacter())
+	{
+		Character->GetWorldTimerManager().SetTimer(ChargeTimerHandle, this, &UASMonsterChargeAbility::TickCharge,
+			FMath::Max(0.005f, MovementTickInterval), true);
+	}
+}
+
+void UASMonsterChargeAbility::BeginChargePawnCollisionIgnore()
+{
+	ACharacter* Character = GetOwnerCharacter();
+	UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
+	if (!Capsule || bIsIgnoringPawnCollision)
+	{
+		return;
+	}
+
+	PreviousPawnCollisionResponse = Capsule->GetCollisionResponseToChannel(ECC_Pawn);
+	Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	bIsIgnoringPawnCollision = true;
+}
+
+void UASMonsterChargeAbility::EndChargePawnCollisionIgnore()
+{
+	ACharacter* Character = GetOwnerCharacter();
+	UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
+	if (!Capsule || !bIsIgnoringPawnCollision)
+	{
+		return;
+	}
+
+	Capsule->SetCollisionResponseToChannel(ECC_Pawn, PreviousPawnCollisionResponse);
+	bIsIgnoringPawnCollision = false;
 }
 
 void UASMonsterChargeAbility::TickCharge()
@@ -145,4 +203,39 @@ void UASMonsterChargeAbility::ApplyChargeHitDamage()
 			ApplySkillDamage(Target);
 		}
 	}
+}
+
+void UASMonsterChargeAbility::SpawnChargeIndicator()
+{
+	ACharacter* Character = GetOwnerCharacter();
+	UWorld* World = Character ? Character->GetWorld() : nullptr;
+	if (!IsValid(Character) || !World || !IndicatorClass)
+	{
+		return;
+	}
+
+	const FVector IndicatorLocation = Character->GetActorLocation()
+		+ ChargeDirection * (FMath::Max(0.0f, ChargeDistance) * 0.5f);
+	const FTransform SpawnTransform(ChargeDirection.Rotation(), IndicatorLocation);
+	AASMonsterAttackIndicatorActor* Indicator = World->SpawnActorDeferred<AASMonsterAttackIndicatorActor>(
+		IndicatorClass, SpawnTransform, Character, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Indicator)
+	{
+		return;
+	}
+
+	Indicator->InitializeIndicator(EASMonsterAttackIndicatorShape::Rectangle, 0.0f, ChargeDistance,
+		IndicatorWidth, WindupDuration);
+	Indicator->FinishSpawning(SpawnTransform);
+	ActiveIndicator = Indicator;
+}
+
+void UASMonsterChargeAbility::DestroyChargeIndicator()
+{
+	if (AASMonsterAttackIndicatorActor* Indicator = ActiveIndicator.Get())
+	{
+		Indicator->Destroy();
+	}
+
+	ActiveIndicator.Reset();
 }

@@ -71,6 +71,13 @@ bool UASMonsterCombatComponent::CanRequestAttack(const AActor* Target) const
 		return IsTargetInAttackRange(Target);
 	}
 
+	// 선딜·돌진·타격 등 현재 패턴 Ability가 끝나기 전에는 어떤 다른 패턴도 요청할 수 없다.
+	// 이 가드가 없으면 StateTree가 공격 상태를 다시 평가하는 프레임에 기본 공격과 범위 공격이 겹칠 수 있다.
+	if (bWaitingForPatternAttackEnd)
+	{
+		return false;
+	}
+
 	const double CurrentTime = GetWorldTimeSeconds();
 	if (CurrentTime < NextAttackAllowedTime)
 	{
