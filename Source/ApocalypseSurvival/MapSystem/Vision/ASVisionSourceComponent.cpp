@@ -14,6 +14,13 @@ UASVisionSourceComponent::UASVisionSourceComponent()
 	SetIsReplicatedByDefault(true);
 }
 
+float UASVisionSourceComponent::GetVisionRadius(const FASVisionSettings& Settings, float NightAlpha) const
+{
+	const float DayRadius = DayVisionRadius > 0.0f ? DayVisionRadius : Settings.DayVisionRadius;
+	const float NightRadius = NightVisionRadius > 0.0f ? NightVisionRadius : Settings.NightVisionRadius;
+	return FMath::Lerp(DayRadius, NightRadius, FMath::Clamp(NightAlpha, 0.0f, 1.0f));
+}
+
 void UASVisionSourceComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);

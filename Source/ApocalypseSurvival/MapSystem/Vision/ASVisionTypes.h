@@ -8,9 +8,17 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 {
 	GENERATED_BODY()
 
-	/** 자체 반경이 0 이하인 시야 소스에 사용한다. */
+	/** 자체 낮 반경이 0 이하인 시야 소스에 사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
-	float DefaultVisionRadius = 1500.0f;
+	float DayVisionRadius = 1500.0f;
+
+	/** 자체 밤 반경이 0 이하인 시야 소스에 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
+	float NightVisionRadius = 900.0f;
+
+	/** 낮과 밤의 시야 반경을 전환하는 시간. 0이면 즉시 적용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "s"))
+	float DayNightBlendSeconds = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "1.0", ClampMax = "60.0"))
 	float UpdateHz = 10.0f;
@@ -45,4 +53,35 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 	/** 벽 표면도 그리도록 벽 충돌 지점 너머로 드러내는 추가 거리. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
 	float WallRevealPadding = 50.0f;
+};
+
+/** 서버 시작 시간을 공유해 모든 머신에서 같은 낮/밤 전환을 평가한다. */
+USTRUCT(BlueprintType)
+struct APOCALYPSESURVIVAL_API FASVisionNightBlend
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	float FromAlpha = 0.0f;
+
+	UPROPERTY()
+	float ToAlpha = 0.0f;
+
+	UPROPERTY()
+	double StartServerTime = 0.0;
+
+	/** 월드에 접근하지 않고 주어진 서버 시간의 밤 비율을 계산한다. */
+	float Evaluate(double ServerTime, float BlendSeconds) const
+	{
+		if (BlendSeconds <= 0.0f || ServerTime >= StartServerTime + BlendSeconds)
+		{
+			return ToAlpha;
+		}
+		if (ServerTime < StartServerTime)
+		{
+			return FromAlpha;
+		}
+		const float T = static_cast<float>((ServerTime - StartServerTime) / BlendSeconds);
+		return FMath::Lerp(FromAlpha, ToAlpha, FMath::SmoothStep(0.0f, 1.0f, T));
+	}
 };

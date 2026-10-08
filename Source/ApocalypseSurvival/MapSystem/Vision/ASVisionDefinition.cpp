@@ -9,9 +9,19 @@ bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 	const int32 InitialErrorCount = OutErrors.Num();
 	const FString AssetName = GetName();
 
-	if (!FMath::IsFinite(Settings.DefaultVisionRadius) || Settings.DefaultVisionRadius <= 0.0f)
+	if (!FMath::IsFinite(Settings.DayVisionRadius) || Settings.DayVisionRadius <= 0.0f)
 	{
-		OutErrors.Add(FString::Printf(TEXT("%s: DefaultVisionRadius must be positive."), *AssetName));
+		OutErrors.Add(FString::Printf(TEXT("%s: DayVisionRadius must be positive."), *AssetName));
+	}
+
+	if (!FMath::IsFinite(Settings.NightVisionRadius) || Settings.NightVisionRadius <= 0.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: NightVisionRadius must be positive."), *AssetName));
+	}
+
+	if (!FMath::IsFinite(Settings.DayNightBlendSeconds) || Settings.DayNightBlendSeconds < 0.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: DayNightBlendSeconds must be non-negative."), *AssetName));
 	}
 
 	if (!FMath::IsFinite(Settings.UpdateHz) || Settings.UpdateHz <= 0.0f)

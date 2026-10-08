@@ -32,6 +32,26 @@ namespace ASVisionManagerPrivate
 			}
 			Manager->SetWallOcclusionEnabled(Args.Num() == 0 || Args[0] == TEXT("1"));
 		}));
+
+	static FAutoConsoleCommandWithWorldAndArgs NightCommand(
+		TEXT("AS.Vision.Night"),
+		TEXT("AS.Vision.Night <0|1>: blend day/night vision on the server."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(World);
+			AASFogOfWarManager* Manager = Subsystem ? Subsystem->GetFogOfWarManager() : nullptr;
+			if (!Manager || !Manager->HasAuthority())
+			{
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Vision: no authoritative fog manager in this world (commands run on the server/host)."));
+				return;
+			}
+			if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1")))
+			{
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Vision.Night <0|1>"));
+				return;
+			}
+			Manager->SetNight(Args[0] == TEXT("1"));
+		}));
 }
 
 AASFogOfWarManager::AASFogOfWarManager()
@@ -52,6 +72,7 @@ void AASFogOfWarManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME(AASFogOfWarManager, VisionDefinition);
 	DOREPLIFETIME(AASFogOfWarManager, bWallOcclusionEnabled);
 	DOREPLIFETIME(AASFogOfWarManager, ExploredResetCount);
+	DOREPLIFETIME(AASFogOfWarManager, NightBlend);
 }
 
 void AASFogOfWarManager::ServerSetVisionDefinition(UASVisionDefinition* InVisionDefinition)
@@ -78,6 +99,30 @@ void AASFogOfWarManager::SetWallOcclusionEnabled(bool bEnabled)
 	OnWallOcclusionChanged.Broadcast(bEnabled);
 	ForceNetUpdate();
 	UE_LOG(LogApocalypseSurvival, Log, TEXT("Wall occlusion %s."), bEnabled ? TEXT("enabled") : TEXT("disabled"));
+}
+
+void AASFogOfWarManager::SetNight(bool bNight, bool bImmediate)
+{
+	const float Target = bNight ? 1.0f : 0.0f;
+	if (!HasAuthority() || Target == NightBlend.ToAlpha)
+	{
+		return;
+	}
+
+	const double Now = VisionEvaluatorComponent->GetServerTimeSeconds();
+	const float BlendSeconds = VisionDefinition ? VisionDefinition->Settings.DayNightBlendSeconds : 0.0f;
+	NightBlend.FromAlpha = bImmediate ? Target : NightBlend.Evaluate(Now, BlendSeconds);
+	NightBlend.ToAlpha = Target;
+	NightBlend.StartServerTime = Now;
+	ForceNetUpdate();
+	UE_LOG(LogApocalypseSurvival, Log, TEXT("Vision night target %.0f (from %.3f, immediate=%s)."),
+		Target, NightBlend.FromAlpha, bImmediate ? TEXT("true") : TEXT("false"));
+}
+
+float AASFogOfWarManager::GetNightAlpha() const
+{
+	const float BlendSeconds = VisionDefinition ? VisionDefinition->Settings.DayNightBlendSeconds : 0.0f;
+	return NightBlend.Evaluate(VisionEvaluatorComponent->GetServerTimeSeconds(), BlendSeconds);
 }
 
 void AASFogOfWarManager::OnRep_WallOcclusionEnabled()
@@ -226,5 +271,5 @@ bool AASFogOfWarManager::CanSourceSeeTarget(
 	double ServerTime,
 	bool bWallOcclusion) const
 {
-	return VisionEvaluatorComponent->CanSourceSeeTarget(Source, Target, ServerTime, bWallOcclusion);
+	return VisionEvaluatorComponent->CanSourceSeeTarget(Source, Target, ServerTime, bWallOcclusion, GetNightAlpha());
 }
