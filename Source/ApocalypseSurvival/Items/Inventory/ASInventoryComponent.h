@@ -24,6 +24,8 @@ class APOCALYPSESURVIVAL_API UASInventoryComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
+	static constexpr int32 PlayerSlotCount = 10;
+
 	UASInventoryComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual bool ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
@@ -31,6 +33,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UASItemInstance* FindItemById(FGuid InstanceId) const;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	UASItemInstance* GetItemAtSlot(int32 SlotIndex) const;
+
+	/** Swap positions only. Reject requests whose displayed items have since changed. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	bool SwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFromItem, FGuid ExpectedToItem);
 
 	/** Authority-only gameplay operations. Clients request these through ASPlayerController. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
@@ -122,6 +131,7 @@ public:
 	FASInventoryChangedSignature OnInventoryChanged;
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
@@ -135,6 +145,7 @@ private:
 	void OnRep_Items();
 
 	bool HasFreeSlot() const;
+	int32 FindFreeSlotIndex() const;
 	void RemoveEmptyAndInvalidInstances();
 
 	/** Maximum number of item instances. Zero means unlimited. */

@@ -24,6 +24,16 @@ UASInventoryComponent::UASInventoryComponent()
 	bReplicateUsingRegisteredSubObjectList = true;
 }
 
+void UASInventoryComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	// Player inventory is the ten visible slots. Loot containers keep their configured limit.
+	if (Cast<APawn>(GetOwner()) || Cast<AController>(GetOwner()) || Cast<APlayerState>(GetOwner()))
+	{
+		MaxSlots = PlayerSlotCount;
+	}
+}
+
 int32 UASInventoryComponent::AddItem(UASItemDefinition* ItemDefinition, const int32 RequestedQuantity)
 {
 	if (!HasInventoryAuthority() || !IsValid(ItemDefinition) || RequestedQuantity <= 0)
@@ -62,6 +72,7 @@ int32 UASInventoryComponent::AddItem(UASItemDefinition* ItemDefinition, const in
 			break;
 		}
 
+		NewItemInstance->InventorySlot = FindFreeSlotIndex();
 		Items.Add(NewItemInstance);
 		RemainingQuantity -= NewItemInstance->GetQuantity();
 	}
@@ -199,6 +210,7 @@ int32 UASInventoryComponent::TransferItemTo(
 				TransferredInstance->InstanceId = FGuid::NewGuid();
 			}
 
+			TransferredInstance->InventorySlot = TargetInventory->FindFreeSlotIndex();
 			TargetInventory->Items.Add(TransferredInstance);
 			ItemInstance->RemoveQuantity(NewInstanceQuantity);
 			RemainingQuantity -= NewInstanceQuantity;
@@ -286,6 +298,40 @@ TArray<UASItemInstance*> UASInventoryComponent::GetItems() const
 bool UASInventoryComponent::HasFreeSlot() const
 {
 	return MaxSlots <= 0 || Items.Num() < MaxSlots;
+}
+
+int32 UASInventoryComponent::FindFreeSlotIndex() const
+{
+	for (int32 Index = 0; Index <= Items.Num(); ++Index)
+	{
+		if (!GetItemAtSlot(Index)) return Index;
+	}
+	return INDEX_NONE;
+}
+
+UASItemInstance* UASInventoryComponent::GetItemAtSlot(const int32 SlotIndex) const
+{
+	if (SlotIndex < 0 || (MaxSlots > 0 && SlotIndex >= MaxSlots)) return nullptr;
+	for (UASItemInstance* Item : Items)
+	{
+		if (IsValid(Item) && Item->IsValidItemInstance() && Item->InventorySlot == SlotIndex) return Item;
+	}
+	return nullptr;
+}
+
+bool UASInventoryComponent::SwapSlots(const int32 FromSlot, const int32 ToSlot,
+	const FGuid ExpectedFromItem, const FGuid ExpectedToItem)
+{
+	if (!HasInventoryAuthority() || FromSlot == ToSlot || FromSlot < 0 || ToSlot < 0
+		|| FromSlot >= PlayerSlotCount || ToSlot >= PlayerSlotCount) return false;
+	UASItemInstance* From = GetItemAtSlot(FromSlot);
+	UASItemInstance* To = GetItemAtSlot(ToSlot);
+	if (!From || From->GetInstanceId() != ExpectedFromItem
+		|| (To ? To->GetInstanceId() : FGuid()) != ExpectedToItem) return false;
+	From->InventorySlot = ToSlot;
+	if (To) To->InventorySlot = FromSlot;
+	NotifyInventoryChanged();
+	return true;
 }
 
 void UASInventoryComponent::RemoveEmptyAndInvalidInstances()
