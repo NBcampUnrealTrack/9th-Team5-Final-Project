@@ -5,6 +5,7 @@
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
+#include "Items/ASItemInstance.h"
 
 AASPlayerState::AASPlayerState()
 {
@@ -35,6 +36,16 @@ void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
 	}
 
 	AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &DefaultAbilityHandles, this);
+}
+
+void AASPlayerState::SetEquippedItemRecord(UASItemInstance* Item)
+{
+	EquippedItemRecord = Item;
+}
+
+UASItemInstance* AASPlayerState::GetEquippedItemRecord() const
+{
+	return EquippedItemRecord.Get();
 }
 
 void AASPlayerState::ResetForRespawn()

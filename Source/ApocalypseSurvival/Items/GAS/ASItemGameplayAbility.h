@@ -27,4 +27,21 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item|GAS")
 	float GetItemHealAmount() const;
+
+	/** Returns zero when this ability has no weapon source. */
+	UFUNCTION(BlueprintPure, Category = "Item|GAS|Weapon")
+	float GetWeaponAttackInterval() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|GAS|Weapon")
+	float GetWeaponAttackRange() const;
+
+protected:
+	/** Keep the last consumed unit available to delayed Blueprint use effects. */
+	void CacheSourceItem();
+	virtual void ActivateAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<UASItemInstance> ActiveSourceItem;
 };

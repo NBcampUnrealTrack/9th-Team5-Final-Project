@@ -41,6 +41,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item")
 	FGuid GetInstanceId() const { return InstanceId; }
 
+	UFUNCTION(BlueprintPure, Category = "Item")
+	int32 GetInventorySlot() const { return InventorySlot; }
+
 	/** Returns how many additional units can be added without exceeding MaxStackSize. */
 	UFUNCTION(BlueprintPure, Category = "Item")
 	int32 GetRemainingStackSpace() const;
@@ -69,4 +72,7 @@ private:
 	/** Number of identical units represented by this instance. */
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
 	int32 Quantity = 0;
+
+	UPROPERTY(Replicated)
+	int32 InventorySlot = INDEX_NONE;
 };

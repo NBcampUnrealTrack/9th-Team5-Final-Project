@@ -10,6 +10,7 @@ void UASItemInstance::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(UASItemInstance, InstanceId);
 	DOREPLIFETIME(UASItemInstance, ItemDefinition);
 	DOREPLIFETIME(UASItemInstance, Quantity);
+	DOREPLIFETIME(UASItemInstance, InventorySlot);
 }
 
 UWorld* UASItemInstance::GetWorld() const

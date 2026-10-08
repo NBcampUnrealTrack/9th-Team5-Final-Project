@@ -12,6 +12,8 @@ class APOCALYPSESURVIVAL_API UASItemUseAbility : public UASItemGameplayAbility
 
 public:
 	UASItemUseAbility();
+	virtual bool CommitAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayAbilityActivationInfo ActivationInfo, FGameplayTagContainer* OptionalRelevantTags = nullptr) override;
 	virtual bool CheckCost(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	virtual void ApplyCost(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -23,4 +25,5 @@ protected:
 
 private:
 	mutable bool bItemCostPaid = false;
+	mutable bool bApplyingItemCost = false;
 };

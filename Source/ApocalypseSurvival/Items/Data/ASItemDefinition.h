@@ -8,12 +8,14 @@
 
 class AActor;
 class UGameplayAbility;
+class UGameplayEffect;
 class UStaticMesh;
 class UTexture2D;
+class FDataValidationContext;
 
 /**
  * Static, designer-authored data shared by every instance of an item.
- * Runtime state such as quantity or equipped slot belongs to the inventory.
+ * Quantity belongs to the inventory; equipped state belongs to the equipment component.
  */
 UCLASS(BlueprintType, Const)
 class APOCALYPSESURVIVAL_API UASItemDefinition : public UPrimaryDataAsset
@@ -21,6 +23,9 @@ class APOCALYPSESURVIVAL_API UASItemDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 	/** Stable identifier. Do not derive gameplay logic from the asset name or path. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	FName ItemId = NAME_None;
@@ -59,20 +64,59 @@ public:
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
 	FName EquippedSocketName = NAME_None;
 
-	/** Abilities granted while this weapon is equipped. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|GAS",
+	/** Normal attack supplied by this weapon. Equipment binds it to InputTag.Attack.Primary. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Attack",
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
-	TArray<TSoftClassPtr<UGameplayAbility>> GrantedAbilities;
+	TSoftClassPtr<UGameplayAbility> PrimaryAttackAbility;
 
-	/** Must derive from ASItemUseAbility to consume one unit on CommitAbility. Null uses the default healing ability. */
+	/** Must derive from ASItemUseAbility; CommitAbility consumes UseQuantity. Null uses the default data-driven ability. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
 		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	TSoftClassPtr<UGameplayAbility> UseAbility;
+
+	/** Units consumed by one successful CommitAbility. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
+		meta = (ClampMin = "1", EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
+	int32 UseQuantity = 1;
+
+	/** Self effects used by the default consumable ability. Empty uses HealAmount. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
+		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
+	TArray<TSoftClassPtr<UGameplayEffect>> UseEffects;
 
 	/** Base damage supplied to the equipped weapon ability. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon",
 		meta = (ClampMin = "0.0", EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
 	float BaseDamage = 0.0f;
+
+	/** Minimum time between normal attacks, in seconds. The attack ability enforces this. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Attack",
+		meta = (ClampMin = "0.01", Units = "s", EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
+	float AttackInterval = 0.5f;
+
+	/** Normal attack reach in cm: melee reach or maximum bullet travel distance. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Attack",
+		meta = (ClampMin = "0.0", Units = "cm", EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
+	float AttackRange = 200.0f;
+
+	/** Damage effect used by the attack ability. Existing skills supply negative Data.Damage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Effects",
+		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
+	TSoftClassPtr<UGameplayEffect> DamageEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Ammo",
+		meta = (EditCondition = "ItemType == EASItemType::Weapon && WeaponType == EASWeaponType::Ranged", EditConditionHides))
+	bool bUsesAmmo = false;
+
+	/** Inventory item consumed by this weapon. Select an item whose ItemType is Ammo. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Ammo",
+		meta = (EditCondition = "ItemType == EASItemType::Weapon && WeaponType == EASWeaponType::Ranged && bUsesAmmo", EditConditionHides))
+	TObjectPtr<UASItemDefinition> AmmoDefinition;
+
+	/** Units consumed per successful shot; charged by the server's firing ability. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Ammo",
+		meta = (ClampMin = "1", EditCondition = "ItemType == EASItemType::Weapon && WeaponType == EASWeaponType::Ranged && bUsesAmmo", EditConditionHides))
+	int32 AmmoPerShot = 1;
 
 	/** Health restored when this healing item is used. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|Healing",

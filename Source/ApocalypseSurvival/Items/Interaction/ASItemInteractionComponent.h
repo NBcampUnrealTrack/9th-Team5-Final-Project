@@ -8,6 +8,8 @@ class AASLootChest;
 class AASPlayerController;
 class UASInventoryComponent;
 class UASLootWidget;
+class UASInventoryBarWidget;
+class UInputComponent;
 
 /** Controller-owned RPC bridge. Finds an existing player inventory; never creates one. */
 UCLASS(ClassGroup = (AS), meta = (BlueprintSpawnableComponent))
@@ -37,6 +39,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void RequestUnequipItem();
 
+	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
+	void RequestActivateSlot(int32 SlotIndex, FGuid ExpectedItem);
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
+	void RequestSwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFrom, FGuid ExpectedTo);
+
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void CloseLoot();
 
@@ -47,6 +55,14 @@ protected:
 private:
 	AASPlayerController* GetASController() const;
 	bool CanReachTarget(AActor* Target) const;
+	void InitializeInventoryBar();
+	void ActivateSlotFromKey(int32 SlotIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerActivateSlot(int32 SlotIndex, FGuid ExpectedItem);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFrom, FGuid ExpectedTo);
 
 	UFUNCTION(Server, Reliable)
 	void ServerInteract(AActor* Target);
@@ -77,6 +93,16 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASLootWidget> LootWidget;
+
+	/** Optional visual override. The native class works without any BP assets. */
+	UPROPERTY(EditDefaultsOnly, Category = "Item|Inventory")
+	TSubclassOf<UASInventoryBarWidget> InventoryBarClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UASInventoryBarWidget> InventoryBar;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputComponent> InventoryInput;
 
 	TWeakObjectPtr<AActor> PendingTarget;
 	TWeakObjectPtr<AASLootChest> OpenChest;
