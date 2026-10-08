@@ -3,6 +3,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Border.h"
 #include "Components/UniformGridPanel.h"
 #include "GameFramework/PlayerController.h"
 #include "Items/Interaction/ASItemInteractionComponent.h"
@@ -24,6 +25,20 @@ TSharedRef<SWidget> UASInventoryBarWidget::RebuildWidget()
 		PanelSlot->SetAutoSize(true);
 		WidgetTree->RootWidget = Canvas;
 	}
+	// Also supports BP layouts whose root is a full-screen CanvasPanel.
+	if (WidgetTree && !OutsideDropArea)
+	{
+		if (UCanvasPanel* Canvas = Cast<UCanvasPanel>(WidgetTree->RootWidget))
+		{
+			OutsideDropArea = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("OutsideDropArea"));
+			OutsideDropArea->SetBrushColor(FLinearColor::Transparent);
+			UCanvasPanelSlot* DropAreaSlot = Canvas->AddChildToCanvas(OutsideDropArea);
+			DropAreaSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+			DropAreaSlot->SetOffsets(FMargin(0.0f));
+			DropAreaSlot->SetZOrder(-1);
+		}
+	}
+	EndItemDrag();
 	return Super::RebuildWidget();
 }
 
@@ -51,8 +66,33 @@ void UASInventoryBarWidget::NativeConstruct()
 
 void UASInventoryBarWidget::NativeDestruct()
 {
+	EndItemDrag();
 	if (Inventory) Inventory->OnInventoryChanged.RemoveDynamic(this, &ThisClass::RefreshSlots);
 	Super::NativeDestruct();
+}
+
+void UASInventoryBarWidget::BeginItemDrag()
+{
+	if (OutsideDropArea) OutsideDropArea->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UASInventoryBarWidget::EndItemDrag()
+{
+	if (OutsideDropArea) OutsideDropArea->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+bool UASInventoryBarWidget::NativeOnDrop(const FGeometry& Geometry, const FDragDropEvent& Event, UDragDropOperation* Operation)
+{
+	UASInventorySlotDragDrop* Drag = Cast<UASInventorySlotDragDrop>(Operation);
+	if (!Drag || Drag->SourceBar != this || Drag->Inventory != Inventory || !IsValid(Inventory)) return false;
+	// Dropping in gaps or back onto the source slot is a no-op, not a discard.
+	if (!SlotsPanel || SlotsPanel->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition())) return true;
+	if (GetOwningPlayer())
+	{
+		if (UASItemInteractionComponent* Interaction = GetOwningPlayer()->FindComponentByClass<UASItemInteractionComponent>())
+			Interaction->RequestDropSlot(Drag->FromSlot, Drag->ItemId);
+	}
+	return true;
 }
 
 void UASInventoryBarWidget::SetInventory(UASInventoryComponent* InInventory)

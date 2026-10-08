@@ -13,6 +13,18 @@
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/UI/ASInventoryBarWidget.h"
 
+void UASInventorySlotDragDrop::Drop_Implementation(const FPointerEvent& PointerEvent)
+{
+	if (SourceBar) SourceBar->EndItemDrag();
+	Super::Drop_Implementation(PointerEvent);
+}
+
+void UASInventorySlotDragDrop::DragCancelled_Implementation(const FPointerEvent& PointerEvent)
+{
+	if (SourceBar) SourceBar->EndItemDrag();
+	Super::DragCancelled_Implementation(PointerEvent);
+}
+
 TSharedRef<SWidget> UASInventorySlotWidget::RebuildWidget()
 {
 	if (WidgetTree && !WidgetTree->RootWidget)
@@ -116,12 +128,14 @@ void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, con
 	if (!Bar || !Item || Item->GetInstanceId() != PressedItem) return;
 	UASInventorySlotDragDrop* Drag = NewObject<UASInventorySlotDragDrop>();
 	Drag->Inventory = Bar->GetInventory();
+	Drag->SourceBar = Bar;
 	Drag->FromSlot = SlotIndex;
 	Drag->ItemId = PressedItem;
 	UASInventorySlotWidget* Visual = CreateWidget<UASInventorySlotWidget>(GetOwningPlayer());
 	if (Visual) Visual->InitializeSlot(Bar, SlotIndex);
 	Drag->DefaultDragVisual = Visual;
 	Drag->Pivot = EDragPivot::CenterCenter;
+	Bar->BeginItemDrag();
 	Operation = Drag;
 }
 

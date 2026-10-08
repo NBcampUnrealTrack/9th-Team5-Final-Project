@@ -111,10 +111,9 @@ FReply UASLootWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const
 	{
 		if (AASPlayerController* PC = Cast<AASPlayerController>(GetOwningPlayer()))
 		{
-			FVector Destination;
-			if (PC->GetCursorWorldLocation(Destination))
+			if (UASItemInteractionComponent* Interaction = PC->FindComponentByClass<UASItemInteractionComponent>())
 			{
-				PC->RequestMoveTo(Destination);
+				Interaction->HandleWorldRightClick();
 			}
 		}
 	}
