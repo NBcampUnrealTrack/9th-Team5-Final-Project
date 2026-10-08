@@ -40,6 +40,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy")
 	bool IsDead() const;
 
+	/** State.Monster.HitReact 태그로 판정한다. 경직 중에는 AI 이동과 공격을 멈춘다. */
+	UFUNCTION(BlueprintPure, Category = "Enemy")
+	bool IsHitReacting() const;
+
 	/**
 	 * 서버 전용. true 면 몸이 이동 방향이 아니라 컨트롤러 시선(AIController 의 Focus)을 따라 돈다.
 	 * 원거리 몬스터가 타깃을 보면서 움직일 때 쓴다.
@@ -86,6 +90,9 @@ protected:
 	 * 만들지 않는다. 만들어도 트리가 먼저 멈추기 때문에 실행되지 않는다.
 	 */
 	virtual void StopMovementAndAI();
+
+	/** 서버 전용. Definition의 HitReactEffect를 자신에게 적용하고 진행 중인 공격을 취소한다. */
+	void ApplyHitReact();
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy")
 	TObjectPtr<UASMonsterDefinition> MonsterDefinition;
