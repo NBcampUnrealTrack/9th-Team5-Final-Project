@@ -16,6 +16,7 @@ UASMonsterMeleeAbility::UASMonsterMeleeAbility()
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack_Melee);
+	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Attacking);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_Dead);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_HitReact);
 }

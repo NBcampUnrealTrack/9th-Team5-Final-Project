@@ -150,6 +150,23 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
 			OwnedAbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1));
 		}
 	}
+
+	TArray<FGameplayAbilitySpecHandle> PatternAbilityHandles;
+	PatternAbilityHandles.Reserve(MonsterDefinition->AttackPatterns.Num());
+	for (const FASMonsterAttackPattern& Pattern : MonsterDefinition->AttackPatterns)
+	{
+		if (!Pattern.PatternId.IsValid() || !Pattern.AbilityClass)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Monster] %s has an invalid attack pattern. PatternId and AbilityClass are required."),
+				*GetNameSafe(MonsterDefinition));
+			PatternAbilityHandles.Add(FGameplayAbilitySpecHandle());
+			continue;
+		}
+
+		PatternAbilityHandles.Add(OwnedAbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(Pattern.AbilityClass, 1)));
+	}
+
+	CombatComponent->ConfigurePatterns(MonsterDefinition->AttackPatterns, PatternAbilityHandles);
 }
 
 void AASMonsterCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)

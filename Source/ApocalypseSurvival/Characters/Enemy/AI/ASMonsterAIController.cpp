@@ -246,6 +246,15 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 		return;
 	}
 
+	// 패턴 Ability가 선딜·돌진처럼 직접 이동을 제어하는 동안에는 주기적인 MoveTo 요청으로 덮어쓰지 않는다.
+	// StopMovement는 PathFollowing만 중단하며, 돌진 Ability의 Root Motion 이동은 Ability 쪽에서 계속 제어한다.
+	if (const UASMonsterCombatComponent* Combat = Monster->GetCombatComponent(); Combat && Combat->IsPatternAttackActive())
+	{
+		StopMovement();
+		MoveTarget.Reset();
+		return;
+	}
+
 	const bool bHasTarget = bNightAggressive
 		? (Targeting->ValidateTarget(true) || Targeting->AcquireTargetAnywhere())
 		: (Targeting->ValidateTarget() || Targeting->AcquireTarget());

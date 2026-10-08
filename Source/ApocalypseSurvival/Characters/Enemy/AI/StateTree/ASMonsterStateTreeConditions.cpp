@@ -35,5 +35,5 @@ bool FASMonsterTargetInAttackRangeCondition::TestCondition(FStateTreeExecutionCo
 		return false;
 	}
 
-	return Combat->IsTargetInAttackRange(Target) != InstanceData.bInvert;
+	return Combat->CanRequestAttack(Target) != InstanceData.bInvert;
 }
