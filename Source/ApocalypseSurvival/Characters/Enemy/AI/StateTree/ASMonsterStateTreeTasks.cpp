@@ -46,7 +46,8 @@ EStateTreeRunStatus FASMonsterAcquireTargetTask::Tick(FStateTreeExecutionContext
 
 EStateTreeRunStatus FASMonsterRequestAttackTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
-	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.bWaitingForPatternAttack = false;
 	if (!IsServerComponent(InstanceData.CombatComponent) || !IsValid(InstanceData.TargetingComponent))
 	{
 		return EStateTreeRunStatus::Failed;
@@ -59,6 +60,42 @@ EStateTreeRunStatus FASMonsterRequestAttackTask::EnterState(FStateTreeExecutionC
 		return EStateTreeRunStatus::Failed;
 	}
 
-	// 사거리와 활성화 가능 여부는 CombatComponent 와 GAS 가 판단한다. 여기서는 결과만 옮긴다.
-	return InstanceData.CombatComponent->TryRequestAttack(Target) ? EStateTreeRunStatus::Succeeded : EStateTreeRunStatus::Failed;
+	// 사거리, 패턴 쿨다운, 활성화 가능 여부는 CombatComponent 와 GAS 가 판단한다.
+	if (!InstanceData.CombatComponent->TryRequestAttack(Target))
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (!InstanceData.CombatComponent->UsesAttackPatterns())
+	{
+		return EStateTreeRunStatus::Succeeded;
+	}
+
+	InstanceData.bWaitingForPatternAttack = true;
+	if (!InstanceData.CombatComponent->IsPatternAttackActive())
+	{
+		// 몽타주 없는 즉발 Ability는 TryActivateAbility 안에서 이미 끝난다.
+		InstanceData.CombatComponent->NotifyPatternAttackFinished();
+		return EStateTreeRunStatus::Succeeded;
+	}
+
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FASMonsterRequestAttackTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!InstanceData.bWaitingForPatternAttack || !IsServerComponent(InstanceData.CombatComponent))
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.CombatComponent->IsPatternAttackActive())
+	{
+		return EStateTreeRunStatus::Running;
+	}
+
+	InstanceData.CombatComponent->NotifyPatternAttackFinished();
+	InstanceData.bWaitingForPatternAttack = false;
+	return EStateTreeRunStatus::Succeeded;
 }

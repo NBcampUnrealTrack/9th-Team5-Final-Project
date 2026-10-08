@@ -42,7 +42,7 @@ struct APOCALYPSESURVIVAL_API FASMonsterHasValidTargetCondition : public FStateT
 	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
 };
 
-/** 공격 사거리 Condition 의 인스턴스 데이터. */
+/** 현재 거리와 패턴 쿨다운 기준으로 공격 요청이 가능한지 검사하는 Condition의 인스턴스 데이터. */
 USTRUCT()
 struct FASMonsterTargetInAttackRangeInstanceData
 {
@@ -62,8 +62,8 @@ struct FASMonsterTargetInAttackRangeInstanceData
 };
 
 /**
- * 타깃이 공격 사거리 안에 있는지 검사한다.
- * 사거리 규칙은 UASMonsterCombatComponent::IsTargetInAttackRange() 하나뿐이고 여기서 다시 계산하지 않는다.
+ * 타깃에게 지금 공격 요청을 보낼 수 있는지 검사한다.
+ * 단일 공격 몬스터는 기존 공격 사거리만, 패턴 몬스터는 거리·개별 쿨다운·공용 후딜을 CombatComponent가 판단한다.
  * 타깃은 바인딩된 값이 아니라 TargetingComponent 에서 평가 순간에 직접 읽는다.
  * 타깃이 없거나 서버가 아니면 항상 거짓이다(뒤집기와 상관없이).
  */
