@@ -12,6 +12,7 @@
 #include "GenericTeamAgentInterface.h"
 #include "GameplayEffect.h"
 #include "Skills/ASSkillTags.h"
+#include "Engine/Texture2D.h"
 
 UASSkillAbility::UASSkillAbility()
 {
@@ -322,4 +323,9 @@ void UASSkillAbility::FinishSkill(bool bWasCancelled)
 	bWaitingForHitEvent = false;
 
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bWasCancelled);
+}
+
+UTexture2D* UASSkillAbility::GetSkillIcon() const
+{
+	return SkillIcon;
 }
