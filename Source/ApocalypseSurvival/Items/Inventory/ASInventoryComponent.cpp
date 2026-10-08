@@ -11,6 +11,8 @@
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Use/ASItemUseComponent.h"
 #include "Items/Equipment/ASItemEquipmentInterface.h"
+#include "Items/Loot/ASDroppedItem.h"
+#include "Engine/World.h"
 
 #include "GAS/ASAbilityTags.h"
 
@@ -332,6 +334,46 @@ bool UASInventoryComponent::SwapSlots(const int32 FromSlot, const int32 ToSlot,
 	if (To) To->InventorySlot = FromSlot;
 	NotifyInventoryChanged();
 	return true;
+}
+
+AASDroppedItem* UASInventoryComponent::DropSlot(const int32 SlotIndex, const FGuid ExpectedItem, APawn* Avatar)
+{
+	if (!HasInventoryAuthority() || !IsValid(Avatar) || Avatar != GetInventoryAvatar()
+		|| SlotIndex < 0 || SlotIndex >= PlayerSlotCount || !GetWorld()) return nullptr;
+	UASItemInstance* Item = GetItemAtSlot(SlotIndex);
+	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
+	if (!Item || Item->GetInstanceId() != ExpectedItem || !ASC
+		|| ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)) return nullptr;
+
+	FVector Location = Avatar->GetActorLocation() + Avatar->GetActorForwardVector() * 100.0f;
+	FHitResult Ground;
+	FCollisionQueryParams Query;
+	Query.AddIgnoredActor(Avatar);
+	if (GetWorld()->LineTraceSingleByChannel(Ground, Location + FVector(0, 0, 100),
+		Location - FVector(0, 0, 300), ECC_Visibility, Query))
+		Location = Ground.ImpactPoint + FVector(0, 0, 30);
+	FActorSpawnParameters Spawn;
+	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AASDroppedItem* Dropped = GetWorld()->SpawnActor<AASDroppedItem>(Location, FRotator::ZeroRotator, Spawn);
+	if (!Dropped) return nullptr;
+	if (GetEquippedItem() == Item)
+	{
+		UnequipItem(); // Equipment implementation owns actor/GAS cleanup.
+		if (GetEquippedItem() == Item)
+		{
+			Dropped->Destroy();
+			return nullptr;
+		}
+	}
+	// Unequip callbacks may change ownership or quantity. Revalidate before transferring.
+	if (!IsValid(Avatar) || Avatar != GetInventoryAvatar() || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+		|| GetItemAtSlot(SlotIndex) != Item || !Item->IsValidItemInstance()
+		|| TransferItemTo(Dropped->GetLootInventory(), Item, Item->GetQuantity()) <= 0)
+	{
+		Dropped->Destroy();
+		return nullptr;
+	}
+	return Dropped;
 }
 
 void UASInventoryComponent::RemoveEmptyAndInvalidInstances()

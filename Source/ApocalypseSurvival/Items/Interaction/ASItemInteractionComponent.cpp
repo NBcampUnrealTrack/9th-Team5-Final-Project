@@ -8,11 +8,22 @@
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Loot/ASLootChest.h"
+#include "Items/Loot/ASDroppedItem.h"
 #include "Items/UI/ASLootWidget.h"
 #include "Items/UI/ASInventoryBarWidget.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
+#include "Characters/Player/ASPlayerCharacter.h"
+
+namespace
+{
+	bool IsDeadPawn(const AASPlayerController* PC)
+	{
+		const AASPlayerCharacter* Pawn = PC ? Cast<AASPlayerCharacter>(PC->GetPawn()) : nullptr;
+		return Pawn && Pawn->IsDead();
+	}
+}
 
 UASItemInteractionComponent::UASItemInteractionComponent()
 {
@@ -48,7 +59,7 @@ bool UASItemInteractionComponent::TryInteractWith(AActor* Target)
 {
 	AASPlayerController* PC = GetASController();
 	if (!PC || !PC->IsLocalController() || !IsValid(PC->GetPawn()) || !IsValid(Target)
-		|| !Target->Implements<UASInteractable>()) return false;
+		|| !Target->Implements<UASInteractable>() || Target->IsA<AASDroppedItem>()) return false;
 	CloseLoot();
 	PendingTarget = Target;
 	PendingStartedAt = GetWorld()->GetTimeSeconds();
@@ -60,6 +71,42 @@ bool UASItemInteractionComponent::TryInteractWith(AActor* Target)
 	}
 	else PC->RequestMoveTo(IASInteractable::Execute_GetInteractionLocation(Target));
 	return true;
+}
+
+bool UASItemInteractionComponent::RequestPickupDroppedItem(AASDroppedItem* Item)
+{
+	AASPlayerController* PC = GetASController();
+	if (!PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())
+		|| !IsValid(Item) || !Item->GetDroppedItem() || !GetPlayerInventory()) return false;
+	CloseLoot();
+	PendingTarget = Item;
+	PendingStartedAt = GetWorld()->GetTimeSeconds();
+	if (CanReachTarget(Item))
+	{
+		PC->StopMovement();
+		ServerInteract(Item);
+		CancelPendingInteraction();
+	}
+	else PC->RequestMoveTo(Item->GetActorLocation());
+	return true;
+}
+
+void UASItemInteractionComponent::HandleWorldRightClick()
+{
+	AASPlayerController* PC = GetASController();
+	if (!PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())) return;
+	FHitResult Hit;
+	if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit))
+	{
+		if (AASDroppedItem* Item = Cast<AASDroppedItem>(Hit.GetActor()))
+		{
+			RequestPickupDroppedItem(Item);
+			return;
+		}
+	}
+	CancelPendingInteraction();
+	FVector Destination;
+	if (PC->GetCursorWorldLocation(Destination)) PC->RequestMoveTo(Destination);
 }
 
 void UASItemInteractionComponent::CancelPendingInteraction()
@@ -95,6 +142,11 @@ void UASItemInteractionComponent::ServerInteract_Implementation(AActor* Target)
 {
 	AASPlayerController* PC = GetASController();
 	if (!CanReachTarget(Target) || !IASInteractable::Execute_CanInteract(Target, PC->GetPawn())) return;
+	if (Target->IsA<AASDroppedItem>())
+	{
+		IASInteractable::Execute_Interact(Target, PC->GetPawn());
+		return;
+	}
 	AASLootChest* Chest = Cast<AASLootChest>(Target);
 	if (Chest && !GetPlayerInventory()) return;
 	IASInteractable::Execute_Interact(Target, PC->GetPawn());
@@ -168,6 +220,10 @@ void UASItemInteractionComponent::InitializeInventoryBar()
 			Binding.KeyDelegate.GetDelegateForManualSet().BindLambda([this, Index]() { ActivateSlotFromKey(Index); });
 			InventoryInput->KeyBindings.Add(Binding);
 		}
+		FInputKeyBinding RightClick(FInputChord(EKeys::RightMouseButton), IE_Pressed);
+		RightClick.bConsumeInput = true;
+		RightClick.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::HandleWorldRightClick);
+		InventoryInput->KeyBindings.Add(RightClick);
 		PC->PushInputComponent(InventoryInput);
 	}
 	if (!InventoryBar)
@@ -230,6 +286,19 @@ void UASItemInteractionComponent::ServerSwapSlots_Implementation(const int32 Fro
 {
 	if (UASInventoryComponent* Inventory = GetPlayerInventory())
 		Inventory->SwapSlots(FromSlot, ToSlot, ExpectedFrom, ExpectedTo);
+}
+
+void UASItemInteractionComponent::RequestDropSlot(const int32 SlotIndex, const FGuid ExpectedItem)
+{
+	if (GetASController() && GetASController()->IsLocalController() && ExpectedItem.IsValid()
+		&& SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)
+		ServerDropSlot(SlotIndex, ExpectedItem);
+}
+
+void UASItemInteractionComponent::ServerDropSlot_Implementation(const int32 SlotIndex, const FGuid ExpectedItem)
+{
+	if (UASInventoryComponent* Inventory = GetPlayerInventory())
+		Inventory->DropSlot(SlotIndex, ExpectedItem, GetASController()->GetPawn());
 }
 
 void UASItemInteractionComponent::ClientOpenLoot_Implementation(AASLootChest* Chest)
