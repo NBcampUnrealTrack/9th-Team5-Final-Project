@@ -8,8 +8,9 @@
 class ACharacter;
 class UAnimMontage;
 class UGameplayEffect;
+class UTexture2D;
 
-/**
+/*
  * Base for Skills
  */
 UCLASS(Abstract)
@@ -41,7 +42,10 @@ public:
 
 	//데미지 스펙을 대상에게 적용 (서버에서 호출)
 	static void ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& DamageSpec, AActor* Target);
-
+	
+	//스킬 아이콘 반환
+	UTexture2D* GetSkillIcon() const;
+	
 protected:
 	//스킬 효과. 타격 타이밍마다 호출
 	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill")
@@ -111,6 +115,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Debug")
 	bool bDrawDebug = false;
 
+	//스킬 아이콘
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Icon")
+	TObjectPtr<UTexture2D> SkillIcon;
+	
 	UFUNCTION()
 	virtual void OnMontageCompleted();
 
