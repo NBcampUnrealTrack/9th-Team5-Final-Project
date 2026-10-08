@@ -18,9 +18,10 @@ struct FOnAttributeChangeData;
  * 카메라는 이 캐릭터에 없다. 화면이 캐릭터와 따로 움직여야 해서
  * AASPlayerCameraManager 가 시점을 담당한다.
  *
- * 사망은 서버가 체력 0 을 보고 State.Dead 태그를 붙이는 것으로 시작한다. 태그는 모든
- * 머신에 복제되므로 각 머신이 태그를 보고 자기 몫(이동 정지, 연출)을 한다. 리스폰은
- * AASGameMode 가 맡고, 이 캐릭터는 죽었다고 알리기만 한다.
+ * 사망은 Lyra 방식이다. 서버가 체력 0 을 보면 ASC 에 사망 이벤트를 보내고, 사망 어빌리티
+ * (UASGameplayAbility_Death)가 StartDeath → 몽타주 → FinishDeath 를 진행한다. StartDeath 가
+ * 붙이는 State.Dead 태그는 모든 머신에 복제되므로 각 머신이 태그를 보고 자기 몫(이동 정지, 연출)을
+ * 한다. 리스폰은 FinishDeath 가 AASGameMode 에 알린 뒤 게임모드가 맡는다.
  */
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API AASPlayerCharacter : public AASCharacterBase
@@ -39,6 +40,18 @@ public:
 	/** 죽어 있는가. 모든 머신에서 같은 답을 준다. */
 	UFUNCTION(BlueprintPure, Category = "Death")
 	bool IsDead() const;
+
+	/**
+	 * 사망 1단계. 서버 전용. 사망 어빌리티가 부른다.
+	 * 복제되는 State.Dead 태그를 붙이고, 그 태그를 받은 각 머신이 이동 정지·충돌 해제·연출을 한다.
+	 */
+	void StartDeath();
+
+	/**
+	 * 사망 2단계. 서버 전용. 연출(몽타주)이 끝난 뒤 사망 어빌리티가 부른다.
+	 * 게임모드에 알려 데스카운트와 리스폰을 맡긴다. 게임모드가 이 캐릭터를 파괴하고 새로 만든다.
+	 */
+	void FinishDeath();
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	UASEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
@@ -60,17 +73,15 @@ private:
 	void InitAbilitySystemFromPlayerState();
 	void UnbindDeathDelegates();
 
-	/** 서버 전용. 체력이 0 이 되면 사망을 시작한다. */
+	/**
+	 * 서버 전용. 체력이 0 이 되면 ASC 에 GameplayEvent.Death 를 보낸다. Lyra 와 같다.
+	 * 이벤트를 받은 사망 어빌리티가 StartDeath → 연출 → FinishDeath 를 진행한다.
+	 * 어빌리티가 부여돼 있지 않으면 연출 없이 두 단계를 바로 실행한다.
+	 */
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 
 	/** 사망 태그가 붙거나 떨어졌을 때. 모든 머신에서 불린다. */
 	void HandleDeadTagChanged(const FGameplayTag Tag, int32 NewCount);
-
-	/**
-	 * 서버 전용. 사망 태그를 붙이고 실행 중인 어빌리티를 끊은 뒤 게임모드에 알린다.
-	 * 게임모드가 대기 시간 뒤 이 캐릭터를 파괴하고 새로 만든다.
-	 */
-	void StartDeath();
 
 	/** 이 머신에서 보이는 사망 처리. 서 있던 자리에 멈추고 더는 부딪히지 않는다. */
 	void ApplyLocalDeath();
@@ -80,6 +91,9 @@ private:
 
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle DeadTagChangedHandle;
+
+	/** FinishDeath 가 두 번 불려도 게임모드에 한 번만 알리기 위한 표시. 서버만 쓴다. */
+	bool bDeathFinished = false;
 
 	/**
 	 * 무기를 몸에 다는 컴포넌트. 인벤토리(컨트롤러)가 인터페이스로 이 컴포넌트를 찾아 장착을 맡긴다.
