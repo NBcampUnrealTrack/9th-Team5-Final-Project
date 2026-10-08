@@ -100,6 +100,15 @@ void AASGameMode::StartNight()
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 밤 시작 (%.0f초, 보스: %s)"),
 		Day, Duration, bBossNight ? TEXT("O") : TEXT("X"));
 	
+	// 낮에 남은 몬스터는 밤이 되면 웨이브 스폰 수에 포함
+	// StartWave 전에 카운팅
+	const int32 LeftoverCount = CountAliveMonsters();
+	if (LeftoverCount > 0)
+	{
+		ReportWaveSpawned(LeftoverCount);
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] 낮에 남은 몬스터 %d마리 웨이브에 포함"), LeftoverCount);
+	}
+	
 	// AI/보스 시스템에 밤 시작을 알린다.
 	OnNightStarted.Broadcast(Day, bBossNight);
 
