@@ -17,6 +17,8 @@ namespace ASGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_HitReact);
 	/** 패턴 Ability가 실행 중이다. StateTree와 AI 이동 요청을 대기시키는 공용 상태다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_Attacking);
+	/** 타깃을 잠근 단일 대상 공격의 선딜·실행 중이다. 시각 경고에 사용한다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_TargetedAttacking);
 	/** 돌진 Ability가 직접 캐릭터 이동을 제어 중이다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_Charging);
 }
