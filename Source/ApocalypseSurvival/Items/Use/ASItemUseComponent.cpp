@@ -21,6 +21,15 @@ bool UASItemUseComponent::UseItem(UASInventoryComponent* Inventory, const FGuid 
 	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(Inventory, Avatar);
 	if (!Item || !ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)) return false;
 	const UASItemDefinition* Definition = Item->GetItemDefinition();
+	if (Definition->ItemType == EASItemType::Weapon)
+	{
+		if (Inventory->GetEquippedItem() == Item)
+		{
+			Inventory->UnequipItem();
+			return Inventory->GetEquippedItem() != Item;
+		}
+		return Inventory->EquipItem(InstanceId, Avatar);
+	}
 	if (Definition->ItemType != EASItemType::Consumable || Definition->UseQuantity <= 0
 		|| Item->GetQuantity() < Definition->UseQuantity) return false;
 	UClass* AbilityClass = Definition->UseAbility.IsNull()

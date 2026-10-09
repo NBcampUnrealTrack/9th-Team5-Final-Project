@@ -55,7 +55,7 @@ int32 UASInventoryComponent::AddItem(UASItemDefinition* ItemDefinition, const in
 			break;
 		}
 
-		if (IsValid(ItemInstance) && ItemInstance->GetItemDefinition() == ItemDefinition)
+		if (IsValid(ItemInstance) && ItemInstance->InventorySlot >= 0 && ItemInstance->GetItemDefinition() == ItemDefinition)
 		{
 			RemainingQuantity -= ItemInstance->AddQuantity(RemainingQuantity);
 		}
@@ -107,7 +107,7 @@ int32 UASInventoryComponent::RemoveItem(UASItemDefinition* ItemDefinition, const
 			continue;
 		}
 
-		if (ItemInstance->GetItemDefinition() == ItemDefinition)
+		if (ItemInstance->InventorySlot >= 0 && ItemInstance->GetItemDefinition() == ItemDefinition)
 		{
 			RemainingQuantity -= ItemInstance->RemoveQuantity(RemainingQuantity);
 
@@ -129,7 +129,7 @@ int32 UASInventoryComponent::RemoveItem(UASItemDefinition* ItemDefinition, const
 
 int32 UASInventoryComponent::RemoveItemInstance(UASItemInstance* ItemInstance, const int32 RequestedQuantity)
 {
-	if (!HasInventoryAuthority() || !IsValid(ItemInstance) || RequestedQuantity <= 0)
+	if (!HasInventoryAuthority() || !IsValid(ItemInstance) || ItemInstance->InventorySlot < 0 || RequestedQuantity <= 0)
 	{
 		return 0;
 	}
@@ -165,6 +165,7 @@ int32 UASInventoryComponent::TransferItemTo(
 		|| !TargetInventory->HasInventoryAuthority()
 		|| TargetInventory == this
 		|| !IsValid(ItemInstance)
+		|| ItemInstance->InventorySlot < 0
 		|| RequestedQuantity <= 0
 		|| Items.IndexOfByKey(ItemInstance) == INDEX_NONE
 		|| !ItemInstance->IsValidItemInstance())
@@ -186,7 +187,7 @@ int32 UASInventoryComponent::TransferItemTo(
 			break;
 		}
 
-		if (IsValid(TargetItem) && TargetItem->CanStackWith(ItemInstance))
+		if (IsValid(TargetItem) && TargetItem->InventorySlot >= 0 && TargetItem->CanStackWith(ItemInstance))
 		{
 			const int32 AddedQuantity = TargetItem->AddQuantity(RemainingQuantity);
 			ItemInstance->RemoveQuantity(AddedQuantity);
@@ -299,12 +300,21 @@ TArray<UASItemInstance*> UASInventoryComponent::GetItems() const
 
 bool UASInventoryComponent::HasFreeSlot() const
 {
-	return MaxSlots <= 0 || Items.Num() < MaxSlots;
+	return MaxSlots <= 0 || GetUsedSlotCount() < MaxSlots;
+}
+
+int32 UASInventoryComponent::GetUsedSlotCount() const
+{
+	int32 Count = 0;
+	for (UASItemInstance* Item : Items)
+		if (IsValid(Item) && Item->IsValidItemInstance() && Item->InventorySlot >= 0) ++Count;
+	return Count;
 }
 
 int32 UASInventoryComponent::FindFreeSlotIndex() const
 {
-	for (int32 Index = 0; Index <= Items.Num(); ++Index)
+	const int32 Limit = MaxSlots > 0 ? MaxSlots : Items.Num() + 1;
+	for (int32 Index = 0; Index < Limit; ++Index)
 	{
 		if (!GetItemAtSlot(Index)) return Index;
 	}
@@ -313,7 +323,7 @@ int32 UASInventoryComponent::FindFreeSlotIndex() const
 
 UASItemInstance* UASInventoryComponent::GetItemAtSlot(const int32 SlotIndex) const
 {
-	if (SlotIndex < 0 || (MaxSlots > 0 && SlotIndex >= MaxSlots)) return nullptr;
+	if ((SlotIndex < 0 && SlotIndex != WeaponSlotIndex) || (MaxSlots > 0 && SlotIndex >= MaxSlots)) return nullptr;
 	for (UASItemInstance* Item : Items)
 	{
 		if (IsValid(Item) && Item->IsValidItemInstance() && Item->InventorySlot == SlotIndex) return Item;
@@ -513,23 +523,44 @@ bool UASInventoryComponent::TryCommitWeaponAttack(UASItemInstance* Weapon, APawn
 
 bool UASInventoryComponent::EquipItem(const FGuid InstanceId, APawn* Avatar)
 {
-	if (!HasInventoryAuthority()) return false;
+	if (!HasInventoryAuthority() || bChangingEquipment) return false;
 	UASItemInstance* Item = FindItemById(InstanceId);
 	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
 	if (!Item || !ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
 		|| Item->GetItemDefinition()->ItemType != EASItemType::Weapon) return false;
 	if (Avatar != GetInventoryAvatar()) return false;
 	UActorComponent* Provider = GetEquipmentProvider();
-	return Provider && IASItemEquipmentInterface::Execute_EquipInventoryItem(Provider, this, Item, Avatar);
+	if (!Provider) return false;
+	UASItemInstance* Previous = GetEquippedItem();
+	if (!Previous) Previous = GetItemAtSlot(WeaponSlotIndex);
+	const int32 SourceSlot = Item->InventorySlot;
+	if (SourceSlot < 0 && (SourceSlot != WeaponSlotIndex || Previous != Item)) return false;
+	TGuardValue<bool> Guard(bChangingEquipment, true);
+	if (!IASItemEquipmentInterface::Execute_EquipInventoryItem(Provider, this, Item, Avatar)
+		|| GetEquippedItem() != Item) return false;
+	// Keep the same owned/replicated instance; only its UI position changes.
+	if (Previous && Previous != Item) Previous->InventorySlot = SourceSlot;
+	Item->InventorySlot = WeaponSlotIndex;
+	NotifyInventoryChanged();
+	return true;
 }
 
 void UASInventoryComponent::UnequipItem()
 {
-	if (!HasInventoryAuthority()) return;
+	if (!HasInventoryAuthority() || bChangingEquipment) return;
 	APawn* Avatar = GetInventoryAvatar();
+	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
+	if (!ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)) return;
+	UASItemInstance* Item = GetEquippedItem();
+	if (!Item) return;
+	const int32 ReturnSlot = Item->InventorySlot >= 0 ? Item->InventorySlot : FindFreeSlotIndex();
+	if (ReturnSlot == INDEX_NONE) return;
 	if (UActorComponent* Provider = GetEquipmentProvider())
 	{
-		IASItemEquipmentInterface::Execute_UnequipInventoryItem(Provider, this, Avatar);
+		TGuardValue<bool> Guard(bChangingEquipment, true);
+		if (!IASItemEquipmentInterface::Execute_UnequipInventoryItem(Provider, this, Avatar) || GetEquippedItem()) return;
+		Item->InventorySlot = ReturnSlot;
+		NotifyInventoryChanged();
 	}
 }
 

@@ -9,7 +9,7 @@ class UASInventorySlotWidget;
 class UUniformGridPanel;
 class UBorder;
 
-/** The player's inventory: ten permanent positions, displayed at the bottom right. */
+/** Ten backpack positions and a separate weapon position, displayed at the bottom right. */
 UCLASS(Blueprintable)
 class APOCALYPSESURVIVAL_API UASInventoryBarWidget : public UUserWidget
 {
