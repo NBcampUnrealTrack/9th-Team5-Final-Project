@@ -12,6 +12,7 @@
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -486,18 +487,18 @@ void AASMonsterCharacter::HandleDeath()
 
 	StopMovementAndAI();
 	SetCanBeDamaged(false);
-	// CharacterMovement는 Capsule 충돌을 기준으로 이동한다. Actor 플래그뿐 아니라 Capsule을
-	// 직접 끄고 NavMesh 장애물에서도 빼야 사망 대기 중 길막하지 않는다.
+	// Actor 플래그만 끄면 Blueprint에 추가한 무기/장식 Mesh 등의 Primitive Component가 계속
+	// Pawn을 Block하거나 NavMesh 장애물로 남을 수 있다. 모든 Primitive Component를 함께 끈다.
 	SetActorEnableCollision(false);
-	if (UCapsuleComponent* CollisionComponent = GetCapsuleComponent())
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
 	{
-		CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		CollisionComponent->SetCanEverAffectNavigation(false);
-	}
-	if (USkeletalMeshComponent* MeshComponent = GetMesh())
-	{
-		MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MeshComponent->SetCanEverAffectNavigation(false);
+		if (PrimitiveComponent)
+		{
+			PrimitiveComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			PrimitiveComponent->SetGenerateOverlapEvents(false);
+			PrimitiveComponent->SetCanEverAffectNavigation(false);
+		}
 	}
 
 	const float DespawnDelay = MonsterDefinition ? MonsterDefinition->DeathDespawnDelay : 1.5f;
@@ -520,6 +521,8 @@ void AASMonsterCharacter::StopMovementAndAI()
 
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
 	MovementComponent->StopMovementImmediately();
+	// RVO는 충돌과 별도의 군집 회피 정보다. 사체가 회피 대상으로 남지 않게 명시적으로 해제한다.
+	MovementComponent->SetAvoidanceEnabled(false);
 	MovementComponent->DisableMovement();
 }
 
