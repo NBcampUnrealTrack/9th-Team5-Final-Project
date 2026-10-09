@@ -31,6 +31,19 @@ void AASPlayerCameraManager::AddZoomInput(const float AxisValue)
 	TargetCameraDistance = FMath::Clamp(TargetCameraDistance - AxisValue * ZoomStep, MinCameraDistance, MaxCameraDistance);
 }
 
+float AASPlayerCameraManager::GetZoomAlpha() const
+{
+	if (FMath::IsNearlyEqual(MinCameraDistance, MaxCameraDistance))
+	{
+		return 0.0f;
+	}
+
+	return FMath::Clamp(
+		(ViewCameraDistance - MinCameraDistance) / (MaxCameraDistance - MinCameraDistance),
+		0.0f,
+		1.0f);
+}
+
 void AASPlayerCameraManager::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
@@ -38,6 +51,7 @@ void AASPlayerCameraManager::PostInitializeComponents()
 	// 생성자가 아니라 여기서 넣는다. 생성자 시점에는 BP 에서 바꾼 값이 아직 반영되지 않았다.
 	TargetCameraDistance = FMath::Clamp(CameraDistance, MinCameraDistance, MaxCameraDistance);
 	ViewCameraDistance = TargetCameraDistance;
+	LastBroadcastZoomAlpha = GetZoomAlpha();
 }
 
 void AASPlayerCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, const float DeltaTime)
@@ -74,6 +88,12 @@ void AASPlayerCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, const
 	}
 
 	ViewCameraDistance = FMath::FInterpTo(ViewCameraDistance, TargetCameraDistance, DeltaTime, ZoomInterpSpeed);
+	const float ZoomAlpha = GetZoomAlpha();
+	if (!FMath::IsNearlyEqual(ZoomAlpha, LastBroadcastZoomAlpha, 0.001f))
+	{
+		LastBroadcastZoomAlpha = ZoomAlpha;
+		OnCameraZoomChanged.Broadcast(ZoomAlpha);
+	}
 
 	// 포커스에서 "카메라가 보는 방향의 반대"로 거리만큼 물러난 곳이 카메라 위치다.
 	const FRotator CameraRotation(CameraPitch, CameraYaw, 0.0f);
