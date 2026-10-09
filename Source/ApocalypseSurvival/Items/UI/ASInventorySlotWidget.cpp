@@ -131,8 +131,11 @@ void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, con
 	Drag->SourceBar = Bar;
 	Drag->FromSlot = SlotIndex;
 	Drag->ItemId = PressedItem;
-	UASInventorySlotWidget* Visual = CreateWidget<UASInventorySlotWidget>(GetOwningPlayer());
-	if (Visual) Visual->InitializeSlot(Bar, SlotIndex);
+	UImage* Visual = NewObject<UImage>(Drag);
+	UTexture2D* Icon = Item->GetItemDefinition()->Icon.LoadSynchronous();
+	Visual->SetBrushFromTexture(Icon);
+	Visual->SetDesiredSizeOverride(FVector2D(44.0f));
+	Visual->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	Drag->DefaultDragVisual = Visual;
 	Drag->Pivot = EDragPivot::CenterCenter;
 	Bar->BeginItemDrag();
