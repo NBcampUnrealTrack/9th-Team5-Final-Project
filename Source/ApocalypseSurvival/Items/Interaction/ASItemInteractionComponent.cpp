@@ -248,14 +248,16 @@ void UASItemInteractionComponent::ActivateSlotFromKey(const int32 SlotIndex)
 void UASItemInteractionComponent::RequestActivateSlot(const int32 SlotIndex, const FGuid ExpectedItem)
 {
 	if (GetASController() && GetASController()->IsLocalController() && ExpectedItem.IsValid()
-		&& SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)
+		&& (SlotIndex == UASInventoryComponent::WeaponSlotIndex
+			|| (SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)))
 		ServerActivateSlot(SlotIndex, ExpectedItem);
 }
 
 void UASItemInteractionComponent::ServerActivateSlot_Implementation(const int32 SlotIndex, const FGuid ExpectedItem)
 {
 	UASInventoryComponent* Inventory = GetPlayerInventory();
-	if (!Inventory || SlotIndex < 0 || SlotIndex >= UASInventoryComponent::PlayerSlotCount) return;
+	if (!Inventory || (SlotIndex != UASInventoryComponent::WeaponSlotIndex
+		&& (SlotIndex < 0 || SlotIndex >= UASInventoryComponent::PlayerSlotCount))) return;
 	UASItemInstance* Item = Inventory->GetItemAtSlot(SlotIndex);
 	if (!Item || Item->GetInstanceId() != ExpectedItem) return;
 	Inventory->UseItem(ExpectedItem, GetASController()->GetPawn());

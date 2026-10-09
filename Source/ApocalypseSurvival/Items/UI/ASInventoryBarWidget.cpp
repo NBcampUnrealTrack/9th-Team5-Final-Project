@@ -50,14 +50,14 @@ void UASInventoryBarWidget::NativeConstruct()
 	{
 		SlotsPanel->ClearChildren();
 		Slots.Reset();
-		for (int32 Index = 0; Index < UASInventoryComponent::PlayerSlotCount; ++Index)
+		for (int32 Index = -1; Index < UASInventoryComponent::PlayerSlotCount; ++Index)
 		{
 			UASInventorySlotWidget* Entry = CreateWidget<UASInventorySlotWidget>(GetOwningPlayer(),
 				SlotWidgetClass ? SlotWidgetClass.Get() : UASInventorySlotWidget::StaticClass());
 			if (!Entry) continue;
-			Entry->InitializeSlot(this, Index);
+			Entry->InitializeSlot(this, Index < 0 ? UASInventoryComponent::WeaponSlotIndex : Index);
 			Slots.Add(Entry);
-			SlotsPanel->AddChildToUniformGrid(Entry, Index / 5, Index % 5);
+			SlotsPanel->AddChildToUniformGrid(Entry, Index < 0 ? 0 : Index / 5, Index < 0 ? 0 : Index % 5 + 1);
 		}
 	}
 	if (Inventory) Inventory->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::RefreshSlots);
