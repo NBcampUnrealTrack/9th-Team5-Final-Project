@@ -2,6 +2,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "DrawDebugHelpers.h"
@@ -12,6 +13,7 @@
 #include "GenericTeamAgentInterface.h"
 #include "GameplayEffect.h"
 #include "Skills/ASSkillTags.h"
+#include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
 #include "Engine/Texture2D.h"
 
 UASSkillAbility::UASSkillAbility()
@@ -30,6 +32,20 @@ void UASSkillAbility::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
+	//꾹 누르는 동안 범위 표시, 떼면 시전 (발동 가능 여부에서 비용·쿨타임은 이미 확인됨. 차감은 뗄 때)
+	if (ShouldUseRangeIndicator())
+	{
+		BeginTargeting();
+		return;
+	}
+
+	//서버에서 도는 원격 플레이어 스킬은 커서를 모르므로 클라이언트가 보낸 조준을 기다림
+	if (ShouldWaitForClientAim())
+	{
+		WaitForClientAim();
+		return;
+	}
+
 	//비용, 쿨다운
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
@@ -37,14 +53,30 @@ void UASSkillAbility::ActivateAbility(
 		return;
 	}
 
+	//조준은 시전 순간에 한 번 확정
+	FVector AimDirection;
+	FVector TargetLocation;
+	ComputeAim(AimDirection, TargetLocation);
+
+	//클라이언트는 같은 조준을 서버로 보냄 (호스트는 자기가 서버라 필요 없음)
+	if (bAimAtCursor && !ActorInfo->IsNetAuthority())
+	{
+		SendAimToServer(AimDirection, TargetLocation);
+	}
+
+	StartSkill(AimDirection, TargetLocation);
+}
+
+void UASSkillAbility::StartSkill(const FVector& AimDirection, const FVector& TargetLocation)
+{
 	const bool bHasMontage = AnimMontage != nullptr;
 	const bool bWaitForHitEvent = bHasMontage && HitEventTag.IsValid();
 
 	bWaitingForHitEvent = bWaitForHitEvent;
 	bHitEventReceived = false;
 
-	//조준은 시전 순간에 한 번 확정
-	CachedAimDirection = ComputeAimDirection();
+	CachedAimDirection = AimDirection;
+	CachedTargetLocation = TargetLocation;
 	bHasCachedAim = true;
 
 	if (bFaceAimDirection)
@@ -108,6 +140,16 @@ void UASSkillAbility::EndAbility(
 	bool bWasCancelled)
 {
 	bHasCachedAim = false;
+	bIsTargeting = false;
+	DestroyRangeIndicator();
+
+	//서버에서 조준을 기다리던 중이면 델리게이트 해제
+	if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
+	{
+		const FPredictionKey PredictionKey = ActivationInfo.GetActivationPredictionKey();
+		ASC->AbilityTargetDataSetDelegate(Handle, PredictionKey).RemoveAll(this);
+		ASC->AbilityTargetDataCancelledDelegate(Handle, PredictionKey).RemoveAll(this);
+	}
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
 }
@@ -146,24 +188,280 @@ FVector UASSkillAbility::ComputeAimDirection() const
 		return FVector::ForwardVector;
 	}
 
-	//TODO: 임시 커서 조준. 서버는 클라이언트의 커서를 모르므로 멀티에서는 TargetData로 교체 필요
-	if (bAimAtCursor)
+	//커서는 본인 화면에서만 읽힘. 서버의 원격 플레이어는 ShouldWaitForClientAim으로 따로 처리
+	FVector CursorLocation;
+	if (bAimAtCursor && AASSkillRangeIndicatorActor::GetCursorWorldLocation(Cast<APawn>(Avatar), CursorLocation))
 	{
-		const APawn* Pawn = Cast<APawn>(Avatar);
-		const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
-
-		FHitResult Hit;
-		if (PC && PC->IsLocalController() && PC->GetHitResultUnderCursor(ECC_Visibility, false, Hit))
+		const FVector ToCursor = (CursorLocation - Avatar->GetActorLocation()).GetSafeNormal2D();
+		if (!ToCursor.IsNearlyZero())
 		{
-			const FVector ToCursor = (Hit.ImpactPoint - Avatar->GetActorLocation()).GetSafeNormal2D();
-			if (!ToCursor.IsNearlyZero())
-			{
-				return ToCursor;
-			}
+			return ToCursor;
 		}
 	}
 
 	return Avatar->GetActorForwardVector().GetSafeNormal2D();
+}
+
+void UASSkillAbility::ComputeAim(FVector& OutAimDirection, FVector& OutTargetLocation) const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+
+	OutAimDirection = ComputeAimDirection();
+	OutTargetLocation = Avatar ? Avatar->GetActorLocation() : FVector::ZeroVector;
+
+	if (!Avatar || TargetingType != EASSkillTargetingType::Location)
+	{
+		return;
+	}
+
+	//커서가 없으면(AI 등) 조준 방향으로 사거리 끝
+	FVector Desired;
+	if (!bAimAtCursor || !AASSkillRangeIndicatorActor::GetCursorWorldLocation(Cast<APawn>(Avatar), Desired))
+	{
+		Desired = Avatar->GetActorLocation() + OutAimDirection * MaxCastRange;
+	}
+
+	OutTargetLocation = ResolveAimLocation(Desired);
+
+	//위치형은 목표 지점을 바라보게
+	const FVector ToTarget = (OutTargetLocation - Avatar->GetActorLocation()).GetSafeNormal2D();
+	if (!ToTarget.IsNearlyZero())
+	{
+		OutAimDirection = ToTarget;
+	}
+}
+
+FVector UASSkillAbility::ResolveAimLocation(const FVector& DesiredLocation) const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (!Avatar)
+	{
+		return DesiredLocation;
+	}
+
+	if (TargetingType == EASSkillTargetingType::Location)
+	{
+		return AASSkillRangeIndicatorActor::ResolveTargetLocation(Avatar, DesiredLocation, MaxCastRange);
+	}
+
+	return Avatar->GetActorLocation();
+}
+
+FVector UASSkillAbility::GetTargetLocation() const
+{
+	if (bHasCachedAim)
+	{
+		return CachedTargetLocation;
+	}
+
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	return Avatar ? Avatar->GetActorLocation() : FVector::ZeroVector;
+}
+
+FASSkillIndicatorSettings UASSkillAbility::GetIndicatorSettings_Implementation() const
+{
+	FASSkillIndicatorSettings Settings;
+	Settings.TargetingType = TargetingType;
+	Settings.MaxCastRange = MaxCastRange;
+	Settings.RangeRingRadius = TargetingType == EASSkillTargetingType::Location ? MaxCastRange : 0.0f;
+	return Settings;
+}
+
+bool UASSkillAbility::ShouldUseRangeIndicator() const
+{
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+
+	//AI는 PlayerController가 없으므로 제외
+	return bShowRangeIndicator
+		&& bAimAtCursor
+		&& ActorInfo
+		&& ActorInfo->PlayerController.IsValid()
+		&& IsLocallyControlled();
+}
+
+void UASSkillAbility::BeginTargeting()
+{
+	bIsTargeting = true;
+
+	APawn* Caster = Cast<APawn>(GetAvatarActorFromActorInfo());
+	if (UWorld* World = Caster ? Caster->GetWorld() : nullptr)
+	{
+		UClass* IndicatorClass = RangeIndicatorClass ? RangeIndicatorClass.Get() : AASSkillRangeIndicatorActor::StaticClass();
+
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = Caster;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		RangeIndicator = World->SpawnActor<AASSkillRangeIndicatorActor>(IndicatorClass, Caster->GetActorTransform(), SpawnParams);
+		if (RangeIndicator)
+		{
+			RangeIndicator->InitIndicator(Caster, GetIndicatorSettings());
+		}
+	}
+
+	//발동되는 사이에 이미 키를 뗐으면 바로 시전
+	if (const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec(); Spec && !Spec->InputPressed)
+	{
+		ConfirmTargeting();
+	}
+}
+
+void UASSkillAbility::InputReleased(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo)
+{
+	Super::InputReleased(Handle, ActorInfo, ActivationInfo);
+
+	if (bIsTargeting)
+	{
+		ConfirmTargeting();
+	}
+}
+
+void UASSkillAbility::ConfirmTargeting()
+{
+	if (!bIsTargeting)
+	{
+		return;
+	}
+
+	bIsTargeting = false;
+
+	FVector AimDirection;
+	FVector TargetLocation;
+	ComputeAim(AimDirection, TargetLocation);
+
+	DestroyRangeIndicator();
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!ASC)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	//발동 순간이 지났으므로 예측 창을 새로 열어야 클라이언트의 비용·쿨타임 차감이 서버와 맞음
+	FScopedPredictionWindow ScopedPrediction(ASC, !HasSkillAuthority());
+
+	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	if (!HasSkillAuthority())
+	{
+		SendAimToServer(AimDirection, TargetLocation);
+	}
+
+	StartSkill(AimDirection, TargetLocation);
+}
+
+void UASSkillAbility::DestroyRangeIndicator()
+{
+	if (IsValid(RangeIndicator))
+	{
+		RangeIndicator->Destroy();
+	}
+
+	RangeIndicator = nullptr;
+}
+
+bool UASSkillAbility::ShouldWaitForClientAim() const
+{
+	return bAimAtCursor && HasSkillAuthority() && !IsLocallyControlled();
+}
+
+void UASSkillAbility::SendAimToServer(const FVector& AimDirection, const FVector& TargetLocation)
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!ASC)
+	{
+		return;
+	}
+
+	//회전 = 조준 방향, 위치 = 목표 지점
+	FGameplayAbilityTargetData_LocationInfo* AimData = new FGameplayAbilityTargetData_LocationInfo();
+	AimData->TargetLocation.LocationType = EGameplayAbilityTargetingLocationType::LiteralTransform;
+	AimData->TargetLocation.LiteralTransform = FTransform(AimDirection.Rotation(), TargetLocation);
+
+	FGameplayAbilityTargetDataHandle TargetData;
+	TargetData.Add(AimData);
+
+	ASC->CallServerSetReplicatedTargetData(
+		CurrentSpecHandle,
+		CurrentActivationInfo.GetActivationPredictionKey(),
+		TargetData,
+		FGameplayTag(),
+		ASC->ScopedPredictionKey);
+}
+
+void UASSkillAbility::WaitForClientAim()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!ASC)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	const FPredictionKey PredictionKey = CurrentActivationInfo.GetActivationPredictionKey();
+	ASC->AbilityTargetDataSetDelegate(CurrentSpecHandle, PredictionKey).AddUObject(this, &UASSkillAbility::OnClientAimReceived);
+	ASC->AbilityTargetDataCancelledDelegate(CurrentSpecHandle, PredictionKey).AddUObject(this, &UASSkillAbility::OnClientAimCancelled);
+
+	//데이터가 발동보다 먼저 도착했으면 바로 처리
+	ASC->CallReplicatedTargetDataDelegatesIfSet(CurrentSpecHandle, PredictionKey);
+}
+
+void UASSkillAbility::OnClientAimReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag)
+{
+	//이미 시작했으면 무시 (중복 수신 방지)
+	if (bHasCachedAim)
+	{
+		return;
+	}
+
+	//받은 데이터는 바로 비움. 남겨 두면 다음 발동에 섞임
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		ASC->ConsumeClientReplicatedTargetData(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey());
+	}
+
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+
+	FVector AimDirection = FVector::ZeroVector;
+	FVector TargetLocation = Avatar ? Avatar->GetActorLocation() : FVector::ZeroVector;
+
+	const FGameplayAbilityTargetData* AimData = Data.Get(0);
+	if (AimData && AimData->HasEndPoint())
+	{
+		const FTransform AimTransform = AimData->GetEndPointTransform();
+		AimDirection = AimTransform.GetRotation().Vector().GetSafeNormal2D();
+		TargetLocation = AimTransform.GetLocation();
+	}
+
+	if (AimDirection.IsNearlyZero())
+	{
+		AimDirection = ComputeAimDirection();
+	}
+
+	//서버에서 한 번 더 사거리 제한 (잘못된 값 방지)
+	TargetLocation = ResolveAimLocation(TargetLocation);
+
+	//예측 창 안이므로 클라이언트의 예측 차감과 맞춰짐
+	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	StartSkill(AimDirection, TargetLocation);
+}
+
+void UASSkillAbility::OnClientAimCancelled()
+{
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
 ACharacter* UASSkillAbility::GetOwnerCharacter() const
