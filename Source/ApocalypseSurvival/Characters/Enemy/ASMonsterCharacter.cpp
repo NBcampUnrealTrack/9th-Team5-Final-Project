@@ -7,6 +7,7 @@
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Characters/Enemy/UI/ASMonsterHealthBarWidget.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
+#include "Core/Framework/ASGameMode.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
@@ -385,6 +386,26 @@ bool AASMonsterCharacter::IsHitReacting() const
 	return IsValid(OwnedAbilitySystemComponent) && OwnedAbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_HitReact);
 }
 
+void AASMonsterCharacter::ConfigureSpawnHome(const FVector& InLocation, float InLeashRadius,
+	float InReturnAcceptanceRadius, float InReturnHealthPercentPerSecond, float InDayDetectionRadius,
+	float InDayLoseTargetRadius, float InReturnMoveSpeedMultiplier)
+{
+	bHasSpawnHome = true;
+	SpawnHomeLocation = InLocation;
+	SpawnLeashRadius = FMath::Max(0.0f, InLeashRadius);
+	ReturnAcceptanceRadius = FMath::Max(1.0f, InReturnAcceptanceRadius);
+	ReturnHealthPercentPerSecond = FMath::Max(0.0f, InReturnHealthPercentPerSecond);
+	DayDetectionRadius = FMath::Max(0.0f, InDayDetectionRadius);
+	DayLoseTargetRadius = FMath::Max(DayDetectionRadius, InDayLoseTargetRadius);
+	ReturnMoveSpeedMultiplier = FMath::Max(1.0f, InReturnMoveSpeedMultiplier);
+}
+
+bool AASMonsterCharacter::IsOutsideSpawnLeash() const
+{
+	return bHasSpawnHome && SpawnLeashRadius > 0.0f
+		&& FVector::Dist2D(GetActorLocation(), SpawnHomeLocation) > SpawnLeashRadius;
+}
+
 void AASMonsterCharacter::SetFaceControllerFocus(bool bFaceControllerFocus)
 {
 	if (!HasAuthority())
@@ -479,6 +500,7 @@ void AASMonsterCharacter::HandleDeath()
 	OwnedAbilitySystemComponent->AddMinimalReplicationGameplayTag(ASGameplayTags::State_Monster_Dead);
 	SetHealthBarEnabled(false);
 	SetTargetedAttackMaterialTint(false);
+	ReportDeathToGameMode();
 
 	// 사망 직전의 공격 몽타주/타격 이벤트가 계속되는 것을 막는다.
 	FGameplayTagContainer AttackAbilityTags;
@@ -524,6 +546,14 @@ void AASMonsterCharacter::StopMovementAndAI()
 	// RVO는 충돌과 별도의 군집 회피 정보다. 사체가 회피 대상으로 남지 않게 명시적으로 해제한다.
 	MovementComponent->SetAvoidanceEnabled(false);
 	MovementComponent->DisableMovement();
+}
+
+void AASMonsterCharacter::ReportDeathToGameMode_Implementation()
+{
+	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+	{
+		GameMode->OnEnemyKilled(nullptr);
+	}
 }
 
 void AASMonsterCharacter::ApplyHitReact()

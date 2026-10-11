@@ -65,6 +65,10 @@ private:
 	void StartAggroLoop();
 	void StopAggroLoop();
 	void UpdateAggroAndMovement();
+	bool UpdateReturnToSpawn(AASMonsterCharacter& Monster, UASMonsterTargetingComponent& Targeting);
+	void RestoreReturningHealth(AASMonsterCharacter& Monster) const;
+	void ApplyReturnMoveSpeed(AASMonsterCharacter& Monster);
+	void RestoreMoveSpeed();
 	void HandleNightStarted(int32 Day, bool bBossNight);
 	void HandleNightEnded(int32 Day);
 
@@ -84,6 +88,16 @@ private:
 
 	/** 밤에는 거리와 무관하게 즉시 플레이어를 추격한다. */
 	bool bNightAggressive = false;
+
+	/** 홈으로 복귀 중일 때는 타깃 탐색·공격을 중단한다. */
+	bool bReturningToSpawn = false;
+
+	/** 낮에 실제 타깃을 잡고 추격을 시작했는지. 타깃 유실 후 귀환 여부를 결정한다. */
+	bool bHasEngagedDayTarget = false;
+
+	/** 귀환 중에만 속도를 올리고, 어떤 종료 경로에서도 원래 값으로 되돌린다. */
+	bool bHasCachedMoveSpeedForReturn = false;
+	float CachedMoveSpeedForReturn = 0.0f;
 
 	/** 타깃 검증·재탐색 주기. 개별 몬스터가 매 프레임 플레이어를 훑지 않게 한다. */
 	float AggroUpdateInterval = 0.25f;
