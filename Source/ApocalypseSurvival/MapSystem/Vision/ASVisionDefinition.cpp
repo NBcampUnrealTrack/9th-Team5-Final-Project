@@ -1,8 +1,15 @@
 ﻿#include "MapSystem/Vision/ASVisionDefinition.h"
 
+#include "GAS/ASAbilityTags.h"
+
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
+
+UASVisionDefinition::UASVisionDefinition()
+{
+	DeadStateTag = ASGameplayTags::State_Dead;
+}
 
 bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 {

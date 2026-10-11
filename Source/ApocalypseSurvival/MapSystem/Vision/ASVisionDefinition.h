@@ -15,10 +15,12 @@ class APOCALYPSESURVIVAL_API UASVisionDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	UASVisionDefinition();
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vision")
 	FASVisionSettings Settings;
 
-	/** 선택 사항. ASC에 이 태그가 있는 캐릭터는 시야를 제공하지 않는다. */
+	/** 기본값은 State.Dead. ASC에 이 태그가 있는 캐릭터는 시야를 제공하지 않으며, 비우면 검사를 끈다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	FGameplayTag DeadStateTag;
 
