@@ -56,6 +56,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	UASEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 
+	/** Listen-server debug visualization for the normal weapon attack. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastDrawWeaponAttackDebug(
+		FVector Start,
+		FVector End,
+		float Radius,
+		bool bIsMelee,
+		bool bHit);
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -108,4 +117,5 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "GAS")
 	TObjectPtr<const UASAbilitySet> DefaultAbilitySet;
+
 };
