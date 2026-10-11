@@ -13,6 +13,9 @@ class APOCALYPSESURVIVAL_API UASVisionFunctionLibrary : public UBlueprintFunctio
 	GENERATED_BODY()
 
 public:
+	/** 시야 판정, 낮/밤 전환과 공격 노출이 함께 사용해야 하는 단일 서버 시간. */
+	static double GetServerTimeSeconds(const UObject* WorldContextObject);
+
 	/** 첫 로컬 플레이어 Pawn의 시야 소스 팀 (없으면 0). */
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static int32 GetLocalTeamId(const UObject* WorldContextObject);

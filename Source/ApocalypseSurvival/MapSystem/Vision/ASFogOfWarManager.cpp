@@ -7,6 +7,7 @@
 #include "MapSystem/Vision/ASFogDisplayComponent.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASVisionEvaluatorComponent.h"
+#include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
@@ -109,7 +110,7 @@ void AASFogOfWarManager::SetNight(bool bNight, bool bImmediate)
 		return;
 	}
 
-	const double Now = VisionEvaluatorComponent->GetServerTimeSeconds();
+	const double Now = UASVisionFunctionLibrary::GetServerTimeSeconds(this);
 	const float BlendSeconds = VisionDefinition ? VisionDefinition->Settings.DayNightBlendSeconds : 0.0f;
 	NightBlend.FromAlpha = bImmediate ? Target : NightBlend.Evaluate(Now, BlendSeconds);
 	NightBlend.ToAlpha = Target;
@@ -122,7 +123,7 @@ void AASFogOfWarManager::SetNight(bool bNight, bool bImmediate)
 float AASFogOfWarManager::GetNightAlpha() const
 {
 	const float BlendSeconds = VisionDefinition ? VisionDefinition->Settings.DayNightBlendSeconds : 0.0f;
-	return NightBlend.Evaluate(VisionEvaluatorComponent->GetServerTimeSeconds(), BlendSeconds);
+	return NightBlend.Evaluate(UASVisionFunctionLibrary::GetServerTimeSeconds(this), BlendSeconds);
 }
 
 void AASFogOfWarManager::OnRep_WallOcclusionEnabled()

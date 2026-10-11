@@ -1,7 +1,6 @@
 ﻿#include "MapSystem/Zone/Effects/ASZoneEffectComponent.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystemGlobals.h"
 #include "ApocalypseSurvival.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -11,6 +10,7 @@
 #include "GameplayEffect.h"
 #include "GenericTeamAgentInterface.h"
 #include "HAL/IConsoleManager.h"
+#include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
@@ -141,7 +141,7 @@ void UASZoneEffectComponent::UpdateEffects()
 		UAbilitySystemComponent* ASC = It.Key().Get();
 		APawn* Pawn = It.Value().Pawn.Get();
 		if (!ASC || !Pawn || ASC->GetAvatarActor() != Pawn
-			|| UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn) != ASC)
+			|| ASMapAbilityUtils::FindAbilitySystemComponent(Pawn) != ASC)
 		{
 			FEntry Entry = It.Value();
 			It.RemoveCurrent();
@@ -157,7 +157,7 @@ void UASZoneEffectComponent::UpdateEffects()
 		{
 			continue;
 		}
-		UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn);
+		UAbilitySystemComponent* ASC = ASMapAbilityUtils::FindAbilitySystemComponent(Pawn);
 		// 이전 몸도 같은 ASC를 반환할 수 있으므로 새 아바타의 항목을 건드리지 않는다.
 		if (!IsValid(ASC) || ASC->GetAvatarActor() != Pawn)
 		{
@@ -377,7 +377,7 @@ void UASZoneEffectComponent::HandleMatchReset()
 
 int32 UASZoneEffectComponent::GetAppliedDangerLevel(const AActor* Actor) const
 {
-	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Actor);
+	UAbilitySystemComponent* ASC = ASMapAbilityUtils::FindAbilitySystemComponent(Actor);
 	const FEntry* Entry = IsValid(ASC) ? Entries.Find(ASC) : nullptr;
 	const APawn* QueriedPawn = Cast<APawn>(Actor);
 	return Entry && Entry->Pawn.IsValid() && ASC->GetAvatarActor() == Entry->Pawn.Get()
@@ -387,7 +387,7 @@ int32 UASZoneEffectComponent::GetAppliedDangerLevel(const AActor* Actor) const
 
 FName UASZoneEffectComponent::GetAppliedZoneEffectZone(const AActor* Actor) const
 {
-	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Actor);
+	UAbilitySystemComponent* ASC = ASMapAbilityUtils::FindAbilitySystemComponent(Actor);
 	const FEntry* Entry = IsValid(ASC) ? Entries.Find(ASC) : nullptr;
 	const APawn* QueriedPawn = Cast<APawn>(Actor);
 	return Entry && Entry->Pawn.IsValid() && ASC->GetAvatarActor() == Entry->Pawn.Get()
