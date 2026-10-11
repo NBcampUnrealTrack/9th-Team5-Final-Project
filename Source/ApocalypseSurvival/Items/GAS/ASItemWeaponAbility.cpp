@@ -12,7 +12,15 @@ UASItemWeaponAbility::UASItemWeaponAbility()
 bool UASItemWeaponAbility::CheckCost(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags) const
 {
-	if (!ActorInfo || !ActorInfo->IsNetAuthority() || !Super::CheckCost(Handle, ActorInfo, OptionalRelevantTags)) return false;
+	if (!ActorInfo || !Super::CheckCost(Handle, ActorInfo, OptionalRelevantTags)) return false;
+
+	// LocalPredicted 자식은 클라이언트에서 먼저 입력을 받아야 하므로,
+	// 실제 장비·탄약 검사는 서버의 CommitAbility에서만 수행한다.
+	if (!ActorInfo->IsNetAuthority())
+	{
+		return true;
+	}
+
 	UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
 	const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(Handle) : nullptr;
 	return Spec && UASItemAbilityLibrary::CanCommitWeaponAttack(Spec->SourceObject.Get(), Cast<APawn>(ActorInfo->AvatarActor.Get()));

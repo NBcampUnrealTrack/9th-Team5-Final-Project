@@ -8,6 +8,7 @@
 #include "GAS/ASAbilitySystemComponent.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
+#include "Items/GAS/PBWeaponAttackAbility.h"
 #include "Net/UnrealNetwork.h"
 
 UASEquipmentComponent::UASEquipmentComponent()
@@ -65,12 +66,20 @@ bool UASEquipmentComponent::EquipItem(UASItemInstance* Item)
 		{
 			return false;
 		}
+	}
+	else if (Definition->WeaponType == EASWeaponType::Melee
+		|| Definition->WeaponType == EASWeaponType::Ranged)
+	{
+		// 무기 데이터에 공격 Ability가 없을 때 기본 일반공격을 자동으로 부여한다.
+		AttackAbilityClass = UPBWeaponAttackAbility::StaticClass();
+		UE_LOG(LogTemp, Warning, TEXT("[Equipment] %s has no PrimaryAttackAbility. Using the default weapon attack."),
+			*GetNameSafe(Definition));
+	}
 
-		// 어빌리티를 받을 ASC 가 아직 없으면 지금은 달 수 없다. 빙의 후 다시 시도하면 된다.
-		if (!IsValid(GetOwnerAbilitySystemComponent()))
-		{
-			return false;
-		}
+	// 어빌리티를 받을 ASC 가 아직 없으면 지금은 달 수 없다. 빙의 후 다시 시도하면 된다.
+	if (AttackAbilityClass && !IsValid(GetOwnerAbilitySystemComponent()))
+	{
+		return false;
 	}
 
 	bool bSpawnFailed = false;

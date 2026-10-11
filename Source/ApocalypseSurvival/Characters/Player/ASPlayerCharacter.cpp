@@ -5,6 +5,7 @@
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
+#include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffectExtension.h"
 #include "GAS/ASAbilitySet.h"
@@ -41,6 +42,54 @@ AASPlayerCharacter::AASPlayerCharacter()
 	// 그 속도가 들어가지 않는다. 그러면 서버는 캐릭터가 서 있다고 계산해서
 	// 본인 클라이언트의 위치를 매 프레임 되돌려 놓는다.
 	MoveComp->GetNavMovementProperties()->bUseAccelerationForPaths = true;
+}
+
+void AASPlayerCharacter::MulticastDrawWeaponAttackDebug_Implementation(
+	const FVector Start,
+	const FVector End,
+	const float Radius,
+	const bool bIsMelee,
+	const bool bHit)
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FColor Color = bHit ? FColor::Red : FColor::Green;
+	if (bIsMelee)
+	{
+		DrawDebugSphere(World, End, Radius, 16, Color, false, 1.0f, 0, 2.0f);
+	}
+	else
+	{
+		const FVector Direction = (End - Start).GetSafeNormal();
+		const float Length = FVector::Distance(Start, End);
+		const FVector Center = Start + Direction * (Length * 0.5f);
+		const FQuat Rotation = Direction.IsNearlyZero()
+			? FQuat::Identity
+			: FRotationMatrix::MakeFromZ(Direction).ToQuat();
+
+		if (Radius > 0.0f)
+		{
+			DrawDebugCapsule(
+				World,
+				Center,
+				Length * 0.5f,
+				Radius,
+				Rotation,
+				Color,
+				false,
+				1.0f,
+				0,
+				2.0f);
+		}
+		else
+		{
+			DrawDebugLine(World, Start, End, Color, false, 1.0f, 0, 2.0f);
+		}
+	}
 }
 
 void AASPlayerCharacter::PossessedBy(AController* NewController)
