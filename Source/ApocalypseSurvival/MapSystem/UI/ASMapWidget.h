@@ -6,6 +6,7 @@
 #include "Styling/SlateBrush.h"
 #include "ASMapWidget.generated.h"
 
+class AASMapZone;
 class UASMapDefinition;
 class UTexture2D;
 
@@ -107,10 +108,20 @@ private:
 		}
 	};
 
+	/** 외곽선이 바뀔 때만 월드 공간 삼각형을 다시 계산한다. */
+	struct FZoneAreaCache
+	{
+		TArray<TArray<FVector2D>> Outlines;
+		TArray<TArray<FVector2D>> WorldTriangles;
+	};
+
+	const FZoneAreaCache& GetCachedZoneArea(const AASMapZone* Zone) const;
+	mutable TMap<TWeakObjectPtr<const AASMapZone>, FZoneAreaCache> ZoneAreaCache;
+
 	bool ComputeView(const FVector2D& LocalSize, const UASMapDefinition* Definition, FMapView& OutView) const;
 	FLinearColor GetMarkerColor(uint8 MarkerType) const;
 
-	/** 기본 브러시: MakeBox에 전달한 색상으로 틴트한 단순 사각형. */
+	/** 기본 브러시: 사각형과 다각형에 전달한 색상으로 틴트한다. */
 	FSlateBrush SolidBrush;
 	FSlateBrush MapTextureBrush;
 	FSlateBrush FogBrush;

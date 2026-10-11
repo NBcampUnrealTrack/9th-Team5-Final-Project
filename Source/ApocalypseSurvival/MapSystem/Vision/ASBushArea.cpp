@@ -4,6 +4,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "MapSystem/Shared/ASMapShapeUtils.h"
+#include "MapSystem/Shared/ASMapPolygonAreaComponent.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 
 AASBushArea::AASBushArea()
@@ -35,7 +36,19 @@ void AASBushArea::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ASMapShapeUtils::GatherAreaShapes(this, AreaShapes);
+	ASMapShapeUtils::GatherAreaComponents(this, AreaShapes);
+	for (const TWeakObjectPtr<UPrimitiveComponent>& Component : AreaShapes)
+	{
+		if (const UASMapPolygonAreaComponent* Polygon = Cast<UASMapPolygonAreaComponent>(Component.Get()))
+		{
+			FString Error;
+			if (!Polygon->ValidateArea(Error))
+			{
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Bush '%s', component '%s': %s"),
+					*GetBushId().ToString(), *Polygon->GetName(), *Error);
+			}
+		}
+	}
 
 	if (UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this))
 	{
