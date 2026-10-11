@@ -7,6 +7,9 @@
 UASSkillArea::UASSkillArea()
 {
 	AreaClass = AASSkillAreaActor::StaticClass();
+
+	//기본은 원하는 곳에 깔기
+	TargetingType = EASSkillTargetingType::Location;
 }
 
 void UASSkillArea::OnSkillEffect_Implementation()
@@ -32,7 +35,9 @@ void UASSkillArea::OnSkillEffect_Implementation()
 	FVector Location = Avatar->GetActorLocation();
 	if (!bAttachToOwner)
 	{
-		Location += Aim * ForwardOffset;
+		Location = TargetingType == EASSkillTargetingType::Location
+			? GetTargetLocation()
+			: Location + Aim * ForwardOffset;
 	}
 
 	const FTransform SpawnTransform(Aim.Rotation(), Location);
@@ -53,4 +58,25 @@ void UASSkillArea::OnSkillEffect_Implementation()
 	{
 		Area->AttachToActor(Avatar, FAttachmentTransformRules::KeepWorldTransform);
 	}
+}
+
+FASSkillIndicatorSettings UASSkillArea::GetIndicatorSettings_Implementation() const
+{
+	FASSkillIndicatorSettings Settings = Super::GetIndicatorSettings_Implementation();
+	Settings.Shape = EASSkillIndicatorShape::Circle;
+	Settings.Radius = Radius;
+
+	//시전자를 따라다니면 시전자 중심 원
+	if (bAttachToOwner)
+	{
+		Settings.TargetingType = EASSkillTargetingType::Self;
+		Settings.RangeRingRadius = 0.0f;
+	}
+	else if (Settings.TargetingType == EASSkillTargetingType::Direction)
+	{
+		Settings.ForwardOffset = ForwardOffset;
+		Settings.RangeRingRadius = FMath::Max(0.0f, ForwardOffset) + Radius;
+	}
+
+	return Settings;
 }
