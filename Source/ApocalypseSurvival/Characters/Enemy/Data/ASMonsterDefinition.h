@@ -7,6 +7,7 @@
 
 class UGameplayAbility;
 class UGameplayEffect;
+class UASMonsterHealthBarWidget;
 class UStateTree;
 
 /** 몬스터가 상황에 따라 선택해서 실행하는 공격 패턴 하나. */
@@ -105,6 +106,45 @@ public:
 	/** 사망 시 충돌을 끈 뒤 월드에 남겨 둘 시간. 0이면 즉시 제거한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
 	float DeathDespawnDelay = 1.5f;
+
+	/** 이 몬스터 원형이 머리 위 월드 체력바를 사용할지 결정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+	bool bUseWorldHealthBar = false;
+
+	/** 생성 직후부터 체력바를 표시한다. 꺼 두면 전투 진입 시 SetHealthBarVisible로 켤 수 있다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI",
+		meta = (EditCondition = "bUseWorldHealthBar", EditConditionHides))
+	bool bHealthBarInitiallyVisible = true;
+
+	/** 비어 있으면 코드에서 제공하는 기본 체력바 Widget을 사용한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI",
+		meta = (EditCondition = "bUseWorldHealthBar", EditConditionHides))
+	TSubclassOf<UASMonsterHealthBarWidget> HealthBarWidgetClass;
+
+	/** Character 원점에서 체력바까지의 상대 위치. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI",
+		meta = (EditCondition = "bUseWorldHealthBar", EditConditionHides, Units = "cm"))
+	FVector HealthBarOffset = FVector(0.0f, 0.0f, 140.0f);
+
+	/** Widget의 DesiredSize가 계산되기 전 첫 프레임에 사용하는 안전한 초기 크기. 이후에는 WBP 크기가 우선한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI",
+		meta = (EditCondition = "bUseWorldHealthBar", EditConditionHides, ClampMin = "1.0"))
+	FVector2D HealthBarDrawSize = FVector2D(250.0f, 30.0f);
+
+	/** 줌아웃할수록 체력바를 제한적으로 축소한다. 몬스터별 Tick은 사용하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI",
+		meta = (EditCondition = "bUseWorldHealthBar", EditConditionHides))
+	bool bScaleHealthBarWithCameraZoom = true;
+
+	/** 카메라가 가장 가까울 때의 체력바 크기 배율. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI",
+		meta = (EditCondition = "bUseWorldHealthBar && bScaleHealthBarWithCameraZoom", EditConditionHides, ClampMin = "0.1"))
+	float HealthBarScaleAtMinZoomDistance = 1.0f;
+
+	/** 카메라가 가장 멀 때의 체력바 크기 배율. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI",
+		meta = (EditCondition = "bUseWorldHealthBar && bScaleHealthBarWithCameraZoom", EditConditionHides, ClampMin = "0.1"))
+	float HealthBarScaleAtMaxZoomDistance = 0.75f;
 
 	/** 몬스터의 전반 행동을 결정하는 StateTree. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI")

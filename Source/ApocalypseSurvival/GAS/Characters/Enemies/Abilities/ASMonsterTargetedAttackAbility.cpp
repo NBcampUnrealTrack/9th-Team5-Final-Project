@@ -13,9 +13,14 @@ UASMonsterTargetedAttackAbility::UASMonsterTargetedAttackAbility()
 	BaseDamage = 0.0f;
 	AttackPowerScale = 1.0f;
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
+	// 0이면 태그 적용과 EndAbility가 같은 프레임에 끝나 경고 색을 볼 수 없다.
+	// Blueprint에서 필요하면 개별 패턴의 선딜 시간으로 덮어쓸 수 있다.
+	WindupDuration = 0.75f;
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack_Targeted);
 	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Attacking);
+	// 모든 클라이언트가 이 태그를 받아 엘리트의 선딜 경고 색을 같은 시점에 표시한다.
+	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_TargetedAttacking);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_Dead);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_HitReact);
 }

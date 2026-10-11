@@ -7,7 +7,7 @@
 class APawn;
 class UASInventoryComponent;
 
-/** Server-side use orchestration. Inventory owns quantities; GAS owns effects/costs.
+/** Server-side use orchestration. Weapons delegate to equipment; consumables activate GAS.
  * Existing interaction RPCs call Inventory.UseItem, which creates this component on demand.
  */
 UCLASS(ClassGroup = (AS), meta = (BlueprintSpawnableComponent))
@@ -17,7 +17,7 @@ class APOCALYPSESURVIVAL_API UASItemUseComponent : public UActorComponent
 public:
 	UASItemUseComponent();
 
-	/** True means activation was accepted, not that a delayed use has committed yet. */
+	/** Toggles weapon equipment or activates a consumable. True accepts use; delayed GAS may commit later. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Item|Use")
 	bool UseItem(UASInventoryComponent* Inventory, FGuid InstanceId, APawn* Avatar);
 };

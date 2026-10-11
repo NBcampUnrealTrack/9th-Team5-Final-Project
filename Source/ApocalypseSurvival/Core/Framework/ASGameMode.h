@@ -40,7 +40,7 @@ public:
 	// 보스가 죽었을 때 호출
 	UFUNCTION(BlueprintCallable, Category = "GameFlow")
 	void OnBossDefeated();
-	
+
 	// 밤이 끝날 때 웨이브 결과 (보상 시스템 등이 참조)
 	UPROPERTY(BlueprintAssignable, Category = "GameFlow")
 	FOnWaveEnded OnWaveEnded;
@@ -54,11 +54,6 @@ public:
 	TArray<AASRespawnPoint*> GetAvailableRespawnPoints() const;
 		
 	
-	// 웨이브용: 적 수만큼의 스폰 위치를 한 번에 반환(동시 스폰)
-	// 플레이어 근처 포인트는 제외하고, 남은 포인트 중 랜덤으로 적 수에 비례한 개수를 골라 나눠 배치
-	UFUNCTION(BlueprintCallable, Category = "Spawn")
-	bool FindSpawnLocation(int32 EnemyCount, TArray<FVector>& OutLocations) const;
-    
 	// 디버그 (콘솔에서 입력)
 	UFUNCTION(Exec)
 	void DebugSkipPhase();
@@ -71,9 +66,6 @@ public:
 	
 	UFUNCTION(Exec)
 	void DebugKillPlayer();
-	
-	UFUNCTION(Exec)
-	void DebugShowEnemySpawnPoints(int32 EnemyCount);
 	
 protected:
 	virtual void HandleMatchHasStarted() override;
@@ -105,29 +97,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
 	float RespawnDelay = 3.f;
 	
-	// 플레이어로부터 최소 스폰 거리 (cm, 화면 밖)
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
-	float SpawnMinDistance = 2500.f;
-	
-	// 게임 시작 시 자동 생성할 적 스폰 포인트 수
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
-	int32 SpawnPointCount = 30;
-	
-	// 스폰 포인트끼리 최소 간격 (cm)
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
-	float SpawnPointMinSpacing = 1500.f;
-	
-	// 스폰 포인트 1개당 적 수 (적 수에 비례해서 사용할 포인트 수 결정)
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
-	int32 EnemiesPerSpawnPoint = 5;
-	
-	// 포인트 주변에 적을 흩뿌리는 반경 (cm, 겹침 방지)
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn")
-	float SpawnScatterRadius = 300.f;
-
 	// 행 이름 Wave_01, Wave_02 ... 에 따라 날짜별 스웜을 정의한 DataTable.
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Wave")
 	TObjectPtr<UDataTable> WaveDataTable;
+
+	// 행 이름 Day_01, Day_02 ... 에 따라 날짜별 필드 몬스터 배치를 정의한 DataTable.
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn")
+	TObjectPtr<UDataTable> DaySpawnDataTable;
+
+	// 행 이름 MonsterGroup_00, MonsterGroup_01 ... 에 따라 그룹별 몬스터 구성과 가중치를 정의한 DataTable.
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn")
+	TObjectPtr<UDataTable> MonsterSpawnGroupDataTable;
 	
 	// 단계 진행
 	void StartDay(int32 Day);
@@ -136,20 +116,9 @@ protected:
 	void OnNightTimeUp();
 	void EndGame(bool bVictory);
 	
-	// 맵에 살아 있는 몬스터 수 (낮에 남은 몬스터를 밤 웨이브에 포함하기 위해)
-	int32 CountAliveMonsters() const;
-	
 	// 사망과 리스폰
 	UASPlayerRecordComponent* GetOrCreateRecord(AController* Controller) const;
 	void RespawnPlayer(AController* Controller);
-	
-	// 적 스폰 포인트
-	void GenerateEnemySpawnPoints();
-	bool IsNearAnyPlayer(const FVector& Location) const;
-	TArray<FVector> GetAvailableEnemySpawnPoints() const;
-	
-	// 게임 시작 시 자동 생성된 적 스폰 포인트
-	TArray<FVector> EnemySpawnPoints;
 	
 	// 리스폰 시 바닥에 박히지 않도록 높이 보간 (캡슐 절반 높이, 없으면 100cm)
 	float GetSpawnHeightOffset(AController* Controller);

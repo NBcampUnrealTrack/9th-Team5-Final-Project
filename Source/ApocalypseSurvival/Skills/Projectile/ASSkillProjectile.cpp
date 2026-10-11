@@ -1,6 +1,7 @@
 ﻿#include "Skills/Projectile/ASSkillProjectile.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/SphereComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "Skills/Projectile/ASSkillProjectileActor.h"
@@ -57,4 +58,25 @@ void UASSkillProjectile::OnSkillEffect_Implementation()
 
 	Projectile->InitProjectile(MakeDamageSpec(), Avatar, Aim, Speed, MaxRange, PierceCount, bCanHitPlayers);
 	Projectile->FinishSpawning(SpawnTransform);
+}
+
+FASSkillIndicatorSettings UASSkillProjectile::GetIndicatorSettings_Implementation() const
+{
+	FASSkillIndicatorSettings Settings = Super::GetIndicatorSettings_Implementation();
+	Settings.TargetingType = EASSkillTargetingType::Direction;
+	Settings.Shape = EASSkillIndicatorShape::Line;
+	Settings.Length = MaxRange;
+	Settings.RangeRingRadius = MaxRange;
+
+	//폭은 투사체 충돌 구체 지름 (못 찾으면 40)
+	Settings.Width = 40.0f;
+	if (const AActor* ProjectileCDO = ProjectileClass ? ProjectileClass->GetDefaultObject<AActor>() : nullptr)
+	{
+		if (const USphereComponent* Sphere = ProjectileCDO->FindComponentByClass<USphereComponent>())
+		{
+			Settings.Width = Sphere->GetUnscaledSphereRadius() * 2.0f;
+		}
+	}
+
+	return Settings;
 }

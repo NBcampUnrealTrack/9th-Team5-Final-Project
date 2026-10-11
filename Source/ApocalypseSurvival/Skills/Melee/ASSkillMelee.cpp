@@ -67,3 +67,20 @@ void UASSkillMelee::OnTargetsHit_Implementation(const TArray<AActor*>& Targets)
 		ApplySkillDamage(Target);
 	}
 }
+
+FASSkillIndicatorSettings UASSkillMelee::GetIndicatorSettings_Implementation() const
+{
+	FASSkillIndicatorSettings Settings = Super::GetIndicatorSettings_Implementation();
+	Settings.Shape = Angle < 360.0f ? EASSkillIndicatorShape::Cone : EASSkillIndicatorShape::Circle;
+	Settings.Radius = Radius;
+	Settings.Angle = Angle;
+	Settings.ForwardOffset = ForwardOffset;
+
+	//닿는 거리를 사거리 원으로 표시
+	if (Settings.TargetingType != EASSkillTargetingType::Location)
+	{
+		Settings.RangeRingRadius = FMath::Max(0.0f, ForwardOffset) + Radius;
+	}
+
+	return Settings;
+}

@@ -26,6 +26,8 @@ class APOCALYPSESURVIVAL_API UASInventoryComponent : public UActorComponent
 
 public:
 	static constexpr int32 PlayerSlotCount = 10;
+	/** Dedicated weapon position; owned instances here remain replicated but do not use backpack capacity. */
+	static constexpr int32 WeaponSlotIndex = -2;
 
 	UASInventoryComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -118,7 +120,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UASItemInstance* FindFirstItem(const UASItemDefinition* ItemDefinition) const;
 
-	/** Returns a Blueprint-friendly snapshot of the current instance references. */
+	/** Returns all owned instances, including the weapon position. */
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	TArray<UASItemInstance*> GetItems() const;
 
@@ -126,7 +128,7 @@ public:
 	const TArray<TObjectPtr<UASItemInstance>>& GetItemInstances() const { return Items; }
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
-	int32 GetUsedSlotCount() const { return Items.Num(); }
+	int32 GetUsedSlotCount() const;
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	int32 GetMaxSlots() const { return MaxSlots; }
@@ -157,7 +159,7 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0"))
 	int32 MaxSlots = 0;
 
-	/** Runtime instances owned by this component. */
+	/** All owned instances. InventorySlot identifies a backpack position or WeaponSlotIndex. */
 	UPROPERTY(ReplicatedUsing = OnRep_Items, VisibleInstanceOnly, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<UASItemInstance>> Items;
 
@@ -171,4 +173,5 @@ private:
 	// Server gate persists across weapon swaps to prevent bypassing the attack interval.
 	double NextWeaponAttackTime = 0.0;
 	bool bCommittingWeaponAttack = false;
+	bool bChangingEquipment = false;
 };

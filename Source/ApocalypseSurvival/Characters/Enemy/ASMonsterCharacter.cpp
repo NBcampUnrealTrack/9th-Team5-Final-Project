@@ -5,16 +5,24 @@
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
+#include "Characters/Enemy/UI/ASMonsterHealthBarWidget.h"
+#include "Core/Framework/ASPlayerCameraManager.h"
+#include "Core/Framework/ASGameMode.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Skills/ASSkillTags.h"
 
 AASMonsterCharacter::AASMonsterCharacter()
@@ -61,14 +69,208 @@ void AASMonsterCharacter::BeginPlay()
 		bMonsterInitialized = true;
 		OnMonsterInitialized.Broadcast();
 	}
+
+	// 전용 서버에는 UI 객체를 만들지 않는다. 클라이언트와 Listen Server에서만 필요한 경우 지연 생성한다.
+	bHealthBarEnabled = MonsterDefinition && MonsterDefinition->bUseWorldHealthBar;
+	bHealthBarVisibleRequested = MonsterDefinition && MonsterDefinition->bHealthBarInitiallyVisible;
+	ApplyHealthBarState();
 }
 
 void AASMonsterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ReleaseHealthBar();
+	UnbindTargetedAttackTagDelegate();
+	SetTargetedAttackMaterialTint(false);
 	UnbindHealthDelegate();
 	UnbindDamageEffectDelegate();
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void AASMonsterCharacter::SetHealthBarEnabled(bool bEnabled)
+{
+	if (bHealthBarEnabled == bEnabled)
+	{
+		return;
+	}
+
+	bHealthBarEnabled = bEnabled;
+	ApplyHealthBarState();
+}
+
+bool AASMonsterCharacter::IsHealthBarVisible() const
+{
+	return bHealthBarEnabled
+		&& bHealthBarVisibleRequested
+		&& IsValid(HealthBarComponent)
+		&& HealthBarComponent->IsVisible();
+}
+
+void AASMonsterCharacter::SetHealthBarVisible(bool bVisible)
+{
+	if (bHealthBarVisibleRequested == bVisible)
+	{
+		return;
+	}
+
+	bHealthBarVisibleRequested = bVisible;
+	ApplyHealthBarState();
+}
+
+void AASMonsterCharacter::ApplyHealthBarState()
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bHealthBarEnabled)
+	{
+		ReleaseHealthBar();
+		return;
+	}
+
+	if (!bHealthBarVisibleRequested)
+	{
+		UnbindHealthBarFromCameraZoom();
+		if (IsValid(HealthBarWidget))
+		{
+			HealthBarWidget->SetHealthSource(nullptr);
+		}
+
+		if (IsValid(HealthBarComponent))
+		{
+			HealthBarComponent->SetComponentTickEnabled(false);
+			HealthBarComponent->SetHiddenInGame(true);
+			HealthBarComponent->SetVisibility(false);
+		}
+		return;
+	}
+
+	CreateHealthBarIfNeeded();
+	if (!IsValid(HealthBarComponent))
+	{
+		return;
+	}
+
+	HealthBarComponent->SetHiddenInGame(false);
+	HealthBarComponent->SetVisibility(true);
+	HealthBarComponent->SetComponentTickEnabled(true);
+	if (IsValid(HealthBarWidget))
+	{
+		// 다시 표시할 때 현재 Attribute 값으로 즉시 갱신한 뒤 변경 이벤트를 다시 구독한다.
+		HealthBarWidget->SetHealthSource(this);
+	}
+	BindHealthBarToCameraZoom();
+}
+
+void AASMonsterCharacter::CreateHealthBarIfNeeded()
+{
+	if (IsValid(HealthBarComponent) || !MonsterDefinition)
+	{
+		return;
+	}
+
+	TSubclassOf<UASMonsterHealthBarWidget> WidgetClass = MonsterDefinition->HealthBarWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = UASMonsterHealthBarWidget::StaticClass();
+	}
+
+	HealthBarComponent = NewObject<UWidgetComponent>(this);
+	if (!IsValid(HealthBarComponent))
+	{
+		return;
+	}
+
+	AddInstanceComponent(HealthBarComponent);
+	HealthBarComponent->SetupAttachment(GetRootComponent());
+	HealthBarComponent->SetRelativeLocation(MonsterDefinition->HealthBarOffset);
+	HealthBarComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	HealthBarComponent->SetDrawSize(FIntPoint(
+		FMath::RoundToInt(MonsterDefinition->HealthBarDrawSize.X),
+		FMath::RoundToInt(MonsterDefinition->HealthBarDrawSize.Y)));
+	// WBP의 RootSizeBox를 바꾸면 실제 화면 크기도 그대로 바뀌게 한다.
+	// 위 DrawSize는 Widget의 DesiredSize가 아직 계산되지 않은 첫 프레임의 안전한 초기값이다.
+	HealthBarComponent->SetDrawAtDesiredSize(true);
+	HealthBarComponent->SetPivot(FVector2D(0.5f, 1.0f));
+	HealthBarComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HealthBarComponent->SetGenerateOverlapEvents(false);
+	HealthBarComponent->SetTickWhenOffscreen(false);
+	HealthBarComponent->SetWidgetClass(WidgetClass);
+	HealthBarComponent->RegisterComponent();
+	HealthBarComponent->InitWidget();
+
+	HealthBarWidget = Cast<UASMonsterHealthBarWidget>(HealthBarComponent->GetWidget());
+}
+
+void AASMonsterCharacter::ReleaseHealthBar()
+{
+	UnbindHealthBarFromCameraZoom();
+
+	if (IsValid(HealthBarWidget))
+	{
+		HealthBarWidget->SetHealthSource(nullptr);
+	}
+	HealthBarWidget = nullptr;
+
+	if (IsValid(HealthBarComponent))
+	{
+		HealthBarComponent->SetWidget(nullptr);
+		HealthBarComponent->DestroyComponent();
+	}
+	HealthBarComponent = nullptr;
+}
+
+void AASMonsterCharacter::BindHealthBarToCameraZoom()
+{
+	UnbindHealthBarFromCameraZoom();
+	if (!IsValid(HealthBarWidget) || !MonsterDefinition)
+	{
+		return;
+	}
+
+	AASPlayerCameraManager* CameraManager = Cast<AASPlayerCameraManager>(
+		UGameplayStatics::GetPlayerCameraManager(this, 0));
+	if (!IsValid(CameraManager))
+	{
+		HandleCameraZoomChanged(0.0f);
+		return;
+	}
+
+	BoundCameraManager = CameraManager;
+	CameraZoomChangedHandle = CameraManager->OnCameraZoomChanged.AddUObject(
+		this, &AASMonsterCharacter::HandleCameraZoomChanged);
+	HandleCameraZoomChanged(CameraManager->GetZoomAlpha());
+}
+
+void AASMonsterCharacter::UnbindHealthBarFromCameraZoom()
+{
+	if (BoundCameraManager.IsValid() && CameraZoomChangedHandle.IsValid())
+	{
+		BoundCameraManager->OnCameraZoomChanged.Remove(CameraZoomChangedHandle);
+	}
+
+	BoundCameraManager.Reset();
+	CameraZoomChangedHandle.Reset();
+}
+
+void AASMonsterCharacter::HandleCameraZoomChanged(const float ZoomAlpha)
+{
+	if (!IsValid(HealthBarWidget) || !MonsterDefinition)
+	{
+		return;
+	}
+
+	const float HealthBarScale = MonsterDefinition->bScaleHealthBarWithCameraZoom
+		? FMath::Lerp(
+			MonsterDefinition->HealthBarScaleAtMinZoomDistance,
+			MonsterDefinition->HealthBarScaleAtMaxZoomDistance,
+			FMath::Clamp(ZoomAlpha, 0.0f, 1.0f))
+		: 1.0f;
+
+	HealthBarWidget->SetRenderTransformPivot(FVector2D(0.5f, 1.0f));
+	HealthBarWidget->SetRenderScale(FVector2D(HealthBarScale));
 }
 
 void AASMonsterCharacter::OnAbilitySystemInitialized()
@@ -84,6 +286,94 @@ void AASMonsterCharacter::OnAbilitySystemInitialized()
 	UnbindDamageEffectDelegate();
 	DamageEffectAppliedHandle = OwnedAbilitySystemComponent->OnGameplayEffectAppliedDelegateToSelf
 		.AddUObject(this, &AASMonsterCharacter::HandleGameplayEffectApplied);
+
+	// 타게팅 공격은 서버에서만 실행되지만 ActivationOwnedTag는 Minimal 복제로 모든 클라이언트에 전달된다.
+	// 따라서 각 클라이언트가 자기 메시의 MID만 바꾸면 되고, 머티리얼 상태를 별도로 복제할 필요가 없다.
+	UnbindTargetedAttackTagDelegate();
+	TargetedAttackTagChangedHandle = OwnedAbilitySystemComponent
+		->RegisterGameplayTagEvent(ASGameplayTags::State_Monster_TargetedAttacking, EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(this, &AASMonsterCharacter::HandleTargetedAttackTagChanged);
+	SetTargetedAttackMaterialTint(OwnedAbilitySystemComponent
+		->HasMatchingGameplayTag(ASGameplayTags::State_Monster_TargetedAttacking));
+}
+
+void AASMonsterCharacter::UnbindTargetedAttackTagDelegate()
+{
+	if (IsValid(OwnedAbilitySystemComponent) && TargetedAttackTagChangedHandle.IsValid())
+	{
+		OwnedAbilitySystemComponent
+			->RegisterGameplayTagEvent(ASGameplayTags::State_Monster_TargetedAttacking, EGameplayTagEventType::NewOrRemoved)
+			.Remove(TargetedAttackTagChangedHandle);
+	}
+
+	TargetedAttackTagChangedHandle.Reset();
+}
+
+void AASMonsterCharacter::HandleTargetedAttackTagChanged(const FGameplayTag Tag, const int32 NewCount)
+{
+	SetTargetedAttackMaterialTint(NewCount > 0);
+}
+
+void AASMonsterCharacter::SetTargetedAttackMaterialTint(const bool bActive)
+{
+	if (bTargetedAttackTintActive == bActive)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (!IsValid(MeshComponent))
+	{
+		return;
+	}
+
+	if (!bActive)
+	{
+		for (int32 MaterialIndex = 0; MaterialIndex < TargetedAttackOriginalMaterials.Num(); ++MaterialIndex)
+		{
+			// 이후 다른 시스템이 슬롯을 바꿨다면 그 값을 덮어쓰지 않는다.
+			if (TargetedAttackMaterialInstances.IsValidIndex(MaterialIndex)
+				&& MeshComponent->GetMaterial(MaterialIndex) == TargetedAttackMaterialInstances[MaterialIndex])
+			{
+				MeshComponent->SetMaterial(MaterialIndex, TargetedAttackOriginalMaterials[MaterialIndex]);
+			}
+		}
+
+		TargetedAttackOriginalMaterials.Reset();
+		TargetedAttackMaterialInstances.Reset();
+		bTargetedAttackTintActive = false;
+		return;
+	}
+
+	const int32 MaterialCount = MeshComponent->GetNumMaterials();
+	if (MaterialCount <= 0)
+	{
+		return;
+	}
+
+	TargetedAttackOriginalMaterials.SetNum(MaterialCount);
+	TargetedAttackMaterialInstances.SetNum(MaterialCount);
+	for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+	{
+		UMaterialInterface* OriginalMaterial = MeshComponent->GetMaterial(MaterialIndex);
+		TargetedAttackOriginalMaterials[MaterialIndex] = OriginalMaterial;
+		if (!IsValid(OriginalMaterial))
+		{
+			continue;
+		}
+
+		UMaterialInstanceDynamic* DynamicMaterial = UMaterialInstanceDynamic::Create(OriginalMaterial, this);
+		if (!IsValid(DynamicMaterial))
+		{
+			continue;
+		}
+
+		DynamicMaterial->SetVectorParameterValue(TargetedAttackTintParameter, TargetedAttackTintColor);
+		MeshComponent->SetMaterial(MaterialIndex, DynamicMaterial);
+		TargetedAttackMaterialInstances[MaterialIndex] = DynamicMaterial;
+	}
+
+	bTargetedAttackTintActive = true;
 }
 
 bool AASMonsterCharacter::IsDead() const
@@ -94,6 +384,26 @@ bool AASMonsterCharacter::IsDead() const
 bool AASMonsterCharacter::IsHitReacting() const
 {
 	return IsValid(OwnedAbilitySystemComponent) && OwnedAbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_HitReact);
+}
+
+void AASMonsterCharacter::ConfigureSpawnHome(const FVector& InLocation, float InLeashRadius,
+	float InReturnAcceptanceRadius, float InReturnHealthPercentPerSecond, float InDayDetectionRadius,
+	float InDayLoseTargetRadius, float InReturnMoveSpeedMultiplier)
+{
+	bHasSpawnHome = true;
+	SpawnHomeLocation = InLocation;
+	SpawnLeashRadius = FMath::Max(0.0f, InLeashRadius);
+	ReturnAcceptanceRadius = FMath::Max(1.0f, InReturnAcceptanceRadius);
+	ReturnHealthPercentPerSecond = FMath::Max(0.0f, InReturnHealthPercentPerSecond);
+	DayDetectionRadius = FMath::Max(0.0f, InDayDetectionRadius);
+	DayLoseTargetRadius = FMath::Max(DayDetectionRadius, InDayLoseTargetRadius);
+	ReturnMoveSpeedMultiplier = FMath::Max(1.0f, InReturnMoveSpeedMultiplier);
+}
+
+bool AASMonsterCharacter::IsOutsideSpawnLeash() const
+{
+	return bHasSpawnHome && SpawnLeashRadius > 0.0f
+		&& FVector::Dist2D(GetActorLocation(), SpawnHomeLocation) > SpawnLeashRadius;
 }
 
 void AASMonsterCharacter::SetFaceControllerFocus(bool bFaceControllerFocus)
@@ -188,6 +498,9 @@ void AASMonsterCharacter::HandleDeath()
 	// Minimal 복제 모드에서는 GameplayEffect가 주는 태그처럼 TagOnly 상태로 복제해야 한다.
 	// 사망 GameplayEffect를 만들기 전까지는 이 API로 Dead 태그를 모든 클라이언트에 전달한다.
 	OwnedAbilitySystemComponent->AddMinimalReplicationGameplayTag(ASGameplayTags::State_Monster_Dead);
+	SetHealthBarEnabled(false);
+	SetTargetedAttackMaterialTint(false);
+	ReportDeathToGameMode();
 
 	// 사망 직전의 공격 몽타주/타격 이벤트가 계속되는 것을 막는다.
 	FGameplayTagContainer AttackAbilityTags;
@@ -196,18 +509,18 @@ void AASMonsterCharacter::HandleDeath()
 
 	StopMovementAndAI();
 	SetCanBeDamaged(false);
-	// CharacterMovement는 Capsule 충돌을 기준으로 이동한다. Actor 플래그뿐 아니라 Capsule을
-	// 직접 끄고 NavMesh 장애물에서도 빼야 사망 대기 중 길막하지 않는다.
+	// Actor 플래그만 끄면 Blueprint에 추가한 무기/장식 Mesh 등의 Primitive Component가 계속
+	// Pawn을 Block하거나 NavMesh 장애물로 남을 수 있다. 모든 Primitive Component를 함께 끈다.
 	SetActorEnableCollision(false);
-	if (UCapsuleComponent* CollisionComponent = GetCapsuleComponent())
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
 	{
-		CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		CollisionComponent->SetCanEverAffectNavigation(false);
-	}
-	if (USkeletalMeshComponent* MeshComponent = GetMesh())
-	{
-		MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		MeshComponent->SetCanEverAffectNavigation(false);
+		if (PrimitiveComponent)
+		{
+			PrimitiveComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			PrimitiveComponent->SetGenerateOverlapEvents(false);
+			PrimitiveComponent->SetCanEverAffectNavigation(false);
+		}
 	}
 
 	const float DespawnDelay = MonsterDefinition ? MonsterDefinition->DeathDespawnDelay : 1.5f;
@@ -230,7 +543,17 @@ void AASMonsterCharacter::StopMovementAndAI()
 
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
 	MovementComponent->StopMovementImmediately();
+	// RVO는 충돌과 별도의 군집 회피 정보다. 사체가 회피 대상으로 남지 않게 명시적으로 해제한다.
+	MovementComponent->SetAvoidanceEnabled(false);
 	MovementComponent->DisableMovement();
+}
+
+void AASMonsterCharacter::ReportDeathToGameMode_Implementation()
+{
+	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+	{
+		GameMode->OnEnemyKilled(nullptr);
+	}
 }
 
 void AASMonsterCharacter::ApplyHitReact()

@@ -15,6 +15,7 @@ class APOCALYPSESURVIVAL_API UASSkillMelee : public UASSkillAbility
 
 protected:
 	virtual void OnSkillEffect_Implementation() override;
+	virtual FASSkillIndicatorSettings GetIndicatorSettings_Implementation() const override;
 
 	//판정에 맞은 대상 처리 (기본: 데미지)
 	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill|Melee")

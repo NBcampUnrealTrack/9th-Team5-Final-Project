@@ -4,6 +4,9 @@
 #include "Camera/PlayerCameraManager.h"
 #include "ASPlayerCameraManager.generated.h"
 
+/** 0은 최대 줌인, 1은 최대 줌아웃이다. 실제 화면에 적용된 보간 값을 전달한다. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FASCameraZoomChangedSignature, float);
+
 /**
  * 폰에 붙어 있지 않은 탑다운 카메라.
  *
@@ -22,6 +25,9 @@ class APOCALYPSESURVIVAL_API AASPlayerCameraManager : public APlayerCameraManage
 
 public:
 	AASPlayerCameraManager();
+
+	/** 로컬 화면에 적용된 줌이 바뀔 때만 방송한다. */
+	FASCameraZoomChangedSignature OnCameraZoomChanged;
 
 	/**
 	 * 포커스를 바닥을 따라 민다.
@@ -44,6 +50,9 @@ public:
 	 * @param AxisValue  마우스 휠 칸 수. 양수가 확대다.
 	 */
 	void AddZoomInput(float AxisValue);
+
+	/** 0은 MinCameraDistance, 1은 MaxCameraDistance다. */
+	float GetZoomAlpha() const;
 
 protected:
 	virtual void PostInitializeComponents() override;
@@ -117,4 +126,7 @@ private:
 
 	/** 뷰 타깃이 바뀌었는지(첫 생성, 리스폰) 알아내려고 기억해 둔다. */
 	TWeakObjectPtr<AActor> LastViewTarget;
+
+	/** 줌 보간 중 실제 값이 달라진 프레임에만 이벤트를 보내기 위한 마지막 값. */
+	float LastBroadcastZoomAlpha = -1.0f;
 };

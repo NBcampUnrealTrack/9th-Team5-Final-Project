@@ -56,6 +56,9 @@ private:
 	UFUNCTION()
 	void HandleStop(const FHitResult& ImpactResult);
 
+	/** 발사 직전에 BP 기본값을 덮어써 피격용 Sphere만 충돌에 참여하게 한다. */
+	void ConfigureProjectileCollision();
+
 	void EndProjectile();
 
 	//0 = 첫 적에서 사라짐, -1 = 무한 관통

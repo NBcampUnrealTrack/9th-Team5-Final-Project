@@ -12,5 +12,6 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(State_Monster_Dead, "State.Monster.Dead");
 	UE_DEFINE_GAMEPLAY_TAG(State_Monster_HitReact, "State.Monster.HitReact");
 	UE_DEFINE_GAMEPLAY_TAG(State_Monster_Attacking, "State.Monster.Attacking");
+	UE_DEFINE_GAMEPLAY_TAG(State_Monster_TargetedAttacking, "State.Monster.TargetedAttacking");
 	UE_DEFINE_GAMEPLAY_TAG(State_Monster_Charging, "State.Monster.Charging");
 }

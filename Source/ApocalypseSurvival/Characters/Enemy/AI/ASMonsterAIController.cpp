@@ -8,6 +8,9 @@
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
 #include "Engine/World.h"
+#include "GAS/ASAbilitySystemComponent.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "TimerManager.h"
 
@@ -88,6 +91,13 @@ void AASMonsterAIController::TryStartAI()
 	}
 
 	StopWaitingForMonster();
+	if (Monster->HasSpawnHome())
+	{
+		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent())
+		{
+			Targeting->Configure(Monster->GetDayDetectionRadius(), Monster->GetDayLoseTargetRadius());
+		}
+	}
 	StartAggroLoop();
 	UpdateAggroAndMovement();
 }
@@ -225,7 +235,10 @@ void AASMonsterAIController::StopAggroLoop()
 
 	NightStartedHandle.Reset();
 	NightEndedHandle.Reset();
+	RestoreMoveSpeed();
 	MoveTarget.Reset();
+	bReturningToSpawn = false;
+	bHasEngagedDayTarget = false;
 }
 
 void AASMonsterAIController::UpdateAggroAndMovement()
@@ -235,6 +248,28 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 	if (!HasAuthority() || !Monster || Monster->IsDead() || !Targeting)
 	{
 		return;
+	}
+
+	// 낮에는 필드 스폰 몬스터만 일반 탐지 거리에서 반응한다.
+	// 밤 웨이브 몬스터는 밤까지 대기하고, 밤에는 모든 몬스터가 거리 제한 없이 추격한다.
+	if (!bNightAggressive && !Monster->CanAggroDuringDay())
+	{
+		Targeting->ClearTarget();
+		StopStateTree(TEXT("DayIdle"));
+		StopMovement();
+		ClearCombatFocus();
+		MoveTarget.Reset();
+		return;
+	}
+
+	// 낮 필드 몬스터는 홈에서 LeashRadius를 넘으면 즉시 전투를 끊고 귀환한다.
+	// 밤에는 거리 제한 추격 규칙이 우선이므로 귀환시키지 않는다.
+	if (!bNightAggressive && (bReturningToSpawn || Monster->IsOutsideSpawnLeash()))
+	{
+		if (UpdateReturnToSpawn(*Monster, *Targeting))
+		{
+			return;
+		}
 	}
 
 	// 타이머가 0.25초마다 MoveToActor를 재요청하므로, 태그를 여기서 확인해야 경직 중 이동이 재개되지 않는다.
@@ -262,11 +297,24 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 	AActor* Target = bHasTarget ? Targeting->GetTargetActor() : nullptr;
 	if (!IsValid(Target))
 	{
-		StopStateTree(TEXT("NoTarget"));
+		// 플레이어가 추적 해제 거리 밖으로 먼저 빠진 경우에도 전투를 끝내고 홈으로 복귀한다.
+		if (!bNightAggressive && bHasEngagedDayTarget && Monster->HasSpawnHome()
+			&& FVector::Dist2D(Monster->GetActorLocation(), Monster->GetSpawnHomeLocation()) > Monster->GetReturnAcceptanceRadius())
+		{
+			UpdateReturnToSpawn(*Monster, *Targeting);
+			return;
+		}
+
+		bHasEngagedDayTarget = false;
 		StopMovement();
 		ClearCombatFocus();
 		MoveTarget.Reset();
 		return;
+	}
+
+	if (!bNightAggressive)
+	{
+		bHasEngagedDayTarget = true;
 	}
 
 	// 타깃을 얻은 뒤에만 StateTree를 시작한다. 빈 TargetActor가 Move To에 전달되는 것을 차단한다.
@@ -283,14 +331,128 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 
 void AASMonsterAIController::HandleNightStarted(int32 Day, bool bBossNight)
 {
+	RestoreMoveSpeed();
 	bNightAggressive = true;
+	bReturningToSpawn = false;
+	bHasEngagedDayTarget = false;
 	UpdateAggroAndMovement();
 }
 
 void AASMonsterAIController::HandleNightEnded(int32 Day)
 {
+	RestoreMoveSpeed();
 	bNightAggressive = false;
-	UpdateAggroAndMovement();
+	bReturningToSpawn = false;
+	bHasEngagedDayTarget = false;
+
+	if (AASMonsterCharacter* Monster = ControlledMonster.Get())
+	{
+		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent())
+		{
+			Targeting->ClearTarget();
+		}
+	}
+
+	StopStateTree(TEXT("NightEnded"));
+	StopMovement();
+	ClearCombatFocus();
+	MoveTarget.Reset();
+}
+
+bool AASMonsterAIController::UpdateReturnToSpawn(AASMonsterCharacter& Monster, UASMonsterTargetingComponent& Targeting)
+{
+	if (!Monster.HasSpawnHome())
+	{
+		bReturningToSpawn = false;
+		return false;
+	}
+
+	const bool bWasReturningToSpawn = bReturningToSpawn;
+	bReturningToSpawn = true;
+	Targeting.ClearTarget();
+	StopStateTree(TEXT("ReturnToSpawn"));
+	ClearCombatFocus();
+	MoveTarget.Reset();
+	ApplyReturnMoveSpeed(Monster);
+	RestoreReturningHealth(Monster);
+
+	const float DistanceToHome = FVector::Dist2D(Monster.GetActorLocation(), Monster.GetSpawnHomeLocation());
+	if (DistanceToHome <= Monster.GetReturnAcceptanceRadius())
+	{
+		// 귀환을 끝낸 뒤에는 전투 중 상태를 남기지 않는다. 다음 갱신부터 일반 대기 몬스터처럼
+		// DetectionRadius 안의 플레이어만 새로 탐색한다.
+		Targeting.ClearTarget();
+		bReturningToSpawn = false;
+		bHasEngagedDayTarget = false;
+		RestoreMoveSpeed();
+		StopMovement();
+		ClearCombatFocus();
+		MoveTarget.Reset();
+		// 귀환 중 멈췄던 StateTree를 대기/타깃 탐색 상태로 즉시 재가동한다.
+		// 이후에는 StateTree와 컨트롤러 양쪽 모두 새 타깃을 다시 탐색한다.
+		StartStateTree();
+		return true;
+	}
+
+	if (!bWasReturningToSpawn || GetMoveStatus() != EPathFollowingStatus::Moving)
+	{
+		// 기본값인 bStopOnOverlap=true는 캡슐 반경만큼 일찍 멈춘다. 그러면 겉으로는 도착해도
+		// 위 DistanceToHome 완료 조건을 영원히 통과하지 못해 bReturningToSpawn이 고착된다.
+		MoveToLocation(Monster.GetSpawnHomeLocation(), Monster.GetReturnAcceptanceRadius(), false);
+	}
+	return true;
+}
+
+void AASMonsterAIController::ApplyReturnMoveSpeed(AASMonsterCharacter& Monster)
+{
+	if (bHasCachedMoveSpeedForReturn)
+	{
+		return;
+	}
+
+	if (UCharacterMovementComponent* Movement = Monster.GetCharacterMovement())
+	{
+		CachedMoveSpeedForReturn = Movement->MaxWalkSpeed;
+		bHasCachedMoveSpeedForReturn = true;
+		Movement->MaxWalkSpeed = CachedMoveSpeedForReturn * Monster.GetReturnMoveSpeedMultiplier();
+	}
+}
+
+void AASMonsterAIController::RestoreMoveSpeed()
+{
+	if (!bHasCachedMoveSpeedForReturn)
+	{
+		return;
+	}
+
+	if (AASMonsterCharacter* Monster = ControlledMonster.Get())
+	{
+		if (UCharacterMovementComponent* Movement = Monster->GetCharacterMovement())
+		{
+			Movement->MaxWalkSpeed = CachedMoveSpeedForReturn;
+		}
+	}
+
+	bHasCachedMoveSpeedForReturn = false;
+	CachedMoveSpeedForReturn = 0.0f;
+}
+
+void AASMonsterAIController::RestoreReturningHealth(AASMonsterCharacter& Monster) const
+{
+	UASAbilitySystemComponent* AbilitySystemComponent = Monster.GetASAbilitySystemComponent();
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	const float CurrentHealth = AbilitySystemComponent->GetNumericAttribute(UASHealthAttributeSet::GetHealthAttribute());
+	const float MaxHealth = AbilitySystemComponent->GetNumericAttribute(UASHealthAttributeSet::GetMaxHealthAttribute());
+	const float HealAmount = MaxHealth * Monster.GetReturnHealthPercentPerSecond() * AggroUpdateInterval;
+	if (HealAmount > 0.0f && CurrentHealth < MaxHealth)
+	{
+		AbilitySystemComponent->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(),
+			FMath::Min(CurrentHealth + HealAmount, MaxHealth));
+	}
 }
 
 void AASMonsterAIController::SetCombatFocus(AActor* Target)

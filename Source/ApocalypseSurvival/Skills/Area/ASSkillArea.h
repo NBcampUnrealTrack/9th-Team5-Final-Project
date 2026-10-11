@@ -20,6 +20,7 @@ public:
 
 protected:
 	virtual void OnSkillEffect_Implementation() override;
+	virtual FASSkillIndicatorSettings GetIndicatorSettings_Implementation() const override;
 
 	//생성할 범위 액터 (이펙트를 넣은 BP 자식 지정)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area")
@@ -43,7 +44,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area")
 	bool bAttachToOwner = true;
 
-	//그 자리에 남을 때 생성 위치를 앞으로 옮기는 거리
+	//그 자리에 남을 때 생성 위치를 앞으로 옮기는 거리 (조준 방식이 방향형일 때만 사용, 위치형은 목표 지점에 생성)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area", meta = (Units = "cm", EditCondition = "!bAttachToOwner"))
 	float ForwardOffset = 0.0f;
 };

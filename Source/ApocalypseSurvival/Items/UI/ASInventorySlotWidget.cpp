@@ -89,8 +89,9 @@ void UASInventorySlotWidget::RefreshSlot()
 	UASItemInstance* Item = GetItem();
 	const UASItemDefinition* Definition = Item ? Item->GetItemDefinition() : nullptr;
 	UTexture2D* Icon = Definition ? Definition->Icon.LoadSynchronous() : nullptr;
-	const bool bEquipped = Item && Bar->GetInventory()->GetEquippedItem() == Item;
-	if (KeyText) KeyText->SetText(FText::AsNumber((SlotIndex + 1) % 10));
+	const bool bWeaponSlot = SlotIndex == UASInventoryComponent::WeaponSlotIndex;
+	const bool bEquipped = Item && bWeaponSlot;
+	if (KeyText) KeyText->SetText(bWeaponSlot ? NSLOCTEXT("Items", "WeaponSlot", "Weapon") : FText::AsNumber((SlotIndex + 1) % 10));
 	if (ItemIcon)
 	{
 		ItemIcon->SetBrushFromTexture(Icon);
@@ -109,7 +110,7 @@ FReply UASInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& Geometry
 	bPressed = true;
 	PressedItem = GetItem() ? GetItem()->GetInstanceId() : FGuid();
 	FReply Reply = FReply::Handled().CaptureMouse(TakeWidget());
-	return PressedItem.IsValid() ? Reply.DetectDrag(TakeWidget(), EKeys::LeftMouseButton) : Reply;
+	return PressedItem.IsValid() && SlotIndex >= 0 ? Reply.DetectDrag(TakeWidget(), EKeys::LeftMouseButton) : Reply;
 }
 
 FReply UASInventorySlotWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -125,14 +126,17 @@ void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, con
 {
 	bPressed = false;
 	UASItemInstance* Item = GetItem();
-	if (!Bar || !Item || Item->GetInstanceId() != PressedItem) return;
+	if (!Bar || !Item || SlotIndex < 0 || Item->GetInstanceId() != PressedItem) return;
 	UASInventorySlotDragDrop* Drag = NewObject<UASInventorySlotDragDrop>();
 	Drag->Inventory = Bar->GetInventory();
 	Drag->SourceBar = Bar;
 	Drag->FromSlot = SlotIndex;
 	Drag->ItemId = PressedItem;
-	UASInventorySlotWidget* Visual = CreateWidget<UASInventorySlotWidget>(GetOwningPlayer());
-	if (Visual) Visual->InitializeSlot(Bar, SlotIndex);
+	UImage* Visual = NewObject<UImage>(Drag);
+	UTexture2D* Icon = Item->GetItemDefinition()->Icon.LoadSynchronous();
+	Visual->SetBrushFromTexture(Icon);
+	Visual->SetDesiredSizeOverride(FVector2D(44.0f));
+	Visual->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	Drag->DefaultDragVisual = Visual;
 	Drag->Pivot = EDragPivot::CenterCenter;
 	Bar->BeginItemDrag();
@@ -149,6 +153,13 @@ bool UASInventorySlotWidget::NativeOnDrop(const FGeometry& Geometry, const FDrag
 {
 	UASInventorySlotDragDrop* Drag = Cast<UASInventorySlotDragDrop>(Operation);
 	if (!Drag || !Bar || Drag->Inventory != Bar->GetInventory() || Drag->FromSlot == SlotIndex) return false;
+	if (SlotIndex == UASInventoryComponent::WeaponSlotIndex)
+	{
+		UASItemInstance* Source = Bar->GetInventory()->GetItemAtSlot(Drag->FromSlot);
+		if (Source && Source->GetInstanceId() == Drag->ItemId && Source->GetItemDefinition()->ItemType == EASItemType::Weapon)
+			Bar->ActivateSlot(Drag->FromSlot, Drag->ItemId);
+		return true;
+	}
 	Bar->SwapSlots(Drag->FromSlot, SlotIndex, Drag->ItemId, GetItem() ? GetItem()->GetInstanceId() : FGuid());
 	return true;
 }
