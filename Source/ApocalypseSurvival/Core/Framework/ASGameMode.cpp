@@ -7,14 +7,10 @@
 #include "Core/Framework/ASPlayerRecordComponent.h"
 #include "Core/Framework/ASRespawnPoint.h"
 #include "EngineUtils.h"
-#include "NavigationSystem.h"
-#include "DrawDebugHelpers.h"
 #include "Components/CapsuleComponent.h"
-#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
-#include "Characters/Player/ASPlayerCharacter.h"
 
 AASGameMode::AASGameMode()
 {
@@ -55,9 +51,6 @@ void AASGameMode::HandleMatchHasStarted()
 {
 	Super::HandleMatchHasStarted();
 	
-	// 맵의 NavMesh 위에 적 스폰 포인트 자동 생성
-	GenerateEnemySpawnPoints();
-	
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
 	
@@ -78,6 +71,11 @@ void AASGameMode::StartDay(int32 Day)
 	GS->SetCurrentDay(Day);
 	GS->SetPhase(EGamePhase::Day, Duration);
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 낮 시작 (%.0f초)"), Day, Duration);
+
+	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
+	{
+		SpawnSubsystem->HandleDayStarted(Day, DaySpawnDataTable, MonsterSpawnGroupDataTable);
+	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnDayTimeUp, Duration, false);
 }
@@ -101,41 +99,16 @@ void AASGameMode::StartNight()
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 밤 시작 (%.0f초, 보스: %s)"),
 		Day, Duration, bBossNight ? TEXT("O") : TEXT("X"));
 	
-	// 낮에 남은 몬스터는 밤이 되면 웨이브 스폰 수에 포함
-	// StartWave 전에 카운팅
-	const int32 LeftoverCount = CountAliveMonsters();
-	if (LeftoverCount > 0)
-	{
-		ReportWaveSpawned(LeftoverCount);
-		UE_LOG(LogTemp, Log, TEXT("[GameMode] 낮에 남은 몬스터 %d마리 웨이브에 포함"), LeftoverCount);
-	}
-	
 	// AI/보스 시스템에 밤 시작을 알린다.
 	OnNightStarted.Broadcast(Day, bBossNight);
 
-	// 몬스터가 살아 있는 수와 관계없이 목표 물량이 모두 생성될 때까지 스웜을 계속 투입한다.
+	// 스폰 위치 선정, 기존 몬스터 집계, 웨이브 생성은 SpawnSubsystem이 전담한다.
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
-		SpawnSubsystem->StartWave(Day, WaveDataTable);
+		SpawnSubsystem->HandleNightStarted(Day, WaveDataTable);
 	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnNightTimeUp, Duration, false);
-}
-
-int32 AASGameMode::CountAliveMonsters() const
-{
-	int32 Count = 0;
-	for (TActorIterator<AASMonsterCharacter> It(GetWorld()); It; ++It)
-	{
-		const AASMonsterCharacter* Monster = *It;
-		
-		// 죽었지만 제거 전(사망연출)인 몬스터 제외
-		if (IsValid(Monster) && !Monster->IsActorBeingDestroyed() && !Monster->IsDead())
-		{
-			++Count;
-		}
-	}
-	return Count;
 }
 
 void AASGameMode::OnNightTimeUp()
@@ -145,7 +118,7 @@ void AASGameMode::OnNightTimeUp()
 
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
-		SpawnSubsystem->StopWave();
+		SpawnSubsystem->HandleNightEnded();
 	}
 	
 	const int32 Day = GS->GetCurrentDay();
@@ -175,7 +148,7 @@ void AASGameMode::EndGame(bool bVictory)
 	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
-		SpawnSubsystem->StopWave();
+		SpawnSubsystem->StopAllSpawning();
 	}
 	
 	if (AASGameState* GS = GetASGameState())
@@ -419,161 +392,4 @@ void AASGameMode::DebugKillPlayer()
 	// 체력을 0으로 만들어 실제 사망 과정(사망 태그 -> OnPlayerDied)를 그대로 탐
 	// 이미 죽어 있으면 캐릭터 쪽에서 무시
 	ASC->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), 0.f);
-}
-
-// 스폰 위치
-
-bool AASGameMode::FindSpawnLocation(int32 EnemyCount, TArray<FVector>& OutLocations) const
-{
-	OutLocations.Reset();
-	if (EnemyCount <= 0) return false;
-	
-	TArray<FVector> Candidates = GetAvailableEnemySpawnPoints();
-	if (Candidates.Num() == 0) return false;
-	
-	// 적 수에 비례해서 사용할 포인트 수 (포인트 1개당 EnemiesPerSpawnPoint마리, 최소1개, 최대 후보수)
-	const int32 PointCount = FMath::Clamp(FMath::DivideAndRoundUp(EnemyCount, FMath::Max(1, EnemiesPerSpawnPoint)), 1, Candidates.Num());
-	
-	// 후보 순서를 섞고 앞에서부터 사용 (겹치지 않게 랜덤 선택)
-	for (int32 i = Candidates.Num() - 1; i > 0; --i)
-	{
-		Candidates.Swap(i, FMath::RandRange(0, i));
-	}
-	
-	const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-	
-	// 적을 선택된 포인트들에 나눠 배정하고, 포인트 주변에 흩뿌림
-	for (int32 i = 0; i < EnemyCount; ++i)
-	{
-		const FVector& Point = Candidates[i % PointCount];
-		FVector Location = Point;
-		
-		if (NavSys)
-		{
-			const FVector2D Offset = FMath::RandPointInCircle(SpawnScatterRadius);
-			FNavLocation NavLocation;
-			if (NavSys->ProjectPointToNavigation(Point + FVector(Offset, 0.f), NavLocation, FVector(100.f, 100.f, 500.f)))
-			{
-				Location = NavLocation.Location;
-			}
-		}
-		
-		OutLocations.Add(Location);
-	}
-	
-	return true;
-}
-
-void AASGameMode::GenerateEnemySpawnPoints()
-{
-	EnemySpawnPoints.Reset();
-	
-	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-	if (!NavSys)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[GameMode] NavMesh가 없어 적 스폰 포인트를 만들지 못함"));
-		return;
-	}
-	
-	// 간격 조건 때문에 실패할 시 재시도
-	const int32 MaxAttempts = SpawnPointCount * 20;
-	for (int32 i = 0; i < MaxAttempts && EnemySpawnPoints.Num() < SpawnPointCount; ++i)
-	{
-		FNavLocation RandomPoint;
-		if (!NavSys->GetRandomPoint(RandomPoint)) continue;
-		
-		// 다른 포인트와 너무 가까우면 버림
-		bool bTooCloseToOther = false;
-		for (const FVector& Existing : EnemySpawnPoints)
-		{
-			if (FVector::Dist2D(Existing, RandomPoint.Location) < SpawnPointMinSpacing)
-			{
-				bTooCloseToOther = true;
-				break;
-			}
-		}
-		
-		if (!bTooCloseToOther)
-		{
-			EnemySpawnPoints.Add(RandomPoint.Location);
-		}
-	}
-	
-	UE_LOG(LogTemp, Log, TEXT("[GameMode] 적 스폰 포인트 %d개 생성"), EnemySpawnPoints.Num());
-}
-
-bool AASGameMode::IsNearAnyPlayer(const FVector& Location) const
-{
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-	{
-		const APlayerController* PC = It->Get();
-		const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
-		
-		// 죽은 플레이어 주변은 스폰 제외 대상이 아님
-		const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Pawn);
-		if (PlayerCharacter && PlayerCharacter->IsDead())
-		{
-			continue;
-		}
-		
-		if (Pawn && FVector::Dist2D(Pawn->GetActorLocation(), Location) < SpawnMinDistance)
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
-TArray<FVector> AASGameMode::GetAvailableEnemySpawnPoints() const
-{
-	TArray<FVector> Result;
-	for (const FVector& Point : EnemySpawnPoints)
-	{
-		if (!IsNearAnyPlayer(Point))
-		{
-			Result.Add(Point);
-		}
-	}
-	
-	// 전부 플레이어 근처라면 전체 사용
-	return Result.Num() > 0 ? Result : EnemySpawnPoints;
-}
-
-void AASGameMode::DebugShowEnemySpawnPoints(int32 EnemyCount)
-{
-	UWorld* World = GetWorld();
-	
-	// 살아 있는 플레이어 주변 최소 거리 (초록 원)
-	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
-	{
-		const APlayerController* PC = It->Get();
-		const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
-		const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Pawn);
-		
-		if (Pawn && !(PlayerCharacter && PlayerCharacter->IsDead()))
-		{
-			DrawDebugCircle(World, Pawn->GetActorLocation(), SpawnMinDistance, 64, FColor::Green, false, 10.f, 0, 10.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
-		}
-	}
-	
-	// 전체 포인트: 사용 가능 파랑, 제외 빨강
-	int32 Available = 0;
-	for (const FVector& Point : EnemySpawnPoints)
-	{
-		const bool bNear = IsNearAnyPlayer(Point);
-		DrawDebugSphere(World, Point, 150.f, 12, bNear ? FColor::Red : FColor::Blue, false, 10.f, 0, 5.f);
-		if (!bNear) ++Available;
-	}
-	
-	// 이번 요청으로 정해진 적 위치 (노랑)
-	TArray<FVector> Locations;
-	if (EnemyCount > 0 && FindSpawnLocation(EnemyCount, Locations))
-	{
-		for (const FVector& Location : Locations)
-		{
-			DrawDebugSphere(World, Location, 40.f, 8, FColor::Yellow, false, 10.f, 0, 3.f);
-		}
-	}
-	
-	UE_LOG(LogTemp, Log, TEXT("[Debug] 적 스폰 포인트 %d개 중 사용 가능 %d개, 적 %d마리 위치 표시"), EnemySpawnPoints.Num(), Available, Locations.Num());
 }

@@ -21,6 +21,14 @@ struct FActiveGameplayEffectHandle;
 struct FGameplayTag;
 class UAbilitySystemComponent;
 
+/** 스폰 출처에 따른 낮 시간 탐지 정책. AI 판단은 서버에서만 사용한다. */
+UENUM()
+enum class EASMonsterDayBehavior : uint8
+{
+	NightOnly,
+	ProximityAggro
+};
+
 /**
  * 일반 몬스터 공통 Character.
  * 공격 종류는 자식 클래스가 아니라 MonsterDefinition, StateTree, GAS Ability 조합으로 결정한다.
@@ -49,6 +57,25 @@ public:
 	/** State.Monster.HitReact 태그로 판정한다. 경직 중에는 AI 이동과 공격을 멈춘다. */
 	UFUNCTION(BlueprintPure, Category = "Enemy")
 	bool IsHitReacting() const;
+
+	/** SpawnSubsystem이 FinishSpawning 전에 설정하는 낮 시간 행동 정책. */
+	void SetDayBehavior(EASMonsterDayBehavior InDayBehavior) { DayBehavior = InDayBehavior; }
+
+	bool CanAggroDuringDay() const { return DayBehavior == EASMonsterDayBehavior::ProximityAggro; }
+
+	/** SpawnSubsystem이 필드 몬스터의 원래 스폰 위치와 Leash 설정을 기록한다. */
+	void ConfigureSpawnHome(const FVector& InLocation, float InLeashRadius, float InReturnAcceptanceRadius,
+		float InReturnHealthPercentPerSecond, float InDayDetectionRadius, float InDayLoseTargetRadius,
+		float InReturnMoveSpeedMultiplier);
+
+	bool HasSpawnHome() const { return bHasSpawnHome; }
+	bool IsOutsideSpawnLeash() const;
+	const FVector& GetSpawnHomeLocation() const { return SpawnHomeLocation; }
+	float GetReturnAcceptanceRadius() const { return ReturnAcceptanceRadius; }
+	float GetReturnHealthPercentPerSecond() const { return ReturnHealthPercentPerSecond; }
+	float GetDayDetectionRadius() const { return DayDetectionRadius; }
+	float GetDayLoseTargetRadius() const { return DayLoseTargetRadius; }
+	float GetReturnMoveSpeedMultiplier() const { return ReturnMoveSpeedMultiplier; }
 
 	/**
 	 * 서버 전용. true 면 몸이 이동 방향이 아니라 컨트롤러 시선(AIController 의 Focus)을 따라 돈다.
@@ -120,6 +147,11 @@ protected:
 	/** 서버 전용. Definition의 HitReactEffect를 자신에게 적용하고 진행 중인 공격을 취소한다. */
 	void ApplyHitReact();
 
+	/** 사망을 GameMode에 보고한다. 기본 몬스터는 처치 수를 올리고, 엘리트 BP는 보스 처치로 오버라이드한다. */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Death")
+	void ReportDeathToGameMode();
+	virtual void ReportDeathToGameMode_Implementation();
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy")
 	TObjectPtr<UASMonsterDefinition> MonsterDefinition;
 
@@ -155,6 +187,16 @@ private:
 		const FGameplayEffectSpec& AppliedEffect, FActiveGameplayEffectHandle ActiveEffectHandle);
 
 	bool bMonsterInitialized = false;
+	/** Subsystem 밖에서 생성한 기존 몬스터의 낮 탐지 동작은 유지한다. 밤 웨이브만 NightOnly로 명시 설정한다. */
+	EASMonsterDayBehavior DayBehavior = EASMonsterDayBehavior::ProximityAggro;
+	bool bHasSpawnHome = false;
+	FVector SpawnHomeLocation = FVector::ZeroVector;
+	float SpawnLeashRadius = 0.0f;
+	float ReturnAcceptanceRadius = 100.0f;
+	float ReturnHealthPercentPerSecond = 0.0f;
+	float DayDetectionRadius = 0.0f;
+	float DayLoseTargetRadius = 0.0f;
+	float ReturnMoveSpeedMultiplier = 1.0f;
 	bool bHealthBarEnabled = false;
 	bool bHealthBarVisibleRequested = false;
 
