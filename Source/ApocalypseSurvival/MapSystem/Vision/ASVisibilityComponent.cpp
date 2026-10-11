@@ -4,7 +4,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/GameStateBase.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
@@ -102,8 +101,7 @@ void UASVisibilityComponent::NotifyAttackStarted(float RevealSeconds)
 		RevealSeconds = Definition ? Definition->Settings.AttackRevealSeconds : 3.0f;
 	}
 
-	const AGameStateBase* GameState = World->GetGameState();
-	const double Now = GameState ? GameState->GetServerWorldTimeSeconds() : World->GetTimeSeconds();
+	const double Now = UASVisionFunctionLibrary::GetServerTimeSeconds(this);
 	RevealEndServerTime = FMath::Max(RevealEndServerTime, Now + RevealSeconds);
 }
 

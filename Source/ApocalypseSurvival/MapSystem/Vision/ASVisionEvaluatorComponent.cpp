@@ -2,10 +2,10 @@
 
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/GameStateBase.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASVisibilityComponent.h"
+#include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "MapSystem/Vision/ASVisionSourceComponent.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -77,7 +77,7 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 	}
 
 	const bool bWallOcclusion = Manager->IsWallOcclusionEnabled();
-	const double Now = GetServerTimeSeconds();
+	const double Now = UASVisionFunctionLibrary::GetServerTimeSeconds(this);
 	const float NightAlpha = Manager->GetNightAlpha();
 
 	TMap<int32, TArray<UASVisionSourceComponent*>> SourcesByTeam;
@@ -137,11 +137,4 @@ bool UASVisionEvaluatorComponent::TraceVisionWall(FHitResult& Hit, const FVector
 {
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASFogOfWarLocalMask), false, IgnoreActor);
 	return GetWorld()->LineTraceSingleByChannel(Hit, From, To, VisionWallChannel, Params);
-}
-
-double UASVisionEvaluatorComponent::GetServerTimeSeconds() const
-{
-	const UWorld* World = GetWorld();
-	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
-	return GameState ? GameState->GetServerWorldTimeSeconds() : (World ? World->GetTimeSeconds() : 0.0);
 }

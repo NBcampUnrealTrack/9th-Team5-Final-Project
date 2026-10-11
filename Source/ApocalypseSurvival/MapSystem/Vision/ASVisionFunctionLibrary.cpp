@@ -1,10 +1,18 @@
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 
 #include "GameFramework/Pawn.h"
+#include "GameFramework/GameStateBase.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "MapSystem/Vision/ASVisionSourceComponent.h"
+
+double UASVisionFunctionLibrary::GetServerTimeSeconds(const UObject* WorldContextObject)
+{
+	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	return GameState ? GameState->GetServerWorldTimeSeconds() : (World ? World->GetTimeSeconds() : 0.0);
+}
 
 int32 UASVisionFunctionLibrary::GetLocalTeamId(const UObject* WorldContextObject)
 {
