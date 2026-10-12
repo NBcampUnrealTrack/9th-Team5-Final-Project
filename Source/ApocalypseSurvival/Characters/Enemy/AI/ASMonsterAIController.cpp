@@ -245,6 +245,7 @@ void AASMonsterAIController::StopAggroLoop()
 	RestoreMoveSpeed();
 	MoveTarget.Reset();
 	bReturningToSpawn = false;
+	bContinueTrackingNightTarget = false;
 	bHasEngagedDayTarget = false;
 }
 
@@ -257,9 +258,15 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 		return;
 	}
 
+	if (!bNightAggressive && bContinueTrackingNightTarget)
+	{
+		// 밤에 잡은 타깃은 낮 탐지·해제 반경을 적용하지 않고, 타깃 자체가 무효해질 때까지 유지한다.
+		bContinueTrackingNightTarget = Targeting->ValidateTarget(true);
+	}
+
 	// 낮에는 필드 스폰 몬스터만 일반 탐지 거리에서 반응한다.
-	// 밤 웨이브 몬스터는 밤까지 대기하고, 밤에는 모든 몬스터가 거리 제한 없이 추격한다.
-	if (!bNightAggressive && !Monster->CanAggroDuringDay())
+	// 단, 밤에 이미 추격하던 몬스터는 현재 타깃을 계속 추격한다.
+	if (!bNightAggressive && !bContinueTrackingNightTarget && !Monster->CanAggroDuringDay())
 	{
 		Targeting->ClearTarget();
 		StopStateTree(TEXT("DayIdle"));
@@ -271,7 +278,8 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 
 	// 낮 필드 몬스터는 홈에서 LeashRadius를 넘으면 즉시 전투를 끊고 귀환한다.
 	// 밤에는 거리 제한 추격 규칙이 우선이므로 귀환시키지 않는다.
-	if (!bNightAggressive && (bReturningToSpawn || Monster->IsOutsideSpawnLeash()))
+	if (!bNightAggressive && !bContinueTrackingNightTarget
+		&& (bReturningToSpawn || Monster->IsOutsideSpawnLeash()))
 	{
 		if (UpdateReturnToSpawn(*Monster, *Targeting))
 		{
@@ -279,7 +287,7 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 		}
 	}
 
-	if (!bNightAggressive)
+	if (!bNightAggressive && !bContinueTrackingNightTarget)
 	{
 		Targeting->UpdateAggro(AggroUpdateInterval);
 	}
@@ -302,13 +310,24 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 		return;
 	}
 
-	const bool bHasTarget = bNightAggressive
-		? (Targeting->ValidateTarget(true) || Targeting->AcquireTargetAnywhere())
-		: (Targeting->ValidateTarget() || Targeting->AcquireTarget());
+	bool bHasTarget = false;
+	if (bNightAggressive)
+	{
+		bHasTarget = Targeting->ValidateTarget(true) || Targeting->AcquireTargetAnywhere();
+	}
+	else if (bContinueTrackingNightTarget)
+	{
+		bHasTarget = Targeting->ValidateTarget(true);
+	}
+	else
+	{
+		bHasTarget = Targeting->ValidateTarget() || Targeting->AcquireTarget();
+	}
 
 	AActor* Target = bHasTarget ? Targeting->GetTargetActor() : nullptr;
 	if (!IsValid(Target))
 	{
+		bContinueTrackingNightTarget = false;
 		// 플레이어가 추적 해제 거리 밖으로 먼저 빠진 경우에도 전투를 끝내고 홈으로 복귀한다.
 		if (!bNightAggressive && bHasEngagedDayTarget && Monster->HasSpawnHome()
 			&& FVector::Dist2D(Monster->GetActorLocation(), Monster->GetSpawnHomeLocation()) > Monster->GetReturnAcceptanceRadius())
@@ -345,6 +364,7 @@ void AASMonsterAIController::HandleNightStarted(int32 Day, bool bBossNight)
 {
 	RestoreMoveSpeed();
 	bNightAggressive = true;
+	bContinueTrackingNightTarget = false;
 	bReturningToSpawn = false;
 	bHasEngagedDayTarget = false;
 	UpdateAggroAndMovement();
@@ -355,16 +375,23 @@ void AASMonsterAIController::HandleNightEnded(int32 Day)
 	RestoreMoveSpeed();
 	bNightAggressive = false;
 	bReturningToSpawn = false;
-	bHasEngagedDayTarget = false;
+	bContinueTrackingNightTarget = false;
 
 	if (AASMonsterCharacter* Monster = ControlledMonster.Get())
 	{
 		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent())
 		{
-			Targeting->ClearTarget();
+			bContinueTrackingNightTarget = Targeting->ValidateTarget(true);
+			bHasEngagedDayTarget = bContinueTrackingNightTarget;
+			if (bContinueTrackingNightTarget)
+			{
+				UpdateAggroAndMovement();
+				return;
+			}
 		}
 	}
 
+	bHasEngagedDayTarget = false;
 	StopStateTree(TEXT("NightEnded"));
 	StopMovement();
 	ClearCombatFocus();
