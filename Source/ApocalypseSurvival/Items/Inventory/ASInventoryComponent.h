@@ -48,6 +48,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	AASDroppedItem* DropSlot(int32 SlotIndex, FGuid ExpectedItem, APawn* Avatar);
 
+	/** Drop exactly one unit from a backpack slot. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	AASDroppedItem* DropOneFromSlot(int32 SlotIndex, FGuid ExpectedItem, APawn* Avatar);
+
 	/** Authority-only gameplay operations. Clients request these through ASPlayerController. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
 	bool UseItem(FGuid InstanceId, APawn* Avatar);
@@ -135,6 +139,7 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	AASDroppedItem* DropSlotInternal(int32 SlotIndex, FGuid ExpectedItem, APawn* Avatar, bool bSingleItem);
 	APawn* GetInventoryAvatar() const;
 	UActorComponent* GetEquipmentProvider() const;
 	bool HasInventoryAuthority() const;

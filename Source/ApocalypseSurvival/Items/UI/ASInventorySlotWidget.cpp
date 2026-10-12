@@ -106,6 +106,16 @@ void UASInventorySlotWidget::RefreshSlot()
 
 FReply UASInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
+	if (Event.GetEffectingButton() == EKeys::RightMouseButton)
+	{
+		if (Event.IsControlDown() && Bar && SlotIndex >= 0)
+		{
+			if (UASItemInstance* Item = GetItem())
+				Bar->DropOneFromSlot(SlotIndex, Item->GetInstanceId());
+		}
+		// All right clicks over slots belong to the UI, including empty and weapon slots.
+		return FReply::Handled();
+	}
 	if (Event.GetEffectingButton() != EKeys::LeftMouseButton) return Super::NativeOnMouseButtonDown(Geometry, Event);
 	bPressed = true;
 	PressedItem = GetItem() ? GetItem()->GetInstanceId() : FGuid();
@@ -115,6 +125,7 @@ FReply UASInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& Geometry
 
 FReply UASInventorySlotWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
 {
+	if (Event.GetEffectingButton() == EKeys::RightMouseButton) return FReply::Handled();
 	if (Event.GetEffectingButton() != EKeys::LeftMouseButton) return Super::NativeOnMouseButtonUp(Geometry, Event);
 	if (bPressed && Bar && PressedItem.IsValid() && Geometry.IsUnderLocation(Event.GetScreenSpacePosition()))
 		Bar->ActivateSlot(SlotIndex, PressedItem);
