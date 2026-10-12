@@ -24,6 +24,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	FGameplayTag DeadStateTag;
 
+	/** 서버에서 이 애셋 태그 중 하나를 가진 어빌리티가 활성화되면 소유자의 수풀 은폐를 AttackRevealSeconds 동안 해제한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
+	FGameplayTagContainer AttackRevealAbilityTags;
+
 	/**
 	 * 팀 시야 밖의 게임 화면을 어둡게 하는 선택적 포스트 프로세스 머티리얼.
 	 * 텍스처 "FogTexture"를 받는다 (알파: 보이는 곳은 0, 나머지는 탐색/미탐색 어둡기).

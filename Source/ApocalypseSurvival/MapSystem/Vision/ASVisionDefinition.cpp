@@ -1,5 +1,6 @@
 ﻿#include "MapSystem/Vision/ASVisionDefinition.h"
 
+#include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "GAS/ASAbilityTags.h"
 
 #if WITH_EDITOR
@@ -9,6 +10,7 @@
 UASVisionDefinition::UASVisionDefinition()
 {
 	DeadStateTag = ASGameplayTags::State_Dead;
+	AttackRevealAbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
 }
 
 bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const

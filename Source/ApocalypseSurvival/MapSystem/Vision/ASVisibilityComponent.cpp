@@ -1,9 +1,12 @@
 ﻿#include "MapSystem/Vision/ASVisibilityComponent.h"
 
+#include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbility.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
@@ -34,6 +37,15 @@ void UASVisibilityComponent::BeginPlay()
 
 	if (AActor* Owner = GetOwner(); Owner && Owner->HasAuthority())
 	{
+		// 소유자의 인터페이스 포인터 초기화 전에도 직접 소유한 ASC 컴포넌트를 찾아 몬스터를 바인딩한다.
+		// PlayerState의 ASC가 나중에 생기는 액터는 바인딩하지 않으며,
+		// NotifyAttackStarted를 직접 호출할 수 있다.
+		if (UAbilitySystemComponent* ASC = ASMapAbilityUtils::FindAbilitySystemComponent(GetOwner()))
+		{
+			BoundAbilitySystemComponent = ASC;
+			AbilityActivatedDelegateHandle = ASC->AbilityActivatedCallbacks.AddUObject(this, &UASVisibilityComponent::HandleAbilityActivated);
+		}
+
 		bOwnerAlwaysRelevantByDefault = Owner->bAlwaysRelevant;
 		if (bAlwaysVisible)
 		{
@@ -50,6 +62,13 @@ void UASVisibilityComponent::BeginPlay()
 
 void UASVisibilityComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UAbilitySystemComponent* ASC = BoundAbilitySystemComponent.Get())
+	{
+		ASC->AbilityActivatedCallbacks.Remove(AbilityActivatedDelegateHandle);
+	}
+	AbilityActivatedDelegateHandle.Reset();
+	BoundAbilitySystemComponent.Reset();
+
 	if (UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this))
 	{
 		Subsystem->UnregisterVisibilityTarget(this);
@@ -82,6 +101,17 @@ void UASVisibilityComponent::ServerSetVisibleTeamMask(uint8 NewMask)
 
 		// 서버에서는 OnRep가 실행되지 않는다. 리슨 서버 호스트도 갱신이 필요하다.
 		UpdateLocalPresentation(false);
+	}
+}
+
+void UASVisibilityComponent::HandleAbilityActivated(UGameplayAbility* Ability)
+{
+	const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
+	const AASFogOfWarManager* Manager = Subsystem ? Subsystem->GetFogOfWarManager() : nullptr;
+	const UASVisionDefinition* Definition = Manager ? Manager->GetVisionDefinition() : nullptr;
+	if (IsValid(Ability) && Definition && Ability->GetAssetTags().HasAny(Definition->AttackRevealAbilityTags))
+	{
+		NotifyAttackStarted();
 	}
 }
 

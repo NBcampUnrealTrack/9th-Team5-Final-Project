@@ -4,6 +4,8 @@
 #include "Components/ActorComponent.h"
 #include "ASVisibilityComponent.generated.h"
 
+class UAbilitySystemComponent;
+class UGameplayAbility;
 class UPrimitiveComponent;
 
 /** 미니맵 / 확장 맵에서 대상을 그리는 방식. */
@@ -79,6 +81,7 @@ private:
 	UFUNCTION()
 	void OnRep_VisibleTeamMask();
 
+	void HandleAbilityActivated(UGameplayAbility* Ability);
 	void UpdateLocalPresentation(bool bForce);
 	void SetOwnerPresentationVisible(bool bVisible);
 
@@ -108,6 +111,8 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_VisibleTeamMask)
 	uint8 VisibleTeamMask = 0;
 
+	TWeakObjectPtr<UAbilitySystemComponent> BoundAbilitySystemComponent;
+	FDelegateHandle AbilityActivatedDelegateHandle;
 	double RevealEndServerTime = 0.0;
 	bool bOwnerAlwaysRelevantByDefault = false;
 	bool bLocallyVisible = true;
