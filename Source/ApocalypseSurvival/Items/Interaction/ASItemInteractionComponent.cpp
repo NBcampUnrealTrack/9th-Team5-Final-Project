@@ -91,10 +91,16 @@ bool UASItemInteractionComponent::RequestPickupDroppedItem(AASDroppedItem* Item)
 	return true;
 }
 
+bool UASItemInteractionComponent::IsCursorOverInventory() const
+{
+	return IsValid(InventoryBar) && InventoryBar->IsCursorOverInventory();
+}
+
 void UASItemInteractionComponent::HandleWorldRightClick()
 {
 	AASPlayerController* PC = GetASController();
-	if (!PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())) return;
+	if (!PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())
+		|| IsCursorOverInventory()) return;
 	FHitResult Hit;
 	if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit))
 	{
@@ -284,6 +290,19 @@ void UASItemInteractionComponent::RequestDropSlot(const int32 SlotIndex, const F
 	if (GetASController() && GetASController()->IsLocalController() && ExpectedItem.IsValid()
 		&& SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)
 		ServerDropSlot(SlotIndex, ExpectedItem);
+}
+
+void UASItemInteractionComponent::RequestDropOneFromSlot(const int32 SlotIndex, const FGuid ExpectedItem)
+{
+	if (GetASController() && GetASController()->IsLocalController() && ExpectedItem.IsValid()
+		&& SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)
+		ServerDropOneFromSlot(SlotIndex, ExpectedItem);
+}
+
+void UASItemInteractionComponent::ServerDropOneFromSlot_Implementation(const int32 SlotIndex, const FGuid ExpectedItem)
+{
+	if (UASInventoryComponent* Inventory = GetPlayerInventory())
+		Inventory->DropOneFromSlot(SlotIndex, ExpectedItem, GetASController()->GetPawn());
 }
 
 void UASItemInteractionComponent::ServerDropSlot_Implementation(const int32 SlotIndex, const FGuid ExpectedItem)

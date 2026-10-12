@@ -26,6 +26,7 @@ public:
 	void CancelPendingInteraction();
 	bool HasPendingInteraction() const { return PendingTarget.IsValid(); }
 	bool IsLootOpen() const;
+	bool IsCursorOverInventory() const;
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetPlayerInventory() const;
@@ -51,6 +52,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
 	void RequestDropSlot(int32 SlotIndex, FGuid ExpectedItem);
 
+	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
+	void RequestDropOneFromSlot(int32 SlotIndex, FGuid ExpectedItem);
+
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void CloseLoot();
 
@@ -72,6 +76,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerDropSlot(int32 SlotIndex, FGuid ExpectedItem);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropOneFromSlot(int32 SlotIndex, FGuid ExpectedItem);
 
 	UFUNCTION(Server, Reliable)
 	void ServerInteract(AActor* Target);

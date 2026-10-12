@@ -17,7 +17,10 @@ class APOCALYPSESURVIVAL_API UASInventoryBarWidget : public UUserWidget
 public:
 	void SetInventory(UASInventoryComponent* InInventory);
 	UASInventoryComponent* GetInventory() const { return Inventory; }
+	/** Tests the inventory panel, including gaps, rather than the full-screen widget root. */
+	bool IsCursorOverInventory() const;
 	void ActivateSlot(int32 SlotIndex, FGuid ExpectedItem);
+	void DropOneFromSlot(int32 SlotIndex, FGuid ExpectedItem);
 	void SwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFrom, FGuid ExpectedTo);
 	void BeginItemDrag();
 	void EndItemDrag();
