@@ -7,6 +7,7 @@
 
 class AASPlayerCameraManager;
 class UASAbilitySystemComponent;
+class UASPlayerAttackMoveComponent;
 class UASInputConfig;
 class UASInventoryComponent;
 class UInputAction;
@@ -14,7 +15,9 @@ class UInputMappingContext;
 class UNiagaraSystem;
 class UPathFollowingComponent;
 class UASItemInteractionComponent;
+class AActor;
 struct FInputActionValue;
+struct FASPrimaryAttackRequest;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASLocalPawnChangedSignature, APawn*, NewPawn);
 
@@ -56,6 +59,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	UASPlayerAttackMoveComponent* GetAttackMoveComponent() const { return AttackMoveComponent; }
+
+	/** 공격 이동이 준비한 요청을 Primary Attack Ability가 한 번 소비한다. */
+	bool ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation);
 
 	/**
 	 * 로컬 플레이어가 조종하는 폰이 바뀌었을 때. 이 머신의 화면을 가진 컨트롤러에서만 방송한다.
@@ -103,6 +112,8 @@ private:
 
 	/** 조종 중인 폰이 쓰는 ASC. 플레이어는 PlayerState 의 것이다. 폰이 없으면 null. */
 	UASAbilitySystemComponent* GetPawnAbilitySystemComponent() const;
+	void HandleAttackMoveRequest(const FASPrimaryAttackRequest& Request);
+	void TryActivatePrimaryAttack();
 
 	/** 조종 중인 폰이 죽어 있는가. 죽은 동안은 클릭 이동과 상호작용을 받지 않는다. 어빌리티 입력은 ASC 가 막는다. */
 	bool IsPawnDead() const;
@@ -119,6 +130,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASInventoryComponent> InventoryComponent;
+
+	/** A + 클릭 명령을 해석한다. 공격 피해·비용은 GAS가 계속 담당한다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASPlayerAttackMoveComponent> AttackMoveComponent;
 
 	// ── 입력 ──────────────────────────────────────────────
 	// C++ 에서 에셋을 직접 참조하지 않는다. BP 자식에서 지정한다.
@@ -179,4 +194,7 @@ private:
 
 	double LastMoveRequestTime = 0.0;
 	bool bInteractionClickHeld = false;
+	TWeakObjectPtr<AActor> PendingAttackMoveTarget;
+	FVector PendingAttackMoveTargetLocation = FVector::ZeroVector;
+	bool bHasPendingAttackMoveRequest = false;
 };

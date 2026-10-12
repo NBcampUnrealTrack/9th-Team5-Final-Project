@@ -5,6 +5,8 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Animation/AnimMontage.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
+#include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
+#include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GAS/ASAbilityTags.h"
@@ -12,7 +14,10 @@
 #include "Items/Combat/ASWeaponAttackProfile.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
+#include "MapSystem/Vision/ASVisibilityComponent.h"
+#include "MapSystem/Vision/ASVisionSourceComponent.h"
 #include "Skills/ASSkillTags.h"
+#include "Skills/ASSkillAbility.h"
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
 
 UASGameplayAbility_CharacterPrimaryAttack::UASGameplayAbility_CharacterPrimaryAttack()
@@ -24,6 +29,15 @@ UASGameplayAbility_CharacterPrimaryAttack::UASGameplayAbility_CharacterPrimaryAt
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Casting);
 }
 
+float UASGameplayAbility_CharacterPrimaryAttack::GetCurrentAttackRange() const
+{
+	FASWeaponAttackExecutionContext Context;
+	const UASWeaponAttackExecution* Execution = nullptr;
+	return BuildExecutionContext(Context, Execution) && Context.Definition
+		? FMath::Max(0.0f, Context.Definition->AttackRange)
+		: 0.0f;
+}
+
 void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
@@ -31,6 +45,10 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	bAttackStarted = false;
 	bHitPerformed = false;
+	bIsTargeting = false;
+	bAddedTargetingTag = false;
+	bBoundLocalConfirm = false;
+	bBoundLocalCancel = false;
 
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	if (!ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
@@ -45,14 +63,44 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 		return;
 	}
 
-	FVector AimDirection;
-	FVector TargetLocation;
-	ComputeLocalAim(AimDirection, TargetLocation);
-	if (!ActorInfo->IsNetAuthority())
+	// A + 클릭 명령이 준비한 요청은 일반 조준 상태를 거치지 않고 즉시 한 번 공격한다.
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo->PlayerController.Get()))
 	{
-		SendAimToServer(AimDirection, TargetLocation);
+		AActor* RequestedTarget = nullptr;
+		FVector RequestedTargetLocation = FVector::ZeroVector;
+		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, RequestedTargetLocation))
+		{
+			FVector AimDirection = RequestedTarget
+				? (RequestedTarget->GetActorLocation() - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D()
+				: (RequestedTargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
+			if (AimDirection.IsNearlyZero())
+			{
+				AimDirection = GetAvatarActorFromActorInfo()->GetActorForwardVector().GetSafeNormal2D();
+			}
+
+			if (!ActorInfo->IsNetAuthority())
+			{
+				SendAimToServer(AimDirection, RequestedTargetLocation, RequestedTarget);
+			}
+			StartAttack(AimDirection, RequestedTargetLocation, RequestedTarget);
+			return;
+		}
 	}
-	StartAttack(AimDirection);
+
+	BeginTargeting();
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::InputPressed(
+	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo)
+{
+	Super::InputPressed(Handle, ActorInfo, ActivationInfo);
+
+	// 조준 중 A를 다시 누르면 확정하지 않고 취소한다.
+	if (bIsTargeting)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+	}
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
@@ -66,13 +114,120 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 		ASC->AbilityTargetDataCancelledDelegate(Handle, PredictionKey).RemoveAll(this);
 	}
 
+	bIsTargeting = false;
+	StopTargetingInput(bWasCancelled);
 	bAttackStarted = false;
 	bHitPerformed = false;
 	CachedExecutionContext = FASWeaponAttackExecutionContext();
 	CachedExecution = nullptr;
+	CachedRequestedTarget.Reset();
 	ActiveMontage = nullptr;
 	ActiveHitEventTag = FGameplayTag();
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo ? ActorInfo->PlayerController.Get() : nullptr))
+	{
+		PlayerController->GetAttackMoveComponent()->NotifyAttackFinished();
+	}
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
+{
+	FASWeaponAttackExecutionContext Context;
+	const UASWeaponAttackExecution* Execution = nullptr;
+	if (!BuildExecutionContext(Context, Execution) || !Execution->CanPayCost(Context))
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!ASC)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	bIsTargeting = true;
+	// 로컬 전용 태그다. 좌클릭이 Primary Attack 재발동 대신 조준 확정으로 처리된다.
+	ASC->AddLooseGameplayTag(ASGameplayTags::State_Targeting);
+	bAddedTargetingTag = true;
+	ASC->GenericLocalConfirmCallbacks.AddDynamic(this, &UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm);
+	bBoundLocalConfirm = true;
+	ASC->GenericLocalCancelCallbacks.AddDynamic(this, &UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputCancel);
+	bBoundLocalCancel = true;
+	OnAttackTargetingStarted();
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::ConfirmTargeting()
+{
+	if (!bIsTargeting) return;
+
+	bIsTargeting = false;
+	StopTargetingInput(false);
+
+	FVector AimDirection;
+	FVector TargetLocation;
+	ComputeLocalAim(AimDirection, TargetLocation);
+	AActor* RequestedTarget = nullptr;
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
+	{
+		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, TargetLocation))
+		{
+			TargetLocation = RequestedTarget ? RequestedTarget->GetActorLocation() : TargetLocation;
+			AimDirection = (TargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
+			if (AimDirection.IsNearlyZero())
+			{
+				AimDirection = GetAvatarActorFromActorInfo()->GetActorForwardVector().GetSafeNormal2D();
+			}
+		}
+	}
+	if (!CurrentActorInfo->IsNetAuthority())
+	{
+		SendAimToServer(AimDirection, TargetLocation, RequestedTarget);
+	}
+	StartAttack(AimDirection, TargetLocation, RequestedTarget);
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::StopTargetingInput(const bool bWasCancelled)
+{
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		if (bAddedTargetingTag)
+		{
+			ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Targeting);
+		}
+		if (bBoundLocalConfirm)
+		{
+			ASC->GenericLocalConfirmCallbacks.RemoveDynamic(this, &UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm);
+		}
+		if (bBoundLocalCancel)
+		{
+			ASC->GenericLocalCancelCallbacks.RemoveDynamic(this, &UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputCancel);
+		}
+	}
+
+	if (bAddedTargetingTag || bBoundLocalConfirm || bBoundLocalCancel)
+	{
+		OnAttackTargetingEnded(bWasCancelled);
+	}
+	bAddedTargetingTag = false;
+	bBoundLocalConfirm = false;
+	bBoundLocalCancel = false;
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm()
+{
+	// LocalInputConfirm이 호출되면 ASC가 구독을 비우므로 상태도 함께 정리한다.
+	bBoundLocalConfirm = false;
+	ConfirmTargeting();
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputCancel()
+{
+	if (bIsTargeting)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	}
 }
 
 bool UASGameplayAbility_CharacterPrimaryAttack::BuildExecutionContext(
@@ -133,7 +288,8 @@ void UASGameplayAbility_CharacterPrimaryAttack::ComputeLocalAim(FVector& OutAimD
 	}
 }
 
-void UASGameplayAbility_CharacterPrimaryAttack::SendAimToServer(const FVector& AimDirection, const FVector& TargetLocation)
+void UASGameplayAbility_CharacterPrimaryAttack::SendAimToServer(
+	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget)
 {
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	if (!ASC) return;
@@ -142,6 +298,12 @@ void UASGameplayAbility_CharacterPrimaryAttack::SendAimToServer(const FVector& A
 	AimData->TargetLocation.LiteralTransform = FTransform(AimDirection.Rotation(), TargetLocation);
 	FGameplayAbilityTargetDataHandle TargetData;
 	TargetData.Add(AimData);
+	if (IsValid(RequestedTarget))
+	{
+		FGameplayAbilityTargetData_ActorArray* ActorData = new FGameplayAbilityTargetData_ActorArray();
+		ActorData->TargetActorArray.Add(TWeakObjectPtr<AActor>(RequestedTarget));
+		TargetData.Add(ActorData);
+	}
 	ASC->CallServerSetReplicatedTargetData(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(),
 		TargetData, FGameplayTag(), ASC->ScopedPredictionKey);
 }
@@ -173,11 +335,26 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimReceived(
 	FVector AimDirection;
 	FVector TargetLocation;
 	ComputeLocalAim(AimDirection, TargetLocation);
-	if (const FGameplayAbilityTargetData* AimData = Data.Get(0); AimData && AimData->HasEndPoint())
+	AActor* RequestedTarget = nullptr;
+	for (int32 DataIndex = 0; DataIndex < Data.Num(); ++DataIndex)
 	{
-		AimDirection = AimData->GetEndPointTransform().GetRotation().Vector().GetSafeNormal2D();
+		const FGameplayAbilityTargetData* AimData = Data.Get(DataIndex);
+		if (!AimData)
+		{
+			continue;
+		}
+		if (AimData->HasEndPoint())
+		{
+			AimDirection = AimData->GetEndPointTransform().GetRotation().Vector().GetSafeNormal2D();
+			TargetLocation = AimData->GetEndPointTransform().GetLocation();
+		}
+		const TArray<TWeakObjectPtr<AActor>> TargetActors = AimData->GetActors();
+		if (!TargetActors.IsEmpty())
+		{
+			RequestedTarget = TargetActors[0].Get();
+		}
 	}
-	StartAttack(AimDirection);
+	StartAttack(AimDirection, TargetLocation, RequestedTarget);
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimCancelled()
@@ -185,12 +362,81 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimCancelled()
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
-void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(const FVector& AimDirection)
+bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
+	const FASWeaponAttackExecutionContext& Context, AActor* RequestedTarget,
+	const FVector& TargetLocation, FVector& OutAimDirection) const
+{
+	if (!Context.Avatar || !Context.Definition)
+	{
+		return false;
+	}
+
+	const UASRangedAttackProfile* RangedProfile = Cast<UASRangedAttackProfile>(Context.Profile);
+	if (RangedProfile && !RangedProfile->bUseAttackMoveTargeting && IsValid(RequestedTarget))
+	{
+		// 방향성 투사체는 타깃 Actor를 받지 않는다. 클라이언트는 위치가 아니라 방향만 보낸다.
+		return false;
+	}
+
+	if (!IsValid(RequestedTarget))
+	{
+		// 방향성 투사체와 기존 수동 조준은 대상 없이도 발사할 수 있다.
+		OutAimDirection = (TargetLocation - Context.Avatar->GetActorLocation()).GetSafeNormal2D();
+		if (OutAimDirection.IsNearlyZero())
+		{
+			OutAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
+		}
+		return !OutAimDirection.IsNearlyZero();
+	}
+
+	if (!UASSkillAbility::IsValidSkillTarget(RequestedTarget, Context.Avatar, false))
+	{
+		return false;
+	}
+
+	// 서버도 공격자의 시야 팀에서 보이는 타깃인지 확인한다. 시야 컴포넌트가 없는 대상은
+	// 기존 전투 규칙과 동일하게 보이는 대상으로 취급한다.
+	if (Context.Avatar->HasAuthority())
+	{
+		if (const UASVisionSourceComponent* VisionSource = Context.Avatar->FindComponentByClass<UASVisionSourceComponent>())
+		{
+			if (const UASVisibilityComponent* Visibility = RequestedTarget->FindComponentByClass<UASVisibilityComponent>();
+				Visibility && !Visibility->IsVisibleToTeam(VisionSource->GetTeamId()))
+			{
+				return false;
+			}
+		}
+	}
+
+	const FVector ToTarget = RequestedTarget->GetActorLocation() - Context.Avatar->GetActorLocation();
+	const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f;
+	if (ToTarget.SizeSquared2D() > FMath::Square(AllowedRange))
+	{
+		return false;
+	}
+
+	OutAimDirection = ToTarget.GetSafeNormal2D();
+	if (OutAimDirection.IsNearlyZero())
+	{
+		OutAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
+	}
+	return !OutAimDirection.IsNearlyZero();
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
+	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget)
 {
 	if (bAttackStarted || !CurrentActorInfo) return;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	FASWeaponAttackExecutionContext Context;
 	if (!BuildExecutionContext(Context, Execution) || !Execution->CanPayCost(Context))
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	FVector ValidAimDirection = AimDirection;
+	if (!IsValidAttackRequest(Context, RequestedTarget, TargetLocation, ValidAimDirection))
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
@@ -212,11 +458,14 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(const FVector& AimDi
 	bAttackStarted = true;
 	bHitPerformed = false;
 	NextAttackTime = World->GetTimeSeconds() + FMath::Max(0.01f, Context.Definition->AttackInterval);
-	CachedAimDirection = AimDirection.GetSafeNormal2D();
+	CachedAimDirection = ValidAimDirection.GetSafeNormal2D();
 	if (CachedAimDirection.IsNearlyZero()) CachedAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
 	Context.AimDirection = CachedAimDirection;
+	Context.RequestedTarget = RequestedTarget;
+	Context.TargetLocation = TargetLocation;
 	CachedExecutionContext = Context;
 	CachedExecution = Execution;
+	CachedRequestedTarget = RequestedTarget;
 	Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
 
 	bool bScaleToInterval = true;

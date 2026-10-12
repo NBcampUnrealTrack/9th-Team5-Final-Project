@@ -77,9 +77,24 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 				Error(TEXT("RangedAttackProfile AmmoPerShot must be positive."));
 			}
 			if (!FMath::IsFinite(RangedProfile->TraceRadius) || RangedProfile->TraceRadius < 0.0f
-				|| !FMath::IsFinite(RangedProfile->RangeMultiplier) || RangedProfile->RangeMultiplier < 1.0f)
+				|| !FMath::IsFinite(RangedProfile->AreaRadius) || RangedProfile->AreaRadius < 0.0f)
 			{
 				Error(TEXT("RangedAttackProfile trace values are invalid."));
+			}
+			if (RangedProfile->TargetMode == EASAttackTargetMode::Area && RangedProfile->AreaRadius <= 0.0f)
+			{
+				Error(TEXT("Area ranged attacks require a positive AreaRadius."));
+			}
+			if (!RangedProfile->bUseAttackMoveTargeting)
+			{
+				if (!RangedProfile->ProjectileClass)
+				{
+					Error(TEXT("Directional projectile attacks require a ProjectileClass."));
+				}
+				if (!FMath::IsFinite(RangedProfile->ProjectileSpeed) || RangedProfile->ProjectileSpeed <= 0.0f)
+				{
+					Error(TEXT("Directional projectile attacks require a positive finite ProjectileSpeed."));
+				}
 			}
 		}
 		if (!FMath::IsFinite(BaseDamage) || BaseDamage < 0.0f) Error(TEXT("BaseDamage must be finite and nonnegative."));

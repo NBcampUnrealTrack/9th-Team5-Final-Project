@@ -39,7 +39,24 @@ void AASSkillProjectileActor::InitProjectile(
 	int32 InPierceCount,
 	bool bInCanHitPlayers)
 {
-	DamageSpec = InDamageSpec;
+	TArray<FGameplayEffectSpecHandle> Specs;
+	if (InDamageSpec.IsValid())
+	{
+		Specs.Add(InDamageSpec);
+	}
+	InitProjectile(Specs, InInstigatorAvatar, Direction, Speed, MaxRange, InPierceCount, bInCanHitPlayers);
+}
+
+void AASSkillProjectileActor::InitProjectile(
+	const TArray<FGameplayEffectSpecHandle>& InDamageSpecs,
+	AActor* InInstigatorAvatar,
+	const FVector& Direction,
+	float Speed,
+	float MaxRange,
+	int32 InPierceCount,
+	bool bInCanHitPlayers)
+{
+	DamageSpecs = InDamageSpecs;
 	InstigatorAvatar = InInstigatorAvatar;
 	PierceCount = InPierceCount;
 	bCanHitPlayers = bInCanHitPlayers;
@@ -135,7 +152,10 @@ void AASSkillProjectileActor::HandleStop(const FHitResult& ImpactResult)
 
 void AASSkillProjectileActor::OnHitTarget_Implementation(AActor* Target)
 {
-	UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
+	for (const FGameplayEffectSpecHandle& DamageSpec : DamageSpecs)
+	{
+		UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
+	}
 }
 
 void AASSkillProjectileActor::OnProjectileEnd_Implementation()
