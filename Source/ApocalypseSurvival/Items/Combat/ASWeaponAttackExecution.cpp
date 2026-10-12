@@ -43,6 +43,25 @@ namespace ASWeaponAttackExecutionPrivate
 			}
 		}
 	}
+
+	void KeepClosestTarget(TArray<AActor*>& Targets, const FVector& ReferenceLocation)
+	{
+		if (Targets.Num() <= 1) return;
+		AActor* ClosestTarget = nullptr;
+		float ClosestDistanceSquared = TNumericLimits<float>::Max();
+		for (AActor* Target : Targets)
+		{
+			if (!IsValid(Target)) continue;
+			const float DistanceSquared = FVector::DistSquared2D(Target->GetActorLocation(), ReferenceLocation);
+			if (DistanceSquared < ClosestDistanceSquared)
+			{
+				ClosestTarget = Target;
+				ClosestDistanceSquared = DistanceSquared;
+			}
+		}
+		Targets.Reset();
+		if (ClosestTarget) Targets.Add(ClosestTarget);
+	}
 }
 
 bool UASMeleeAttackExecution::CanPayCost(const FASWeaponAttackExecutionContext& Context) const
@@ -90,14 +109,20 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 	const UASMeleeAttackProfile* Profile = Cast<UASMeleeAttackProfile>(Context.Profile);
 	if (!Profile) return;
 	const float AttackRange = FMath::Max(1.0f, Context.Definition->AttackRange);
-	const float Radius = Profile->HitRadius > 0.0f
+	const float DesiredRadius = Profile->HitRadius > 0.0f
 		? Profile->HitRadius : FMath::Max(50.0f, AttackRange * 0.5f);
+	const float Radius = FMath::Min(DesiredRadius, AttackRange);
+	const float MaxOffset = FMath::Max(0.0f, AttackRange - Radius);
 	const float Offset = Profile->HitboxOffset > 0.0f
-		? Profile->HitboxOffset : Radius * 2.0f;
+		? FMath::Min(Profile->HitboxOffset, MaxOffset) : MaxOffset;
 	const FVector Start = Context.Avatar->GetActorLocation();
 	const FVector Center = Start + Context.AimDirection * Offset;
-	const TArray<AActor*> Targets = UASSkillAbility::FindSkillTargets(
+	TArray<AActor*> Targets = UASSkillAbility::FindSkillTargets(
 		Context.Avatar->GetWorld(), Center, Radius, Context.Avatar, false);
+	if (Profile->TargetMode == EASAttackTargetMode::Single)
+	{
+		ASWeaponAttackExecutionPrivate::KeepClosestTarget(Targets, Center);
+	}
 	ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
 
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
@@ -130,9 +155,8 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	const UASRangedAttackProfile* Profile = Cast<UASRangedAttackProfile>(Context.Profile);
 	if (!Profile) return;
 	const float TraceRadius = FMath::Max(0.0f, Profile->TraceRadius);
-	const float RangeMultiplier = FMath::Max(1.0f, Profile->RangeMultiplier);
 	const FVector Start = Context.Avatar->GetActorLocation();
-	const FVector End = Start + Context.AimDirection * FMath::Max(1.0f, Context.Definition->AttackRange) * RangeMultiplier;
+	const FVector End = Start + Context.AimDirection * FMath::Max(1.0f, Context.Definition->AttackRange);
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WeaponAttack), false, Context.Avatar);
 	TArray<FHitResult> Hits;
 	World->SweepMultiByObjectType(Hits, Start, End, FQuat::Identity,
@@ -152,7 +176,22 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	}
 
 	TArray<AActor*> Targets;
-	if (FirstTarget) Targets.Add(FirstTarget);
+	if (FirstTarget)
+	{
+		if (Profile->TargetMode == EASAttackTargetMode::Area)
+		{
+			const FVector ImpactCenter = Start + (End - Start) * FirstHitTime;
+			Targets = UASSkillAbility::FindSkillTargets(
+				World, ImpactCenter, FMath::Max(0.0f, Profile->AreaRadius), Context.Avatar, false);
+			// The direct-hit target must always take damage even when its collision bounds
+			// place the actor origin just outside a very small AreaRadius.
+			Targets.AddUnique(FirstTarget);
+		}
+		else
+		{
+			Targets.Add(FirstTarget);
+		}
+	}
 	ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{

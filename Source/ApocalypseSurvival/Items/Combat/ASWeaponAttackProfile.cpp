@@ -6,11 +6,13 @@
 UASMeleeAttackProfile::UASMeleeAttackProfile()
 {
 	ExecutionClass = UASMeleeAttackExecution::StaticClass();
+	TargetMode = EASAttackTargetMode::Area;
 	HitEventTag = ASGameplayTags::Event_Skill_Hit;
 }
 
 UASRangedAttackProfile::UASRangedAttackProfile()
 {
 	ExecutionClass = UASRangedAttackExecution::StaticClass();
+	TargetMode = EASAttackTargetMode::Single;
 	HitEventTag = ASGameplayTags::Event_Skill_Hit;
 }

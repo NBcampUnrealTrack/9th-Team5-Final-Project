@@ -10,6 +10,14 @@ class UASItemDefinition;
 class UASWeaponAttackExecution;
 class UGameplayEffect;
 
+/** How many valid targets receive damage after an attack finds its hit location. */
+UENUM(BlueprintType)
+enum class EASAttackTargetMode : uint8
+{
+	Single UMETA(DisplayName = "Single Target"),
+	Area UMETA(DisplayName = "Area")
+};
+
 /** Data and execution policy consumed by the character-owned primary attack ability. */
 UCLASS(Abstract, BlueprintType, Const)
 class APOCALYPSESURVIVAL_API UASWeaponAttackProfile : public UPrimaryDataAsset
@@ -19,6 +27,10 @@ class APOCALYPSESURVIVAL_API UASWeaponAttackProfile : public UPrimaryDataAsset
 public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
 	TSubclassOf<UASWeaponAttackExecution> ExecutionClass;
+
+	/** Single damages one best target; Area damages every valid target in the attack area. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
+	EASAttackTargetMode TargetMode = EASAttackTargetMode::Single;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Animation")
 	TObjectPtr<UAnimMontage> AttackMontage;
@@ -49,11 +61,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee")
 	TSubclassOf<UGameplayEffect> StaminaRegenDelayEffect;
 
-	/** Zero derives the radius from AttackRange. */
+	/** Width of the melee hit area. Zero derives it from AttackRange. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee", meta = (ClampMin = "0.0", Units = "cm"))
 	float HitRadius = 0.0f;
 
-	/** Zero places the hit sphere two radii in front of the character. */
+	/** Distance from the character to the hit-area center. Zero keeps its front edge at AttackRange. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee", meta = (ClampMin = "0.0", Units = "cm"))
 	float HitboxOffset = 0.0f;
 };
@@ -75,6 +87,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged", meta = (ClampMin = "0.0", Units = "cm"))
 	float TraceRadius = 50.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged", meta = (ClampMin = "1.0"))
-	float RangeMultiplier = 10.0f;
+	/** Radius around the first ranged impact used only by Area attacks. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged",
+		meta = (ClampMin = "0.0", Units = "cm", EditCondition = "TargetMode == EASAttackTargetMode::Area", EditConditionHides))
+	float AreaRadius = 200.0f;
 };
