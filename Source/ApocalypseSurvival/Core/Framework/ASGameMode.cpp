@@ -33,6 +33,18 @@ bool AASGameMode::IsBossDay(int32 Day) const
 	return BossDays.Contains(Day);
 }
 
+bool AASGameMode::IsFinalBossDay(int32 Day) const
+{
+	if (BossDays.Num() == 0) return false;
+	
+	int32 LastBossDay = BossDays[0];
+	for (int32 BossDay : BossDays)
+	{
+		LastBossDay = FMath::Max(LastBossDay, BossDay);
+	}
+	return Day == LastBossDay;
+}
+
 bool AASGameMode::IsDeathCountEnabled() const
 {
 	// 프로토 타입용 항상 사용
@@ -95,6 +107,7 @@ void AASGameMode::StartNight()
 	const bool bBossNight = IsBossDay(Day);
 	
 	GS->ResetWaveCounts();
+	bBossDefeatedThisNight = false;
 	GS->SetPhase(EGamePhase::Night, Duration);
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 밤 시작 (%.0f초, 보스: %s)"),
 		Day, Duration, bBossNight ? TEXT("O") : TEXT("X"));
@@ -132,15 +145,39 @@ void AASGameMode::OnNightTimeUp()
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 웨이브 결과: %d/%d 처치 (올클리어: %s)"),
 		Result.Day, Result.KilledCount, Result.SpawnedCount, Result.bAllCleared ? TEXT("O") : TEXT("X"));
 	
-	// 보스 밤이 끝날 때까지 보스를 못잡으면 패배
+	// 보스 날 밤이 끝날 때까지 보스를 못잡으면 패배
 	// 보스를 잡으면 그 다음 시점에 바로 승리 처리
-	if (IsBossDay(Day))
+	if (IsBossDay(Day) && !bBossDefeatedThisNight)
 	{
 		EndGame(false);
 		return;
 	}
 	
 	StartDay(Day + 1);
+}
+
+void AASGameMode::TryEndNightEarly()
+{
+	if (IsGameEnded()) return;
+	
+	AASGameState* GS = GetASGameState();
+	if (!GS || GS->GetCurrentPhase() != EGamePhase::Night) return;
+	
+	// 보스날 밤은 보스까지 잡아야 조기 종료
+	if (IsBossDay(GS->GetCurrentDay()) && !bBossDefeatedThisNight) return;
+	
+	// 웨이브 물량이 아직 다 나오지 않았으면 대기
+	const UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>();
+	if (SpawnSubsystem && !SpawnSubsystem->IsWaveSpawnFinished()) return;
+	
+	// 스폰 0이면 전멸로 보지 않음
+	const int32 Spawned = GS->GetWaveSpawnedCount();
+	if (Spawned <= 0 || GS->GetWaveKilledCount() < Spawned) return;
+	
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 밤 몬스터 전멸, 밤 조기 종료"), GS->GetCurrentDay());
+	
+	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
+	OnNightTimeUp();
 }
 
 void AASGameMode::EndGame(bool bVictory)
@@ -234,6 +271,9 @@ void AASGameMode::OnEnemyKilled(AController* Killer)
 	{
 		Record->AddKill();
 	}
+	
+	// 집계 후 전멸 여부 확인
+	TryEndNightEarly();
 }
 
 void AASGameMode::OnBossDefeated()
@@ -243,12 +283,22 @@ void AASGameMode::OnBossDefeated()
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
 	
-	// 보스 날 밤에 잡았을 때만 승리
-	if (GS->GetCurrentPhase() == EGamePhase::Night && IsBossDay(GS->GetCurrentDay()))
+	// 보스 날 밤에 잡았을 때만 처리
+	const int32 Day = GS->GetCurrentDay();
+	if (GS->GetCurrentPhase() != EGamePhase::Night || !IsBossDay(Day)) return;
+	
+	// 마지막 보스 날이면 승리
+	if (IsFinalBossDay(Day))
 	{
-		UE_LOG(LogTemp, Log, TEXT("[GameMode] 보스 처치"));
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 최종 보스 처치"), Day);
 		EndGame(true);
+		return;
 	}
+	
+	// 중간 보스 날이면 표시만 하고, 몬스터 전멸 확인
+	bBossDefeatedThisNight = true;
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 보스 처치"), Day);
+	TryEndNightEarly();
 }
 
 // 사망과 리스폰

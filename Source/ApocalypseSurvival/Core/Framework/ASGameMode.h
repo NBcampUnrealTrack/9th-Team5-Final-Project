@@ -22,6 +22,8 @@ public:
 	virtual float GetDayDuration(int32 Day) const;
 	virtual float GetNightDuration(int32 Day) const;
 	virtual bool IsBossDay(int32 Day) const;
+	// 마지막 날 보스인가
+	virtual bool IsFinalBossDay(int32 Day) const;
 	virtual bool IsDeathCountEnabled() const;
 	
 	// 다른 시스템이 구독하는 이벤트 (서버 전용)
@@ -115,6 +117,11 @@ protected:
 	void OnDayTimeUp();
 	void OnNightTimeUp();
 	void EndGame(bool bVictory);
+	
+	// 밤에 웨이브 몬스터 모두 처치 시 밤 종료 (보스 날은 보스 포함)
+	void TryEndNightEarly();
+	// 보스를 잡았는가
+	bool bBossDefeatedThisNight = false;
 	
 	// 사망과 리스폰
 	UASPlayerRecordComponent* GetOrCreateRecord(AController* Controller) const;

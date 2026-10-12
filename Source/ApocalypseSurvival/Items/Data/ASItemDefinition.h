@@ -9,6 +9,7 @@
 class AActor;
 class UGameplayAbility;
 class UGameplayEffect;
+class UASWeaponAttackProfile;
 class UStaticMesh;
 class UTexture2D;
 class FDataValidationContext;
@@ -64,10 +65,10 @@ public:
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
 	FName EquippedSocketName = NAME_None;
 
-	/** Normal attack supplied by this weapon. Equipment binds it to InputTag.Attack.Primary. */
+	/** Defines melee/ranged cost, hit behavior, and attack animation for the character-owned attack GA. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Attack",
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
-	TSoftClassPtr<UGameplayAbility> PrimaryAttackAbility;
+	TObjectPtr<UASWeaponAttackProfile> AttackProfile;
 
 	/** Must derive from ASItemUseAbility; CommitAbility consumes UseQuantity. Null uses the default data-driven ability. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
@@ -116,17 +117,4 @@ public:
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
 	TSoftClassPtr<UGameplayEffect> DamageEffectClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Ammo",
-		meta = (EditCondition = "ItemType == EASItemType::Weapon && WeaponType == EASWeaponType::Ranged", EditConditionHides))
-	bool bUsesAmmo = false;
-
-	/** Inventory item consumed by this weapon. Select an item whose ItemType is Ammo. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Ammo",
-		meta = (EditCondition = "ItemType == EASItemType::Weapon && WeaponType == EASWeaponType::Ranged && bUsesAmmo", EditConditionHides))
-	TObjectPtr<UASItemDefinition> AmmoDefinition;
-
-	/** Units consumed per successful shot; charged by the server's firing ability. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Ammo",
-		meta = (ClampMin = "1", EditCondition = "ItemType == EASItemType::Weapon && WeaponType == EASWeaponType::Ranged && bUsesAmmo", EditConditionHides))
-	int32 AmmoPerShot = 1;
 };

@@ -35,13 +35,6 @@ public:
 	/** Rejects a mismatched inventory owner or stale GAS avatar after respawn. */
 	static UAbilitySystemComponent* ResolveInventoryAbilitySystem(const UASInventoryComponent* Inventory, APawn* Avatar);
 
-	/** For attack abilities with another base class. Commit once per actual attack on the server. */
-	UFUNCTION(BlueprintPure, Category = "Item|GAS|Weapon")
-	static bool CanCommitWeaponAttack(UObject* SourceObject, APawn* Avatar);
-
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Item|GAS|Weapon")
-	static bool TryCommitWeaponAttack(UObject* SourceObject, APawn* Avatar);
-
 	/** Returns one damage spec for the prototype. Snapshot at firing time and apply on the server.
 	 * AdditionalDamage is the combat system's calculated attribute contribution.
 	 */

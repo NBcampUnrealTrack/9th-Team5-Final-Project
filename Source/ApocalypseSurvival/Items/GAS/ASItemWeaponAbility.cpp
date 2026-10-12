@@ -23,7 +23,8 @@ bool UASItemWeaponAbility::CheckCost(const FGameplayAbilitySpecHandle Handle,
 
 	UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
 	const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(Handle) : nullptr;
-	return Spec && UASItemAbilityLibrary::CanCommitWeaponAttack(Spec->SourceObject.Get(), Cast<APawn>(ActorInfo->AvatarActor.Get()));
+	//return Spec && UASItemAbilityLibrary::CanCommitWeaponAttack(Spec->SourceObject.Get(), Cast<APawn>(ActorInfo->AvatarActor.Get()));
+	return true;
 }
 
 void UASItemWeaponAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle,
@@ -32,8 +33,9 @@ void UASItemWeaponAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle,
 	if (!ActorInfo || !ActorInfo->IsNetAuthority() || bAttackCostPaid) return;
 	UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
 	const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(Handle) : nullptr;
-	bAttackCostPaid = Spec && UASItemAbilityLibrary::TryCommitWeaponAttack(
-		Spec->SourceObject.Get(), Cast<APawn>(ActorInfo->AvatarActor.Get()));
+	// bAttackCostPaid = Spec && UASItemAbilityLibrary::TryCommitWeaponAttack(
+	// 	Spec->SourceObject.Get(), Cast<APawn>(ActorInfo->AvatarActor.Get()));
+	bAttackCostPaid = true;
 	if (bAttackCostPaid) Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
 }
 

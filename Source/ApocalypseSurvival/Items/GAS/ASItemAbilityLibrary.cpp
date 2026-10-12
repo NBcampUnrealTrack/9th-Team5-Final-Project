@@ -44,18 +44,6 @@ UAbilitySystemComponent* UASItemAbilityLibrary::ResolveInventoryAbilitySystem(co
 	return IsValid(ASC) && ASC->GetAvatarActor() == Avatar ? ASC : nullptr;
 }
 
-bool UASItemAbilityLibrary::CanCommitWeaponAttack(UObject* SourceObject, APawn* Avatar)
-{
-	UASInventoryComponent* Inventory = GetInventoryFromSourceObject(SourceObject);
-	return Inventory && Inventory->CanCommitWeaponAttack(GetItemFromSourceObject(SourceObject), Avatar);
-}
-
-bool UASItemAbilityLibrary::TryCommitWeaponAttack(UObject* SourceObject, APawn* Avatar)
-{
-	UASInventoryComponent* Inventory = GetInventoryFromSourceObject(SourceObject);
-	return Inventory && Inventory->TryCommitWeaponAttack(GetItemFromSourceObject(SourceObject), Avatar);
-}
-
 TArray<FGameplayEffectSpecHandle> UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(
 	UObject* SourceObject, UAbilitySystemComponent* SourceASC, const float AdditionalDamage)
 {
