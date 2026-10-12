@@ -16,6 +16,9 @@
 #include "GameplayEffect.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Skills/ASSkillTags.h"
+#include "Skills/Data/ASSkillData.h"
+#include "AbilitySystemGlobals.h"
+#include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
 #include "Skills/Settings/ASSkillSettingsSubsystem.h"
 #include "TimerManager.h"
@@ -36,6 +39,12 @@ void UASSkillAbility::ActivateAbility(
 	const FGameplayEventData* TriggerEventData)
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+
+	//DT 수치 반영 (SkillData가 없으면 BP 값 그대로)
+	if (const FASSkillStatsRow* Stats = FindSkillStats())
+	{
+		ApplySkillStats(*Stats);
+	}
 
 	//꾹 누르는 동안 범위 표시, 떼면 시전 (발동 가능 여부에서 비용·쿨타임은 이미 확인됨. 차감은 뗄 때)
 	if (ShouldUseRangeIndicator())
@@ -944,7 +953,129 @@ void UASSkillAbility::FinishSkill(bool bWasCancelled)
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bWasCancelled);
 }
 
+const FASSkillStatsRow* UASSkillAbility::FindSkillStats() const
+{
+	return SkillData ? SkillData->FindStats() : nullptr;
+}
+
+void UASSkillAbility::ApplySkillStats(const FASSkillStatsRow& Stats)
+{
+	BaseDamage = Stats.BaseDamage;
+	AttackPowerScale = Stats.AttackPowerScale;
+	MaxCastRange = Stats.MaxCastRange;
+}
+
+void UASSkillAbility::ApplyCooldown(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	const UGameplayEffect* CooldownGE = GetCooldownGameplayEffect();
+	const FASSkillStatsRow* Stats = FindSkillStats();
+	const bool bOverrideDuration = Stats && Stats->Cooldown > 0.0f;
+	const bool bAddTag = SkillData && SkillData->CooldownTag.IsValid();
+	if (!CooldownGE || (!bOverrideDuration && !bAddTag))
+	{
+		//몬스터 등 SkillData 없음: GE에 적힌 시간·태그 그대로
+		Super::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+		return;
+	}
+
+	FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
+		Handle, ActorInfo, ActivationInfo, CooldownGE->GetClass(), GetAbilityLevel(Handle, ActorInfo));
+	if (!SpecHandle.IsValid())
+	{
+		return;
+	}
+
+	if (bOverrideDuration)
+	{
+		//true = 이후 재계산으로 덮어써지지 않게 고정
+		SpecHandle.Data->SetDuration(Stats->Cooldown, true);
+	}
+
+	if (bAddTag)
+	{
+		//공용 GE라 태그가 없으므로 이 스킬의 쿨타임 태그를 붙임
+		SpecHandle.Data->DynamicGrantedTags.AddTag(SkillData->CooldownTag);
+	}
+
+	ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
+}
+
+const FGameplayTagContainer* UASSkillAbility::GetCooldownTags() const
+{
+	if (!SkillData || !SkillData->CooldownTag.IsValid())
+	{
+		return Super::GetCooldownTags();
+	}
+
+	//DA 태그만 사용 (공용 GE의 태그는 모든 스킬이 같이 붙이므로 넣으면 스킬 하나가 쿨타임일 때 전부 막힘)
+	CooldownTagsCache.Reset();
+	CooldownTagsCache.AddTag(SkillData->CooldownTag);
+	return &CooldownTagsCache;
+}
+
+bool UASSkillAbility::CheckCost(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	FGameplayTagContainer* OptionalRelevantTags) const
+{
+	const FASSkillStatsRow* Stats = FindSkillStats();
+	if (!Stats || Stats->ManaCost <= 0.0f)
+	{
+		//SkillData 없음 또는 ManaCost 0: 코스트 GE에 적힌 값으로 확인
+		return Super::CheckCost(Handle, ActorInfo, OptionalRelevantTags);
+	}
+
+	//SetByCaller 값은 기본 확인 로직이 몰라서 현재 마나와 직접 비교
+	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	bool bFound = false;
+	const float CurrentMana = ASC
+		? ASC->GetGameplayAttributeValue(UASPlayerAttributeSet::GetManaAttribute(), bFound)
+		: 0.0f;
+
+	if (!bFound || CurrentMana < Stats->ManaCost)
+	{
+		const FGameplayTag& CostFailTag = UAbilitySystemGlobals::Get().ActivateFailCostTag;
+		if (OptionalRelevantTags && CostFailTag.IsValid())
+		{
+			OptionalRelevantTags->AddTag(CostFailTag);
+		}
+		return false;
+	}
+
+	return true;
+}
+
+void UASSkillAbility::ApplyCost(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	const UGameplayEffect* CostGE = GetCostGameplayEffect();
+	const FASSkillStatsRow* Stats = FindSkillStats();
+	if (!CostGE || !Stats || Stats->ManaCost <= 0.0f)
+	{
+		Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
+		return;
+	}
+
+	FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
+		Handle, ActorInfo, ActivationInfo, CostGE->GetClass(), GetAbilityLevel(Handle, ActorInfo));
+	if (SpecHandle.IsValid())
+	{
+		//GE_SkillCost는 Mana Add라서 음수로 넣음
+		SpecHandle.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_ManaCost, -Stats->ManaCost);
+		ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
+	}
+}
+
 UTexture2D* UASSkillAbility::GetSkillIcon() const
 {
+	if (SkillData && SkillData->Icon)
+	{
+		return SkillData->Icon;
+	}
 	return SkillIcon;
 }

@@ -17,6 +17,7 @@ public:
 
 protected:
 	virtual void OnSkillEffect_Implementation() override;
+	virtual void ApplySkillStats(const FASSkillStatsRow& Stats) override;
 	virtual FASSkillIndicatorSettings GetIndicatorSettings_Implementation() const override;
 
 	//발사할 투사체 (메시·이펙트를 넣은 BP 자식 지정)

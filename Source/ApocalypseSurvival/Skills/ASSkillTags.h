@@ -11,6 +11,9 @@ namespace ASGameplayTags
 	//데미지 SetByCaller 키
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
 
+	//마나 소모 SetByCaller 키 (GE_SkillCost, 음수로 넣음)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_ManaCost);
+
 	//스킬 시전 중
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Casting);
 
@@ -21,4 +24,7 @@ namespace ASGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Slash);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Throw);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_DoT);
+	
+	//공용 스킬 쿨타임 태크
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Shared);
 }
