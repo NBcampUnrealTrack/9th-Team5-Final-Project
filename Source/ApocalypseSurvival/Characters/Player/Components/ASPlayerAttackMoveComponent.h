@@ -73,9 +73,6 @@ private:
 	void RequestMove(const FVector& Destination, double CurrentTime);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Attack Move", meta = (ClampMin = "0.0", Units = "cm"))
-	float CursorAcquireRadius = 180.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Attack Move", meta = (ClampMin = "0.0", Units = "cm"))
 	float MinimumAcquireRadius = 300.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Attack Move", meta = (ClampMin = "0.01", Units = "s"))

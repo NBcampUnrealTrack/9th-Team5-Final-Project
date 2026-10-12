@@ -188,8 +188,8 @@ AActor* UASPlayerAttackMoveComponent::FindBestTarget() const
 		}
 
 		const float CandidateToCursorSquared = FVector::DistSquared2D(Candidate->GetActorLocation(), CommandDestination);
-		if (CandidateToCursorSquared <= FMath::Square(CursorAcquireRadius)
-			&& CandidateToCursorSquared < CursorDistanceSquared)
+		// 사거리 안 후보 중 클릭 지점에 가장 가까운 적을 항상 우선한다.
+		if (CandidateToCursorSquared < CursorDistanceSquared)
 		{
 			CursorTarget = Candidate;
 			CursorDistanceSquared = CandidateToCursorSquared;
