@@ -95,7 +95,9 @@ void AASMonsterAIController::TryStartAI()
 	{
 		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent())
 		{
-			Targeting->Configure(Monster->GetDayDetectionRadius(), Monster->GetDayLoseTargetRadius());
+			const UASMonsterDefinition* Definition = Monster->GetMonsterDefinition();
+			Targeting->Configure(Monster->GetDayDetectionRadius(), Monster->GetDayLoseTargetRadius(),
+				Definition ? Definition->AggroDecayPerSecond : 25.0f);
 		}
 	}
 	StartAggroLoop();
@@ -156,7 +158,7 @@ void AASMonsterAIController::StopAI(const FString& Reason)
 	ClearCombatFocus();
 }
 
-void AASMonsterAIController::NotifyMonsterDamaged(AActor* InstigatorActor)
+void AASMonsterAIController::NotifyMonsterDamaged(AActor* InstigatorActor, float AggroAmount)
 {
 	if (!HasAuthority())
 	{
@@ -165,7 +167,7 @@ void AASMonsterAIController::NotifyMonsterDamaged(AActor* InstigatorActor)
 
 	if (AASMonsterCharacter* Monster = ControlledMonster.Get())
 	{
-		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent(); Targeting && Targeting->ForceAggro(InstigatorActor))
+		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent(); Targeting && Targeting->ForceAggro(InstigatorActor, AggroAmount))
 		{
 			// 이전 타깃을 놓고 귀환하던 상태라도, 피격은 새 전투 시작으로 취급한다.
 			// 다음 갱신에서 Spawn Leash를 넘었다면 기존 귀환 규칙이 우선한다.
@@ -275,6 +277,11 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 		{
 			return;
 		}
+	}
+
+	if (!bNightAggressive)
+	{
+		Targeting->UpdateAggro(AggroUpdateInterval);
 	}
 
 	// 타이머가 0.25초마다 MoveToActor를 재요청하므로, 태그를 여기서 확인해야 경직 중 이동이 재개되지 않는다.

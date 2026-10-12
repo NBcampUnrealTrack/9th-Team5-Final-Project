@@ -426,7 +426,8 @@ void AASMonsterCharacter::NotifyDamagedBy(AActor* InstigatorActor)
 		return;
 	}
 
-	NotifyAllyDamagedBy(InstigatorActor);
+	const float DirectHitAggro = MonsterDefinition ? MonsterDefinition->DirectHitAggro : 100.0f;
+	NotifyAllyDamagedBy(InstigatorActor, DirectHitAggro);
 
 	const float AssistRadius = MonsterDefinition ? MonsterDefinition->AssistAggroRadius : 0.0f;
 	if (AssistRadius <= 0.0f || !GetWorld())
@@ -445,11 +446,11 @@ void AASMonsterCharacter::NotifyDamagedBy(AActor* InstigatorActor)
 		}
 
 		// 전투 전파는 한 번만 수행한다. NearbyMonster가 다시 주변을 순회하지 않는다.
-		NearbyMonster->NotifyAllyDamagedBy(InstigatorActor);
+		NearbyMonster->NotifyAllyDamagedBy(InstigatorActor, DirectHitAggro);
 	}
 }
 
-void AASMonsterCharacter::NotifyAllyDamagedBy(AActor* InstigatorActor)
+void AASMonsterCharacter::NotifyAllyDamagedBy(AActor* InstigatorActor, float AggroAmount)
 {
 	if (!HasAuthority() || IsDead() || !IsValid(InstigatorActor))
 	{
@@ -458,7 +459,7 @@ void AASMonsterCharacter::NotifyAllyDamagedBy(AActor* InstigatorActor)
 
 	if (AASMonsterAIController* AIController = Cast<AASMonsterAIController>(GetController()))
 	{
-		AIController->NotifyMonsterDamaged(InstigatorActor);
+		AIController->NotifyMonsterDamaged(InstigatorActor, AggroAmount);
 	}
 }
 
@@ -477,7 +478,8 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
 	GetCharacterMovement()->MaxWalkSpeed = InitialAttributes.MoveSpeed;
 
 	CombatComponent->Configure(MonsterDefinition->AttackRange, MonsterDefinition->AttackAbilityTag);
-	TargetingComponent->Configure(MonsterDefinition->DetectionRadius, MonsterDefinition->LoseTargetRadius);
+	TargetingComponent->Configure(MonsterDefinition->DetectionRadius, MonsterDefinition->LoseTargetRadius,
+		MonsterDefinition->AggroDecayPerSecond);
 	if (MonsterDefinition->GrantedAbilities.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Monster] %s has no GrantedAbilities. Configure a monster attack Ability in its Definition."),

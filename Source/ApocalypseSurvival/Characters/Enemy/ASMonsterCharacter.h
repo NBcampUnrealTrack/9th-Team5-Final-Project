@@ -181,7 +181,7 @@ private:
 	void HandleTargetedAttackTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void SetTargetedAttackMaterialTint(bool bActive);
 	/** 인접 몬스터의 피격 알림. 전파가 다시 전파되지 않도록 자기 자신만 어그로 처리한다. */
-	void NotifyAllyDamagedBy(AActor* InstigatorActor);
+	void NotifyAllyDamagedBy(AActor* InstigatorActor, float AggroAmount);
 	void UnbindHealthDelegate();
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void UnbindDamageEffectDelegate();

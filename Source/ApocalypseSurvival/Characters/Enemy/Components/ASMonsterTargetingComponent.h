@@ -21,7 +21,7 @@ public:
 	UASMonsterTargetingComponent();
 
 	/** 탐지·추적 해제 반경을 정한다. 해제 반경은 탐지 반경보다 작아지지 않게 보정된다. */
-	void Configure(float InDetectionRadius, float InLoseTargetRadius);
+	void Configure(float InDetectionRadius, float InLoseTargetRadius, float InAggroDecayPerSecond = 25.0f);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Targeting")
 	float GetDetectionRadius() const { return DetectionRadius; }
@@ -45,14 +45,20 @@ public:
 	bool AcquireTargetAnywhere();
 
 	/**
-	 * 서버 전용. 현재 타깃이 죽었거나, 유효하지 않거나, 해제 반경 밖이면 비운다.
+	 * 서버 전용. 현재 타깃이 죽었거나 유효하지 않으면 비운다.
 	 * 타깃이 계속 유효하면 true.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Targeting")
 	bool ValidateTarget(bool bIgnoreLoseTargetRadius = false);
 
-	/** 서버 전용. 유효한 플레이어 공격자에게 즉시 어그로를 건다. */
-	bool ForceAggro(AActor* Aggressor);
+	/** 서버 전용. 유효한 플레이어 공격자에게 지정된 수치만큼 어그로를 부여한다. */
+	bool ForceAggro(AActor* Aggressor, float AggroAmount);
+
+	/** 서버 전용. 타깃이 추적 해제 거리 밖에 있으면 어그로를 감소시키고 0일 때 타깃을 비운다. */
+	void UpdateAggro(float DeltaSeconds);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Targeting")
+	float GetCurrentAggro() const { return CurrentAggro; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Targeting")
 	AActor* GetTargetActor() const { return TargetActor; }
@@ -89,6 +95,7 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_TargetActor)
 	TObjectPtr<AActor> TargetActor;
 
-	// 피격으로 잡은 타깃은 낮의 일반 추적 해제 거리보다 우선한다. 서버 AI 상태다.
-	bool bHasForcedAggroTarget = false;
+	float CurrentAggro = 0.0f;
+	float AggroDecayPerSecond = 25.0f;
+	static constexpr float MaxAggro = 100.0f;
 };

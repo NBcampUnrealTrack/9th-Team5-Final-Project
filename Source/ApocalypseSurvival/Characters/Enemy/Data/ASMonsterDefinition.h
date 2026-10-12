@@ -88,6 +88,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", Units = "cm"))
 	float AssistAggroRadius = 900.0f;
 
+	/** 직접 피해를 받았을 때 공격자에게 부여할 어그로. 최대치는 100이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float DirectHitAggro = 100.0f;
+
+	/** 타깃이 추적 해제 거리 밖에 있을 때 초당 잃는 어그로. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float AggroDecayPerSecond = 25.0f;
+
 	/** CombatComponent가 활성화할 Ability의 태그. 예: Ability.Monster.Attack.Ranged */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (Categories = "Ability.Monster"))
 	FGameplayTag AttackAbilityTag;
