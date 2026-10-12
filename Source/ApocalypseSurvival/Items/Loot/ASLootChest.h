@@ -30,6 +30,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Loot")
 	UASInventoryComponent* GetLootInventory() const { return LootInventory; }
 
+	/** Replace default contents before FinishSpawning/BeginPlay. Empty explicitly spawns an empty chest.
+	 * Server-only. Returns false for invalid grants or after initialization has begun.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
+	bool SetInitialLoot(const TArray<FASItemGrant>& Items);
+
 	/** Server revalidates range, recipient ownership and remaining quantity for every pickup. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
 	int32 TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInventory, FGuid InstanceId, int32 Quantity);
@@ -65,8 +71,8 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASInventoryComponent> LootInventory;
 
-	/** Items generated into LootInventory when play begins. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot", meta = (AllowPrivateAccess = "true"))
+	/** Spawn input overrides the Blueprint defaults; applied once on the server before Blueprint BeginPlay. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot", meta = (AllowPrivateAccess = "true", ExposeOnSpawn = "true"))
 	TArray<FASItemGrant> InitialLoot;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
