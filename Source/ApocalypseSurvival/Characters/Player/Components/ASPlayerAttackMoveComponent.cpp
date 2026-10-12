@@ -1,14 +1,11 @@
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 
-#include "AbilitySystemGlobals.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
-#include "GAS/ASAbilitySystemComponent.h"
-#include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Combat/ASWeaponAttackProfile.h"
 #include "Items/Data/ASItemDefinition.h"
@@ -62,35 +59,21 @@ bool UASPlayerAttackMoveComponent::ConfirmAttackMove(const FVector& Destination)
 
 	CommandDestination = Destination;
 	CurrentTarget.Reset();
-	PendingAttackRequest.Reset();
 
 	if (!UsesAttackMoveTargeting())
 	{
-		FASPrimaryAttackRequest Request;
-		Request.TargetLocation = Destination;
-		PendingAttackRequest = Request;
 		State = EASAttackMoveState::Idle;
-		if (IsPrimaryAttackActive())
-		{
-			return true;
-		}
-		return TryStartAttack(nullptr, Destination);
+		RequestAttack(nullptr, Destination);
+		return true;
 	}
 
-	// A로 이미 활성화된 Primary Attack은 다음 좌클릭의 LocalInputConfirm을 기다린다.
-	// 사거리 안의 대상은 이 시점에 넣어 BP 조준 표시와 대상 공격을 함께 유지한다.
+	// 사거리 안의 대상은 Controller에 공격 요청만 전달한다.
+	// Ability 활성화와 조준 UI 종료는 Controller/Primary Attack이 담당한다.
 	if (AActor* Target = FindBestTarget(); Target && IsTargetInAttackRange(Target))
 	{
-		FASPrimaryAttackRequest Request;
-		Request.Target = Target;
-		Request.TargetLocation = Target->GetActorLocation();
-		PendingAttackRequest = Request;
 		State = EASAttackMoveState::Idle;
-		if (IsPrimaryAttackActive())
-		{
-			return true;
-		}
-		return TryStartAttack(Target, Request.TargetLocation);
+		RequestAttack(Target, Target->GetActorLocation());
+		return true;
 	}
 
 	State = EASAttackMoveState::Seeking;
@@ -104,7 +87,6 @@ void UASPlayerAttackMoveComponent::CancelAttackMove()
 {
 	State = EASAttackMoveState::Idle;
 	CurrentTarget.Reset();
-	PendingAttackRequest.Reset();
 	NextSearchTime = 0.0;
 	NextRepathTime = 0.0;
 }
@@ -117,21 +99,12 @@ void UASPlayerAttackMoveComponent::NotifyExternalMoveRequested()
 	}
 }
 
-bool UASPlayerAttackMoveComponent::ConsumePendingAttackRequest(FASPrimaryAttackRequest& OutRequest)
+void UASPlayerAttackMoveComponent::NotifyAttackFinished()
 {
-	if (!PendingAttackRequest.IsSet())
+	if (State == EASAttackMoveState::Attacking)
 	{
-		return false;
+		State = CurrentTarget.IsValid() ? EASAttackMoveState::Chasing : EASAttackMoveState::Seeking;
 	}
-
-	OutRequest = PendingAttackRequest.GetValue();
-	PendingAttackRequest.Reset();
-	return true;
-}
-
-void UASPlayerAttackMoveComponent::ClearPendingAttackRequest()
-{
-	PendingAttackRequest.Reset();
 }
 
 void UASPlayerAttackMoveComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
@@ -256,77 +229,12 @@ bool UASPlayerAttackMoveComponent::IsTargetInAttackRange(const AActor* Target) c
 	return FVector::DistSquared2D(Pawn->GetActorLocation(), Target->GetActorLocation()) <= FMath::Square(Range);
 }
 
-bool UASPlayerAttackMoveComponent::IsPrimaryAttackActive() const
+void UASPlayerAttackMoveComponent::RequestAttack(AActor* Target, const FVector& TargetLocation)
 {
-	const AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
-	const UASAbilitySystemComponent* ASC = Controller
-		? Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Controller->GetPawn()))
-		: nullptr;
-	if (!ASC)
-	{
-		return false;
-	}
-
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-	{
-		if (Spec.IsActive() && Spec.Ability
-			&& Spec.Ability->GetClass()->IsChildOf(UASGameplayAbility_CharacterPrimaryAttack::StaticClass()))
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool UASPlayerAttackMoveComponent::TryStartAttack(AActor* Target, const FVector& TargetLocation)
-{
-	AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
-	UASAbilitySystemComponent* ASC = Controller
-		? Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Controller->GetPawn()))
-		: nullptr;
-	if (!ASC)
-	{
-		return false;
-	}
-
 	FASPrimaryAttackRequest Request;
 	Request.Target = Target;
 	Request.TargetLocation = TargetLocation;
-
-	// A로 시작한 Primary Attack이 조준 상태로 살아 있으면 새로 발동하지 않는다.
-	// 준비한 요청을 넣고 여기서만 좌클릭 확정을 보내므로, 적이 없을 때는
-	// 바닥을 향한 공격이 발사되지 않는다.
-	if (IsPrimaryAttackActive())
-	{
-		PendingAttackRequest = Request;
-		ASC->LocalInputConfirm();
-		return true;
-	}
-
-	FGameplayAbilitySpecHandle PrimaryAttackHandle;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-	{
-		if (Spec.Ability && Spec.Ability->GetClass()->IsChildOf(UASGameplayAbility_CharacterPrimaryAttack::StaticClass()))
-		{
-			PrimaryAttackHandle = Spec.Handle;
-			break;
-		}
-	}
-
-	if (!PrimaryAttackHandle.IsValid())
-	{
-		return false;
-	}
-
-	PendingAttackRequest = Request;
-	if (!ASC->TryActivateAbility(PrimaryAttackHandle))
-	{
-		PendingAttackRequest.Reset();
-		return false;
-	}
-
-	return true;
+	OnAttackRequested.Broadcast(Request);
 }
 
 void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTime)
@@ -339,14 +247,7 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 		return;
 	}
 
-	if (State == EASAttackMoveState::Attacking)
-	{
-		if (IsPrimaryAttackActive())
-		{
-			return;
-		}
-		State = CurrentTarget.IsValid() ? EASAttackMoveState::Chasing : EASAttackMoveState::Seeking;
-	}
+	if (State == EASAttackMoveState::Attacking) return;
 
 	if (!IsValidAttackTarget(CurrentTarget.Get()))
 	{
@@ -365,12 +266,6 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 		if (FVector::DistSquared2D(Pawn->GetActorLocation(), CommandDestination)
 			<= FMath::Square(DestinationAcceptanceRadius))
 		{
-			// 바닥까지 도착했는데 공격할 적이 없으면 조준과 사거리 표시를 함께 종료한다.
-			if (UASAbilitySystemComponent* ASC = Cast<UASAbilitySystemComponent>(
-				UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn)))
-			{
-				ASC->LocalInputCancel();
-			}
 			CancelAttackMove();
 			return;
 		}
@@ -382,14 +277,8 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 	if (IsTargetInAttackRange(CurrentTarget.Get()))
 	{
 		Controller->StopMovement();
-		if (TryStartAttack(CurrentTarget.Get(), CurrentTarget->GetActorLocation()))
-		{
-			State = EASAttackMoveState::Attacking;
-		}
-		else
-		{
-			State = EASAttackMoveState::Chasing;
-		}
+		State = EASAttackMoveState::Attacking;
+		RequestAttack(CurrentTarget.Get(), CurrentTarget->GetActorLocation());
 		return;
 	}
 

@@ -10,6 +10,7 @@
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
 #include "GAS/ASAbilitySystemComponent.h"
+#include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
 #include "Skills/ASSkillTags.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
@@ -40,6 +41,7 @@ AASPlayerController::AASPlayerController()
 void AASPlayerController::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
+	AttackMoveComponent->OnAttackRequested.AddUObject(this, &AASPlayerController::HandleAttackMoveRequest);
 
 	// BeginPlay 가 아니라 여기서 연결한다. 클라이언트에서는 폰이 첫 복제 묶음에
 	// 실려 와서 BeginPlay 보다 먼저 알림이 나갈 수 있기 때문이다.
@@ -127,7 +129,12 @@ void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 	{
 		if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
 		{
-			if (!AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+			if (AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+			{
+				// A를 다시 누르는 것은 현재 조준/공격 이동 명령 취소다.
+				AttackMoveComponent->CancelAttackMove();
+			}
+			else
 			{
 				AttackMoveComponent->ArmAttackMove();
 			}
@@ -221,6 +228,48 @@ UASAbilitySystemComponent* AASPlayerController::GetPawnAbilitySystemComponent() 
 	return Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetPawn()));
 }
 
+void AASPlayerController::HandleAttackMoveRequest(const FASPrimaryAttackRequest& Request)
+{
+	PendingAttackMoveTarget = Request.Target;
+	PendingAttackMoveTargetLocation = Request.TargetLocation;
+	bHasPendingAttackMoveRequest = true;
+	TryActivatePrimaryAttack();
+}
+
+bool AASPlayerController::ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation)
+{
+	if (!bHasPendingAttackMoveRequest)
+	{
+		return false;
+	}
+
+	OutTarget = PendingAttackMoveTarget.Get();
+	OutTargetLocation = PendingAttackMoveTargetLocation;
+	PendingAttackMoveTarget.Reset();
+	PendingAttackMoveTargetLocation = FVector::ZeroVector;
+	bHasPendingAttackMoveRequest = false;
+	return true;
+}
+
+void AASPlayerController::TryActivatePrimaryAttack()
+{
+	UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent();
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (!Spec.IsActive() && Spec.Ability
+			&& Spec.Ability->GetClass()->IsChildOf(UASGameplayAbility_CharacterPrimaryAttack::StaticClass()))
+		{
+			AbilitySystemComponent->TryActivateAbility(Spec.Handle);
+			return;
+		}
+	}
+}
+
 void AASPlayerController::ReceivedPlayer()
 {
 	Super::ReceivedPlayer();
@@ -294,6 +343,11 @@ void AASPlayerController::OnMoveStarted()
 	if (IsPawnDead() || ItemInteractionComponent->IsLootOpen()) return;
 
 	// MoveAction은 우클릭 기본 이동 전용이다. 조준 상태와 무관하게 항상 이동한다.
+	if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent();
+		AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+	{
+		AbilitySystemComponent->LocalInputCancel();
+	}
 	AttackMoveComponent->NotifyExternalMoveRequested();
 	FHitResult Hit;
 	if (GetHitResultUnderCursor(CursorTraceChannel, true, Hit)

@@ -66,14 +66,13 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	// A + 클릭 명령이 준비한 요청은 일반 조준 상태를 거치지 않고 즉시 한 번 공격한다.
 	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo->PlayerController.Get()))
 	{
-		FASPrimaryAttackRequest Request;
-		if (UASPlayerAttackMoveComponent* AttackMove = PlayerController->GetAttackMoveComponent();
-			AttackMove && AttackMove->ConsumePendingAttackRequest(Request))
+		AActor* RequestedTarget = nullptr;
+		FVector RequestedTargetLocation = FVector::ZeroVector;
+		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, RequestedTargetLocation))
 		{
-			AActor* RequestedTarget = Request.Target.Get();
 			FVector AimDirection = RequestedTarget
 				? (RequestedTarget->GetActorLocation() - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D()
-				: (Request.TargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
+				: (RequestedTargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
 			if (AimDirection.IsNearlyZero())
 			{
 				AimDirection = GetAvatarActorFromActorInfo()->GetActorForwardVector().GetSafeNormal2D();
@@ -81,9 +80,9 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 
 			if (!ActorInfo->IsNetAuthority())
 			{
-				SendAimToServer(AimDirection, Request.TargetLocation, RequestedTarget);
+				SendAimToServer(AimDirection, RequestedTargetLocation, RequestedTarget);
 			}
-			StartAttack(AimDirection, Request.TargetLocation, RequestedTarget);
+			StartAttack(AimDirection, RequestedTargetLocation, RequestedTarget);
 			return;
 		}
 	}
@@ -124,6 +123,10 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 	CachedRequestedTarget.Reset();
 	ActiveMontage = nullptr;
 	ActiveHitEventTag = FGameplayTag();
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo ? ActorInfo->PlayerController.Get() : nullptr))
+	{
+		PlayerController->GetAttackMoveComponent()->NotifyAttackFinished();
+	}
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
 }
 
@@ -168,12 +171,9 @@ void UASGameplayAbility_CharacterPrimaryAttack::ConfirmTargeting()
 	AActor* RequestedTarget = nullptr;
 	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
 	{
-		FASPrimaryAttackRequest Request;
-		if (UASPlayerAttackMoveComponent* AttackMove = PlayerController->GetAttackMoveComponent();
-			AttackMove && AttackMove->ConsumePendingAttackRequest(Request))
+		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, TargetLocation))
 		{
-			RequestedTarget = Request.Target.Get();
-			TargetLocation = RequestedTarget ? RequestedTarget->GetActorLocation() : Request.TargetLocation;
+			TargetLocation = RequestedTarget ? RequestedTarget->GetActorLocation() : TargetLocation;
 			AimDirection = (TargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
 			if (AimDirection.IsNearlyZero())
 			{

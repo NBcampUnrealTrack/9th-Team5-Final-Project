@@ -5,6 +5,9 @@
 #include "ASPlayerAttackMoveComponent.generated.h"
 
 class AActor;
+struct FASPrimaryAttackRequest;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FASAttackMoveRequestDelegate, const FASPrimaryAttackRequest&);
 
 /** 일반 공격 어빌리티가 소비하는 단발 공격 요청. */
 USTRUCT()
@@ -50,12 +53,10 @@ public:
 	bool ConfirmAttackMove(const FVector& Destination);
 	void CancelAttackMove();
 	void NotifyExternalMoveRequested();
+	void NotifyAttackFinished();
 
-	/** 일반 공격 어빌리티가 활성화 시작 시 한 번 소비한다. */
-	bool ConsumePendingAttackRequest(FASPrimaryAttackRequest& OutRequest);
-
-	/** 어빌리티 활성화에 실패했을 때 남은 요청을 폐기한다. */
-	void ClearPendingAttackRequest();
+	/** 적을 사거리 안에서 발견했을 때 Controller가 일반 공격 Ability를 시작하도록 알린다. */
+	FASAttackMoveRequestDelegate OnAttackRequested;
 
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
@@ -67,8 +68,7 @@ private:
 	AActor* FindBestTarget() const;
 	bool IsValidAttackTarget(const AActor* Candidate) const;
 	bool IsTargetInAttackRange(const AActor* Target) const;
-	bool IsPrimaryAttackActive() const;
-	bool TryStartAttack(AActor* Target, const FVector& TargetLocation);
+	void RequestAttack(AActor* Target, const FVector& TargetLocation);
 	void UpdateTargetedCommand(double CurrentTime);
 	void RequestMove(const FVector& Destination, double CurrentTime);
 
@@ -93,7 +93,6 @@ private:
 	EASAttackMoveState State = EASAttackMoveState::Idle;
 	FVector CommandDestination = FVector::ZeroVector;
 	TWeakObjectPtr<AActor> CurrentTarget;
-	TOptional<FASPrimaryAttackRequest> PendingAttackRequest;
 	double NextSearchTime = 0.0;
 	double NextRepathTime = 0.0;
 };
