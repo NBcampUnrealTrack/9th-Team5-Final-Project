@@ -489,38 +489,6 @@ bool UASInventoryComponent::TryConsumeItemInstance(UASItemInstance* Item, const 
 	return RemoveItemInstance(Item, Quantity) == Quantity;
 }
 
-bool UASInventoryComponent::CanCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar) const
-{
-	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
-	if (!HasInventoryAuthority() || bCommittingWeaponAttack || !ASC
-		|| ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
-		|| !IsValid(Weapon) || !Weapon->IsValidItemInstance() || !Items.Contains(Weapon)
-		|| Avatar != GetInventoryAvatar() || GetEquippedItem() != Weapon
-		|| !GetWorld() || GetWorld()->GetTimeSeconds() < NextWeaponAttackTime) return false;
-	const UASItemDefinition* Definition = Weapon->GetItemDefinition();
-	if (Definition->ItemType != EASItemType::Weapon) return false;
-	if (!Definition->bUsesAmmo) return true;
-	return Definition->WeaponType == EASWeaponType::Ranged
-		&& IsValid(Definition->AmmoDefinition) && Definition->AmmoDefinition->ItemType == EASItemType::Ammo
-		&& Definition->AmmoPerShot > 0 && HasItem(Definition->AmmoDefinition, Definition->AmmoPerShot);
-}
-
-bool UASInventoryComponent::TryCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar)
-{
-	if (!CanCommitWeaponAttack(Weapon, Avatar)) return false;
-	TGuardValue<bool> Guard(bCommittingWeaponAttack, true);
-	const UASItemDefinition* Definition = Weapon->GetItemDefinition();
-	const double PreviousTime = NextWeaponAttackTime;
-	// Establish the interval before inventory callbacks can request another attack.
-	NextWeaponAttackTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.01f, Definition->AttackInterval);
-	if (Definition->bUsesAmmo && !TryConsumeItem(Definition->AmmoDefinition, Definition->AmmoPerShot))
-	{
-		NextWeaponAttackTime = PreviousTime;
-		return false;
-	}
-	return true;
-}
-
 bool UASInventoryComponent::EquipItem(const FGuid InstanceId, APawn* Avatar)
 {
 	if (!HasInventoryAuthority() || bChangingEquipment) return false;
