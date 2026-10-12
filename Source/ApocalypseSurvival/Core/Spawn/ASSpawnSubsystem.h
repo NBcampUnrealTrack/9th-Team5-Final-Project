@@ -23,6 +23,7 @@ public:
 	void HandleNightStarted(int32 Day, UDataTable* WaveDataTable);
 	void HandleNightEnded();
 	void StopAllSpawning();
+	bool IsWaveSpawnFinished() const {return SpawnedWaveMonsterCount >= TotalWaveMonsterCount;}
 
 private:
 	void SpawnDayUnits(int32 Day, UDataTable* DaySpawnDataTable, UDataTable* MonsterSpawnGroupDataTable);
