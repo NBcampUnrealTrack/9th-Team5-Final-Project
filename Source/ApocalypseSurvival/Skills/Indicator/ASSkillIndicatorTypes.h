@@ -60,6 +60,10 @@ struct APOCALYPSESURVIVAL_API FASSkillIndicatorSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator", meta = (Units = "cm"))
 	float MaxCastRange = 0.0f;
 
+	//위치형 목표 지점을 사거리 안으로 제한 (false = 커서 위치 그대로, 걸어가서 시전 모드)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator")
+	bool bClampToRange = true;
+
 	//사거리 원 반지름 (0이면 숨김)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator", meta = (Units = "cm"))
 	float RangeRingRadius = 0.0f;

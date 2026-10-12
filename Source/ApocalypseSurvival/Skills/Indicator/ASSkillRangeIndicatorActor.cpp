@@ -129,7 +129,8 @@ void AASSkillRangeIndicatorActor::UpdateIndicator()
 	switch (Settings.TargetingType)
 	{
 	case EASSkillTargetingType::Location:
-		TargetLocation = ResolveTargetLocation(CasterPawn, Desired, Settings.MaxCastRange);
+		//걸어가서 시전 모드면 사거리 제한 없이 커서 위치 그대로 (바닥 높이만 맞춤)
+		TargetLocation = ResolveTargetLocation(CasterPawn, Desired, Settings.bClampToRange ? Settings.MaxCastRange : 0.0f);
 		break;
 	case EASSkillTargetingType::Self:
 		TargetLocation = Origin;
