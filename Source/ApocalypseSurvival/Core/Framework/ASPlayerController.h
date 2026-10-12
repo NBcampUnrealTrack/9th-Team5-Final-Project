@@ -7,6 +7,7 @@
 
 class AASPlayerCameraManager;
 class UASAbilitySystemComponent;
+class UASPlayerAttackMoveComponent;
 class UASInputConfig;
 class UASInventoryComponent;
 class UInputAction;
@@ -56,6 +57,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	UASPlayerAttackMoveComponent* GetAttackMoveComponent() const { return AttackMoveComponent; }
 
 	/**
 	 * 로컬 플레이어가 조종하는 폰이 바뀌었을 때. 이 머신의 화면을 가진 컨트롤러에서만 방송한다.
@@ -119,6 +123,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASInventoryComponent> InventoryComponent;
+
+	/** A + 클릭 명령을 해석한다. 공격 피해·비용은 GAS가 계속 담당한다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASPlayerAttackMoveComponent> AttackMoveComponent;
 
 	// ── 입력 ──────────────────────────────────────────────
 	// C++ 에서 에셋을 직접 참조하지 않는다. BP 자식에서 지정한다.

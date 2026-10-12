@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
+#include "Skills/Projectile/ASSkillProjectileActor.h"
 #include "ASWeaponAttackProfile.generated.h"
 
 class UAnimMontage;
@@ -86,6 +87,36 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged", meta = (ClampMin = "0.0", Units = "cm"))
 	float TraceRadius = 50.0f;
+
+	/** true면 A+클릭이 적을 선택·추적한다. false면 클릭 방향으로 투사체를 한 발 발사한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged")
+	bool bUseAttackMoveTargeting = true;
+
+	/** 방향성 투사체 모드에서만 쓰는 발사체 클래스. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
+		meta = (EditCondition = "!bUseAttackMoveTargeting", EditConditionHides))
+	TSubclassOf<AASSkillProjectileActor> ProjectileClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
+		meta = (ClampMin = "1.0", Units = "cm/s", EditCondition = "!bUseAttackMoveTargeting", EditConditionHides))
+	float ProjectileSpeed = 2000.0f;
+
+	/** 0은 첫 적에서 소멸, -1은 무한 관통. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
+		meta = (ClampMin = "-1", EditCondition = "!bUseAttackMoveTargeting", EditConditionHides))
+	int32 ProjectilePierceCount = 0;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
+		meta = (EditCondition = "!bUseAttackMoveTargeting", EditConditionHides))
+	FName ProjectileSpawnSocketName;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
+		meta = (Units = "cm", EditCondition = "!bUseAttackMoveTargeting", EditConditionHides))
+	float ProjectileSpawnForwardOffset = 50.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
+		meta = (Units = "cm", EditCondition = "!bUseAttackMoveTargeting", EditConditionHides))
+	float ProjectileSpawnHeightOffset = 0.0f;
 
 	/** Radius around the first ranged impact used only by Area attacks. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged",

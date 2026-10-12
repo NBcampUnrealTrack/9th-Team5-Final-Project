@@ -5,6 +5,7 @@
 #include "ASWeaponAttackExecution.generated.h"
 
 class APawn;
+class AActor;
 class UAbilitySystemComponent;
 class UASInventoryComponent;
 class UASItemDefinition;
@@ -20,6 +21,9 @@ struct FASWeaponAttackExecutionContext
 	const UASItemDefinition* Definition = nullptr;
 	const UASWeaponAttackProfile* Profile = nullptr;
 	FVector AimDirection = FVector::ForwardVector;
+	/** 서버가 검증한 명시적 타깃. 방향성 투사체는 비어 있다. */
+	TWeakObjectPtr<AActor> RequestedTarget;
+	FVector TargetLocation = FVector::ZeroVector;
 };
 
 /** Stateless strategy selected by the equipped weapon's attack profile. */

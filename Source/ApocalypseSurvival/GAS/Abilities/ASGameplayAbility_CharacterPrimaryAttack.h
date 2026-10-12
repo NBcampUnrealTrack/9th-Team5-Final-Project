@@ -9,6 +9,7 @@
 class UAnimMontage;
 class UASItemDefinition;
 class UASWeaponAttackExecution;
+class AActor;
 
 /** Character-owned primary attack. Equipment supplies data; it never grants or removes this ability. */
 UCLASS(Blueprintable)
@@ -40,11 +41,13 @@ private:
 	void ResolveAnimation(const FASWeaponAttackExecutionContext& Context, UAnimMontage*& OutMontage,
 		FGameplayTag& OutHitEventTag, bool& bOutScaleToInterval) const;
 	void ComputeLocalAim(FVector& OutAimDirection, FVector& OutTargetLocation) const;
-	void SendAimToServer(const FVector& AimDirection, const FVector& TargetLocation);
+	void SendAimToServer(const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget);
 	void WaitForClientAim();
 	void OnClientAimReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
 	void OnClientAimCancelled();
-	void StartAttack(const FVector& AimDirection);
+	void StartAttack(const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget);
+	bool IsValidAttackRequest(const FASWeaponAttackExecutionContext& Context, AActor* RequestedTarget,
+		const FVector& TargetLocation, FVector& OutAimDirection) const;
 	void PerformHit();
 	float GetMontagePlayRate(const UAnimMontage* Montage, const UASItemDefinition* Definition,
 		bool bScaleToInterval) const;
@@ -62,6 +65,9 @@ private:
 	UFUNCTION()
 	void OnLocalInputConfirm();
 
+	UFUNCTION()
+	void OnLocalInputCancel();
+
 protected:
 	/** BP 자식은 이 훅에서 범위/커서 인디케이터를 표시한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Attack|Targeting")
@@ -75,10 +81,12 @@ private:
 	bool bIsTargeting = false;
 	bool bAddedTargetingTag = false;
 	bool bBoundLocalConfirm = false;
+	bool bBoundLocalCancel = false;
 	bool bAttackStarted = false;
 	bool bHitPerformed = false;
 	double NextAttackTime = 0.0;
 	FVector CachedAimDirection = FVector::ForwardVector;
+	TWeakObjectPtr<AActor> CachedRequestedTarget;
 	FASWeaponAttackExecutionContext CachedExecutionContext;
 	const UASWeaponAttackExecution* CachedExecution = nullptr;
 	UPROPERTY(Transient)

@@ -2,14 +2,17 @@
 
 #include "AbilitySystemComponent.h"
 #include "Characters/Player/ASPlayerCharacter.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
+#include "GameFramework/Character.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Combat/ASWeaponAttackProfile.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Skills/ASSkillAbility.h"
+#include "Skills/Projectile/ASSkillProjectileActor.h"
 
 namespace ASWeaponAttackExecutionPrivate
 {
@@ -61,6 +64,57 @@ namespace ASWeaponAttackExecutionPrivate
 		}
 		Targets.Reset();
 		if (ClosestTarget) Targets.Add(ClosestTarget);
+	}
+
+	void SpawnDirectionalProjectile(const FASWeaponAttackExecutionContext& Context, const UASRangedAttackProfile& Profile)
+	{
+		UWorld* World = Context.Avatar ? Context.Avatar->GetWorld() : nullptr;
+		if (!World || !Context.Definition)
+		{
+			return;
+		}
+
+		FVector Direction = Context.AimDirection.GetSafeNormal2D();
+		if (Direction.IsNearlyZero())
+		{
+			Direction = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
+		}
+		if (Direction.IsNearlyZero())
+		{
+			return;
+		}
+
+		FVector SpawnLocation = Context.Avatar->GetActorLocation()
+			+ Direction * Profile.ProjectileSpawnForwardOffset
+			+ FVector(0.0f, 0.0f, Profile.ProjectileSpawnHeightOffset);
+		if (!Profile.ProjectileSpawnSocketName.IsNone())
+		{
+			if (const ACharacter* Character = Cast<ACharacter>(Context.Avatar))
+			{
+				if (const USkeletalMeshComponent* Mesh = Character->GetMesh(); Mesh && Mesh->DoesSocketExist(Profile.ProjectileSpawnSocketName))
+				{
+					SpawnLocation = Mesh->GetSocketLocation(Profile.ProjectileSpawnSocketName);
+				}
+			}
+		}
+
+		const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
+		UClass* ProjectileClass = Profile.ProjectileClass
+			? Profile.ProjectileClass.Get()
+			: AASSkillProjectileActor::StaticClass();
+		AASSkillProjectileActor* Projectile = World->SpawnActorDeferred<AASSkillProjectileActor>(
+			ProjectileClass, SpawnTransform, Context.Avatar, Context.Avatar,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Projectile)
+		{
+			return;
+		}
+
+		const TArray<FGameplayEffectSpecHandle> DamageSpecs = UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(
+			Context.Weapon, Context.AbilitySystem);
+		Projectile->InitProjectile(DamageSpecs, Context.Avatar,
+			Direction, Profile.ProjectileSpeed, Context.Definition->AttackRange, Profile.ProjectilePierceCount, false);
+		Projectile->FinishSpawning(SpawnTransform);
 	}
 }
 
@@ -121,7 +175,20 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 		Context.Avatar->GetWorld(), Center, Radius, Context.Avatar, false);
 	if (Profile->TargetMode == EASAttackTargetMode::Single)
 	{
-		ASWeaponAttackExecutionPrivate::KeepClosestTarget(Targets, Center);
+		AActor* RequestedTarget = Context.RequestedTarget.Get();
+		const bool bRequestedTargetInRange = IsValid(RequestedTarget)
+			&& UASSkillAbility::IsValidSkillTarget(RequestedTarget, Context.Avatar, false)
+			&& FVector::DistSquared2D(Context.Avatar->GetActorLocation(), RequestedTarget->GetActorLocation())
+			<= FMath::Square(AttackRange + 15.0f);
+		if (bRequestedTargetInRange)
+		{
+			Targets.Reset();
+			Targets.Add(RequestedTarget);
+		}
+		else
+		{
+			ASWeaponAttackExecutionPrivate::KeepClosestTarget(Targets, Center);
+		}
 	}
 	ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
 
@@ -156,6 +223,32 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	if (!Profile) return;
 	const float TraceRadius = FMath::Max(0.0f, Profile->TraceRadius);
 	const FVector Start = Context.Avatar->GetActorLocation();
+	if (!Profile->bUseAttackMoveTargeting)
+	{
+		ASWeaponAttackExecutionPrivate::SpawnDirectionalProjectile(Context, *Profile);
+		return;
+	}
+
+	if (Profile->TargetMode == EASAttackTargetMode::Single)
+	{
+		if (AActor* RequestedTarget = Context.RequestedTarget.Get(); IsValid(RequestedTarget))
+		{
+			const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f;
+			if (UASSkillAbility::IsValidSkillTarget(RequestedTarget, Context.Avatar, false)
+				&& FVector::DistSquared2D(Context.Avatar->GetActorLocation(), RequestedTarget->GetActorLocation()) <= FMath::Square(AllowedRange))
+			{
+				TArray<AActor*> Targets;
+				Targets.Add(RequestedTarget);
+				ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
+				if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
+				{
+					Character->MulticastDrawWeaponAttackDebug(Start, RequestedTarget->GetActorLocation(), TraceRadius, false, true);
+				}
+				return;
+			}
+		}
+	}
+
 	const FVector End = Start + Context.AimDirection * FMath::Max(1.0f, Context.Definition->AttackRange);
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WeaponAttack), false, Context.Avatar);
 	TArray<FHitResult> Hits;

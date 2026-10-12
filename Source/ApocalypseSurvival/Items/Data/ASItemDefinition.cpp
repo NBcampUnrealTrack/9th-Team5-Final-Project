@@ -85,6 +85,17 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 			{
 				Error(TEXT("Area ranged attacks require a positive AreaRadius."));
 			}
+			if (!RangedProfile->bUseAttackMoveTargeting)
+			{
+				if (!RangedProfile->ProjectileClass)
+				{
+					Error(TEXT("Directional projectile attacks require a ProjectileClass."));
+				}
+				if (!FMath::IsFinite(RangedProfile->ProjectileSpeed) || RangedProfile->ProjectileSpeed <= 0.0f)
+				{
+					Error(TEXT("Directional projectile attacks require a positive finite ProjectileSpeed."));
+				}
+			}
 		}
 		if (!FMath::IsFinite(BaseDamage) || BaseDamage < 0.0f) Error(TEXT("BaseDamage must be finite and nonnegative."));
 		if (!FMath::IsFinite(AttackInterval) || AttackInterval < 0.01f) Error(TEXT("AttackInterval must be finite and at least 0.01 seconds."));

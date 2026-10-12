@@ -1,12 +1,16 @@
 #include "Core/Framework/ASPlayerController.h"
 
+#include <Core/Input/ASInputTags.h>
+
 #include "AbilitySystemGlobals.h"
 #include "ApocalypseSurvival.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Characters/Player/ASPlayerCharacter.h"
+#include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
 #include "GAS/ASAbilitySystemComponent.h"
+#include "Skills/ASSkillTags.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
@@ -26,6 +30,7 @@ AASPlayerController::AASPlayerController()
 	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("PathFollowingComponent"));
 	ItemInteractionComponent = CreateDefaultSubobject<UASItemInteractionComponent>(TEXT("ItemInteractionComponent"));
 	InventoryComponent = CreateDefaultSubobject<UASInventoryComponent>(TEXT("InventoryComponent"));
+	AttackMoveComponent = CreateDefaultSubobject<UASPlayerAttackMoveComponent>(TEXT("AttackMoveComponent"));
 	PlayerCameraManagerClass = AASPlayerCameraManager::StaticClass();
 
 	bShowMouseCursor = true;
@@ -43,6 +48,7 @@ void AASPlayerController::PostInitializeComponents()
 
 void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
 {
+	AttackMoveComponent->CancelAttackMove();
 	ItemInteractionComponent->CancelPendingInteraction();
 	ItemInteractionComponent->CloseLoot();
 	// 길찾기 컴포넌트는 자기가 움직일 폰의 이동 컴포넌트를 기억해 둬야 한다.
@@ -115,6 +121,60 @@ void AASPlayerController::SetupInputComponent()
 
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
+	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
+	// 스킬 조준 중에는 기존 조준 상태와 충돌하지 않도록 무시한다.
+	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Prepare))
+	{
+		if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
+		{
+			if (!AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+			{
+				AttackMoveComponent->ArmAttackMove();
+			}
+
+			// 기존 Primary Attack Ability를 반드시 활성화한다. BP의
+			// OnAttackTargetingStarted/Ended가 사거리 인디케이터를 맡고 있다.
+			AbilitySystemComponent->AbilityInputTagPressed(InputTag);
+		}
+		return;
+	}
+
+	// 좌클릭은 조준 확정이다. A를 누른 상태라면 이동 입력이 아니라 여기서
+	// 공격 이동 대상 또는 투사체 방향을 기록한 뒤 기존 GAS 확정 흐름으로 넘긴다.
+	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary) && AttackMoveComponent->IsArmed())
+	{
+		FVector AttackDestination;
+		if (GetCursorWorldLocation(AttackDestination))
+		{
+			AttackMoveComponent->ConfirmAttackMove(AttackDestination);
+
+			// 적을 아직 찾지 못한 공격 이동은 좌클릭 확정을 보류한다.
+			// 컴포넌트가 이동 중 사거리 안의 적을 찾았을 때만 확정한다.
+			if (AttackMoveComponent->HasActiveCommand())
+			{
+				// A 조준은 이번 좌클릭으로 끝난다. 적이 없어서 이동만 시작하더라도
+				// 사거리 인디케이터를 남겨 두지 않는다.
+				if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
+				{
+					AbilitySystemComponent->LocalInputCancel();
+				}
+				return;
+			}
+		}
+	}
+	else if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary)
+		&& AttackMoveComponent->HasActiveCommand())
+	{
+		// 첫 좌클릭 뒤 Seeking/Chasing 상태에서도 다음 좌클릭이 일반 조준 확정으로
+		// 새면 안 된다. 적을 찾았을 때는 컴포넌트가 LocalInputConfirm을 직접 보낸다.
+		return;
+	}
+
+	if (!InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary))
+	{
+		AttackMoveComponent->CancelAttackMove();
+	}
+
 	if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
 	{
 		AbilitySystemComponent->AbilityInputTagPressed(InputTag);
@@ -232,6 +292,9 @@ void AASPlayerController::OnMoveStarted()
 {
 	bInteractionClickHeld = false;
 	if (IsPawnDead() || ItemInteractionComponent->IsLootOpen()) return;
+
+	// MoveAction은 우클릭 기본 이동 전용이다. 조준 상태와 무관하게 항상 이동한다.
+	AttackMoveComponent->NotifyExternalMoveRequested();
 	FHitResult Hit;
 	if (GetHitResultUnderCursor(CursorTraceChannel, true, Hit)
 		&& ItemInteractionComponent->TryInteractWith(Hit.GetActor()))
@@ -256,6 +319,7 @@ void AASPlayerController::OnMoveStarted()
 
 void AASPlayerController::OnMoveHeld()
 {
+	if (AttackMoveComponent->HasActiveCommand()) return;
 	if (IsPawnDead() || bInteractionClickHeld || ItemInteractionComponent->HasPendingInteraction() || ItemInteractionComponent->IsLootOpen()) return;
 	// 매 프레임 길을 다시 찾는 것은 낭비라서 누르고 있는 동안에는 간격을 둔다.
 	if (GetWorld()->GetTimeSeconds() - LastMoveRequestTime < HeldMoveInterval)
@@ -277,6 +341,7 @@ void AASPlayerController::OnMoveCompleted()
 
 void AASPlayerController::OnStop()
 {
+	AttackMoveComponent->CancelAttackMove();
 	ItemInteractionComponent->CancelPendingInteraction();
 	StopMovement();
 }
