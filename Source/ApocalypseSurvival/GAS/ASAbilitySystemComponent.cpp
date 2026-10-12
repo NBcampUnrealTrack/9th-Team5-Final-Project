@@ -1,6 +1,8 @@
 #include "GAS/ASAbilitySystemComponent.h"
 
+#include "Core/Input/ASInputTags.h"
 #include "GAS/ASAbilityTags.h"
+#include "Skills/ASSkillTags.h"
 
 UASAbilitySystemComponent::UASAbilitySystemComponent()
 {
@@ -14,6 +16,15 @@ void UASAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& Input
 	// 어빌리티마다 차단 태그를 적지 않아도 되도록 입력 입구에서 한 번에 막는다.
 	if (!InputTag.IsValid() || IsDead())
 	{
+		return;
+	}
+
+	// 스킬 일반 시전 조준 중(State.Targeting)에는 좌클릭을 기본 공격 대신 조준 확정으로 쓴다.
+	// 확정 신호는 GAS 표준 LocalInputConfirm 으로 보내고, 조준 중인 스킬이 받아서 시전한다.
+	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary)
+		&& HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+	{
+		LocalInputConfirm();
 		return;
 	}
 

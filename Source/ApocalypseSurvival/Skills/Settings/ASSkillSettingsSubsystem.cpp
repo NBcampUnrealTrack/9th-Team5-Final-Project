@@ -22,6 +22,11 @@ void UASSkillSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 			UGameplayStatics::LoadGameFromSlot(ASSkillSettingsPrivate::SlotName, ASSkillSettingsPrivate::UserIndex)))
 		{
 			bWalkToCastWhenOutOfRange = SaveGame->bWalkToCastWhenOutOfRange;
+
+			if (SaveGame->CastMode <= static_cast<uint8>(EASSkillCastMode::NormalCast))
+			{
+				CastMode = static_cast<EASSkillCastMode>(SaveGame->CastMode);
+			}
 		}
 	}
 }
@@ -37,6 +42,21 @@ void UASSkillSettingsSubsystem::SetWalkToCastWhenOutOfRange(bool bEnabled)
 void UASSkillSettingsSubsystem::ToggleWalkToCastWhenOutOfRange()
 {
 	SetWalkToCastWhenOutOfRange(!bWalkToCastWhenOutOfRange);
+}
+
+void UASSkillSettingsSubsystem::SetCastMode(EASSkillCastMode NewCastMode)
+{
+	CastMode = NewCastMode;
+	SaveSettings();
+
+	static const TCHAR* ModeNames[] = { TEXT("빠른 시전"), TEXT("범위 표시 후 빠른 시전"), TEXT("일반 시전") };
+	UE_LOG(LogTemp, Log, TEXT("[SkillSettings] 시전 방식: %s"), ModeNames[static_cast<uint8>(CastMode)]);
+}
+
+void UASSkillSettingsSubsystem::CycleCastMode()
+{
+	const uint8 Next = (static_cast<uint8>(CastMode) + 1) % (static_cast<uint8>(EASSkillCastMode::NormalCast) + 1);
+	SetCastMode(static_cast<EASSkillCastMode>(Next));
 }
 
 UASSkillSettingsSubsystem* UASSkillSettingsSubsystem::Get(const APlayerController* PlayerController)
@@ -55,5 +75,6 @@ void UASSkillSettingsSubsystem::SaveSettings() const
 	}
 
 	SaveGame->bWalkToCastWhenOutOfRange = bWalkToCastWhenOutOfRange;
+	SaveGame->CastMode = static_cast<uint8>(CastMode);
 	UGameplayStatics::SaveGameToSlot(SaveGame, ASSkillSettingsPrivate::SlotName, ASSkillSettingsPrivate::UserIndex);
 }
