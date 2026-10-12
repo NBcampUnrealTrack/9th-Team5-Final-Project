@@ -6,6 +6,7 @@
 #include "Components/Border.h"
 #include "Components/UniformGridPanel.h"
 #include "GameFramework/PlayerController.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/UI/ASInventorySlotWidget.h"
@@ -95,6 +96,13 @@ bool UASInventoryBarWidget::NativeOnDrop(const FGeometry& Geometry, const FDragD
 	return true;
 }
 
+bool UASInventoryBarWidget::IsCursorOverInventory() const
+{
+	return IsInViewport() && IsVisible() && SlotsPanel && SlotsPanel->IsVisible()
+		&& FSlateApplication::IsInitialized()
+		&& SlotsPanel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos());
+}
+
 void UASInventoryBarWidget::SetInventory(UASInventoryComponent* InInventory)
 {
 	if (Inventory) Inventory->OnInventoryChanged.RemoveDynamic(this, &ThisClass::RefreshSlots);
@@ -114,6 +122,15 @@ void UASInventoryBarWidget::ActivateSlot(const int32 SlotIndex, const FGuid Expe
 	{
 		if (UASItemInteractionComponent* Interaction = GetOwningPlayer()->FindComponentByClass<UASItemInteractionComponent>())
 			Interaction->RequestActivateSlot(SlotIndex, ExpectedItem);
+	}
+}
+
+void UASInventoryBarWidget::DropOneFromSlot(const int32 SlotIndex, const FGuid ExpectedItem)
+{
+	if (GetOwningPlayer())
+	{
+		if (UASItemInteractionComponent* Interaction = GetOwningPlayer()->FindComponentByClass<UASItemInteractionComponent>())
+			Interaction->RequestDropOneFromSlot(SlotIndex, ExpectedItem);
 	}
 }
 

@@ -348,6 +348,17 @@ bool UASInventoryComponent::SwapSlots(const int32 FromSlot, const int32 ToSlot,
 
 AASDroppedItem* UASInventoryComponent::DropSlot(const int32 SlotIndex, const FGuid ExpectedItem, APawn* Avatar)
 {
+	return DropSlotInternal(SlotIndex, ExpectedItem, Avatar, false);
+}
+
+AASDroppedItem* UASInventoryComponent::DropOneFromSlot(const int32 SlotIndex, const FGuid ExpectedItem, APawn* Avatar)
+{
+	return DropSlotInternal(SlotIndex, ExpectedItem, Avatar, true);
+}
+
+AASDroppedItem* UASInventoryComponent::DropSlotInternal(const int32 SlotIndex, const FGuid ExpectedItem,
+	APawn* Avatar, const bool bSingleItem)
+{
 	if (!HasInventoryAuthority() || !IsValid(Avatar) || Avatar != GetInventoryAvatar()
 		|| SlotIndex < 0 || SlotIndex >= PlayerSlotCount || !GetWorld()) return nullptr;
 	UASItemInstance* Item = GetItemAtSlot(SlotIndex);
@@ -378,7 +389,7 @@ AASDroppedItem* UASInventoryComponent::DropSlot(const int32 SlotIndex, const FGu
 	// Unequip callbacks may change ownership or quantity. Revalidate before transferring.
 	if (!IsValid(Avatar) || Avatar != GetInventoryAvatar() || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
 		|| GetItemAtSlot(SlotIndex) != Item || !Item->IsValidItemInstance()
-		|| TransferItemTo(Dropped->GetLootInventory(), Item, Item->GetQuantity()) <= 0)
+		|| TransferItemTo(Dropped->GetLootInventory(), Item, bSingleItem ? 1 : Item->GetQuantity()) <= 0)
 	{
 		Dropped->Destroy();
 		return nullptr;
