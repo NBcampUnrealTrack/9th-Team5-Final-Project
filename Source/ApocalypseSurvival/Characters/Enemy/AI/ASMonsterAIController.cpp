@@ -327,6 +327,7 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 	AActor* Target = bHasTarget ? Targeting->GetTargetActor() : nullptr;
 	if (!IsValid(Target))
 	{
+		StateTreeTarget.Reset();
 		bContinueTrackingNightTarget = false;
 		// 플레이어가 추적 해제 거리 밖으로 먼저 빠진 경우에도 전투를 끝내고 홈으로 복귀한다.
 		if (!bNightAggressive && bHasEngagedDayTarget && Monster->HasSpawnHome()
@@ -346,6 +347,15 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 	if (!bNightAggressive)
 	{
 		bHasEngagedDayTarget = true;
+	}
+
+	// 플레이어 부활은 기존 Pawn을 파괴하고 새 Pawn을 빙의한다. 이동 루프는 새 타깃을
+	// 바로 따라가지만, 실행 중인 StateTree의 공격 Task는 이전 Pawn 기준으로 남을 수 있다.
+	// 대상 Actor가 바뀐 경우에만 트리를 재시작해 공격 조건을 새 Pawn 기준으로 재평가한다.
+	if (StateTreeTarget != Target)
+	{
+		StateTreeTarget = Target;
+		StopStateTree(TEXT("TargetChanged"));
 	}
 
 	// 타깃을 얻은 뒤에만 StateTree를 시작한다. 빈 TargetActor가 Move To에 전달되는 것을 차단한다.
