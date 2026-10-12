@@ -88,4 +88,7 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_TargetActor)
 	TObjectPtr<AActor> TargetActor;
+
+	// 피격으로 잡은 타깃은 낮의 일반 추적 해제 거리보다 우선한다. 서버 AI 상태다.
+	bool bHasForcedAggroTarget = false;
 };

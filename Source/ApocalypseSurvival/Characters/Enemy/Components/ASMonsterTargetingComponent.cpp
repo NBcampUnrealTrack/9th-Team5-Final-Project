@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "Engine/World.h"
+#include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "GenericTeamAgentInterface.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
@@ -66,6 +67,7 @@ bool UASMonsterTargetingComponent::AcquireTarget()
 	}
 
 	APawn* NewTarget = FindNearestLivingPlayer(DetectionRadius);
+	bHasForcedAggroTarget = false;
 	SetTargetActor(NewTarget);
 	return NewTarget != nullptr;
 }
@@ -83,6 +85,7 @@ bool UASMonsterTargetingComponent::AcquireTargetAnywhere()
 	}
 
 	APawn* NewTarget = FindNearestLivingPlayer(TNumericLimits<float>::Max());
+	bHasForcedAggroTarget = false;
 	SetTargetActor(NewTarget);
 	return NewTarget != nullptr;
 }
@@ -97,7 +100,8 @@ bool UASMonsterTargetingComponent::ValidateTarget(bool bIgnoreLoseTargetRadius)
 	const APawn* TargetPawn = Cast<APawn>(TargetActor);
 	const bool bStillValid = HasValidTarget()
 		&& IsLivingPlayerTarget(TargetPawn)
-		&& (bIgnoreLoseTargetRadius || FVector::Dist2D(GetOwner()->GetActorLocation(), TargetPawn->GetActorLocation()) <= LoseTargetRadius);
+		&& (bIgnoreLoseTargetRadius || bHasForcedAggroTarget
+			|| FVector::Dist2D(GetOwner()->GetActorLocation(), TargetPawn->GetActorLocation()) <= LoseTargetRadius);
 
 	if (!bStillValid)
 	{
@@ -115,11 +119,27 @@ bool UASMonsterTargetingComponent::ForceAggro(AActor* Aggressor)
 	}
 
 	APawn* AggressorPawn = Cast<APawn>(Aggressor);
+	if (!AggressorPawn)
+	{
+		AggressorPawn = Aggressor->GetInstigator();
+	}
+	if (!AggressorPawn)
+	{
+		AggressorPawn = Cast<APawn>(Aggressor->GetOwner());
+	}
+	if (!AggressorPawn)
+	{
+		if (const AController* AggressorController = Cast<AController>(Aggressor))
+		{
+			AggressorPawn = AggressorController->GetPawn();
+		}
+	}
 	if (!IsLivingPlayerTarget(AggressorPawn))
 	{
 		return false;
 	}
 
+	bHasForcedAggroTarget = true;
 	SetTargetActor(AggressorPawn);
 	return true;
 }
@@ -161,6 +181,7 @@ void UASMonsterTargetingComponent::SetTargetActor(AActor* NewTarget)
 
 void UASMonsterTargetingComponent::ClearTarget()
 {
+	bHasForcedAggroTarget = false;
 	SetTargetActor(nullptr);
 }
 

@@ -167,6 +167,11 @@ void AASMonsterAIController::NotifyMonsterDamaged(AActor* InstigatorActor)
 	{
 		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent(); Targeting && Targeting->ForceAggro(InstigatorActor))
 		{
+			// 이전 타깃을 놓고 귀환하던 상태라도, 피격은 새 전투 시작으로 취급한다.
+			// 다음 갱신에서 Spawn Leash를 넘었다면 기존 귀환 규칙이 우선한다.
+			bReturningToSpawn = false;
+			bHasEngagedDayTarget = true;
+			RestoreMoveSpeed();
 			UpdateAggroAndMovement();
 		}
 	}

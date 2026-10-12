@@ -84,6 +84,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", Units = "cm"))
 	float LoseTargetRadius = 2200.0f;
 
+	/** 피해를 받았을 때 같은 공격자에게 어그로를 전파할 주변 몬스터 탐색 반경. 0이면 전파하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", Units = "cm"))
+	float AssistAggroRadius = 900.0f;
+
 	/** CombatComponent가 활성화할 Ability의 태그. 예: Ability.Monster.Attack.Ranged */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (Categories = "Ability.Monster"))
 	FGameplayTag AttackAbilityTag;
