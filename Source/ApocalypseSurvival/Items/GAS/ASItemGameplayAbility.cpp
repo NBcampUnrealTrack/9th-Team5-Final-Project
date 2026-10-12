@@ -26,12 +26,6 @@ float UASItemGameplayAbility::GetItemBaseDamage() const
 	return IsValid(Definition) ? Definition->BaseDamage : 0.0f;
 }
 
-float UASItemGameplayAbility::GetItemHealAmount() const
-{
-	const UASItemDefinition* Definition = GetSourceItemDefinition();
-	return IsValid(Definition) ? Definition->HealAmount : 0.0f;
-}
-
 float UASItemGameplayAbility::GetWeaponAttackInterval() const
 {
 	const UASItemDefinition* Definition = UASItemAbilityLibrary::GetWeaponDefinitionFromSourceObject(GetSourceItem());

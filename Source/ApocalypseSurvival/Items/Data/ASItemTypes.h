@@ -20,3 +20,12 @@ enum class EASWeaponType : uint8
 	Melee UMETA(DisplayName = "Melee"),
 	Ranged UMETA(DisplayName = "Ranged")
 };
+
+/** Resources checked before consuming a recovery item. */
+UENUM(BlueprintType)
+enum class EASItemRecoveryResource : uint8
+{
+	Health,
+	Mana,
+	Stamina
+};

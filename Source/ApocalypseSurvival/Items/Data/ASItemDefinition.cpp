@@ -37,13 +37,18 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 	if (ItemType == EASItemType::Consumable)
 	{
 		if (UseQuantity < 1 || UseQuantity > MaxStackSize) Error(TEXT("UseQuantity must be between 1 and MaxStackSize."));
-		if (!FMath::IsFinite(HealAmount) || HealAmount < 0.0f) Error(TEXT("HealAmount must be finite and nonnegative."));
+		for (const auto& Magnitude : EffectMagnitudes)
+		{
+			if (!Magnitude.Key.IsValid()) Error(TEXT("EffectMagnitudes requires valid gameplay tags."));
+			if (!FMath::IsFinite(Magnitude.Value)) Error(TEXT("EffectMagnitudes values must be finite."));
+		}
 		if (!UseAbility.IsNull())
 		{
 			UClass* AbilityClass = UseAbility.LoadSynchronous();
 			if (!AbilityClass || !AbilityClass->IsChildOf(UASItemUseAbility::StaticClass())) Error(TEXT("UseAbility must derive from ASItemUseAbility."));
 		}
-		else if (UseEffects.IsEmpty() && HealAmount <= 0.0f) Error(TEXT("Default consumables need positive HealAmount or UseEffects."));
+		else if (UseEffects.IsEmpty())
+			Error(TEXT("Default consumables require at least one UseEffect."));
 		for (const auto& Effect : UseEffects)
 		{
 			if (!Effect.LoadSynchronous()) Error(TEXT("UseEffects contains an empty or missing class."));

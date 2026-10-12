@@ -25,9 +25,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item|GAS")
 	float GetItemBaseDamage() const;
 
-	UFUNCTION(BlueprintPure, Category = "Item|GAS")
-	float GetItemHealAmount() const;
-
 	/** Returns zero when this ability has no weapon source. */
 	UFUNCTION(BlueprintPure, Category = "Item|GAS|Weapon")
 	float GetWeaponAttackInterval() const;
