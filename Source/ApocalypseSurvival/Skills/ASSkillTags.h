@@ -13,6 +13,9 @@ namespace ASGameplayTags
 
 	//스킬 시전 중
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Casting);
+
+	//일반 시전 조준 중 (좌클릭이 기본 공격 대신 조준 확정이 됨, 로컬 전용)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Targeting);
 	
 	//스킬 쿨타임 태그
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Slash);
