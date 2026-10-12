@@ -19,12 +19,22 @@ class APOCALYPSESURVIVAL_API UASGameplayAbility_CharacterPrimaryAttack : public 
 public:
 	UASGameplayAbility_CharacterPrimaryAttack();
 
+	/** 현재 장착 무기의 일반 공격 사거리. 타게팅 인디케이터 표시에 사용한다. */
+	UFUNCTION(BlueprintPure, Category = "Attack|Targeting")
+	float GetCurrentAttackRange() const;
+
 	virtual void ActivateAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+	virtual void InputPressed(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayAbilityActivationInfo ActivationInfo) override;
 	virtual void EndAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo, bool bReplicatedEndAbility, bool bWasCancelled) override;
 
 private:
+	void BeginTargeting();
+	void ConfirmTargeting();
+	void StopTargetingInput(bool bWasCancelled);
+
 	bool BuildExecutionContext(FASWeaponAttackExecutionContext& OutContext,
 		const UASWeaponAttackExecution*& OutExecution) const;
 	void ResolveAnimation(const FASWeaponAttackExecutionContext& Context, UAnimMontage*& OutMontage,
@@ -48,6 +58,23 @@ private:
 	UFUNCTION()
 	void OnMontageCancelled();
 
+	/** State.Targeting 중 좌클릭이 들어오면 ASC가 호출한다. */
+	UFUNCTION()
+	void OnLocalInputConfirm();
+
+protected:
+	/** BP 자식은 이 훅에서 범위/커서 인디케이터를 표시한다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Attack|Targeting")
+	void OnAttackTargetingStarted();
+
+	/** BP 자식은 이 훅에서 범위/커서 인디케이터를 숨긴다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Attack|Targeting")
+	void OnAttackTargetingEnded(bool bWasCancelled);
+
+private:
+	bool bIsTargeting = false;
+	bool bAddedTargetingTag = false;
+	bool bBoundLocalConfirm = false;
 	bool bAttackStarted = false;
 	bool bHitPerformed = false;
 	double NextAttackTime = 0.0;

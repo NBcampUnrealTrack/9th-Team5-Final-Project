@@ -55,7 +55,7 @@ void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
 	if (!bHasPrimaryAttack)
 	{
 		FGameplayAbilitySpec AttackSpec(UASGameplayAbility_CharacterPrimaryAttack::StaticClass(), 1, INDEX_NONE, this);
-		AttackSpec.GetDynamicSpecSourceTags().AddTag(ASGameplayTags::InputTag_Attack_Primary);
+		AttackSpec.GetDynamicSpecSourceTags().AddTag(ASGameplayTags::InputTag_Attack_Prepare);
 		DefaultAbilityHandles.AddAbilitySpecHandle(AbilitySystemComponent->GiveAbility(AttackSpec));
 	}
 }

@@ -24,6 +24,15 @@ UASGameplayAbility_CharacterPrimaryAttack::UASGameplayAbility_CharacterPrimaryAt
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Casting);
 }
 
+float UASGameplayAbility_CharacterPrimaryAttack::GetCurrentAttackRange() const
+{
+	FASWeaponAttackExecutionContext Context;
+	const UASWeaponAttackExecution* Execution = nullptr;
+	return BuildExecutionContext(Context, Execution) && Context.Definition
+		? FMath::Max(0.0f, Context.Definition->AttackRange)
+		: 0.0f;
+}
+
 void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
@@ -31,6 +40,9 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	bAttackStarted = false;
 	bHitPerformed = false;
+	bIsTargeting = false;
+	bAddedTargetingTag = false;
+	bBoundLocalConfirm = false;
 
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	if (!ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
@@ -45,14 +57,20 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 		return;
 	}
 
-	FVector AimDirection;
-	FVector TargetLocation;
-	ComputeLocalAim(AimDirection, TargetLocation);
-	if (!ActorInfo->IsNetAuthority())
+	BeginTargeting();
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::InputPressed(
+	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo)
+{
+	Super::InputPressed(Handle, ActorInfo, ActivationInfo);
+
+	// 조준 중 A를 다시 누르면 확정하지 않고 취소한다.
+	if (bIsTargeting)
 	{
-		SendAimToServer(AimDirection, TargetLocation);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 	}
-	StartAttack(AimDirection);
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
@@ -66,6 +84,8 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 		ASC->AbilityTargetDataCancelledDelegate(Handle, PredictionKey).RemoveAll(this);
 	}
 
+	bIsTargeting = false;
+	StopTargetingInput(bWasCancelled);
 	bAttackStarted = false;
 	bHitPerformed = false;
 	CachedExecutionContext = FASWeaponAttackExecutionContext();
@@ -73,6 +93,78 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 	ActiveMontage = nullptr;
 	ActiveHitEventTag = FGameplayTag();
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
+{
+	FASWeaponAttackExecutionContext Context;
+	const UASWeaponAttackExecution* Execution = nullptr;
+	if (!BuildExecutionContext(Context, Execution) || !Execution->CanPayCost(Context))
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!ASC)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	bIsTargeting = true;
+	// 로컬 전용 태그다. 좌클릭이 Primary Attack 재발동 대신 조준 확정으로 처리된다.
+	ASC->AddLooseGameplayTag(ASGameplayTags::State_Targeting);
+	bAddedTargetingTag = true;
+	ASC->GenericLocalConfirmCallbacks.AddDynamic(this, &UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm);
+	bBoundLocalConfirm = true;
+	OnAttackTargetingStarted();
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::ConfirmTargeting()
+{
+	if (!bIsTargeting) return;
+
+	bIsTargeting = false;
+	StopTargetingInput(false);
+
+	FVector AimDirection;
+	FVector TargetLocation;
+	ComputeLocalAim(AimDirection, TargetLocation);
+	if (!CurrentActorInfo->IsNetAuthority())
+	{
+		SendAimToServer(AimDirection, TargetLocation);
+	}
+	StartAttack(AimDirection);
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::StopTargetingInput(const bool bWasCancelled)
+{
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		if (bAddedTargetingTag)
+		{
+			ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Targeting);
+		}
+		if (bBoundLocalConfirm)
+		{
+			ASC->GenericLocalConfirmCallbacks.RemoveDynamic(this, &UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm);
+		}
+	}
+
+	if (bAddedTargetingTag || bBoundLocalConfirm)
+	{
+		OnAttackTargetingEnded(bWasCancelled);
+	}
+	bAddedTargetingTag = false;
+	bBoundLocalConfirm = false;
+}
+
+void UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm()
+{
+	// LocalInputConfirm이 호출되면 ASC가 구독을 비우므로 상태도 함께 정리한다.
+	bBoundLocalConfirm = false;
+	ConfirmTargeting();
 }
 
 bool UASGameplayAbility_CharacterPrimaryAttack::BuildExecutionContext(
