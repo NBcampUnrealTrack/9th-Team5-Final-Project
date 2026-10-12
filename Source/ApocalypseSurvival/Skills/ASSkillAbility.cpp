@@ -585,8 +585,11 @@ void UASSkillAbility::UpdatePendingCast()
 		return;
 	}
 
+	//새 이동 명령 = 유효한 요청 번호가 기록한 번호와 다름
+	//이동이 끝나면 번호가 Invalid로 초기화되므로 그건 새 명령으로 보지 않음
 	const UPathFollowingComponent* PathFollowing = WatchedPathFollowing.Get();
-	const bool bMoveReplaced = PathFollowing && !(PathFollowing->GetCurrentRequestId() == WatchedMoveRequestId);
+	const FAIRequestID CurrentMoveRequestId = PathFollowing ? PathFollowing->GetCurrentRequestId() : FAIRequestID::InvalidRequest;
+	const bool bMoveReplaced = CurrentMoveRequestId.IsValid() && !(CurrentMoveRequestId == WatchedMoveRequestId);
 
 	if (bIsTargeting)
 	{
