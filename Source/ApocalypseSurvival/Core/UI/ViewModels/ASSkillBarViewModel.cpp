@@ -28,7 +28,7 @@ namespace ASSkillBarViewModelPrivate
 
 void UASSkillBarViewModel::InitializeSlots()
 {
-	if (QSlot && WSlot && ESlot && RSlot)
+	if (QSlot && WSlot && ESlot && RSlot && ShiftSlot)
 	{
 		return;
 	}
@@ -37,16 +37,19 @@ void UASSkillBarViewModel::InitializeSlots()
 	UASSkillSlotViewModel* NewWSlot = NewObject<UASSkillSlotViewModel>(this);
 	UASSkillSlotViewModel* NewESlot = NewObject<UASSkillSlotViewModel>(this);
 	UASSkillSlotViewModel* NewRSlot = NewObject<UASSkillSlotViewModel>(this);
+	UASSkillSlotViewModel* NewShiftSlot = NewObject<UASSkillSlotViewModel>(this);
 
 	NewQSlot->InitializeSlot(FText::FromString(TEXT("Q")));
 	NewWSlot->InitializeSlot(FText::FromString(TEXT("W")));
 	NewESlot->InitializeSlot(FText::FromString(TEXT("E")));
 	NewRSlot->InitializeSlot(FText::FromString(TEXT("R")));
+	NewShiftSlot->InitializeSlot(FText::FromString(TEXT("Shift")));
 
 	UE_MVVM_SET_PROPERTY_VALUE(QSlot, NewQSlot);
 	UE_MVVM_SET_PROPERTY_VALUE(WSlot, NewWSlot);
 	UE_MVVM_SET_PROPERTY_VALUE(ESlot, NewESlot);
 	UE_MVVM_SET_PROPERTY_VALUE(RSlot, NewRSlot);
+	UE_MVVM_SET_PROPERTY_VALUE(ShiftSlot, NewShiftSlot);
 }
 
 void UASSkillBarViewModel::Initialize(UAbilitySystemComponent* InAbilitySystemComponent)
@@ -63,11 +66,12 @@ void UASSkillBarViewModel::Initialize(UAbilitySystemComponent* InAbilitySystemCo
 	AbilitySystemComponent = InAbilitySystemComponent;
 	CachedWorld = InAbilitySystemComponent->GetWorld();
 
-	SlotBindings.SetNum(4);
+	SlotBindings.SetNum(5);
 	SlotBindings[0].InputTag = ASGameplayTags::InputTag_Skill_Q;
 	SlotBindings[1].InputTag = ASGameplayTags::InputTag_Skill_W;
 	SlotBindings[2].InputTag = ASGameplayTags::InputTag_Skill_E;
 	SlotBindings[3].InputTag = ASGameplayTags::InputTag_Skill_R;
+	SlotBindings[4].InputTag = ASGameplayTags::InputTag_Dodge;
 
 	RefreshSkillSlots();
 }
@@ -143,6 +147,7 @@ UASSkillSlotViewModel* UASSkillBarViewModel::GetSlotByIndex(int32 SlotIndex) con
 	case 1: return WSlot;
 	case 2: return ESlot;
 	case 3: return RSlot;
+	case 4: return ShiftSlot;
 	default: return nullptr;
 	}
 }
