@@ -2,12 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "ActiveGameplayEffectHandle.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
 #include "ASAbilitySet.generated.h"
 
 class UASAbilitySystemComponent;
 class UGameplayAbility;
+class UGameplayEffect;
 
 /** 세트가 부여할 어빌리티 하나. */
 USTRUCT(BlueprintType)
@@ -26,6 +28,19 @@ struct FASAbilitySet_GameplayAbility
 	FGameplayTag InputTag;
 };
 
+/** 세트가 ASC 자신에게 적용할 지속/즉발 GameplayEffect 하나. */
+USTRUCT(BlueprintType)
+struct FASAbilitySet_GameplayEffect
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect")
+	TSubclassOf<UGameplayEffect> GameplayEffect = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "1"))
+	float EffectLevel = 1.0f;
+};
+
 /**
  * 세트가 부여한 어빌리티들의 핸들. 세트를 다시 걷어낼 때 쓴다.
  *
@@ -38,12 +53,16 @@ struct FASAbilitySet_GrantedHandles
 	GENERATED_BODY()
 
 	void AddAbilitySpecHandle(const FGameplayAbilitySpecHandle& Handle);
+	void AddGameplayEffectHandle(const FActiveGameplayEffectHandle& Handle);
 	void TakeFromAbilitySystem(UASAbilitySystemComponent* AbilitySystemComponent);
-	bool IsEmpty() const { return AbilitySpecHandles.IsEmpty(); }
+	bool IsEmpty() const { return AbilitySpecHandles.IsEmpty() && GameplayEffectHandles.IsEmpty(); }
 
 private:
 	UPROPERTY()
 	TArray<FGameplayAbilitySpecHandle> AbilitySpecHandles;
+
+	UPROPERTY()
+	TArray<FActiveGameplayEffectHandle> GameplayEffectHandles;
 };
 
 /**
@@ -60,7 +79,7 @@ class APOCALYPSESURVIVAL_API UASAbilitySet : public UPrimaryDataAsset
 
 public:
 	/**
-	 * 서버 전용. 목록의 어빌리티를 ASC 에 부여한다.
+	 * 서버 전용. 목록의 어빌리티를 부여하고 GameplayEffect 를 ASC 자신에게 적용한다.
 	 * @param OutGrantedHandles  나중에 걷어낼 일이 있으면 받아 둔다. 없으면 null.
 	 * @param SourceObject       어빌리티가 자기 출처로 기억할 객체. 무기 세트라면 아이템 인스턴스.
 	 */
@@ -69,4 +88,8 @@ public:
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Abilities", meta = (TitleProperty = "Ability"))
 	TArray<FASAbilitySet_GameplayAbility> GrantedGameplayAbilities;
+
+	/** 기본 마나 재생처럼 ASC 수명 동안 유지할 효과를 둔다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Effects", meta = (TitleProperty = "GameplayEffect"))
+	TArray<FASAbilitySet_GameplayEffect> GrantedGameplayEffects;
 };
