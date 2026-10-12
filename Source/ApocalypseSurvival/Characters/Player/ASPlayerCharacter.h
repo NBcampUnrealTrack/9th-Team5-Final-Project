@@ -106,7 +106,7 @@ private:
 
 	/**
 	 * 무기를 몸에 다는 컴포넌트. 인벤토리(컨트롤러)가 인터페이스로 이 컴포넌트를 찾아 장착을 맡긴다.
-	 * 액터 부착과 공격 어빌리티 부여는 캐릭터 수명을 따라야 해서 여기에 둔다.
+	 * 이 컴포넌트는 장착 상태와 액터 부착만 맡고, 공격 어빌리티는 기본 AbilitySet이 소유한다.
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASEquipmentComponent> EquipmentComponent;

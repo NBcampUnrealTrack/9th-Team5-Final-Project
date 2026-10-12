@@ -12,6 +12,9 @@
  */
 namespace ASGameplayTags
 {
+	/** 일반 공격 조준을 시작하는 입력. 기본값은 A 키다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Attack_Prepare);
+
 	/** 장착한 무기의 일반 공격 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Attack_Primary);
 

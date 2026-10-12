@@ -4,6 +4,7 @@
 #include "Components/SphereComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "Skills/Data/ASSkillData.h"
 #include "Skills/Projectile/ASSkillProjectileActor.h"
 
 UASSkillProjectile::UASSkillProjectile()
@@ -58,6 +59,15 @@ void UASSkillProjectile::OnSkillEffect_Implementation()
 
 	Projectile->InitProjectile(MakeDamageSpec(), Avatar, Aim, Speed, MaxRange, PierceCount, bCanHitPlayers);
 	Projectile->FinishSpawning(SpawnTransform);
+}
+
+void UASSkillProjectile::ApplySkillStats(const FASSkillStatsRow& Stats)
+{
+	Super::ApplySkillStats(Stats);
+
+	Speed = Stats.Speed;
+	MaxRange = Stats.MaxRange;
+	PierceCount = Stats.PierceCount;
 }
 
 FASSkillIndicatorSettings UASSkillProjectile::GetIndicatorSettings_Implementation() const

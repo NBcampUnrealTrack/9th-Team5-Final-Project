@@ -2,10 +2,12 @@
 
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
+#include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "Items/ASItemInstance.h"
+#include "Core/Input/ASInputTags.h"
 
 AASPlayerState::AASPlayerState()
 {
@@ -36,6 +38,26 @@ void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
 	}
 
 	AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &DefaultAbilityHandles, this);
+
+	// Migration fallback: once DA_AbilitySet_Player contains the native ability or a BP child,
+	// this scan prevents a duplicate. It keeps existing content playable while equipment stops
+	// granting/removing attacks on every weapon swap.
+	bool bHasPrimaryAttack = false;
+	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (Spec.Ability && Spec.Ability->GetClass()->IsChildOf(
+			UASGameplayAbility_CharacterPrimaryAttack::StaticClass()))
+		{
+			bHasPrimaryAttack = true;
+			break;
+		}
+	}
+	if (!bHasPrimaryAttack)
+	{
+		FGameplayAbilitySpec AttackSpec(UASGameplayAbility_CharacterPrimaryAttack::StaticClass(), 1, INDEX_NONE, this);
+		AttackSpec.GetDynamicSpecSourceTags().AddTag(ASGameplayTags::InputTag_Attack_Prepare);
+		DefaultAbilityHandles.AddAbilitySpecHandle(AbilitySystemComponent->GiveAbility(AttackSpec));
+	}
 }
 
 void AASPlayerState::SetEquippedItemRecord(UASItemInstance* Item)

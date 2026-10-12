@@ -1,6 +1,7 @@
 ﻿#include "Skills/Melee/ASSkillMelee.h"
 
 #include "DrawDebugHelpers.h"
+#include "Skills/Data/ASSkillData.h"
 #include "Engine/World.h"
 
 void UASSkillMelee::OnSkillEffect_Implementation()
@@ -66,6 +67,15 @@ void UASSkillMelee::OnTargetsHit_Implementation(const TArray<AActor*>& Targets)
 	{
 		ApplySkillDamage(Target);
 	}
+}
+
+void UASSkillMelee::ApplySkillStats(const FASSkillStatsRow& Stats)
+{
+	Super::ApplySkillStats(Stats);
+
+	Radius = Stats.MeleeRadius;
+	Angle = Stats.Angle;
+	ForwardOffset = Stats.ForwardOffset;
 }
 
 FASSkillIndicatorSettings UASSkillMelee::GetIndicatorSettings_Implementation() const

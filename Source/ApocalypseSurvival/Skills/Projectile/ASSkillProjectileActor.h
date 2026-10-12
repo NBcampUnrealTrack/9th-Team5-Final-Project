@@ -28,6 +28,16 @@ public:
 		int32 InPierceCount,
 		bool bInCanHitPlayers);
 
+	/** 여러 무기 피해 효과를 하나의 투사체에 실을 때 쓰는 초기화 경로. */
+	void InitProjectile(
+		const TArray<FGameplayEffectSpecHandle>& InDamageSpecs,
+		AActor* InInstigatorAvatar,
+		const FVector& Direction,
+		float Speed,
+		float MaxRange,
+		int32 InPierceCount,
+		bool bInCanHitPlayers);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -45,7 +55,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
-	FGameplayEffectSpecHandle DamageSpec;
+	TArray<FGameplayEffectSpecHandle> DamageSpecs;
 	TWeakObjectPtr<AActor> InstigatorAvatar;
 
 private:
