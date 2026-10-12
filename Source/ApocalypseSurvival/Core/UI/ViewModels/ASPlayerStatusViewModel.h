@@ -9,14 +9,14 @@ class UTexture2D;
 class UAbilitySystemComponent;
 struct FOnAttributeChangeData;
 
-/** 플레이어 초상화, 레벨, 체력 및 마나 표시용 MVVM 데이터 모델이다. */
+/** 플레이어 초상화, 레벨, 체력, 마나 및 스태미나 표시용 MVVM 데이터 모델이다. */
 UCLASS(BlueprintType)
 class APOCALYPSESURVIVAL_API UASPlayerStatusViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
 
 public:
-	/** 지정한 ASC의 Health/MaxHealth/Mana/MaxMana 변화를 구독하고 현재값을 즉시 반영한다. */
+	/** 지정한 ASC의 Health/MaxHealth/Mana/MaxMana/Stamina/MaxStamina 변화를 구독하고 현재값을 즉시 반영한다. */
 	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
 	void Initialize(UAbilitySystemComponent* InAbilitySystemComponent);
 
@@ -33,6 +33,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
 	void SetMana(float InCurrentMana, float InMaxMana);
+
+	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
+	void SetStamina(float InCurrentStamina, float InMaxStamina);
 
 	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
 	void SetPlayerLevel(int32 InPlayerLevel);
@@ -53,6 +56,12 @@ public:
 	FText GetManaText() const { return ManaText; }
 
 	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
+	float GetStaminaPercent() const { return StaminaPercent; }
+
+	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
+	FText GetStaminaText() const { return StaminaText; }
+
+	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
 	int32 GetPlayerLevel() const { return PlayerLevel; }
 
 	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
@@ -71,6 +80,12 @@ private:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
 	FText ManaText;
 
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
+	float StaminaPercent = 1.0f;
+
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
+	FText StaminaText;
+
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true", ClampMin = "1"))
 	int32 PlayerLevel = 1;
 
@@ -81,12 +96,17 @@ private:
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
 	void HandleManaChanged(const FOnAttributeChangeData& ChangeData);
 	void HandleMaxManaChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleStaminaChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleMaxStaminaChanged(const FOnAttributeChangeData& ChangeData);
 	void RefreshHealth();
 	void RefreshMana();
+	void RefreshStamina();
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle MaxHealthChangedHandle;
 	FDelegateHandle ManaChangedHandle;
 	FDelegateHandle MaxManaChangedHandle;
+	FDelegateHandle StaminaChangedHandle;
+	FDelegateHandle MaxStaminaChangedHandle;
 };

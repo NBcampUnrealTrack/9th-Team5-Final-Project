@@ -1,12 +1,21 @@
 #include "GAS/ASAbilitySet.h"
 
 #include "GAS/ASAbilitySystemComponent.h"
+#include "GameplayEffect.h"
 
 void FASAbilitySet_GrantedHandles::AddAbilitySpecHandle(const FGameplayAbilitySpecHandle& Handle)
 {
 	if (Handle.IsValid())
 	{
 		AbilitySpecHandles.Add(Handle);
+	}
+}
+
+void FASAbilitySet_GrantedHandles::AddGameplayEffectHandle(const FActiveGameplayEffectHandle& Handle)
+{
+	if (Handle.IsValid())
+	{
+		GameplayEffectHandles.Add(Handle);
 	}
 }
 
@@ -19,10 +28,22 @@ void FASAbilitySet_GrantedHandles::TakeFromAbilitySystem(UASAbilitySystemCompone
 
 	for (const FGameplayAbilitySpecHandle& Handle : AbilitySpecHandles)
 	{
-		AbilitySystemComponent->ClearAbility(Handle);
+		if (Handle.IsValid())
+		{
+			AbilitySystemComponent->ClearAbility(Handle);
+		}
+	}
+
+	for (const FActiveGameplayEffectHandle& Handle : GameplayEffectHandles)
+	{
+		if (Handle.IsValid())
+		{
+			AbilitySystemComponent->RemoveActiveGameplayEffect(Handle);
+		}
 	}
 
 	AbilitySpecHandles.Reset();
+	GameplayEffectHandles.Reset();
 }
 
 void UASAbilitySet::GiveToAbilitySystem(UASAbilitySystemComponent* AbilitySystemComponent, FASAbilitySet_GrantedHandles* OutGrantedHandles, UObject* SourceObject) const
@@ -53,6 +74,24 @@ void UASAbilitySet::GiveToAbilitySystem(UASAbilitySystemComponent* AbilitySystem
 		if (OutGrantedHandles != nullptr)
 		{
 			OutGrantedHandles->AddAbilitySpecHandle(Handle);
+		}
+	}
+
+	for (const FASAbilitySet_GameplayEffect& Entry : GrantedGameplayEffects)
+	{
+		if (!Entry.GameplayEffect)
+		{
+			continue;
+		}
+
+		const UGameplayEffect* GameplayEffect = Entry.GameplayEffect->GetDefaultObject<UGameplayEffect>();
+		const FActiveGameplayEffectHandle EffectHandle = AbilitySystemComponent->ApplyGameplayEffectToSelf(
+			GameplayEffect,
+			Entry.EffectLevel,
+			AbilitySystemComponent->MakeEffectContext());
+		if (OutGrantedHandles != nullptr)
+		{
+			OutGrantedHandles->AddGameplayEffectHandle(EffectHandle);
 		}
 	}
 }

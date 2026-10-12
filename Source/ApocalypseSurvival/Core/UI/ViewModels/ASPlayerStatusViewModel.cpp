@@ -39,10 +39,17 @@ void UASPlayerStatusViewModel::Initialize(UAbilitySystemComponent* InAbilitySyst
 	MaxManaChangedHandle = InAbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UASPlayerAttributeSet::GetMaxManaAttribute())
 		.AddUObject(this, &ThisClass::HandleMaxManaChanged);
+	StaminaChangedHandle = InAbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UASPlayerAttributeSet::GetStaminaAttribute())
+		.AddUObject(this, &ThisClass::HandleStaminaChanged);
+	MaxStaminaChangedHandle = InAbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UASPlayerAttributeSet::GetMaxStaminaAttribute())
+		.AddUObject(this, &ThisClass::HandleMaxStaminaChanged);
 
 	// 델리게이트는 값이 바뀔 때만 실행되므로, 구독 직후 현재값을 별도로 반영한다.
 	RefreshHealth();
 	RefreshMana();
+	RefreshStamina();
 }
 
 void UASPlayerStatusViewModel::InitializeFromActor(AActor* InAbilitySystemOwner)
@@ -66,6 +73,12 @@ void UASPlayerStatusViewModel::Deinitialize()
 		AbilitySystemComponent
 			->GetGameplayAttributeValueChangeDelegate(UASPlayerAttributeSet::GetMaxManaAttribute())
 			.Remove(MaxManaChangedHandle);
+		AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UASPlayerAttributeSet::GetStaminaAttribute())
+			.Remove(StaminaChangedHandle);
+		AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UASPlayerAttributeSet::GetMaxStaminaAttribute())
+			.Remove(MaxStaminaChangedHandle);
 	}
 
 	AbilitySystemComponent.Reset();
@@ -73,6 +86,8 @@ void UASPlayerStatusViewModel::Deinitialize()
 	MaxHealthChangedHandle.Reset();
 	ManaChangedHandle.Reset();
 	MaxManaChangedHandle.Reset();
+	StaminaChangedHandle.Reset();
+	MaxStaminaChangedHandle.Reset();
 }
 
 void UASPlayerStatusViewModel::SetHealth(float InCurrentHealth, float InMaxHealth)
@@ -93,6 +108,16 @@ void UASPlayerStatusViewModel::SetMana(float InCurrentMana, float InMaxMana)
 
 	UE_MVVM_SET_PROPERTY_VALUE(ManaPercent, NewPercent);
 	UE_MVVM_SET_PROPERTY_VALUE(ManaText, ASPlayerStatusViewModelPrivate::MakeResourceText(SafeCurrentMana, SafeMaxMana));
+}
+
+void UASPlayerStatusViewModel::SetStamina(float InCurrentStamina, float InMaxStamina)
+{
+	const float SafeMaxStamina = FMath::Max(InMaxStamina, 0.0f);
+	const float SafeCurrentStamina = FMath::Clamp(InCurrentStamina, 0.0f, SafeMaxStamina);
+	const float NewPercent = SafeMaxStamina > 0.0f ? SafeCurrentStamina / SafeMaxStamina : 0.0f;
+
+	UE_MVVM_SET_PROPERTY_VALUE(StaminaPercent, NewPercent);
+	UE_MVVM_SET_PROPERTY_VALUE(StaminaText, ASPlayerStatusViewModelPrivate::MakeResourceText(SafeCurrentStamina, SafeMaxStamina));
 }
 
 void UASPlayerStatusViewModel::SetPlayerLevel(int32 InPlayerLevel)
@@ -125,6 +150,16 @@ void UASPlayerStatusViewModel::HandleMaxManaChanged(const FOnAttributeChangeData
 	RefreshMana();
 }
 
+void UASPlayerStatusViewModel::HandleStaminaChanged(const FOnAttributeChangeData&)
+{
+	RefreshStamina();
+}
+
+void UASPlayerStatusViewModel::HandleMaxStaminaChanged(const FOnAttributeChangeData&)
+{
+	RefreshStamina();
+}
+
 void UASPlayerStatusViewModel::RefreshHealth()
 {
 	if (!AbilitySystemComponent.IsValid())
@@ -147,4 +182,16 @@ void UASPlayerStatusViewModel::RefreshMana()
 	SetMana(
 		AbilitySystemComponent->GetNumericAttribute(UASPlayerAttributeSet::GetManaAttribute()),
 		AbilitySystemComponent->GetNumericAttribute(UASPlayerAttributeSet::GetMaxManaAttribute()));
+}
+
+void UASPlayerStatusViewModel::RefreshStamina()
+{
+	if (!AbilitySystemComponent.IsValid())
+	{
+		return;
+	}
+
+	SetStamina(
+		AbilitySystemComponent->GetNumericAttribute(UASPlayerAttributeSet::GetStaminaAttribute()),
+		AbilitySystemComponent->GetNumericAttribute(UASPlayerAttributeSet::GetMaxStaminaAttribute()));
 }

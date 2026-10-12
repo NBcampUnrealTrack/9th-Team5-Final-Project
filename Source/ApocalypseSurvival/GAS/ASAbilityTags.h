@@ -22,4 +22,13 @@ namespace ASGameplayTags
 
 	/** 이 태그가 붙은 어빌리티는 죽어도 취소되지 않는다. 사망 어빌리티 자신이 대표적이다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
+
+	/** 스태미나 소비 직후 회복을 잠시 막는 효과의 식별 태그. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_StaminaRegen_Delay);
+
+	/** 스태미나 회복의 첫 번째 느린 단계 식별 태그. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_StaminaRegen_Slow);
+
+	/** 스태미나 회복의 두 번째 빠른 단계 식별 태그. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_StaminaRegen_Fast);
 }
