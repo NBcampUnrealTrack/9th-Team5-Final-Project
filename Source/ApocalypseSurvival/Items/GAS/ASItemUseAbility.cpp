@@ -3,14 +3,33 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
-#include "Items/GAS/ASItemEffects.h"
-#include "Items/Data/ASItemTags.h"
 #include "GAS/ASAbilityTags.h"
 #include "GameFramework/Pawn.h"
+
+namespace
+{
+	bool HasMissingResource(const UAbilitySystemComponent& ASC, const EASItemRecoveryResource Resource)
+	{
+		if (Resource == EASItemRecoveryResource::Health)
+		{
+			const UASHealthAttributeSet* Attributes = ASC.GetSet<UASHealthAttributeSet>();
+			return Attributes && Attributes->GetHealth() > 0.0f
+				&& Attributes->GetHealth() < Attributes->GetMaxHealth();
+		}
+		const UASPlayerAttributeSet* Attributes = ASC.GetSet<UASPlayerAttributeSet>();
+		if (!Attributes) return false;
+		if (Resource == EASItemRecoveryResource::Mana)
+			return Attributes->GetMana() < Attributes->GetMaxMana();
+		if (Resource == EASItemRecoveryResource::Stamina)
+			return Attributes->GetStamina() < Attributes->GetMaxStamina();
+		return false;
+	}
+}
 
 UASItemUseAbility::UASItemUseAbility()
 {
@@ -39,13 +58,11 @@ bool UASItemUseAbility::CheckCost(const FGameplayAbilitySpecHandle Handle,
 		|| Item->GetItemDefinition()->ItemType != EASItemType::Consumable
 		|| Item->GetItemDefinition()->UseQuantity <= 0
 		|| Item->GetQuantity() < Item->GetItemDefinition()->UseQuantity) return false;
-	if (!bHasBlueprintActivate && Item->GetItemDefinition()->UseEffects.IsEmpty())
-	{
-		const UASHealthAttributeSet* Attributes = ASC->GetSet<UASHealthAttributeSet>();
-		if (!Attributes || Item->GetItemDefinition()->HealAmount <= 0.0f
-			|| Attributes->GetHealth() <= 0.0f || Attributes->GetHealth() >= Attributes->GetMaxHealth()) return false;
-	}
-	return true;
+	const UASItemDefinition& Definition = *Item->GetItemDefinition();
+	TArray<EASItemRecoveryResource> Resources = Definition.RecoveryResources;
+	if (!bHasBlueprintActivate && Definition.UseEffects.IsEmpty()) return false;
+	return Resources.IsEmpty() || Resources.ContainsByPredicate(
+		[ASC](const EASItemRecoveryResource Resource) { return HasMissingResource(*ASC, Resource); });
 }
 
 void UASItemUseAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle,
@@ -74,7 +91,7 @@ void UASItemUseAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	const UASItemDefinition* Definition = GetSourceItemDefinition();
-	if (!ASC || !Definition)
+	if (!ASC || !Definition || Definition->UseEffects.IsEmpty())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -91,7 +108,6 @@ void UASItemUseAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 		Classes.Add(EffectClass);
 	}
-	if (Classes.IsEmpty()) Classes.Add(UASItemHealingEffect::StaticClass());
 	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
 	Context.AddSourceObject(GetSourceItem());
 	TArray<FGameplayEffectSpecHandle> Effects;
@@ -103,7 +119,15 @@ void UASItemUseAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 			return;
 		}
-		Spec.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_Item_Heal, FMath::Max(0.0f, Definition->HealAmount));
+		for (const auto& Magnitude : Definition->EffectMagnitudes)
+		{
+			if (!Magnitude.Key.IsValid() || !FMath::IsFinite(Magnitude.Value))
+			{
+				EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+				return;
+			}
+			Spec.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
+		}
 		Effects.Add(Spec);
 	}
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))

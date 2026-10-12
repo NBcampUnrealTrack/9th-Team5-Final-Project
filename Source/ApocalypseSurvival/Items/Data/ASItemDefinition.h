@@ -79,10 +79,22 @@ public:
 		meta = (ClampMin = "1", EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	int32 UseQuantity = 1;
 
-	/** Self effects used by the default consumable ability. Empty uses HealAmount. */
+	/** Self effects used by the default consumable ability. At least one effect is required. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
 		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	TArray<TSoftClassPtr<UGameplayEffect>> UseEffects;
+
+	/** SetByCaller values shared by all UseEffects. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
+		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides, Categories = "Data"))
+	TMap<FGameplayTag, float> EffectMagnitudes;
+
+	/** At least one listed resource must be below maximum. Set explicitly for recovery GEs.
+	 * Empty disables resource checks.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
+		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
+	TArray<EASItemRecoveryResource> RecoveryResources;
 
 	/** Base damage supplied to the equipped weapon ability. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon",
@@ -117,9 +129,4 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Ammo",
 		meta = (ClampMin = "1", EditCondition = "ItemType == EASItemType::Weapon && WeaponType == EASWeaponType::Ranged && bUsesAmmo", EditConditionHides))
 	int32 AmmoPerShot = 1;
-
-	/** Health restored when this healing item is used. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|Healing",
-		meta = (ClampMin = "0.0", EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
-	float HealAmount = 0.0f;
 };
