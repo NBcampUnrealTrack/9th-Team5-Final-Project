@@ -9,6 +9,7 @@
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Team/ASTeamTypes.h"
+#include "EngineUtils.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
@@ -420,14 +421,45 @@ void AASMonsterCharacter::SetFaceControllerFocus(bool bFaceControllerFocus)
 
 void AASMonsterCharacter::NotifyDamagedBy(AActor* InstigatorActor)
 {
-	if (!HasAuthority())
+	if (!HasAuthority() || IsDead() || !IsValid(InstigatorActor))
+	{
+		return;
+	}
+
+	const float DirectHitAggro = MonsterDefinition ? MonsterDefinition->DirectHitAggro : 100.0f;
+	NotifyAllyDamagedBy(InstigatorActor, DirectHitAggro);
+
+	const float AssistRadius = MonsterDefinition ? MonsterDefinition->AssistAggroRadius : 0.0f;
+	if (AssistRadius <= 0.0f || !GetWorld())
+	{
+		return;
+	}
+
+	const float AssistRadiusSquared = FMath::Square(AssistRadius);
+	for (TActorIterator<AASMonsterCharacter> It(GetWorld()); It; ++It)
+	{
+		AASMonsterCharacter* NearbyMonster = *It;
+		if (!IsValid(NearbyMonster) || NearbyMonster == this || NearbyMonster->IsDead()
+			|| FVector::DistSquared2D(GetActorLocation(), NearbyMonster->GetActorLocation()) > AssistRadiusSquared)
+		{
+			continue;
+		}
+
+		// 전투 전파는 한 번만 수행한다. NearbyMonster가 다시 주변을 순회하지 않는다.
+		NearbyMonster->NotifyAllyDamagedBy(InstigatorActor, DirectHitAggro);
+	}
+}
+
+void AASMonsterCharacter::NotifyAllyDamagedBy(AActor* InstigatorActor, float AggroAmount)
+{
+	if (!HasAuthority() || IsDead() || !IsValid(InstigatorActor))
 	{
 		return;
 	}
 
 	if (AASMonsterAIController* AIController = Cast<AASMonsterAIController>(GetController()))
 	{
-		AIController->NotifyMonsterDamaged(InstigatorActor);
+		AIController->NotifyMonsterDamaged(InstigatorActor, AggroAmount);
 	}
 }
 
@@ -446,7 +478,8 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
 	GetCharacterMovement()->MaxWalkSpeed = InitialAttributes.MoveSpeed;
 
 	CombatComponent->Configure(MonsterDefinition->AttackRange, MonsterDefinition->AttackAbilityTag);
-	TargetingComponent->Configure(MonsterDefinition->DetectionRadius, MonsterDefinition->LoseTargetRadius);
+	TargetingComponent->Configure(MonsterDefinition->DetectionRadius, MonsterDefinition->LoseTargetRadius,
+		MonsterDefinition->AggroDecayPerSecond);
 	if (MonsterDefinition->GrantedAbilities.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Monster] %s has no GrantedAbilities. Configure a monster attack Ability in its Definition."),
@@ -629,13 +662,19 @@ void AASMonsterCharacter::HandleGameplayEffectApplied(UAbilitySystemComponent* T
 	}
 
 	const FGameplayEffectContextHandle& EffectContext = AppliedEffect.GetContext();
-	AActor* InstigatorActor = EffectContext.GetOriginalInstigator();
+	// 플레이어 ASC는 PlayerState에 있으므로 OriginalInstigator가 Pawn이 아닐 수 있다.
+	// EffectCauser는 실제 시전자 Avatar(플레이어 캐릭터)이므로 타깃 컴포넌트가 유효한 공격자로 판정할 수 있다.
+	AActor* InstigatorActor = EffectContext.GetEffectCauser();
+	if (!IsValid(InstigatorActor))
+	{
+		InstigatorActor = EffectContext.GetOriginalInstigator();
+	}
 	if (!IsValid(InstigatorActor))
 	{
 		InstigatorActor = EffectContext.GetInstigator();
 	}
 
-	// 투사체가 이미 파괴됐더라도 OriginalInstigator(발사한 플레이어)를 우선 사용한다.
+	// 투사체가 파괴된 뒤에도 Effect Context의 EffectCauser(발사한 플레이어)를 사용한다.
 	NotifyDamagedBy(InstigatorActor);
 	ApplyHitReact();
 }

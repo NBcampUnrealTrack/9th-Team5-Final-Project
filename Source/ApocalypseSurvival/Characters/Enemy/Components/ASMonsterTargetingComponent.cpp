@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "Engine/World.h"
+#include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "GenericTeamAgentInterface.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
@@ -14,10 +15,11 @@ UASMonsterTargetingComponent::UASMonsterTargetingComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void UASMonsterTargetingComponent::Configure(float InDetectionRadius, float InLoseTargetRadius)
+void UASMonsterTargetingComponent::Configure(float InDetectionRadius, float InLoseTargetRadius, float InAggroDecayPerSecond)
 {
 	DetectionRadius = FMath::Max(0.0f, InDetectionRadius);
 	LoseTargetRadius = FMath::Max(DetectionRadius, InLoseTargetRadius);
+	AggroDecayPerSecond = FMath::Max(0.0f, InAggroDecayPerSecond);
 }
 
 APawn* UASMonsterTargetingComponent::FindNearestLivingPlayer(float MaxDistance) const
@@ -66,6 +68,7 @@ bool UASMonsterTargetingComponent::AcquireTarget()
 	}
 
 	APawn* NewTarget = FindNearestLivingPlayer(DetectionRadius);
+	CurrentAggro = NewTarget ? 1.0f : 0.0f;
 	SetTargetActor(NewTarget);
 	return NewTarget != nullptr;
 }
@@ -83,6 +86,7 @@ bool UASMonsterTargetingComponent::AcquireTargetAnywhere()
 	}
 
 	APawn* NewTarget = FindNearestLivingPlayer(TNumericLimits<float>::Max());
+	CurrentAggro = NewTarget ? 1.0f : 0.0f;
 	SetTargetActor(NewTarget);
 	return NewTarget != nullptr;
 }
@@ -95,9 +99,8 @@ bool UASMonsterTargetingComponent::ValidateTarget(bool bIgnoreLoseTargetRadius)
 	}
 
 	const APawn* TargetPawn = Cast<APawn>(TargetActor);
-	const bool bStillValid = HasValidTarget()
-		&& IsLivingPlayerTarget(TargetPawn)
-		&& (bIgnoreLoseTargetRadius || FVector::Dist2D(GetOwner()->GetActorLocation(), TargetPawn->GetActorLocation()) <= LoseTargetRadius);
+	const bool bStillValid = HasValidTarget() && IsLivingPlayerTarget(TargetPawn)
+		&& (bIgnoreLoseTargetRadius || CurrentAggro > 0.0f);
 
 	if (!bStillValid)
 	{
@@ -107,21 +110,63 @@ bool UASMonsterTargetingComponent::ValidateTarget(bool bIgnoreLoseTargetRadius)
 	return bStillValid;
 }
 
-bool UASMonsterTargetingComponent::ForceAggro(AActor* Aggressor)
+bool UASMonsterTargetingComponent::ForceAggro(AActor* Aggressor, float AggroAmount)
 {
-	if (!GetOwner() || !GetOwner()->HasAuthority())
+	if (!GetOwner() || !GetOwner()->HasAuthority() || AggroAmount <= 0.0f)
 	{
 		return false;
 	}
 
 	APawn* AggressorPawn = Cast<APawn>(Aggressor);
+	if (!AggressorPawn)
+	{
+		AggressorPawn = Aggressor->GetInstigator();
+	}
+	if (!AggressorPawn)
+	{
+		AggressorPawn = Cast<APawn>(Aggressor->GetOwner());
+	}
+	if (!AggressorPawn)
+	{
+		if (const AController* AggressorController = Cast<AController>(Aggressor))
+		{
+			AggressorPawn = AggressorController->GetPawn();
+		}
+	}
 	if (!IsLivingPlayerTarget(AggressorPawn))
 	{
 		return false;
 	}
 
+	CurrentAggro = FMath::Min(MaxAggro, CurrentAggro + AggroAmount);
 	SetTargetActor(AggressorPawn);
 	return true;
+}
+
+void UASMonsterTargetingComponent::UpdateAggro(float DeltaSeconds)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || DeltaSeconds <= 0.0f || !HasValidTarget())
+	{
+		return;
+	}
+
+	const APawn* TargetPawn = Cast<APawn>(TargetActor);
+	if (!IsLivingPlayerTarget(TargetPawn))
+	{
+		ClearTarget();
+		return;
+	}
+
+	if (FVector::Dist2D(GetOwner()->GetActorLocation(), TargetPawn->GetActorLocation()) <= LoseTargetRadius)
+	{
+		return;
+	}
+
+	CurrentAggro = FMath::Max(0.0f, CurrentAggro - AggroDecayPerSecond * DeltaSeconds);
+	if (CurrentAggro <= 0.0f)
+	{
+		ClearTarget();
+	}
 }
 
 bool UASMonsterTargetingComponent::IsLivingPlayerTarget(const APawn* Pawn) const
@@ -161,6 +206,7 @@ void UASMonsterTargetingComponent::SetTargetActor(AActor* NewTarget)
 
 void UASMonsterTargetingComponent::ClearTarget()
 {
+	CurrentAggro = 0.0f;
 	SetTargetActor(nullptr);
 }
 

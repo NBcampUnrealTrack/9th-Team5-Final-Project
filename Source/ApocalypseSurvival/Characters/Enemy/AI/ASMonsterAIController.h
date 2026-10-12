@@ -45,8 +45,8 @@ public:
 	/** 서버 전용. 시선 고정을 풀고 다시 이동 방향을 바라보게 한다. */
 	void ClearCombatFocus();
 
-	/** 서버 전용. 플레이어에게 피해를 받았을 때 즉시 공격자를 타깃으로 삼는다. */
-	void NotifyMonsterDamaged(AActor* InstigatorActor);
+	/** 서버 전용. 플레이어에게 피해를 받았을 때 공격자에게 어그로를 부여한다. */
+	void NotifyMonsterDamaged(AActor* InstigatorActor, float AggroAmount);
 
 	/** 서버 전용. 피격 경직이 시작됐을 때 현재 경로 이동과 시선 고정을 멈춘다. */
 	void NotifyMonsterHitReact();
