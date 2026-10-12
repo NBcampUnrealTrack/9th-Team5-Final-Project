@@ -2,6 +2,7 @@
 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "Skills/Data/ASSkillData.h"
 #include "Skills/Area/ASSkillAreaActor.h"
 
 UASSkillArea::UASSkillArea()
@@ -58,6 +59,15 @@ void UASSkillArea::OnSkillEffect_Implementation()
 	{
 		Area->AttachToActor(Avatar, FAttachmentTransformRules::KeepWorldTransform);
 	}
+}
+
+void UASSkillArea::ApplySkillStats(const FASSkillStatsRow& Stats)
+{
+	Super::ApplySkillStats(Stats);
+
+	Radius = Stats.AreaRadius;
+	Duration = Stats.Duration;
+	TickInterval = Stats.TickInterval;
 }
 
 FASSkillIndicatorSettings UASSkillArea::GetIndicatorSettings_Implementation() const

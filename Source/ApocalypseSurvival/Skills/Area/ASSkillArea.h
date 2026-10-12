@@ -20,6 +20,7 @@ public:
 
 protected:
 	virtual void OnSkillEffect_Implementation() override;
+	virtual void ApplySkillStats(const FASSkillStatsRow& Stats) override;
 	virtual FASSkillIndicatorSettings GetIndicatorSettings_Implementation() const override;
 
 	//생성할 범위 액터 (이펙트를 넣은 BP 자식 지정)

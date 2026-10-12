@@ -15,6 +15,8 @@ class UPathFollowingComponent;
 class UAnimMontage;
 class UGameplayEffect;
 class UTexture2D;
+class UASSkillData;
+struct FASSkillStatsRow;
 
 /*
  * Base for Skills
@@ -61,10 +63,39 @@ public:
 	//데미지 스펙을 대상에게 적용 (서버에서 호출)
 	static void ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& DamageSpec, AActor* Target);
 	
-	//스킬 아이콘 반환
+	//스킬 아이콘 반환 (SkillData 아이콘 우선)
 	UTexture2D* GetSkillIcon() const;
+
+	UASSkillData* GetSkillData() const { return SkillData; }
+
+	//SkillData의 DT 행 (없으면 nullptr, 몬스터 등은 BP 값 사용)
+	const FASSkillStatsRow* FindSkillStats() const;
+
+	//쿨타임: 시간은 DT의 Cooldown, 태그는 DA의 CooldownTag를 쿨타임 GE에 넣어서 적용 (SkillData 없으면 GE 그대로)
+	virtual void ApplyCooldown(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo) const override;
+
+	//쿨타임 태그: DA의 CooldownTag가 있으면 그것만 (재사용 막기·스킬바 표시가 이 태그를 봄)
+	virtual const FGameplayTagContainer* GetCooldownTags() const override;
+
+	//마나 확인: DT의 ManaCost가 있으면 현재 마나와 직접 비교
+	virtual bool CheckCost(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
+	//마나 소모: DT의 ManaCost를 코스트 GE에 SetByCaller(Data.ManaCost)로 넣어서 적용
+	virtual void ApplyCost(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo) const override;
 	
 protected:
+	//DT 행 값을 이 인스턴스의 수치에 덮어씀 (발동 시마다 호출, 자식은 자기 수치를 추가로 덮어씀)
+	virtual void ApplySkillStats(const FASSkillStatsRow& Stats);
+
 	//스킬 효과. 타격 타이밍마다 호출
 	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill")
 	void OnSkillEffect();
@@ -161,9 +192,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Debug")
 	bool bDrawDebug = false;
 
-	//스킬 아이콘
+	//스킬 아이콘 (SkillData에 아이콘이 있으면 그쪽 사용)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Icon")
 	TObjectPtr<UTexture2D> SkillIcon;
+
+	//스킬 데이터 (DA_Skill_*). 지정하면 수치는 DT 행 값이 BP 값보다 우선, 비우면 BP 값 그대로
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Data")
+	TObjectPtr<UASSkillData> SkillData;
 	
 	UFUNCTION()
 	virtual void OnMontageCompleted();
@@ -284,6 +319,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AASSkillRangeIndicatorActor> RangeIndicator;
+
+	//GetCooldownTags 반환용
+	mutable FGameplayTagContainer CooldownTagsCache;
 
 	//AnimNotify 누락 경고용
 	bool bWaitingForHitEvent = false;
