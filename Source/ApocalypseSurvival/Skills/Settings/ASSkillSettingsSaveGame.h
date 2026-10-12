@@ -14,4 +14,8 @@ public:
 	//사거리 밖을 지정하면 걸어가서 시전 (false = 사거리 끝에 시전)
 	UPROPERTY()
 	bool bWalkToCastWhenOutOfRange = true;
+
+	//시전 방식 (EASSkillCastMode)
+	UPROPERTY()
+	uint8 CastMode = 2;
 };

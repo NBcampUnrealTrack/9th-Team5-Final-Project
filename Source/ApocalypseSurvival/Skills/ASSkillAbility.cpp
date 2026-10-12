@@ -146,7 +146,9 @@ void UASSkillAbility::EndAbility(
 {
 	bHasCachedAim = false;
 	bIsTargeting = false;
-	StopWalkToCast();
+	bIsWalkingToCast = false;
+	StopTargetingInput();
+	StopPendingWatch();
 	DestroyRangeIndicator();
 
 	//서버에서 조준을 기다리던 중이면 델리게이트 해제
@@ -285,12 +287,21 @@ bool UASSkillAbility::ShouldUseRangeIndicator() const
 		&& bAimAtCursor
 		&& ActorInfo
 		&& ActorInfo->PlayerController.IsValid()
-		&& IsLocallyControlled();
+		&& IsLocallyControlled()
+		&& GetCastMode() != EASSkillCastMode::QuickCast;
+}
+
+EASSkillCastMode UASSkillAbility::GetCastMode() const
+{
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+	const UASSkillSettingsSubsystem* SkillSettings = UASSkillSettingsSubsystem::Get(ActorInfo ? ActorInfo->PlayerController.Get() : nullptr);
+	return SkillSettings ? SkillSettings->GetCastMode() : EASSkillCastMode::NormalCast;
 }
 
 void UASSkillAbility::BeginTargeting()
 {
 	bIsTargeting = true;
+	bConfirmOnRelease = GetCastMode() != EASSkillCastMode::NormalCast;
 
 	APawn* Caster = Cast<APawn>(GetAvatarActorFromActorInfo());
 	if (UWorld* World = Caster ? Caster->GetWorld() : nullptr)
@@ -308,11 +319,73 @@ void UASSkillAbility::BeginTargeting()
 		}
 	}
 
-	//발동되는 사이에 이미 키를 뗐으면 바로 시전
-	if (const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec(); Spec && !Spec->InputPressed)
+	//일반 시전: 좌클릭을 조준 확정으로 받음 (ASC가 State.Targeting을 보고 기본 공격 대신 확정 신호를 보냄)
+	if (!bConfirmOnRelease)
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+		{
+			//입력은 본인 화면에서만 처리하므로 복제하지 않는 로컬 태그
+			ASC->AddLooseGameplayTag(ASGameplayTags::State_Targeting);
+			bAddedTargetingTag = true;
+			ASC->GenericLocalConfirmCallbacks.AddDynamic(this, &UASSkillAbility::OnLocalInputConfirm);
+			bBoundLocalConfirm = true;
+		}
+	}
+
+	//우클릭 이동·다른 스킬 사용 감지
+	StartPendingWatch();
+
+	//범위 표시 후 빠른 시전: 발동되는 사이에 이미 키를 뗐으면 바로 시전
+	if (bConfirmOnRelease)
+	{
+		if (const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec(); Spec && !Spec->InputPressed)
+		{
+			ConfirmTargeting();
+		}
+	}
+}
+
+void UASSkillAbility::InputPressed(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo)
+{
+	Super::InputPressed(Handle, ActorInfo, ActivationInfo);
+
+	if (bIsTargeting && !bConfirmOnRelease)
+	{
+		CancelPendingCast();
+	}
+}
+
+void UASSkillAbility::OnLocalInputConfirm()
+{
+	//LocalInputConfirm은 호출 후 구독을 비우므로 표시만 정리
+	bBoundLocalConfirm = false;
+
+	if (bIsTargeting && !bConfirmOnRelease)
 	{
 		ConfirmTargeting();
 	}
+}
+
+void UASSkillAbility::StopTargetingInput()
+{
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		if (bAddedTargetingTag)
+		{
+			ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Targeting);
+		}
+
+		if (bBoundLocalConfirm)
+		{
+			ASC->GenericLocalConfirmCallbacks.RemoveDynamic(this, &UASSkillAbility::OnLocalInputConfirm);
+		}
+	}
+
+	bAddedTargetingTag = false;
+	bBoundLocalConfirm = false;
 }
 
 void UASSkillAbility::InputReleased(
@@ -322,7 +395,7 @@ void UASSkillAbility::InputReleased(
 {
 	Super::InputReleased(Handle, ActorInfo, ActivationInfo);
 
-	if (bIsTargeting)
+	if (bIsTargeting && bConfirmOnRelease)
 	{
 		ConfirmTargeting();
 	}
@@ -336,6 +409,7 @@ void UASSkillAbility::ConfirmTargeting()
 	}
 
 	bIsTargeting = false;
+	StopTargetingInput();
 
 	FVector AimDirection;
 	FVector TargetLocation;
@@ -349,6 +423,7 @@ void UASSkillAbility::ConfirmTargeting()
 		return;
 	}
 
+	StopPendingWatch();
 	DestroyRangeIndicator();
 	CastAtTarget(AimDirection, TargetLocation);
 }
@@ -414,11 +489,10 @@ void UASSkillAbility::BeginWalkToCast(const FVector& InTargetLocation)
 	UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
 	APlayerController* PlayerController = ActorInfo ? ActorInfo->PlayerController.Get() : nullptr;
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 
-	if (!World || !PlayerController || !ASC)
+	if (!World || !PlayerController)
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		CancelPendingCast();
 		return;
 	}
 
@@ -439,31 +513,86 @@ void UASSkillAbility::BeginWalkToCast(const FVector& InTargetLocation)
 		UAIBlueprintHelperLibrary::SimpleMoveToLocation(PlayerController, InTargetLocation);
 	}
 
-	//이후 요청 번호가 바뀌면 다른 이동 명령(우클릭 등)이 들어온 것
-	WalkPathFollowing = PlayerController->FindComponentByClass<UPathFollowingComponent>();
-	WalkMoveRequestId = WalkPathFollowing.IsValid() ? WalkPathFollowing->GetCurrentRequestId() : FAIRequestID::InvalidRequest;
-
-	OtherAbilityActivatedHandle = ASC->AbilityActivatedCallbacks.AddUObject(this, &UASSkillAbility::OnOtherAbilityActivated);
-	OtherAbilityFailedHandle = ASC->AbilityFailedCallbacks.AddUObject(this, &UASSkillAbility::OnOtherAbilityFailed);
-
-	World->GetTimerManager().SetTimer(WalkToCastTimerHandle,
-		FTimerDelegate::CreateUObject(this, &UASSkillAbility::UpdateWalkToCast), 0.05f, true);
-
-	UpdateWalkToCast();
+	//방금 보낸 이동 요청 번호를 기록 (이후 바뀌면 다른 이동 명령)
+	StartPendingWatch();
+	UpdatePendingCast();
 }
 
-void UASSkillAbility::UpdateWalkToCast()
+void UASSkillAbility::StartPendingWatch()
 {
-	if (!bIsWalkingToCast)
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+	APlayerController* PlayerController = ActorInfo ? ActorInfo->PlayerController.Get() : nullptr;
+
+	WatchedPathFollowing = PlayerController ? PlayerController->FindComponentByClass<UPathFollowingComponent>() : nullptr;
+	WatchedMoveRequestId = WatchedPathFollowing.IsValid() ? WatchedPathFollowing->GetCurrentRequestId() : FAIRequestID::InvalidRequest;
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (ASC && !OtherAbilityActivatedHandle.IsValid())
 	{
-		return;
+		OtherAbilityActivatedHandle = ASC->AbilityActivatedCallbacks.AddUObject(this, &UASSkillAbility::OnOtherAbilityActivated);
+		OtherAbilityFailedHandle = ASC->AbilityFailedCallbacks.AddUObject(this, &UASSkillAbility::OnOtherAbilityFailed);
 	}
 
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (UWorld* World = Avatar ? Avatar->GetWorld() : nullptr)
+	{
+		FTimerManager& TimerManager = World->GetTimerManager();
+		if (!TimerManager.IsTimerActive(PendingWatchTimerHandle))
+		{
+			TimerManager.SetTimer(PendingWatchTimerHandle,
+				FTimerDelegate::CreateUObject(this, &UASSkillAbility::UpdatePendingCast), 0.05f, true);
+		}
+	}
+}
+
+void UASSkillAbility::StopPendingWatch()
+{
+	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
+	{
+		if (UWorld* World = Avatar->GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(PendingWatchTimerHandle);
+		}
+	}
+
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		ASC->AbilityActivatedCallbacks.Remove(OtherAbilityActivatedHandle);
+		ASC->AbilityFailedCallbacks.Remove(OtherAbilityFailedHandle);
+	}
+
+	OtherAbilityActivatedHandle.Reset();
+	OtherAbilityFailedHandle.Reset();
+	WatchedPathFollowing.Reset();
+}
+
+void UASSkillAbility::UpdatePendingCast()
+{
 	const AActor* Avatar = GetAvatarActorFromActorInfo();
 	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
 	if (!World)
 	{
-		CancelWalkToCast();
+		CancelPendingCast();
+		return;
+	}
+
+	const UPathFollowingComponent* PathFollowing = WatchedPathFollowing.Get();
+	const bool bMoveReplaced = PathFollowing && !(PathFollowing->GetCurrentRequestId() == WatchedMoveRequestId);
+
+	if (bIsTargeting)
+	{
+		//일반 시전 조준 중 우클릭 이동 → 조준 취소 (이동은 그대로 진행)
+		//범위 표시 후 빠른 시전은 키를 누른 채 이동할 수 있으므로 취소하지 않음
+		if (!bConfirmOnRelease && bMoveReplaced)
+		{
+			CancelPendingCast();
+		}
+		return;
+	}
+
+	if (!bIsWalkingToCast)
+	{
+		StopPendingWatch();
 		return;
 	}
 
@@ -471,7 +600,8 @@ void UASSkillAbility::UpdateWalkToCast()
 	if (FVector::DistSquared2D(Avatar->GetActorLocation(), WalkTargetLocation) <= FMath::Square(MaxCastRange))
 	{
 		const FVector TargetLocation = WalkTargetLocation;
-		StopWalkToCast();
+		bIsWalkingToCast = false;
+		StopPendingWatch();
 
 		if (const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo())
 		{
@@ -487,7 +617,6 @@ void UASSkillAbility::UpdateWalkToCast()
 			AimDirection = Avatar->GetActorForwardVector().GetSafeNormal2D();
 		}
 
-		DestroyRangeIndicator();
 		CastAtTarget(AimDirection, TargetLocation);
 		return;
 	}
@@ -495,72 +624,39 @@ void UASSkillAbility::UpdateWalkToCast()
 	//시간 초과
 	if (World->GetTimeSeconds() - WalkStartTime > WalkToCastTimeout)
 	{
-		CancelWalkToCast();
+		CancelPendingCast();
 		return;
 	}
 
 	//다른 이동 명령이 들어왔거나, 이동이 멈춤 (갈 수 없는 곳 등)
-	if (const UPathFollowingComponent* PathFollowing = WalkPathFollowing.Get())
+	if (bMoveReplaced || (PathFollowing && PathFollowing->GetStatus() == EPathFollowingStatus::Idle))
 	{
-		const bool bMoveReplaced = !(PathFollowing->GetCurrentRequestId() == WalkMoveRequestId);
-		const bool bMoveStopped = PathFollowing->GetStatus() == EPathFollowingStatus::Idle;
-		if (bMoveReplaced || bMoveStopped)
-		{
-			CancelWalkToCast();
-		}
+		CancelPendingCast();
 	}
 }
 
-void UASSkillAbility::StopWalkToCast()
+void UASSkillAbility::CancelPendingCast()
 {
-	if (!bIsWalkingToCast)
-	{
-		return;
-	}
-
-	bIsWalkingToCast = false;
-
-	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
-	{
-		if (UWorld* World = Avatar->GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(WalkToCastTimerHandle);
-		}
-	}
-
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-	{
-		ASC->AbilityActivatedCallbacks.Remove(OtherAbilityActivatedHandle);
-		ASC->AbilityFailedCallbacks.Remove(OtherAbilityFailedHandle);
-	}
-
-	OtherAbilityActivatedHandle.Reset();
-	OtherAbilityFailedHandle.Reset();
-	WalkPathFollowing.Reset();
-}
-
-void UASSkillAbility::CancelWalkToCast()
-{
-	StopWalkToCast();
+	//조준·걸어가기 정리는 EndAbility에서 함
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
 void UASSkillAbility::OnOtherAbilityActivated(UGameplayAbility* ActivatedAbility)
 {
-	if (bIsWalkingToCast && ActivatedAbility != this)
+	if ((bIsTargeting || bIsWalkingToCast) && ActivatedAbility != this)
 	{
-		CancelWalkToCast();
+		CancelPendingCast();
 	}
 }
 
 void UASSkillAbility::OnOtherAbilityFailed(const UGameplayAbility* FailedAbility, const FGameplayTagContainer& FailureTags)
 {
-	if (!bIsWalkingToCast || !FailedAbility || FailedAbility == this || FailedAbility->GetClass() == GetClass())
+	if (!(bIsTargeting || bIsWalkingToCast) || !FailedAbility || FailedAbility == this || FailedAbility->GetClass() == GetClass())
 	{
 		return;
 	}
 
-	//이동 중인 이 스킬 때문에 막혔을 수 있으므로, 취소한 뒤 다음 틱에 그 스킬을 다시 발동
+	//조준·이동 중인 이 스킬 때문에 막혔을 수 있으므로, 취소한 뒤 다음 틱에 그 스킬을 다시 발동
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const FGameplayAbilitySpec* FailedSpec = ASC ? ASC->FindAbilitySpecFromClass(FailedAbility->GetClass()) : nullptr;
 	const FGameplayAbilitySpecHandle RetryHandle = FailedSpec ? FailedSpec->Handle : FGameplayAbilitySpecHandle();
@@ -568,7 +664,7 @@ void UASSkillAbility::OnOtherAbilityFailed(const UGameplayAbility* FailedAbility
 	const AActor* Avatar = GetAvatarActorFromActorInfo();
 	UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
 
-	CancelWalkToCast();
+	CancelPendingCast();
 
 	if (ASC && World && RetryHandle.IsValid())
 	{
