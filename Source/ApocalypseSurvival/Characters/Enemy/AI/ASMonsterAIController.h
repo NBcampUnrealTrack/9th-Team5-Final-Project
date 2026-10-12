@@ -86,8 +86,14 @@ private:
 	FTimerHandle AggroUpdateTimerHandle;
 	TWeakObjectPtr<AActor> MoveTarget;
 
+	/** 플레이어 부활 등으로 추적 대상 Pawn이 바뀌면 StateTree 공격 상태를 새로 평가한다. */
+	TWeakObjectPtr<AActor> StateTreeTarget;
+
 	/** 밤에는 거리와 무관하게 즉시 플레이어를 추격한다. */
 	bool bNightAggressive = false;
+
+	/** 밤 종료 시점에 이미 잡고 있던 타깃은 낮이 되어도 유실되기 전까지 계속 추격한다. */
+	bool bContinueTrackingNightTarget = false;
 
 	/** 홈으로 복귀 중일 때는 타깃 탐색·공격을 중단한다. */
 	bool bReturningToSpawn = false;
