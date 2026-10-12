@@ -86,6 +86,9 @@ private:
 	FTimerHandle AggroUpdateTimerHandle;
 	TWeakObjectPtr<AActor> MoveTarget;
 
+	/** 플레이어 부활 등으로 추적 대상 Pawn이 바뀌면 StateTree 공격 상태를 새로 평가한다. */
+	TWeakObjectPtr<AActor> StateTreeTarget;
+
 	/** 밤에는 거리와 무관하게 즉시 플레이어를 추격한다. */
 	bool bNightAggressive = false;
 
