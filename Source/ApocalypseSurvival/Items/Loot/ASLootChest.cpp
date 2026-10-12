@@ -32,18 +32,39 @@ AASLootChest::AASLootChest()
 	LootInventory = CreateDefaultSubobject<UASInventoryComponent>(TEXT("LootInventory"));
 }
 
+bool AASLootChest::SetInitialLoot(const TArray<FASItemGrant>& Items)
+{
+	if (!HasAuthority() || GetNetMode() == NM_Client || HasActorBegunPlay() || IsActorBeginningPlay()) return false;
+	for (const FASItemGrant& Grant : Items)
+	{
+		if (!IsValid(Grant.ItemDefinition) || Grant.Quantity <= 0 || Grant.ItemDefinition->MaxStackSize <= 0)
+			return false;
+	}
+	InitialLoot = Items;
+	return true;
+}
+
 void AASLootChest::BeginPlay()
 {
-	Super::BeginPlay();
-	if (!HasAuthority()) return;
-
-	for (const FASItemGrant& Grant : InitialLoot)
+	// Initialize before Super dispatches Blueprint BeginPlay so presentation sees the contents.
+	if (HasAuthority())
 	{
-		if (IsValid(Grant.ItemDefinition.Get()) && Grant.Quantity > 0)
+		for (const FASItemGrant& Grant : InitialLoot)
 		{
-			LootInventory->AddItem(Grant.ItemDefinition.Get(), Grant.Quantity);
+			if (!IsValid(Grant.ItemDefinition) || Grant.Quantity <= 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[LootChest] %s has an invalid InitialLoot entry."), *GetName());
+				continue;
+			}
+			const int32 Added = LootInventory->AddItem(Grant.ItemDefinition, Grant.Quantity);
+			if (Added != Grant.Quantity)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[LootChest] %s added %d/%d of %s; check inventory capacity."),
+					*GetName(), Added, Grant.Quantity, *GetNameSafe(Grant.ItemDefinition));
+			}
 		}
 	}
+	Super::BeginPlay();
 }
 
 bool AASLootChest::CanInteract_Implementation(AActor* Interactor) const
