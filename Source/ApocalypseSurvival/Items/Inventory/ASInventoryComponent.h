@@ -59,13 +59,6 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool TryConsumeItemInstance(UASItemInstance* ItemInstance, int32 Quantity);
 
-	/** Shared server attack gate: equipped source, live avatar, interval and ammo. */
-	UFUNCTION(BlueprintPure, Category = "Inventory|Weapon")
-	bool CanCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar) const;
-
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Weapon")
-	bool TryCommitWeaponAttack(UASItemInstance* Weapon, APawn* Avatar);
-
 	/** Compatibility request bridge. Equipment interface implementation owns actual equipping. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
 	bool EquipItem(FGuid InstanceId, APawn* Avatar);
@@ -170,8 +163,5 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UASItemUseComponent> ItemUseComponent;
 
-	// Server gate persists across weapon swaps to prevent bypassing the attack interval.
-	double NextWeaponAttackTime = 0.0;
-	bool bCommittingWeaponAttack = false;
 	bool bChangingEquipment = false;
 };
