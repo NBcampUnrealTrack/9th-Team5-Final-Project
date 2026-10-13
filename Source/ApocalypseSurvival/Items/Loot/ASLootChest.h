@@ -69,6 +69,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** Blueprint hook for opening a loot widget or playing presentation. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Loot", meta = (DisplayName = "On Loot Interaction Requested"))
@@ -77,6 +78,11 @@ protected:
 private:
 	bool IsWithinInteractionRange(const AActor* Interactor) const;
 	void ApplyLootRarityAppearance();
+	void UpdateEmptyDespawnTimer();
+	void DespawnIfStillEmpty();
+
+	UFUNCTION()
+	void HandleLootInventoryChanged();
 
 	UFUNCTION()
 	void OnRep_LootRarityAppearance();
@@ -126,4 +132,10 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
 	float InteractionRange = 250.0f;
+
+	/** Seconds an empty chest remains in the world. Set to 0 to remove it immediately. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
+	float EmptyDespawnDelay = 30.0f;
+
+	FTimerHandle EmptyDespawnTimerHandle;
 };

@@ -1,15 +1,23 @@
 #include "Items/UI/ASLootWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "InputCoreTypes.h"
 #include "Items/ASItemInstance.h"
@@ -41,27 +49,56 @@ void UASLootWidget::BuildDefaultWidgetTree()
 	OutsideButtonSlot->SetZOrder(-1);
 
 	UBorder* LootPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("LootPanel"));
-	LootPanel->SetPadding(FMargin(16.0f));
+	LootPanel->SetPadding(FMargin(14.0f));
+	LootPanel->SetBrushColor(FLinearColor(0.035f, 0.055f, 0.075f, 0.97f));
 	UVerticalBox* RootColumn = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("RootColumn"));
-	UTextBlock* TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
-	TitleText->SetText(FText::FromString(TEXT("Loot")));
+	UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Header"));
+	LootTitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("LootTitleText"));
+	LootTitleText->SetText(FText::FromString(TEXT("Loot Chest")));
+	LootTitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.82f, 0.91f, 0.98f, 1.0f)));
+	FSlateFontInfo TitleFont = LootTitleText->GetFont();
+	TitleFont.Size = 18;
+	LootTitleText->SetFont(TitleFont);
+	ItemCountText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ItemCountText"));
+	ItemCountText->SetColorAndOpacity(FSlateColor(FLinearColor(0.43f, 0.66f, 0.78f, 1.0f)));
+	UButton* HeaderCloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("HeaderCloseButton"));
+	HeaderCloseButton->SetBackgroundColor(FLinearColor(0.08f, 0.12f, 0.16f, 1.0f));
+	HeaderCloseButton->OnClicked.AddUniqueDynamic(this, &UASLootWidget::HandleCloseClicked);
+	UTextBlock* HeaderCloseText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderCloseText"));
+	HeaderCloseText->SetText(FText::FromString(TEXT("X")));
+	HeaderCloseButton->AddChild(HeaderCloseText);
+	Header->AddChildToHorizontalBox(LootTitleText)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	Header->AddChildToHorizontalBox(ItemCountText)->SetPadding(FMargin(0.0f, 0.0f, 10.0f, 0.0f));
+	Header->AddChildToHorizontalBox(HeaderCloseButton);
+	UTextBlock* SectionLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SectionLabel"));
+	SectionLabel->SetText(FText::FromString(TEXT("CONTENTS")));
+	SectionLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.42f, 0.53f, 0.61f, 1.0f)));
 	UScrollBox* LootScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("LootScrollBox"));
-	UVerticalBox* ItemListBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ItemList"));
-	ItemList = ItemListBox;
+	LootScrollBox->SetScrollBarVisibility(ESlateVisibility::Collapsed);
+	UUniformGridPanel* ItemGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), TEXT("ItemList"));
+	ItemGrid->SetSlotPadding(FMargin(3.0f));
+	ItemList = ItemGrid;
+	EmptyText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("EmptyText"));
+	EmptyText->SetText(FText::FromString(TEXT("Empty")));
+	EmptyText->SetColorAndOpacity(FSlateColor(FLinearColor(0.47f, 0.56f, 0.62f, 1.0f)));
 	CloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseButton"));
 	UTextBlock* CloseButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CloseButtonText"));
 	CloseButtonText->SetText(FText::FromString(TEXT("Close")));
+	CloseButton->SetBackgroundColor(FLinearColor(0.10f, 0.17f, 0.22f, 1.0f));
 
-	UCanvasPanelSlot* LootPanelSlot = RootCanvas->AddChildToCanvas(LootPanel);
-	LootPanelSlot->SetAnchors(FAnchors(0.5f, 0.5f));
-	LootPanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	LootPanelSlot->SetSize(FVector2D(420.0f, 500.0f));
+	LootPanelSlot = RootCanvas->AddChildToCanvas(LootPanel);
+	LootPanelSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+	LootPanelSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+	LootPanelSlot->SetPosition(FVector2D::ZeroVector);
+	LootPanelSlot->SetSize(FVector2D(360.0f, 390.0f));
 	LootPanel->AddChild(RootColumn);
-	RootColumn->AddChildToVerticalBox(TitleText);
+	RootColumn->AddChildToVerticalBox(Header);
+	RootColumn->AddChildToVerticalBox(SectionLabel)->SetPadding(FMargin(0.0f, 7.0f, 0.0f, 9.0f));
 	UVerticalBoxSlot* ScrollSlot = RootColumn->AddChildToVerticalBox(LootScrollBox);
 	ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	LootScrollBox->AddChild(ItemListBox);
-	RootColumn->AddChildToVerticalBox(CloseButton);
+	LootScrollBox->AddChild(ItemGrid);
+	RootColumn->AddChildToVerticalBox(EmptyText)->SetPadding(FMargin(0.0f, 10.0f));
+	RootColumn->AddChildToVerticalBox(CloseButton)->SetPadding(FMargin(0.0f, 12.0f, 0.0f, 0.0f));
 	CloseButton->AddChild(CloseButtonText);
 	WidgetTree->RootWidget = RootCanvas;
 }
@@ -70,12 +107,30 @@ void UASLootWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	if (UWidget* DimBackground = IsValid(WidgetTree) ? WidgetTree->FindWidget(TEXT("DimBackground")) : nullptr)
+	{
+		DimBackground->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (!IsValid(LootPanelSlot) && IsValid(WidgetTree))
+	{
+		if (UWidget* LootPanel = WidgetTree->FindWidget(TEXT("LootPanel")))
+		{
+			LootPanelSlot = Cast<UCanvasPanelSlot>(LootPanel->Slot);
+			if (IsValid(LootPanelSlot))
+			{
+				LootPanelSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+				LootPanelSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+			}
+		}
+	}
+
 	if (IsValid(CloseButton))
 	{
 		CloseButton->OnClicked.AddUniqueDynamic(this, &UASLootWidget::HandleCloseClicked);
 	}
 
 	BindLootInventory();
+	RefreshLootHeader();
 	RefreshLoot();
 }
 
@@ -90,6 +145,29 @@ void UASLootWidget::NativeDestruct()
 
 	Super::NativeDestruct();
 	OnLootClosed.Broadcast();
+}
+
+void UASLootWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!IsValid(LootPanelSlot) || !LootChest.IsValid() || !GetOwningPlayer())
+	{
+		return;
+	}
+
+	FVector2D ProjectedPosition;
+	const FVector WorldAnchor = LootChest->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f);
+	if (!UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(GetOwningPlayer(), WorldAnchor, ProjectedPosition, true))
+	{
+		return;
+	}
+
+	const FVector2D ViewportSize = UWidgetLayoutLibrary::GetViewportSize(this);
+	const FVector2D PanelSize = LootPanelSlot->GetSize();
+	ProjectedPosition.X = FMath::Clamp(ProjectedPosition.X, PanelSize.X * 0.5f + 12.0f, ViewportSize.X - PanelSize.X * 0.5f - 12.0f);
+	ProjectedPosition.Y = FMath::Clamp(ProjectedPosition.Y, PanelSize.Y + 12.0f, ViewportSize.Y - 12.0f);
+	LootPanelSlot->SetPosition(ProjectedPosition);
 }
 
 FReply UASLootWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -127,8 +205,35 @@ void UASLootWidget::SetLootContext(
 	UnbindLootInventory();
 	LootInventory = InLootInventory;
 	PlayerInventory = InPlayerInventory;
+	LootChest = IsValid(InLootInventory) ? Cast<AASLootChest>(InLootInventory->GetOwner()) : nullptr;
 	BindLootInventory();
+	RefreshLootHeader();
 	RefreshLoot();
+}
+
+void UASLootWidget::RefreshLootHeader()
+{
+	if (IsValid(LootTitleText))
+	{
+		FLinearColor Accent(0.35f, 0.73f, 0.92f, 1.0f);
+		FText Title = FText::FromString(TEXT("Loot Chest"));
+		if (IsValid(LootInventory))
+		{
+			if (const AASLootChest* Chest = Cast<AASLootChest>(LootInventory->GetOwner()))
+			{
+				switch (Chest->GetLootRarity())
+				{
+				case EASLootRarity::Uncommon: Title = FText::FromString(TEXT("고급 보급 상자")); Accent = FLinearColor(0.35f, 0.78f, 0.46f, 1.0f); break;
+				case EASLootRarity::Rare: Title = FText::FromString(TEXT("레어 보급 상자")); Accent = FLinearColor(0.68f, 0.49f, 0.91f, 1.0f); break;
+				case EASLootRarity::Epic: Title = FText::FromString(TEXT("에픽 보급 상자")); Accent = FLinearColor(0.72f, 0.39f, 0.91f, 1.0f); break;
+				case EASLootRarity::Legendary: Title = FText::FromString(TEXT("전설 보급 상자")); Accent = FLinearColor(0.96f, 0.60f, 0.28f, 1.0f); break;
+				default: break;
+				}
+			}
+		}
+		LootTitleText->SetText(Title);
+		LootTitleText->SetColorAndOpacity(FSlateColor(Accent));
+	}
 }
 
 void UASLootWidget::RefreshLoot()
@@ -142,8 +247,17 @@ void UASLootWidget::RefreshLoot()
 
 	if (!IsValid(LootInventory))
 	{
+		if (IsValid(EmptyText)) EmptyText->SetVisibility(ESlateVisibility::Visible);
+		if (IsValid(ItemCountText)) ItemCountText->SetText(FText::FromString(TEXT("0")));
 		return;
 	}
+	const TArray<UASItemInstance*> Items = LootInventory->GetItems();
+	if (IsValid(ItemCountText)) ItemCountText->SetText(FText::AsNumber(Items.Num()));
+	if (IsValid(EmptyText)) EmptyText->SetVisibility(Items.IsEmpty() ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	const int32 ConfiguredSlotCount = LootInventory->GetMaxSlots();
+	const int32 VisibleSlotCount = ConfiguredSlotCount > 0
+		? ConfiguredSlotCount
+		: FMath::Max(12, FMath::DivideAndRoundUp(Items.Num(), 4) * 4);
 
 	TSubclassOf<UASLootEntryWidget> ActualEntryClass = EntryWidgetClass;
 	if (!ActualEntryClass)
@@ -151,7 +265,7 @@ void UASLootWidget::RefreshLoot()
 		ActualEntryClass = UASLootEntryWidget::StaticClass();
 	}
 
-	for (UASItemInstance* ItemInstance : LootInventory->GetItems())
+	for (UASItemInstance* ItemInstance : Items)
 	{
 		UASLootEntryWidget* EntryWidget = CreateWidget<UASLootEntryWidget>(GetOwningPlayer(), ActualEntryClass);
 		if (!IsValid(EntryWidget))
@@ -161,7 +275,40 @@ void UASLootWidget::RefreshLoot()
 
 		EntryWidget->SetItemInstance(ItemInstance);
 		EntryWidget->OnItemClicked.AddUniqueDynamic(this, &UASLootWidget::HandleItemClicked);
-		ItemList->AddChild(EntryWidget);
+		if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(ItemList))
+		{
+			const int32 SlotIndex = ItemInstance->GetInventorySlot();
+			UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(EntryWidget, SlotIndex / 4, SlotIndex % 4);
+			if (GridSlot)
+			{
+				GridSlot->SetHorizontalAlignment(HAlign_Fill);
+				GridSlot->SetVerticalAlignment(VAlign_Fill);
+			}
+		}
+		else ItemList->AddChild(EntryWidget);
+	}
+
+	if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(ItemList))
+	{
+		for (int32 SlotIndex = 0; SlotIndex < VisibleSlotCount; ++SlotIndex)
+		{
+			if (LootInventory->GetItemAtSlot(SlotIndex))
+			{
+				continue;
+			}
+
+			USizeBox* EmptySlot = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+			EmptySlot->SetWidthOverride(80.0f);
+			EmptySlot->SetHeightOverride(80.0f);
+			UBorder* SlotBackground = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+			SlotBackground->SetBrushColor(FLinearColor(0.045f, 0.055f, 0.065f, 0.72f));
+			EmptySlot->AddChild(SlotBackground);
+			if (UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(EmptySlot, SlotIndex / 4, SlotIndex % 4))
+			{
+				GridSlot->SetHorizontalAlignment(HAlign_Fill);
+				GridSlot->SetVerticalAlignment(VAlign_Fill);
+			}
+		}
 	}
 }
 

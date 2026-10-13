@@ -8,7 +8,10 @@ class UASInventoryComponent;
 class UASItemInstance;
 class UASLootEntryWidget;
 class UButton;
+class UCanvasPanelSlot;
 class UPanelWidget;
+class UTextBlock;
+class AASLootChest;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASLootClosedSignature);
 
@@ -31,6 +34,7 @@ public:
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
@@ -38,6 +42,7 @@ private:
 	void BuildDefaultWidgetTree();
 	void BindLootInventory();
 	void UnbindLootInventory();
+	void RefreshLootHeader();
 
 	UFUNCTION()
 	void HandleInventoryChanged();
@@ -66,4 +71,18 @@ private:
 	/** Transparent hit area behind LootPanel so outside mouse input reaches this widget. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> OutsideCloseButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> LootTitleText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ItemCountText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> EmptyText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCanvasPanelSlot> LootPanelSlot;
+
+	TWeakObjectPtr<AASLootChest> LootChest;
 };
