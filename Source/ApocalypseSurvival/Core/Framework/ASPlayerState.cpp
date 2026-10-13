@@ -83,6 +83,12 @@ void AASPlayerState::ResetForRespawn()
 		AbilitySystemComponent->RemoveLooseGameplayTag(ASGameplayTags::State_Dead, 1, EGameplayTagReplicationState::TagAndCountToAll);
 	}
 
+	// ASC는 PlayerState에 남으므로, 이전 생명에서 남아 있던 무적 효과가 새 리스폰의
+	// 보호 시간과 겹치지 않게 정리한다. GE_Invulnerable은 Effect.Invulnerable을 Asset Tag로 가져야 한다.
+	FGameplayTagContainer InvulnerabilityEffectTags;
+	InvulnerabilityEffectTags.AddTag(ASGameplayTags::Effect_Invulnerable);
+	AbilitySystemComponent->RemoveActiveEffectsWithTags(InvulnerabilityEffectTags);
+
 	// 기본값을 직접 바꾼다. 효과로 올리면 전투 중 걸린 버프·디버프와 섞이기 때문이다.
 	AbilitySystemComponent->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), HealthAttributeSet->GetMaxHealth());
 	AbilitySystemComponent->SetNumericAttributeBase(UASPlayerAttributeSet::GetStaminaAttribute(), PlayerAttributeSet->GetMaxStamina());

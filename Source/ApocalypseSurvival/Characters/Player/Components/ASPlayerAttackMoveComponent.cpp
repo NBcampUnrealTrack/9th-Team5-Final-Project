@@ -103,7 +103,9 @@ void UASPlayerAttackMoveComponent::NotifyAttackFinished()
 {
 	if (State == EASAttackMoveState::Attacking)
 	{
-		State = CurrentTarget.IsValid() ? EASAttackMoveState::Chasing : EASAttackMoveState::Seeking;
+		// A + 클릭은 자동 평타 토글이 아니라 단일 공격 명령이다.
+		// 첫 공격이 끝나면 추적·반복 공격을 재개하지 않는다.
+		CancelAttackMove();
 	}
 }
 

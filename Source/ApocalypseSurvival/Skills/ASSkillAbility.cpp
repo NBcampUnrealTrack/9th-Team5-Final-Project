@@ -18,6 +18,7 @@
 #include "Skills/ASSkillTags.h"
 #include "Skills/Data/ASSkillData.h"
 #include "AbilitySystemGlobals.h"
+#include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
 #include "Skills/Settings/ASSkillSettingsSubsystem.h"
@@ -879,6 +880,14 @@ void UASSkillAbility::ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& D
 
 	if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target))
 	{
+		// 기존 GE_Damage 에셋이 아직 UASDamageGameplayEffect로 리패런트되지 않았어도,
+		// 모든 스킬·무기 공격이 거치는 공통 입구에서 서버 피해를 우선 차단한다.
+		// 리패런트 후에는 GE 자체의 Tag Requirements가 이 검사를 이중으로 보장한다.
+		if (TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Invulnerable))
+		{
+			return;
+		}
+
 		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
 	}
 }
