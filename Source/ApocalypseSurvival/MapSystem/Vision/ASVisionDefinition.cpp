@@ -1,6 +1,8 @@
 ﻿#include "MapSystem/Vision/ASVisionDefinition.h"
 
+#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 #include "GAS/ASAbilityTags.h"
 
 #if WITH_EDITOR
@@ -9,6 +11,8 @@
 
 UASVisionDefinition::UASVisionDefinition()
 {
+	AutoVisionSourceClasses = { AASPlayerCharacter::StaticClass() };
+	AutoVisibilityTargetClasses = { AASMonsterCharacter::StaticClass() };
 	DeadStateTag = ASGameplayTags::State_Dead;
 	AttackRevealAbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
 }
