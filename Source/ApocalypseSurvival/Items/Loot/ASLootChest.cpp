@@ -6,6 +6,7 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/ASItemInstance.h"
+#include "Items/Loot/ASLootValidation.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 
@@ -34,37 +35,89 @@ AASLootChest::AASLootChest()
 
 bool AASLootChest::SetInitialLoot(const TArray<FASItemGrant>& Items)
 {
-	if (!HasAuthority() || GetNetMode() == NM_Client || HasActorBegunPlay() || IsActorBeginningPlay()) return false;
-	for (const FASItemGrant& Grant : Items)
-	{
-		if (!IsValid(Grant.ItemDefinition) || Grant.Quantity <= 0 || Grant.ItemDefinition->MaxStackSize <= 0)
-			return false;
-	}
+	if (!HasAuthority() || GetNetMode() == NM_Client || HasActorBegunPlay() || IsActorBeginningPlay()
+		|| bInitialLootAttempted) return false;
+	FString Error;
+	if (!FASLootValidation::ValidateGrants(Items, Error)) return false;
 	InitialLoot = Items;
+	SpawnInitialLoot = Items;
+	bHasSpawnInitialLoot = true;
+	return true;
+}
+
+bool AASLootChest::InitializeInitialLoot(FString& OutError)
+{
+	OutError.Reset();
+	if (!HasAuthority() || GetNetMode() == NM_Client)
+	{
+		OutError = TEXT("Initial loot requires server authority.");
+		return false;
+	}
+	if (bInitialLootAttempted)
+	{
+		OutError = InitialLootError;
+		return bInitialLootSucceeded;
+	}
+	bInitialLootAttempted = true; // Inventory callbacks cannot re-enter initialization.
+	auto Fail = [&](const FString& Error)
+	{
+		InitialLootError = Error;
+		OutError = Error;
+		return false;
+	};
+	if (!IsValid(LootInventory) || !LootInventory->GetItems().IsEmpty())
+		return Fail(TEXT("Initial loot requires an empty, valid chest inventory."));
+	const TArray<FASItemGrant> Grants = bHasSpawnInitialLoot ? SpawnInitialLoot : InitialLoot;
+	FString Error;
+	if (!FASLootValidation::ValidateGrants(Grants, Error)) return Fail(Error);
+	TMap<const UASItemDefinition*, int64> Totals;
+	for (const FASItemGrant& Grant : Grants) Totals.FindOrAdd(Grant.ItemDefinition) += Grant.Quantity;
+	int64 RequiredSlots = 0;
+	for (const auto& Total : Totals)
+		RequiredSlots += (Total.Value + Total.Key->MaxStackSize - 1) / Total.Key->MaxStackSize;
+	const int32 MaxSlots = LootInventory->GetMaxSlots();
+	if (MaxSlots > 0 && RequiredSlots > MaxSlots)
+		return Fail(FString::Printf(TEXT("Initial loot requires %lld slots, but the chest allows %d."), RequiredSlots, MaxSlots));
+
+	auto Rollback = [&]()
+	{
+		const TArray<UASItemInstance*> AddedItems = LootInventory->GetItems();
+		for (UASItemInstance* Item : AddedItems)
+			if (IsValid(Item)) LootInventory->RemoveItemInstance(Item, Item->GetQuantity());
+	};
+	for (const FASItemGrant& Grant : Grants)
+	{
+		if (LootInventory->AddItem(Grant.ItemDefinition, Grant.Quantity) != Grant.Quantity || IsActorBeingDestroyed())
+		{
+			Rollback();
+			return Fail(TEXT("Could not add all requested loot; initial additions were rolled back."));
+		}
+	}
+	for (const auto& Total : Totals)
+	{
+		if (LootInventory->GetItemCount(Total.Key) != Total.Value)
+		{
+			Rollback();
+			return Fail(TEXT("Initial loot quantity verification failed."));
+		}
+	}
+	bInitialLootSucceeded = true;
 	return true;
 }
 
 void AASLootChest::BeginPlay()
 {
-	// Initialize before Super dispatches Blueprint BeginPlay so presentation sees the contents.
+	// Complete initial contents before Blueprint BeginPlay; an incomplete chest is discarded.
+	bool bInitializationFailed = false;
 	if (HasAuthority())
 	{
-		for (const FASItemGrant& Grant : InitialLoot)
-		{
-			if (!IsValid(Grant.ItemDefinition) || Grant.Quantity <= 0)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[LootChest] %s has an invalid InitialLoot entry."), *GetName());
-				continue;
-			}
-			const int32 Added = LootInventory->AddItem(Grant.ItemDefinition, Grant.Quantity);
-			if (Added != Grant.Quantity)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[LootChest] %s added %d/%d of %s; check inventory capacity."),
-					*GetName(), Added, Grant.Quantity, *GetNameSafe(Grant.ItemDefinition));
-			}
-		}
+		FString Error;
+		bInitializationFailed = !InitializeInitialLoot(Error);
+		if (bInitializationFailed)
+			UE_LOG(LogTemp, Warning, TEXT("[LootChest] %s: %s"), *GetName(), *Error);
 	}
 	Super::BeginPlay();
+	if (bInitializationFailed) Destroy();
 }
 
 bool AASLootChest::CanInteract_Implementation(AActor* Interactor) const

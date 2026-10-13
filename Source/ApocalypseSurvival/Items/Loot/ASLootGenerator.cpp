@@ -2,6 +2,7 @@
 
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Loot/ASLootDefinition.h"
+#include "Items/Loot/ASLootValidation.h"
 
 bool FASLootGenerator::Generate(const FASLootChestPresetRow& Preset, FRandomStream& Random,
 	TArray<FASItemGrant>& OutItems, FString& OutError)
@@ -70,6 +71,7 @@ bool FASLootGenerator::Generate(const FASLootChestPresetRow& Preset, FRandomStre
 			if (!Definition->bAllowRepeatedItems && bHadPositiveCandidate)
 			{
 				// Fixed grants already exhausted the pool; keep them rather than failing the chest.
+				if (!FASLootValidation::ValidateGrants(Result, OutError)) return false;
 				Random = Stream;
 				OutItems = MoveTemp(Result);
 				return true;
@@ -102,6 +104,7 @@ bool FASLootGenerator::Generate(const FASLootChestPresetRow& Preset, FRandomStre
 			if (!Definition->bAllowRepeatedItems) Weights[Selected] = 0.0;
 		}
 	}
+	if (!FASLootValidation::ValidateGrants(Result, OutError)) return false;
 	Random = Stream;
 	OutItems = MoveTemp(Result);
 	return true;

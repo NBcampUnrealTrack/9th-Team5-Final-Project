@@ -2,22 +2,16 @@
 
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Loot/ASLootChest.h"
+#include "Items/Loot/ASLootValidation.h"
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
 
-namespace
-{
-	bool IsLootItemValid(const UASItemDefinition* Item)
-	{
-		return IsValid(Item) && !Item->ItemId.IsNone() && Item->MaxStackSize > 0;
-	}
-}
-
 bool FASLootPoolEntry::Validate(FString& OutError) const
 {
 	OutError.Reset();
-	if (!IsLootItemValid(ItemDefinition) || !FMath::IsFinite(Weight) || Weight < 0.0f
+	if (!FASLootValidation::ValidateItem(ItemDefinition, OutError)) return false;
+	if (!FMath::IsFinite(Weight) || Weight < 0.0f
 		|| MinQuantity < 1 || MaxQuantity < MinQuantity)
 	{
 		OutError = TEXT("Candidates require a valid item, finite nonnegative weight, and 1 <= MinQuantity <= MaxQuantity.");
@@ -81,19 +75,9 @@ bool FASLootChestPresetRow::Validate(FString& OutError) const
 		return false;
 	}
 	TMap<FName, const UASItemDefinition*> Ids;
+	if (!FASLootValidation::ValidateGrants(FixedItems, OutError)) return false;
 	for (const FASItemGrant& Grant : FixedItems)
 	{
-		if (!IsLootItemValid(Grant.ItemDefinition) || Grant.Quantity <= 0)
-		{
-			OutError = TEXT("Fixed items require valid definitions and positive quantities.");
-			return false;
-		}
-		const UASItemDefinition* const* Existing = Ids.Find(Grant.ItemDefinition->ItemId);
-		if (Existing && *Existing != Grant.ItemDefinition)
-		{
-			OutError = TEXT("Different fixed item assets share an ItemId.");
-			return false;
-		}
 		Ids.Add(Grant.ItemDefinition->ItemId, Grant.ItemDefinition);
 	}
 	for (const auto& Weight : CategoryWeights)
