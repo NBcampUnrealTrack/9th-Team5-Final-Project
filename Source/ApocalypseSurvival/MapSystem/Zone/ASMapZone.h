@@ -5,17 +5,18 @@
 #include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "ASMapZone.generated.h"
 
-class UBoxComponent;
+class UASMapPolygonAreaComponent;
 class USceneComponent;
-class UShapeComponent;
+class UPrimitiveComponent;
 class UASZoneLinkDebugComponent;
 
 /**
  * 고정 맵 구역 중 하나. 레벨에 배치하며 모든 머신에 존재한다.
  *
- * 구역 영역은 액터에 있는 모든 도형 컴포넌트의 합집합이다 (불규칙
- * 영역에는 박스, 구, 캡슐을 추가한다. 도형에 "NotArea" 태그를 붙이면
- * 제외한다). 도형에는 충돌이 없다. 포함 여부를 직접 계산하므로
+ * 구역 영역은 다각형 영역과 박스, 구, 캡슐 등 도형 컴포넌트의 합집합이다.
+ * 다각형은 스플라인 점을 드래그해 편집하고 Alt+드래그로 점을 추가하며
+ * 컨텍스트 메뉴에서 점을 삭제한다. 접선은 무시한다. 컴포넌트에 "NotArea"
+ * 태그를 붙이면 제외한다. 영역에는 충돌이 없다. 포함 여부를 직접 계산하므로
  * 순간이동, 리스폰, 중첩 볼륨에서도 중복 집계되지 않는다.
  */
 UCLASS(Blueprintable)
@@ -47,8 +48,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	bool ContainsLocation(const FVector& Location) const;
 
-	/** 영역 도형의 월드 XY 경계 사각형 (맵 위젯에서 사용). */
-	void GetFootprints(TArray<FBox2D>& OutFootprints) const;
+	/** 영역 컴포넌트의 월드 XY 외곽선 (맵 위젯에서 사용). */
+	void GetAreaOutlines(TArray<TArray<FVector2D>>& OutOutlines) const;
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	FVector GetZoneCenter() const;
@@ -60,6 +61,9 @@ public:
 	TArray<FTransform> GetRespawnTransforms() const;
 
 	bool HasAreaShapes() const;
+
+	/** 모든 다각형 오류에 구역 ID와 컴포넌트 이름을 붙여 추가한다. */
+	bool ValidateArea(TArray<FString>& OutErrors) const;
 
 	/** 직접 이동할 수 있는 구역. 어느 한쪽에서만 지정해도 양방향으로 연결된다. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Map")
@@ -102,9 +106,9 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> SceneRoot;
 
-	/** 첫 영역 도형. Blueprint/인스턴스에서 크기를 바꾸거나 도형을 추가한다. */
+	/** 기본 다각형 영역. 뷰포트에서 점을 편집하거나 영역 컴포넌트를 추가한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UBoxComponent> MainArea;
+	TObjectPtr<UASMapPolygonAreaComponent> MainPolygon;
 
 #if WITH_EDITORONLY_DATA
 	/** 레벨 편집 중 인접 구역 연결선을 표시한다. */
@@ -112,8 +116,8 @@ private:
 	TObjectPtr<UASZoneLinkDebugComponent> LinkDebugComponent;
 #endif
 
-	/** 영역 도형은 이 액터가 소유한다. 약한 포인터로 리플렉션 대상인 가변 캐시를 피한다. */
-	mutable TArray<TWeakObjectPtr<UShapeComponent>> CachedAreaShapes;
+	/** 영역 컴포넌트는 이 액터가 소유한다. 약한 포인터로 리플렉션 대상인 가변 캐시를 피한다. */
+	mutable TArray<TWeakObjectPtr<UPrimitiveComponent>> CachedAreaShapes;
 
 	mutable bool bAreaShapesCached = false;
 };

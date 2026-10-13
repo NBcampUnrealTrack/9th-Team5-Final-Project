@@ -401,6 +401,7 @@ bool AASMapSystemManager::ValidateLevel(TArray<FString>& OutErrors) const
 		{
 			OutErrors.Add(FString::Printf(TEXT("Zone actor %s (%s) has no area shapes."), *Zone->GetName(), *Zone->GetZoneId().ToString()));
 		}
+		Zone->ValidateArea(OutErrors);
 		for (const AASMapZone* AdjacentZone : Zone->GetAdjacentZones())
 		{
 			if (!IsValid(AdjacentZone))
@@ -493,14 +494,17 @@ void AASMapSystemManager::DrawDebug() const
 		const FASZoneRuntimeState* ZoneState = State->GetSnapshot().FindZone(Zone->GetZoneId());
 
 		FLinearColor Color = MapDefinition->GetDangerColor(ZoneState ? ZoneState->DangerLevel : 1);
-		TArray<FBox2D> Footprints;
-		Zone->GetFootprints(Footprints);
+		TArray<TArray<FVector2D>> Outlines;
+		Zone->GetAreaOutlines(Outlines);
 		const float Z = Zone->GetActorLocation().Z;
-		for (const FBox2D& Footprint : Footprints)
+		for (const TArray<FVector2D>& Outline : Outlines)
 		{
-			const FVector Center(Footprint.GetCenter(), Z);
-			const FVector Extent(Footprint.GetExtent(), 50.0);
-			DrawDebugBox(GetWorld(), Center, Extent, Color.ToFColor(true), false, Duration, 0, 10.0f);
+			for (int32 Index = 0; Index < Outline.Num(); ++Index)
+			{
+				const FVector A(Outline[Index], Z);
+				const FVector B(Outline[(Index + 1) % Outline.Num()], Z);
+				DrawDebugLine(GetWorld(), A, B, Color.ToFColor(true), false, Duration, 0, 10.0f);
+			}
 		}
 
 		const FString Label = FString::Printf(TEXT("%s  D%d"),
