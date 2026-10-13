@@ -1,6 +1,8 @@
 #include "Items/Inventory/ASInventoryComponent.h"
 
 #include "Items/Data/ASItemDefinition.h"
+#include "Items/Data/ASStartingItemsRow.h"
+#include "Items/Loot/ASLootValidation.h"
 #include "Items/ASItemInstance.h"
 #include "UObject/UObjectGlobals.h"
 #include "AbilitySystemComponent.h"
@@ -34,6 +36,100 @@ void UASInventoryComponent::BeginPlay()
 	{
 		MaxSlots = PlayerSlotCount;
 	}
+
+	if (HasInventoryAuthority() && !InitialItemsPreset.IsNull())
+	{
+		FString Error;
+		if (!GrantInitialItems(Error))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[InitialItems] %s: %s"), *GetNameSafe(GetOwner()), *Error);
+		}
+	}
+}
+
+bool UASInventoryComponent::GrantInitialItems(FString& OutError)
+{
+	OutError.Reset();
+	if (!HasInventoryAuthority() || GetNetMode() == NM_Client)
+	{
+		OutError = TEXT("Initial items require server authority.");
+		return false;
+	}
+	if (bInitialItemsGranted) return true;
+	if (!IsValid(InitialItemsPreset.DataTable) || InitialItemsPreset.RowName.IsNone()
+		|| !InitialItemsPreset.DataTable->GetRowStruct()
+		|| !InitialItemsPreset.DataTable->GetRowStruct()->IsChildOf(FASStartingItemsRow::StaticStruct()))
+	{
+		OutError = TEXT("Select a starting-items table and an ASStartingItemsRow row.");
+		return false;
+	}
+	const FASStartingItemsRow* Row = InitialItemsPreset.DataTable->FindRow<FASStartingItemsRow>(
+		InitialItemsPreset.RowName, TEXT("InitialItems"), false);
+	if (!Row)
+	{
+		OutError = FString::Printf(TEXT("Starting-items row '%s' does not exist."), *InitialItemsPreset.RowName.ToString());
+		return false;
+	}
+	if (!FASLootValidation::ValidateGrants(Row->Items, OutError)) return false;
+
+	// Plan stack changes and new slots before touching the live inventory or broadcasting callbacks.
+	TArray<TObjectPtr<UASItemInstance>> PendingItems;
+	TMap<UASItemInstance*, int32> StackAdditions;
+	TSet<int32> OccupiedSlots;
+	for (UASItemInstance* Item : Items)
+	{
+		if (IsValid(Item) && Item->IsValidItemInstance() && Item->InventorySlot >= 0)
+			OccupiedSlots.Add(Item->InventorySlot);
+	}
+	const bool bPlayerInventory = Cast<APawn>(GetOwner()) || Cast<AController>(GetOwner()) || Cast<APlayerState>(GetOwner());
+	const int32 SlotLimit = bPlayerInventory ? PlayerSlotCount : MaxSlots;
+	for (const FASItemGrant& Grant : Row->Items)
+	{
+		int32 Remaining = Grant.Quantity;
+		for (UASItemInstance* Item : Items)
+		{
+			if (Remaining <= 0) break;
+			if (!IsValid(Item) || !Item->IsValidItemInstance() || Item->InventorySlot < 0
+				|| Item->GetItemDefinition() != Grant.ItemDefinition) continue;
+			int32& Addition = StackAdditions.FindOrAdd(Item);
+			const int32 Added = FMath::Min(Remaining, FMath::Max(0, Item->GetRemainingStackSpace() - Addition));
+			Addition += Added;
+			Remaining -= Added;
+		}
+		for (UASItemInstance* Item : PendingItems)
+		{
+			if (Remaining <= 0) break;
+			if (Item->GetItemDefinition() == Grant.ItemDefinition)
+				Remaining -= Item->AddQuantity(Remaining);
+		}
+		while (Remaining > 0)
+		{
+			int32 Slot = 0;
+			while (OccupiedSlots.Contains(Slot)) ++Slot;
+			if (SlotLimit > 0 && Slot >= SlotLimit)
+			{
+				OutError = FString::Printf(TEXT("Starting items exceed the inventory's %d backpack slots. No items were granted."), SlotLimit);
+				return false;
+			}
+			UASItemInstance* Item = NewObject<UASItemInstance>(this);
+			Item->Initialize(Grant.ItemDefinition, FMath::Min(Remaining, Grant.ItemDefinition->MaxStackSize));
+			Item->InventorySlot = Slot;
+			PendingItems.Add(Item);
+			OccupiedSlots.Add(Slot);
+			Remaining -= Item->GetQuantity();
+		}
+	}
+
+	bool bChanged = !PendingItems.IsEmpty();
+	for (const auto& Addition : StackAdditions)
+	{
+		Addition.Key->AddQuantity(Addition.Value);
+		bChanged |= Addition.Value > 0;
+	}
+	Items.Append(PendingItems);
+	bInitialItemsGranted = true; // Set before notification so reentrant calls cannot grant twice.
+	if (bChanged) NotifyInventoryChanged();
+	return true;
 }
 
 int32 UASInventoryComponent::AddItem(UASItemDefinition* ItemDefinition, const int32 RequestedQuantity)
