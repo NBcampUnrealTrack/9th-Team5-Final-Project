@@ -7,6 +7,9 @@
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Loot/ASLootValidation.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
+#include "Net/UnrealNetwork.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 
@@ -31,6 +34,67 @@ AASLootChest::AASLootChest()
 	InteractionCollision->SetGenerateOverlapEvents(false);
 
 	LootInventory = CreateDefaultSubobject<UASInventoryComponent>(TEXT("LootInventory"));
+}
+
+void AASLootChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AASLootChest, LootRarity);
+	DOREPLIFETIME(AASLootChest, LootMeshOverride);
+	DOREPLIFETIME(AASLootChest, LootMaterialOverride);
+	DOREPLIFETIME(AASLootChest, LootAppearanceMaterialIndex);
+	DOREPLIFETIME(AASLootChest, LootRarityColor);
+	DOREPLIFETIME(AASLootChest, LootRarityColorParameter);
+}
+
+void AASLootChest::SetLootRarityAppearance(const EASLootRarity Rarity, UStaticMesh* MeshOverride,
+	UMaterialInterface* MaterialOverride, const int32 MaterialIndex, const FLinearColor ColorParameterValue,
+	const FName ColorParameter)
+{
+	if (!HasAuthority()) return;
+	LootRarity = Rarity;
+	LootMeshOverride = MeshOverride;
+	LootMaterialOverride = MaterialOverride;
+	LootAppearanceMaterialIndex = FMath::Max(0, MaterialIndex);
+	LootRarityColor = ColorParameterValue;
+	LootRarityColorParameter = ColorParameter;
+	ApplyLootRarityAppearance();
+	ForceNetUpdate();
+}
+
+void AASLootChest::OnRep_LootRarityAppearance()
+{
+	ApplyLootRarityAppearance();
+}
+
+void AASLootChest::ApplyLootRarityAppearance()
+{
+	if (!IsValid(ChestMesh)) return;
+	if (IsValid(LootMeshOverride)) ChestMesh->SetStaticMesh(LootMeshOverride);
+	if (LootAppearanceMaterialIndex >= ChestMesh->GetNumMaterials())
+	{
+		if (IsValid(LootMaterialOverride) || !LootRarityColorParameter.IsNone())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LootChest] %s has no material slot %d for its rarity appearance."),
+				*GetNameSafe(this), LootAppearanceMaterialIndex);
+		}
+		return;
+	}
+	if (IsValid(LootMaterialOverride)) ChestMesh->SetMaterial(LootAppearanceMaterialIndex, LootMaterialOverride);
+	if (LootRarityColorParameter.IsNone()) return;
+	if (UMaterialInstanceDynamic* ExistingDynamic = Cast<UMaterialInstanceDynamic>(
+		ChestMesh->GetMaterial(LootAppearanceMaterialIndex)))
+	{
+		ExistingDynamic->SetVectorParameterValue(LootRarityColorParameter, LootRarityColor);
+		return;
+	}
+	UMaterialInterface* SourceMaterial = IsValid(LootMaterialOverride.Get())
+		? LootMaterialOverride.Get() : ChestMesh->GetMaterial(LootAppearanceMaterialIndex);
+	if (!IsValid(SourceMaterial)) return;
+	UMaterialInstanceDynamic* DynamicMaterial = UMaterialInstanceDynamic::Create(SourceMaterial, this);
+	if (!IsValid(DynamicMaterial)) return;
+	DynamicMaterial->SetVectorParameterValue(LootRarityColorParameter, LootRarityColor);
+	ChestMesh->SetMaterial(LootAppearanceMaterialIndex, DynamicMaterial);
 }
 
 bool AASLootChest::SetInitialLoot(const TArray<FASItemGrant>& Items)

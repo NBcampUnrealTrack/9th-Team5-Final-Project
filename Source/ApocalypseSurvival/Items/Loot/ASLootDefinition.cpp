@@ -3,6 +3,8 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Loot/ASLootChest.h"
 #include "Items/Loot/ASLootValidation.h"
+#include "Materials/MaterialInterface.h"
+#include "Engine/StaticMesh.h"
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
@@ -60,6 +62,42 @@ bool FASLootChestPresetRow::ResolveRandomEntries(TArray<FASLootPoolEntry>& OutEn
 	OutEntries = MoveTemp(Resolved);
 	return true;
 }
+
+FLinearColor FASLootRarityAppearanceRow::GetResolvedColor() const
+{
+	if (bOverrideColor) return ColorOverride;
+	switch (Rarity)
+	{
+	case EASLootRarity::Uncommon: return FLinearColor(0.15f, 0.85f, 0.25f, 1.0f);
+	case EASLootRarity::Rare: return FLinearColor(0.12f, 0.45f, 1.0f, 1.0f);
+	case EASLootRarity::Epic: return FLinearColor(0.68f, 0.22f, 1.0f, 1.0f);
+	case EASLootRarity::Legendary: return FLinearColor(1.0f, 0.48f, 0.08f, 1.0f);
+	case EASLootRarity::Common:
+	default: return FLinearColor(0.8f, 0.8f, 0.8f, 1.0f);
+	}
+}
+
+bool FASLootRarityAppearanceRow::Validate(FString& OutError) const
+{
+	OutError.Reset();
+	const bool bColorFinite = FMath::IsFinite(ColorOverride.R) && FMath::IsFinite(ColorOverride.G)
+		&& FMath::IsFinite(ColorOverride.B) && FMath::IsFinite(ColorOverride.A);
+	if (MaterialIndex < 0 || (bOverrideColor && !bColorFinite))
+	{
+		OutError = TEXT("Appearance material index must be nonnegative and color override must be finite.");
+		return false;
+	}
+	return true;
+}
+
+#if WITH_EDITOR
+EDataValidationResult FASLootRarityAppearanceRow::IsDataValid(FDataValidationContext& Context) const
+{
+	FString Error;
+	if (!Validate(Error)) { Context.AddError(FText::FromString(Error)); return EDataValidationResult::Invalid; }
+	return EDataValidationResult::Valid;
+}
+#endif
 
 bool FASLootChestPresetRow::Validate(FString& OutError) const
 {

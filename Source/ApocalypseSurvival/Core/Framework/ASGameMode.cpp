@@ -1,6 +1,7 @@
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
 #include "Core/Spawn/ASSpawnSubsystem.h"
+#include "Items/Loot/ASLootDaySpawnSubsystem.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
@@ -88,6 +89,10 @@ void AASGameMode::StartDay(int32 Day)
 	{
 		SpawnSubsystem->HandleDayStarted(Day, DaySpawnDataTable, MonsterSpawnGroupDataTable);
 	}
+	if (UASLootDaySpawnSubsystem* LootSpawnSubsystem = GetWorld()->GetSubsystem<UASLootDaySpawnSubsystem>())
+	{
+		LootSpawnSubsystem->HandleDayStarted(Day, LootDaySpawnScheduleDataTable, Duration);
+	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnDayTimeUp, Duration, false);
 }
@@ -101,6 +106,10 @@ void AASGameMode::StartNight()
 {
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
+	if (UASLootDaySpawnSubsystem* LootSpawnSubsystem = GetWorld()->GetSubsystem<UASLootDaySpawnSubsystem>())
+	{
+		LootSpawnSubsystem->HandleDayEnded();
+	}
 	
 	const int32 Day = GS->GetCurrentDay();
 	const float Duration = GetNightDuration(Day);
