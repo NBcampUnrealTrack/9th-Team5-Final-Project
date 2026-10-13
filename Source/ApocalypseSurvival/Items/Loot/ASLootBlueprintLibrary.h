@@ -7,6 +7,8 @@
 #include "ASLootBlueprintLibrary.generated.h"
 
 class AASLootChest;
+struct FASLootChestPresetRow;
+struct FASLootRarityAppearanceRow;
 
 UENUM(BlueprintType)
 enum class EASLootChestSpawnStatus : uint8
@@ -59,4 +61,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Items|Loot")
 	static bool GenerateLootFromPreset(const FDataTableRowHandle& Preset, int32 Seed,
 		TArray<FASItemGrant>& OutItems, FString& OutError);
+
+private:
+	static FASLootChestSpawnResult SpawnLootChestWithAppearance(UObject* WorldContextObject,
+		TSubclassOf<AASLootChest> ChestClass, const FTransform& SpawnTransform,
+		const TArray<FASItemGrant>& Items, const FASLootChestPresetRow* Preset);
 };

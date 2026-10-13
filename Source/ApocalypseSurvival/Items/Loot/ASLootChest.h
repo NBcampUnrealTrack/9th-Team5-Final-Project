@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Interaction/ASInteractable.h"
 #include "Items/Data/ASItemGrant.h"
+#include "Items/Loot/ASLootDefinition.h"
 #include "ASLootChest.generated.h"
 
 class AASLootChest;
@@ -11,6 +12,7 @@ class UASInventoryComponent;
 class UBoxComponent;
 class USceneComponent;
 class UStaticMeshComponent;
+class UMaterialInterface;
 class APawn;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -26,6 +28,7 @@ class APOCALYPSESURVIVAL_API AASLootChest : public AActor, public IASInteractabl
 
 public:
 	AASLootChest();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Loot")
 	UASInventoryComponent* GetLootInventory() const { return LootInventory; }
@@ -35,6 +38,14 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
 	bool SetInitialLoot(const TArray<FASItemGrant>& Items);
+
+	/** Applies preset rarity appearance on the server; the resulting visual settings replicate to clients. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot|Appearance")
+	void SetLootRarityAppearance(EASLootRarity Rarity, UStaticMesh* MeshOverride,
+		UMaterialInterface* MaterialOverride, int32 MaterialIndex, FLinearColor ColorParameterValue, FName ColorParameter);
+
+	UFUNCTION(BlueprintPure, Category = "Loot|Appearance")
+	EASLootRarity GetLootRarity() const { return LootRarity; }
 
 	/** Applied once after construction. Also used by BeginPlay; returns the cached result on repeat calls.
 	 * Failed additions are rolled back. Spawn callers destroy the rejected chest.
@@ -65,6 +76,10 @@ protected:
 
 private:
 	bool IsWithinInteractionRange(const AActor* Interactor) const;
+	void ApplyLootRarityAppearance();
+
+	UFUNCTION()
+	void OnRep_LootRarityAppearance();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -89,6 +104,25 @@ private:
 	bool bInitialLootAttempted = false;
 	bool bInitialLootSucceeded = false;
 	FString InitialLootError;
+
+	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
+		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
+	EASLootRarity LootRarity = EASLootRarity::Common;
+	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
+		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMesh> LootMeshOverride;
+	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
+		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UMaterialInterface> LootMaterialOverride;
+	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
+		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
+	int32 LootAppearanceMaterialIndex = 0;
+	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
+		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
+	FLinearColor LootRarityColor = FLinearColor::White;
+	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
+		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
+	FName LootRarityColorParameter = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
 	float InteractionRange = 250.0f;

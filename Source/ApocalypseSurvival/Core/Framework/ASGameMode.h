@@ -119,6 +119,11 @@ protected:
 	// 행 이름 MonsterGroup_00, MonsterGroup_01 ... 에 따라 그룹별 몬스터 구성과 가중치를 정의한 DataTable.
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn")
 	TObjectPtr<UDataTable> MonsterSpawnGroupDataTable;
+
+	// DayNumber and SecondsAfterDayStart rows that schedule server-side loot chest spawns.
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn|Loot",
+		meta = (RequiredAssetDataTags = "RowStructure=/Script/ApocalypseSurvival.ASLootDaySpawnScheduleRow"))
+	TObjectPtr<UDataTable> LootDaySpawnScheduleDataTable;
 	
 	// 단계 진행
 	void StartDay(int32 Day);
