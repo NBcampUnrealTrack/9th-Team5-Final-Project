@@ -70,5 +70,7 @@ private:
 	int32 SpawnedWaveMonsterCount = 0;
 	int32 ActiveWaveSpawnBatchSize = 1;
 	float ActiveWaveSpawnInterval = 0.25f;
+
+	UPROPERTY(Transient)
 	TArray<TSubclassOf<AASMonsterCharacter>> PendingWaveMonsterClasses;
 };
