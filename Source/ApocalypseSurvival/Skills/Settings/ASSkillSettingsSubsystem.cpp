@@ -23,10 +23,11 @@ void UASSkillSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		{
 			bWalkToCastWhenOutOfRange = SaveGame->bWalkToCastWhenOutOfRange;
 
-			if (SaveGame->CastMode <= static_cast<uint8>(EASSkillCastMode::NormalCast))
-			{
-				CastMode = static_cast<EASSkillCastMode>(SaveGame->CastMode);
-			}
+			//시전 방식은 게임을 켤 때마다 일반 시전으로 시작 (옵션 UI가 생기면 저장값 불러오기로 변경)
+			//if (SaveGame->CastMode <= static_cast<uint8>(EASSkillCastMode::NormalCast))
+			//{
+			//	CastMode = static_cast<EASSkillCastMode>(SaveGame->CastMode);
+			//}
 		}
 	}
 }
