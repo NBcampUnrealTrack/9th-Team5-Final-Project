@@ -2,39 +2,45 @@
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
-#include "Items/Data/ASItemDefinition.h"
 #include "Items/Loot/ASLootChest.h"
 #include "Items/Loot/ASLootDefinition.h"
 #include "Items/Loot/ASLootGenerator.h"
+#include "Items/Loot/ASLootValidation.h"
+#include "Items/ASItemInstance.h"
+#include "Items/Inventory/ASInventoryComponent.h"
 
-AASLootChest* UASLootBlueprintLibrary::SpawnLootChest(UObject* WorldContextObject,
-	TSubclassOf<AASLootChest> ChestClass, const FTransform& SpawnTransform, const TArray<FASItemGrant>& Items)
+bool FASLootChestSpawnResult::IsSuccess() const
 {
-	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
-	if (!World || World->GetNetMode() == NM_Client || !ChestClass
-		|| ChestClass->HasAnyClassFlags(CLASS_Abstract) || SpawnTransform.ContainsNaN()) return nullptr;
-
-	// Validate the whole list before spawning, rather than silently omitting bad entries.
-	for (const FASItemGrant& Grant : Items)
-	{
-		if (!IsValid(Grant.ItemDefinition) || Grant.Quantity <= 0 || Grant.ItemDefinition->MaxStackSize <= 0)
-			return nullptr;
-	}
-
-	AASLootChest* Chest = World->SpawnActorDeferred<AASLootChest>(ChestClass, SpawnTransform, nullptr, nullptr,
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding);
-	if (!Chest) return nullptr;
-	if (!Chest->SetInitialLoot(Items))
-	{
-		Chest->Destroy();
-		return nullptr;
-	}
-	Chest->FinishSpawning(SpawnTransform);
-	return IsValid(Chest) && !Chest->IsActorBeingDestroyed() ? Chest : nullptr;
+	return Status == EASLootChestSpawnStatus::Success && IsValid(Chest.Get());
 }
 
 namespace
 {
+	FASLootChestSpawnResult Failure(const EASLootChestSpawnStatus Status, const FString& Error)
+	{
+		FASLootChestSpawnResult Result;
+		Result.Status = Status;
+		Result.ErrorMessage = Error;
+		return Result;
+	}
+
+	UWorld* ValidateContext(UObject* Context, const FTransform& Transform, FASLootChestSpawnResult& OutFailure)
+	{
+		UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::ReturnNull) : nullptr;
+		if (!World) { OutFailure = Failure(EASLootChestSpawnStatus::InvalidWorld, TEXT("World context is invalid.")); return nullptr; }
+		if (World->GetNetMode() == NM_Client)
+		{
+			OutFailure = Failure(EASLootChestSpawnStatus::NotAuthority, TEXT("Loot chests can only be spawned on the server."));
+			return nullptr;
+		}
+		if (Transform.ContainsNaN())
+		{
+			OutFailure = Failure(EASLootChestSpawnStatus::InvalidTransform, TEXT("Spawn transform contains a non-finite value."));
+			return nullptr;
+		}
+		return World;
+	}
+
 	const FASLootChestPresetRow* ResolvePreset(const FDataTableRowHandle& Preset, FString& OutError)
 	{
 		OutError.Reset();
@@ -51,6 +57,69 @@ namespace
 	}
 }
 
+bool UASLootBlueprintLibrary::ValidateLootItems(const TArray<FASItemGrant>& Items, FString& OutError)
+{
+	return FASLootValidation::ValidateGrants(Items, OutError);
+}
+
+FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestWithResult(UObject* WorldContextObject,
+	TSubclassOf<AASLootChest> ChestClass, const FTransform& SpawnTransform, const TArray<FASItemGrant>& Items)
+{
+	FASLootChestSpawnResult Result;
+	UWorld* World = ValidateContext(WorldContextObject, SpawnTransform, Result);
+	if (!World) return Result;
+	if (!ChestClass || ChestClass->HasAnyClassFlags(CLASS_Abstract))
+		return Failure(EASLootChestSpawnStatus::InvalidChestClass, TEXT("A concrete loot chest class is required."));
+	FString Error;
+	if (!FASLootValidation::ValidateGrants(Items, Error))
+		return Failure(EASLootChestSpawnStatus::InvalidItems, Error);
+
+	AASLootChest* Chest = World->SpawnActorDeferred<AASLootChest>(ChestClass, SpawnTransform, nullptr, nullptr,
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding);
+	if (!Chest) return Failure(EASLootChestSpawnStatus::SpawnFailed, TEXT("Could not create the chest at the requested transform."));
+	if (!Chest->SetInitialLoot(Items))
+	{
+		Chest->Destroy();
+		return Failure(EASLootChestSpawnStatus::InventoryInitializationFailed, TEXT("Chest refused the initial loot configuration."));
+	}
+	Chest->FinishSpawning(SpawnTransform);
+	if (!IsValid(Chest) || Chest->IsActorBeingDestroyed())
+	{
+		Error = Chest->GetInitialLootError();
+		return Failure(Error.IsEmpty() ? EASLootChestSpawnStatus::SpawnFailed : EASLootChestSpawnStatus::InventoryInitializationFailed,
+			Error.IsEmpty() ? TEXT("Chest was destroyed while finishing its spawn.") : Error);
+	}
+	// Covers worlds that have not dispatched BeginPlay yet. BeginPlay will reuse this result.
+	if (!Chest->InitializeInitialLoot(Error))
+	{
+		Chest->Destroy();
+		return Failure(EASLootChestSpawnStatus::InventoryInitializationFailed, Error);
+	}
+	if (!IsValid(Chest) || Chest->IsActorBeingDestroyed())
+		return Failure(EASLootChestSpawnStatus::SpawnFailed, TEXT("Chest was destroyed during inventory initialization."));
+	// Construction/BeginPlay hooks must not silently change the API's requested contents.
+	TMap<const UASItemDefinition*, int64> ExpectedTotals;
+	for (const FASItemGrant& Grant : Items) ExpectedTotals.FindOrAdd(Grant.ItemDefinition) += Grant.Quantity;
+	UASInventoryComponent* Inventory = Chest->GetLootInventory();
+	bool bContentsMatch = IsValid(Inventory);
+	if (bContentsMatch)
+	{
+		for (const auto& Total : ExpectedTotals)
+			bContentsMatch &= Inventory->GetItemCount(Total.Key) == Total.Value;
+		for (const UASItemInstance* Item : Inventory->GetItems())
+			bContentsMatch &= IsValid(Item) && ExpectedTotals.Contains(Item->GetItemDefinition());
+	}
+	if (!bContentsMatch)
+	{
+		Chest->Destroy();
+		return Failure(EASLootChestSpawnStatus::InventoryInitializationFailed,
+			TEXT("Chest contents changed during spawn; the incomplete chest was discarded."));
+	}
+	Result.Chest = Chest;
+	Result.Status = EASLootChestSpawnStatus::Success;
+	return Result;
+}
+
 bool UASLootBlueprintLibrary::GenerateLootFromPreset(const FDataTableRowHandle& Preset, const int32 Seed,
 	TArray<FASItemGrant>& OutItems, FString& OutError)
 {
@@ -61,19 +130,17 @@ bool UASLootBlueprintLibrary::GenerateLootFromPreset(const FDataTableRowHandle& 
 	return FASLootGenerator::Generate(*Row, Random, OutItems, OutError);
 }
 
-AASLootChest* UASLootBlueprintLibrary::SpawnLootChestFromPreset(UObject* WorldContextObject,
+FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestFromPresetWithResult(UObject* WorldContextObject,
 	const FDataTableRowHandle& Preset, const FTransform& SpawnTransform, const int32 Seed)
 {
-	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
-	if (!World || World->GetNetMode() == NM_Client || SpawnTransform.ContainsNaN()) return nullptr;
-	TArray<FASItemGrant> Items;
+	FASLootChestSpawnResult Result;
+	if (!ValidateContext(WorldContextObject, SpawnTransform, Result)) return Result;
 	FString Error;
 	const FASLootChestPresetRow* Row = ResolvePreset(Preset, Error);
+	if (!Row || !Row->Validate(Error)) return Failure(EASLootChestSpawnStatus::InvalidPreset, Error);
+	TArray<FASItemGrant> Items;
 	FRandomStream Random(Seed);
-	if (!Row || !FASLootGenerator::Generate(*Row, Random, Items, Error))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[LootChest] Preset %s: %s"), *Preset.RowName.ToString(), *Error);
-		return nullptr;
-	}
-	return SpawnLootChest(WorldContextObject, Row->ChestClass, SpawnTransform, Items);
+	if (!FASLootGenerator::Generate(*Row, Random, Items, Error))
+		return Failure(EASLootChestSpawnStatus::LootGenerationFailed, Error);
+	return SpawnLootChestWithResult(WorldContextObject, Row->ChestClass, SpawnTransform, Items);
 }

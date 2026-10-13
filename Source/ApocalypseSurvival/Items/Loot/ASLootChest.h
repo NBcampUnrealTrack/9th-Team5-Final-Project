@@ -36,6 +36,13 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
 	bool SetInitialLoot(const TArray<FASItemGrant>& Items);
 
+	/** Applied once after construction. Also used by BeginPlay; returns the cached result on repeat calls.
+	 * Failed additions are rolled back. Spawn callers destroy the rejected chest.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
+	bool InitializeInitialLoot(FString& OutError);
+	const FString& GetInitialLootError() const { return InitialLootError; }
+
 	/** Server revalidates range, recipient ownership and remaining quantity for every pickup. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
 	int32 TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInventory, FGuid InstanceId, int32 Quantity);
@@ -74,6 +81,14 @@ private:
 	/** Spawn input overrides the Blueprint defaults; applied once on the server before Blueprint BeginPlay. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot", meta = (AllowPrivateAccess = "true", ExposeOnSpawn = "true"))
 	TArray<FASItemGrant> InitialLoot;
+
+	/** Preserve explicit API input if a Blueprint construction script changes InitialLoot defaults. */
+	UPROPERTY(Transient)
+	TArray<FASItemGrant> SpawnInitialLoot;
+	bool bHasSpawnInitialLoot = false;
+	bool bInitialLootAttempted = false;
+	bool bInitialLootSucceeded = false;
+	FString InitialLootError;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
 	float InteractionRange = 250.0f;
