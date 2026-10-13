@@ -12,6 +12,8 @@
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 AASLootChest::AASLootChest()
 {
@@ -181,7 +183,72 @@ void AASLootChest::BeginPlay()
 			UE_LOG(LogTemp, Warning, TEXT("[LootChest] %s: %s"), *GetName(), *Error);
 	}
 	Super::BeginPlay();
-	if (bInitializationFailed) Destroy();
+	if (bInitializationFailed)
+	{
+		Destroy();
+		return;
+	}
+
+	if (HasAuthority() && IsValid(LootInventory))
+	{
+		LootInventory->OnInventoryChanged.AddUniqueDynamic(this, &AASLootChest::HandleLootInventoryChanged);
+		UpdateEmptyDespawnTimer();
+	}
+}
+
+void AASLootChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(EmptyDespawnTimerHandle);
+	}
+	if (IsValid(LootInventory))
+	{
+		LootInventory->OnInventoryChanged.RemoveDynamic(this, &AASLootChest::HandleLootInventoryChanged);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void AASLootChest::HandleLootInventoryChanged()
+{
+	UpdateEmptyDespawnTimer();
+}
+
+void AASLootChest::UpdateEmptyDespawnTimer()
+{
+	if (!HasAuthority() || !IsValid(LootInventory) || IsActorBeingDestroyed() || !GetWorld())
+	{
+		return;
+	}
+
+	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
+	if (LootInventory->GetUsedSlotCount() > 0)
+	{
+		TimerManager.ClearTimer(EmptyDespawnTimerHandle);
+		return;
+	}
+
+	if (TimerManager.IsTimerActive(EmptyDespawnTimerHandle))
+	{
+		return;
+	}
+
+	if (EmptyDespawnDelay <= 0.0f)
+	{
+		DespawnIfStillEmpty();
+		return;
+	}
+
+	TimerManager.SetTimer(EmptyDespawnTimerHandle, this, &AASLootChest::DespawnIfStillEmpty,
+		EmptyDespawnDelay, false);
+}
+
+void AASLootChest::DespawnIfStillEmpty()
+{
+	if (HasAuthority() && IsValid(LootInventory) && LootInventory->GetUsedSlotCount() == 0 && !IsActorBeingDestroyed())
+	{
+		Destroy();
+	}
 }
 
 bool AASLootChest::CanInteract_Implementation(AActor* Interactor) const
