@@ -163,16 +163,6 @@ bool UASMapWidget::ComputeView(const FVector2D& LocalSize, const UASMapDefinitio
 	return true;
 }
 
-FVector2D UASMapWidget::WorldToWidgetLocal(const FVector& WorldLocation) const
-{
-	const UASMapDefinition* Definition = UASMapFunctionLibrary::GetMapDefinition(this);
-	if (!Definition || !bHasLastView)
-	{
-		return FVector2D::ZeroVector;
-	}
-	return LastView.UVToLocal(Definition->WorldToMapUV(WorldLocation));
-}
-
 FLinearColor UASMapWidget::GetMarkerColor(uint8 MarkerType) const
 {
 	switch (static_cast<EASMapMarkerType>(MarkerType))
@@ -242,12 +232,8 @@ int32 UASMapWidget::NativePaint(
 	FMapView View;
 	if (!ComputeView(LocalSize, Definition, View) || !MapState || !Subsystem || !VisionSubsystem || !World)
 	{
-		bHasLastView = false;
 		return Layer;
 	}
-
-	LastView = View;
-	bHasLastView = true;
 
 	const FSlateFontInfo Font = LabelFont.HasValidFont() ? LabelFont : FCoreStyle::GetDefaultFontStyle("Bold", 9);
 	const FVector2D MapTopLeft = View.UVToLocal(FVector2D::ZeroVector);

@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
+#include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "MapSystem/Zone/Manager/ASMapSystemManager.h"
 
 UASMapGameFlowComponent::UASMapGameFlowComponent()
@@ -72,7 +73,6 @@ void UASMapGameFlowComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	GameState.Reset();
 	MapManager = nullptr;
-	bHasPendingPhase = false;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -125,19 +125,12 @@ void UASMapGameFlowComponent::HandlePhaseChanged(EGamePhase NewPhase)
 
 			if (IsValid(MapManager) && MapManager->IsMapRunning())
 			{
-				bHasPendingPhase = false;
 				MapManager->HandlePhaseChanged(Context);
-			}
-			else
-			{
-				PendingPhase = Context;
-				bHasPendingPhase = true;
 			}
 		}
 		break;
 	case EGamePhase::Victory:
 	case EGamePhase::Defeat:
-		bHasPendingPhase = false;
 		if (IsValid(MapManager))
 		{
 			MapManager->StopMap();
@@ -154,11 +147,5 @@ void UASMapGameFlowComponent::ApplyCurrentPhase()
 	if (const AASGameState* GS = GameState.Get())
 	{
 		HandlePhaseChanged(GS->GetCurrentPhase());
-	}
-	if (bHasPendingPhase && IsValid(MapManager) && MapManager->IsMapRunning())
-	{
-		const FASMapPhaseContext Context = PendingPhase;
-		bHasPendingPhase = false;
-		MapManager->HandlePhaseChanged(Context);
 	}
 }

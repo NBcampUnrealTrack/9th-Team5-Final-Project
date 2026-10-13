@@ -77,10 +77,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
 	FSlateFontInfo LabelFont;
 
-	/** 마지막으로 그린 뷰에서 월드 위치의 위젯 로컬 위치 (Blueprint 오버레이용). */
-	UFUNCTION(BlueprintPure, Category = "AS|Map")
-	FVector2D WorldToWidgetLocal(const FVector& WorldLocation) const;
-
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -125,6 +121,4 @@ private:
 	FSlateBrush SolidBrush;
 	FSlateBrush MapTextureBrush;
 	FSlateBrush FogBrush;
-	mutable FMapView LastView;
-	mutable bool bHasLastView = false;
 };

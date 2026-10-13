@@ -330,12 +330,3 @@ void AASFogOfWarManager::ResetExplored()
 {
 	FogDisplayComponent->ResetExplored();
 }
-
-bool AASFogOfWarManager::CanSourceSeeTarget(
-	const UASVisionSourceComponent* Source,
-	const UASVisibilityComponent* Target,
-	double ServerTime,
-	bool bWallOcclusion) const
-{
-	return VisionEvaluatorComponent->CanSourceSeeTarget(Source, Target, ServerTime, bWallOcclusion, GetNightAlpha());
-}
