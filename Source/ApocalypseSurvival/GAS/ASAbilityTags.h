@@ -17,6 +17,9 @@ namespace ASGameplayTags
 	 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 
+	/** 피해 무적. 지속형 GE가 부여하며, 피해 GE는 이 태그가 있으면 적용되지 않는다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable);
+
 	/** 체력이 0 이 되었을 때 ASC 에 보내는 이벤트. 사망 어빌리티가 이 태그로 켜진다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Death);
 
@@ -31,4 +34,10 @@ namespace ASGameplayTags
 
 	/** 스태미나 회복의 두 번째 빠른 단계 식별 태그. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_StaminaRegen_Fast);
+
+	/** 피해 GameplayEffect 식별용 에셋 태그. ASC에 부여되는 상태 태그가 아니다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Damage);
+
+	/** 무적 GameplayEffect 식별용 에셋 태그. 리스폰 때 남은 무적 효과를 정리하는 데 쓴다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Invulnerable);
 }
