@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/DataTable.h"
 #include "ASInventoryComponent.generated.h"
 
 class UASItemDefinition;
@@ -33,6 +34,10 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual bool ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
 	virtual void ReadyForReplication() override;
+
+	/** Server-only, all-or-nothing grant. Success is remembered for this component's lifetime. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Initial Items")
+	bool GrantInitialItems(FString& OutError);
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UASItemInstance* FindItemById(FGuid InstanceId) const;
@@ -157,6 +162,11 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0"))
 	int32 MaxSlots = 0;
 
+	/** Optional starting-items table row. Automatically granted on the server at BeginPlay. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Initial Items",
+		meta = (AllowPrivateAccess = "true", RowType = "/Script/ApocalypseSurvival.ASStartingItemsRow"))
+	FDataTableRowHandle InitialItemsPreset;
+
 	/** All owned instances. InventorySlot identifies a backpack position or WeaponSlotIndex. */
 	UPROPERTY(ReplicatedUsing = OnRep_Items, VisibleInstanceOnly, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<UASItemInstance>> Items;
@@ -169,4 +179,5 @@ private:
 	TObjectPtr<UASItemUseComponent> ItemUseComponent;
 
 	bool bChangingEquipment = false;
+	bool bInitialItemsGranted = false;
 };
