@@ -6,6 +6,7 @@
 #include "Items/Loot/ASLootDefinition.h"
 #include "Items/Loot/ASLootGenerator.h"
 #include "Items/Loot/ASLootValidation.h"
+#include "Items/Loot/ASLootSettings.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 
@@ -55,6 +56,17 @@ namespace
 		if (!Row) OutError = FString::Printf(TEXT("Loot preset row '%s' does not exist."), *Preset.RowName.ToString());
 		return Row;
 	}
+
+	const FASLootRarityAppearanceRow* ResolveRarityAppearance(const EASLootRarity Rarity)
+	{
+		const UASLootSettings* Settings = GetDefault<UASLootSettings>();
+		UDataTable* Table = Settings ? Settings->RarityAppearanceTable.LoadSynchronous() : nullptr;
+		if (!Table || Table->GetRowStruct() != FASLootRarityAppearanceRow::StaticStruct()) return nullptr;
+		const FString RowName = StaticEnum<EASLootRarity>()->GetNameStringByValue(static_cast<int64>(Rarity));
+		const FASLootRarityAppearanceRow* Row = Table->FindRow<FASLootRarityAppearanceRow>(FName(*RowName),
+			TEXT("ResolveLootRarityAppearance"), false);
+		return Row && Row->Rarity == Rarity ? Row : nullptr;
+	}
 }
 
 bool UASLootBlueprintLibrary::ValidateLootItems(const TArray<FASItemGrant>& Items, FString& OutError)
@@ -64,6 +76,13 @@ bool UASLootBlueprintLibrary::ValidateLootItems(const TArray<FASItemGrant>& Item
 
 FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestWithResult(UObject* WorldContextObject,
 	TSubclassOf<AASLootChest> ChestClass, const FTransform& SpawnTransform, const TArray<FASItemGrant>& Items)
+{
+	return SpawnLootChestWithAppearance(WorldContextObject, ChestClass, SpawnTransform, Items, nullptr);
+}
+
+FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestWithAppearance(UObject* WorldContextObject,
+	TSubclassOf<AASLootChest> ChestClass, const FTransform& SpawnTransform,
+	const TArray<FASItemGrant>& Items, const FASLootChestPresetRow* Preset)
 {
 	FASLootChestSpawnResult Result;
 	UWorld* World = ValidateContext(WorldContextObject, SpawnTransform, Result);
@@ -82,12 +101,33 @@ FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestWithResult(UObjec
 		Chest->Destroy();
 		return Failure(EASLootChestSpawnStatus::InventoryInitializationFailed, TEXT("Chest refused the initial loot configuration."));
 	}
+	if (Preset)
+	{
+		const FASLootRarityAppearanceRow* Appearance = ResolveRarityAppearance(Preset->Rarity);
+		Chest->SetLootRarityAppearance(Preset->Rarity,
+			Appearance ? Appearance->ChestMesh.Get() : nullptr,
+			Appearance ? Appearance->ChestMaterial.Get() : nullptr,
+			Appearance ? Appearance->MaterialIndex : 0,
+			Appearance ? Appearance->GetResolvedColor() : FLinearColor::White,
+			Appearance ? Appearance->ColorParameter : NAME_None);
+	}
 	Chest->FinishSpawning(SpawnTransform);
 	if (!IsValid(Chest) || Chest->IsActorBeingDestroyed())
 	{
 		Error = Chest->GetInitialLootError();
 		return Failure(Error.IsEmpty() ? EASLootChestSpawnStatus::SpawnFailed : EASLootChestSpawnStatus::InventoryInitializationFailed,
 			Error.IsEmpty() ? TEXT("Chest was destroyed while finishing its spawn.") : Error);
+	}
+	if (Preset)
+	{
+		// Construction scripts may set their default mesh/material after the deferred spawn setup.
+		const FASLootRarityAppearanceRow* Appearance = ResolveRarityAppearance(Preset->Rarity);
+		Chest->SetLootRarityAppearance(Preset->Rarity,
+			Appearance ? Appearance->ChestMesh.Get() : nullptr,
+			Appearance ? Appearance->ChestMaterial.Get() : nullptr,
+			Appearance ? Appearance->MaterialIndex : 0,
+			Appearance ? Appearance->GetResolvedColor() : FLinearColor::White,
+			Appearance ? Appearance->ColorParameter : NAME_None);
 	}
 	// Covers worlds that have not dispatched BeginPlay yet. BeginPlay will reuse this result.
 	if (!Chest->InitializeInitialLoot(Error))
@@ -142,5 +182,5 @@ FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestFromPresetWithRes
 	FRandomStream Random(Seed);
 	if (!FASLootGenerator::Generate(*Row, Random, Items, Error))
 		return Failure(EASLootChestSpawnStatus::LootGenerationFailed, Error);
-	return SpawnLootChestWithResult(WorldContextObject, Row->ChestClass, SpawnTransform, Items);
+	return SpawnLootChestWithAppearance(WorldContextObject, Row->ChestClass, SpawnTransform, Items, Row);
 }

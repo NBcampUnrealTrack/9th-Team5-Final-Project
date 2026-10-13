@@ -1,6 +1,7 @@
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
 #include "Core/Spawn/ASSpawnSubsystem.h"
+#include "Items/Loot/ASLootDaySpawnSubsystem.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
@@ -10,6 +11,7 @@
 #include "Components/CapsuleComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
+#include "GameplayEffect.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 
 AASGameMode::AASGameMode()
@@ -88,6 +90,10 @@ void AASGameMode::StartDay(int32 Day)
 	{
 		SpawnSubsystem->HandleDayStarted(Day, DaySpawnDataTable, MonsterSpawnGroupDataTable);
 	}
+	if (UASLootDaySpawnSubsystem* LootSpawnSubsystem = GetWorld()->GetSubsystem<UASLootDaySpawnSubsystem>())
+	{
+		LootSpawnSubsystem->HandleDayStarted(Day, LootDaySpawnScheduleDataTable, Duration);
+	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnDayTimeUp, Duration, false);
 }
@@ -101,6 +107,10 @@ void AASGameMode::StartNight()
 {
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
+	if (UASLootDaySpawnSubsystem* LootSpawnSubsystem = GetWorld()->GetSubsystem<UASLootDaySpawnSubsystem>())
+	{
+		LootSpawnSubsystem->HandleDayEnded();
+	}
 	
 	const int32 Day = GS->GetCurrentDay();
 	const float Duration = GetNightDuration(Day);
@@ -382,6 +392,38 @@ void AASGameMode::RespawnPlayer(AController* Controller)
 		// 포인트가 없으면 PlayerStart에서
 		RestartPlayer(Controller);
 	}
+
+	// RestartPlayer 계열은 PossessedBy까지 동기적으로 완료한다. 따라서 PlayerState ASC의
+	// Avatar가 새 Pawn으로 연결된 뒤에 보호 GE를 적용할 수 있다.
+	ApplyRespawnInvulnerability(Controller);
+}
+
+void AASGameMode::ApplyRespawnInvulnerability(AController* Controller) const
+{
+	if (!Controller || !Controller->GetPawn() || !RespawnInvulnerabilityEffect || RespawnInvulnerabilityDuration <= 0.0f)
+	{
+		return;
+	}
+
+	APlayerState* PlayerState = Controller->GetPlayerState<APlayerState>();
+	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PlayerState);
+	if (!ASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GameMode] %s의 리스폰 무적 ASC를 찾지 못했다."), *GetNameSafe(Controller));
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = ASC->MakeEffectContext();
+	EffectContext.AddSourceObject(Controller->GetPawn());
+	FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(RespawnInvulnerabilityEffect, 1.0f, EffectContext);
+	if (!Spec.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GameMode] 리스폰 무적 Effect Spec을 만들지 못했다: %s"), *GetNameSafe(RespawnInvulnerabilityEffect));
+		return;
+	}
+
+	Spec.Data->SetDuration(RespawnInvulnerabilityDuration, true);
+	ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 }
 
 TArray<AASRespawnPoint*> AASGameMode::GetAvailableRespawnPoints() const

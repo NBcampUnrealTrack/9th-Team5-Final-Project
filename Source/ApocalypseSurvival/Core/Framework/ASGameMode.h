@@ -9,6 +9,7 @@ class AASGameState;
 class AASRespawnPoint;
 class UASPlayerRecordComponent;
 class UDataTable;
+class UGameplayEffect;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -98,6 +99,14 @@ protected:
 	// 사망 후 리스폰까지 대기 시간 (초)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
 	float RespawnDelay = 3.f;
+
+	/** 리스폰 직후 자신에게 적용할 무적 효과. BP에서 GE_Invulnerable을 지정한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")
+	TSubclassOf<UGameplayEffect> RespawnInvulnerabilityEffect;
+
+	/** 0이면 리스폰 무적을 적용하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn", meta = (ClampMin = "0.0", Units = "s"))
+	float RespawnInvulnerabilityDuration = 3.f;
 	
 	// 행 이름 Wave_01, Wave_02 ... 에 따라 날짜별 스웜을 정의한 DataTable.
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Wave")
@@ -110,6 +119,11 @@ protected:
 	// 행 이름 MonsterGroup_00, MonsterGroup_01 ... 에 따라 그룹별 몬스터 구성과 가중치를 정의한 DataTable.
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn")
 	TObjectPtr<UDataTable> MonsterSpawnGroupDataTable;
+
+	// DayNumber and SecondsAfterDayStart rows that schedule server-side loot chest spawns.
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn|Loot",
+		meta = (RequiredAssetDataTags = "RowStructure=/Script/ApocalypseSurvival.ASLootDaySpawnScheduleRow"))
+	TObjectPtr<UDataTable> LootDaySpawnScheduleDataTable;
 	
 	// 단계 진행
 	void StartDay(int32 Day);
@@ -126,6 +140,7 @@ protected:
 	// 사망과 리스폰
 	UASPlayerRecordComponent* GetOrCreateRecord(AController* Controller) const;
 	void RespawnPlayer(AController* Controller);
+	void ApplyRespawnInvulnerability(AController* Controller) const;
 	
 	// 리스폰 시 바닥에 박히지 않도록 높이 보간 (캡슐 절반 높이, 없으면 100cm)
 	float GetSpawnHeightOffset(AController* Controller);

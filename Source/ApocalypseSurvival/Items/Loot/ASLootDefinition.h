@@ -9,6 +9,47 @@
 
 class AASLootChest;
 class UASItemDefinition;
+class UMaterialInterface;
+class UStaticMesh;
+
+/** Visual quality tier shared by loot presets and spawned chests. */
+UENUM(BlueprintType)
+enum class EASLootRarity : uint8
+{
+	Common,
+	Uncommon,
+	Rare,
+	Epic,
+	Legendary
+};
+
+/** Shared visual settings resolved by rarity from the configured appearance DataTable. */
+USTRUCT(BlueprintType)
+struct APOCALYPSESURVIVAL_API FASLootRarityAppearanceRow : public FTableRowBase
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
+	EASLootRarity Rarity = EASLootRarity::Common;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
+	TObjectPtr<UStaticMesh> ChestMesh = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
+	TObjectPtr<UMaterialInterface> ChestMaterial = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance", meta = (ClampMin = "0"))
+	int32 MaterialIndex = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance|Color")
+	FName ColorParameter = TEXT("RarityColor");
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance|Color")
+	bool bOverrideColor = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance|Color",
+		meta = (EditCondition = "bOverrideColor", EditConditionHides))
+	FLinearColor ColorOverride = FLinearColor::White;
+
+	FLinearColor GetResolvedColor() const;
+	bool Validate(FString& OutError) const;
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
+};
 
 /** Candidate table row: the single source of item weights and random quantity ranges. */
 USTRUCT(BlueprintType)
@@ -47,6 +88,8 @@ USTRUCT(BlueprintType)
 struct APOCALYPSESURVIVAL_API FASLootChestPresetRow : public FTableRowBase
 {
 	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
+	EASLootRarity Rarity = EASLootRarity::Common;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot")
 	TSubclassOf<AASLootChest> ChestClass;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Fixed")

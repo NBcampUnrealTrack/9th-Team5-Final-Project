@@ -123,6 +123,10 @@ void AASPlayerController::SetupInputComponent()
 
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
+	// 스킬·공격 입력은 이전 우클릭 이동 명령을 이어받지 않는다.
+	// 누르고 있는 이동 입력은 다음 Triggered 이벤트에서 새 명령으로 다시 처리된다.
+	StopMovement();
+
 	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
 	// 스킬 조준 중에는 기존 조준 상태와 충돌하지 않도록 무시한다.
 	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Prepare))
@@ -172,8 +176,8 @@ void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 	else if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary)
 		&& AttackMoveComponent->HasActiveCommand())
 	{
-		// 첫 좌클릭 뒤 Seeking/Chasing 상태에서도 다음 좌클릭이 일반 조준 확정으로
-		// 새면 안 된다. 적을 찾았을 때는 컴포넌트가 LocalInputConfirm을 직접 보낸다.
+		// 진행 중인 공격 이동에 다시 좌클릭하면 허공 공격으로 새지 않고 명령을 취소한다.
+		AttackMoveComponent->CancelAttackMove();
 		return;
 	}
 
