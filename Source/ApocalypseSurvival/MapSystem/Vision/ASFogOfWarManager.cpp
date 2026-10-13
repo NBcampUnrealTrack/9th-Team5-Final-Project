@@ -4,10 +4,13 @@
 #include "Components/SceneComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "MapSystem/Vision/ASFogDisplayComponent.h"
+#include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASVisionEvaluatorComponent.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
+#include "MapSystem/Vision/ASVisionSourceComponent.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
@@ -164,6 +167,12 @@ void AASFogOfWarManager::BeginPlay()
 
 void AASFogOfWarManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld(); World && ActorSpawnedDelegateHandle.IsValid())
+	{
+		World->RemoveOnActorSpawnedHandler(ActorSpawnedDelegateHandle);
+	}
+	ActorSpawnedDelegateHandle.Reset();
+
 	GetWorldTimerManager().ClearTimer(VisionTimerHandle);
 	FogDisplayComponent->RemoveWorldFog();
 
@@ -243,7 +252,63 @@ bool AASFogOfWarManager::EnsureConfigured(bool bLogMissingDefinition)
 		GetWorldTimerManager().SetTimer(VisionTimerHandle, this, &AASFogOfWarManager::TickVision, ActiveInterval, true);
 	}
 
+	if (HasAuthority() && !bAutoAttachInitialized)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			bAutoAttachInitialized = true;
+			ActorSpawnedDelegateHandle = World->AddOnActorSpawnedHandler(
+				FOnActorSpawned::FDelegate::CreateWeakLambda(this, [this](AActor* Actor)
+				{
+					AutoAttachVisionComponents(Actor);
+				}));
+
+			int32 AttachedCount = 0;
+			for (AActor* Actor : TActorRange<AActor>(World))
+			{
+				AttachedCount += AutoAttachVisionComponents(Actor);
+			}
+			UE_LOG(LogApocalypseSurvival, Log, TEXT("Vision auto attach initial scan added %d component(s)."), AttachedCount);
+		}
+	}
+
 	return true;
+}
+
+int32 AASFogOfWarManager::AutoAttachVisionComponents(AActor* Actor)
+{
+	if (!HasAuthority() || !VisionDefinition || !IsValid(Actor) || Actor->IsActorBeingDestroyed())
+	{
+		return 0;
+	}
+
+	const auto Matches = [Actor](const TArray<TSubclassOf<AActor>>& Classes)
+	{
+		return Classes.ContainsByPredicate([Actor](const TSubclassOf<AActor>& ActorClass)
+		{
+			return ActorClass && Actor->IsA(ActorClass.Get());
+		});
+	};
+
+	int32 AttachedCount = 0;
+	if (!Actor->FindComponentByClass<UASVisionSourceComponent>() && Matches(VisionDefinition->AutoVisionSourceClasses))
+	{
+		UASVisionSourceComponent* Component = NewObject<UASVisionSourceComponent>(Actor, TEXT("AutoVisionSource"));
+		Actor->AddInstanceComponent(Component);
+		// 이미 시작한 액터는 즉시, 지연 스폰 액터는 소유자와 함께 BeginPlay를 실행한다.
+		Component->RegisterComponent();
+		++AttachedCount;
+	}
+
+	if (!Actor->FindComponentByClass<UASVisibilityComponent>() && Matches(VisionDefinition->AutoVisibilityTargetClasses))
+	{
+		UASVisibilityComponent* Component = NewObject<UASVisibilityComponent>(Actor, TEXT("AutoVisibility"));
+		Actor->AddInstanceComponent(Component);
+		Component->RegisterComponent();
+		++AttachedCount;
+	}
+
+	return AttachedCount;
 }
 
 UTexture2D* AASFogOfWarManager::GetFogTexture() const

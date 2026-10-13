@@ -109,6 +109,7 @@ protected:
 private:
 	void TickVision();
 	bool EnsureConfigured(bool bLogMissingDefinition = false);
+	int32 AutoAttachVisionComponents(AActor* Actor);
 
 	UFUNCTION()
 	void OnRep_WallOcclusionEnabled();
@@ -134,6 +135,8 @@ private:
 
 	bool bWallOcclusionInitialized = false;
 	bool bConfigurationErrorLogged = false;
+	bool bAutoAttachInitialized = false;
+	FDelegateHandle ActorSpawnedDelegateHandle;
 	float ActiveInterval = 0.0f;
 	FTimerHandle VisionTimerHandle;
 };
