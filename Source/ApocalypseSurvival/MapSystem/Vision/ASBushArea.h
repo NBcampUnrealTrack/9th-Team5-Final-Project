@@ -6,12 +6,12 @@
 
 class UBoxComponent;
 class USceneComponent;
-class UShapeComponent;
+class UPrimitiveComponent;
 
 /**
  * 은폐 영역. 수풀 안의 대상은 같은 수풀에 시야 소스가 있는
  * 팀에게만 보이거나 (거리/벽 검사도 통과해야 함),
- * 공격으로 노출된 동안 보인다. 수풀 하나에 여러 도형을 사용할 수 있다.
+ * 공격으로 노출된 동안 보인다. 수풀 하나에 여러 도형과 다각형 영역을 사용할 수 있다.
  * 수풀은 시야 벽으로 취급하지 않는다.
  */
 UCLASS(Blueprintable)
@@ -46,5 +46,5 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBoxComponent> MainArea;
 
-	TArray<TWeakObjectPtr<UShapeComponent>> AreaShapes;
+	TArray<TWeakObjectPtr<UPrimitiveComponent>> AreaShapes;
 };

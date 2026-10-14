@@ -38,7 +38,9 @@ private:
 	void RasterizeTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C);
 	bool HasLocalPlayer() const;
 	void StepShownAlpha(int32 MaxStep);
-	void UploadTexture(const FIntRect& Dirty);
+	void UploadTexture(const TArray<FIntRect>& DirtyRegions);
+	FIntRect TileRegion(int32 TileIndex) const;
+	void MarkVisibleTiles(int32 MinX, int32 MinY, int32 MaxX, int32 MaxY);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "255"))
 	int32 ExploredAlpha = 150;
@@ -65,10 +67,20 @@ private:
 	TArray<uint8> VisibleCells;
 	TArray<uint8> PreviousVisibleCells;
 	TArray<uint8> ExploredCells;
+	TArray<uint8> RawAlpha;
 	TArray<uint8> TargetAlpha;
 	TArray<uint8> ShownAlpha;
 	TArray<uint8> BlurScratch;
 	TArray<FVector2D> OcclusionPoints;
+	/** 래스터 경계를 기록하고 변경과 페이드를 16셀 단위로 추적한다. */
+	static constexpr int32 TileSize = 16;
+	int32 TilesX = 0;
+	int32 TilesY = 0;
+	TArray<uint8> PreviousVisibleTiles;
+	TArray<uint8> CurrentVisibleTiles;
+	TArray<uint8> PendingFadeTiles;
+	/** 타일 안에서 원본 알파가 실제로 바뀐 셀의 최소 사각형을 패스마다 재사용한다. */
+	TArray<FIntRect> RawChangedRegions;
 	/** U는 월드 Y를, V는 월드 X를 따른다. */
 	int32 ResolutionX = 0;
 	int32 ResolutionY = 0;

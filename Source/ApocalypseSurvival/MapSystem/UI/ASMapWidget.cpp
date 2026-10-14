@@ -7,6 +7,8 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
+#include "GeomTools.h"
+#include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
@@ -17,6 +19,8 @@
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
 #include "Rendering/DrawElements.h"
+#include "Rendering/RenderingCommon.h"
+#include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 
 #define LOCTEXT_NAMESPACE "ASMapWidget"
@@ -184,6 +188,35 @@ FLinearColor UASMapWidget::GetMarkerColor(uint8 MarkerType) const
 	}
 }
 
+const UASMapWidget::FZoneAreaCache& UASMapWidget::GetCachedZoneArea(const AASMapZone* Zone) const
+{
+	TArray<TArray<FVector2D>> Outlines;
+	Zone->GetAreaOutlines(Outlines);
+	FZoneAreaCache& Cache = ZoneAreaCache.FindOrAdd(TWeakObjectPtr<const AASMapZone>(Zone));
+	if (Cache.Outlines != Outlines)
+	{
+		Cache.Outlines = MoveTemp(Outlines);
+		Cache.WorldTriangles.Reset(Cache.Outlines.Num());
+		for (const TArray<FVector2D>& Outline : Cache.Outlines)
+		{
+			TArray<FVector2D>& Triangles = Cache.WorldTriangles.AddDefaulted_GetRef();
+			FString Error;
+			if (!ASMapShapeUtils::ValidatePolygon(Outline, Error))
+			{
+				continue;
+			}
+			// UE 5.8의 귀 자르기는 양의 외적(CCW)을 요구한다. 출력 배열은 비워서 전달한다.
+			TArray<FVector2D> CounterClockwise;
+			FGeomTools2D::CorrectPolygonWinding(CounterClockwise, Outline, false);
+			if (!FGeomTools2D::TriangulatePoly(Triangles, CounterClockwise))
+			{
+				Triangles.Reset();
+			}
+		}
+	}
+	return Cache;
+}
+
 int32 UASMapWidget::NativePaint(
 	const FPaintArgs& Args,
 	const FGeometry& AllottedGeometry,
@@ -248,24 +281,51 @@ int32 UASMapWidget::NativePaint(
 	const int32 DangerLayer = ++Layer;
 	const int32 LabelLayer = ++Layer;
 
-	for (const AASMapZone* Zone : Subsystem->GetZones())
+	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	for (auto It = ZoneAreaCache.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid() || !Zones.Contains(It.Key().Get()))
+		{
+			It.RemoveCurrent();
+		}
+	}
+	const bool bCanDrawAreas = FSlateApplication::IsInitialized();
+	const FSlateResourceHandle SolidResource = bCanDrawAreas
+		? FSlateApplication::Get().GetRenderer()->GetResourceHandle(SolidBrush) : FSlateResourceHandle();
+
+	for (const AASMapZone* Zone : Zones)
 	{
 		const FASZoneRuntimeState* State = Snapshot.FindZone(Zone->GetZoneId());
 		const int32 Danger = State ? State->DangerLevel : 1;
 
-		TArray<FBox2D> Footprints;
-		Zone->GetFootprints(Footprints);
-
-		for (const FBox2D& Footprint : Footprints)
+		const FZoneAreaCache& Area = GetCachedZoneArea(Zone);
+		FLinearColor Fill = Definition->GetDangerColor(Danger);
+		Fill.A = ZoneFillOpacity;
+		const FColor VertexColor = Fill.ToFColor(true);
+		if (bCanDrawAreas)
 		{
-			const FVector2D A = WorldToLocal(FVector(Footprint.Min.X, Footprint.Min.Y, 0.0));
-			const FVector2D B = WorldToLocal(FVector(Footprint.Max.X, Footprint.Max.Y, 0.0));
-			const FVector2D TopLeft(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y));
-			const FVector2D Size(FMath::Abs(A.X - B.X), FMath::Abs(A.Y - B.Y));
-
-			FLinearColor Fill = Definition->GetDangerColor(Danger);
-			Fill.A = ZoneFillOpacity;
-			DrawRect(OutDrawElements, DangerLayer, AllottedGeometry, &SolidBrush, TopLeft, Size, Fill);
+			for (const TArray<FVector2D>& Triangles : Area.WorldTriangles)
+			{
+				if (Triangles.IsEmpty())
+				{
+					continue;
+				}
+				TArray<FSlateVertex> Vertices;
+				TArray<SlateIndex> Indices;
+				Vertices.Reserve(Triangles.Num());
+				Indices.Reserve(Triangles.Num());
+				for (int32 Index = 0; Index < Triangles.Num(); ++Index)
+				{
+					const FVector2D Local = WorldToLocal(FVector(Triangles[Index], 0.0));
+					Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(
+						AllottedGeometry.GetAccumulatedRenderTransform(),
+						FVector2f(static_cast<float>(Local.X), static_cast<float>(Local.Y)),
+						FVector2f(0.5f, 0.5f), VertexColor));
+					Indices.Add(static_cast<SlateIndex>(Index));
+				}
+				FSlateDrawElement::MakeCustomVerts(OutDrawElements, DangerLayer, SolidResource,
+					Vertices, Indices, nullptr, 0, 0);
+			}
 		}
 
 		if (bShowZoneLabels)
