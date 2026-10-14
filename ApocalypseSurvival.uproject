@@ -16,6 +16,11 @@
 	],
 	"Plugins": [
 		{
+			"Name": "SheetAssetImporter",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
+		},
+		{
 			"Name": "ModelingToolsEditorMode",
 			"Enabled": true,
 			"TargetAllowList": [
