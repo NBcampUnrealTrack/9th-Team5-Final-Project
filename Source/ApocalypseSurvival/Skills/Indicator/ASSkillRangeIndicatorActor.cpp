@@ -65,23 +65,42 @@ void AASSkillRangeIndicatorActor::InitIndicator(APawn* InCaster, const FASSkillI
 
 		if (Settings.Shape == EASSkillIndicatorShape::Cone && !ConeAngleParameterName.IsNone())
 		{
-			AreaMID->SetScalarParameterValue(ConeAngleParameterName, Settings.Angle);
+			AreaMID->SetScalarParameterValue(ConeAngleParameterName, Settings.Angle * ConeAngleDisplayScale);
 		}
 	}
 
 	//DecalSize = (투영 깊이, 좌우 절반, 앞뒤 절반)
 	const float RingRadius = FMath::Max(0.0f, Settings.RangeRingRadius);
-	RangeDecal->DecalSize = FVector(DecalDepth, RingRadius, RingRadius);
+	
+	//RangeDecal->DecalSize = FVector(DecalDepth, RingRadius, RingRadius);
+	
+	if (Settings.Shape == EASSkillIndicatorShape::Cone)
+	{
+		RangeDecal->DecalSize = FVector(DecalDepth, RingRadius * ConeRadiusDisplayScale, RingRadius * ConeRadiusDisplayScale);
+	}
+	else if (Settings.Shape == EASSkillIndicatorShape::Line)
+	{
+		RangeDecal->DecalSize = FVector(DecalDepth, RingRadius * LineRadiusDisplayScale, RingRadius * LineRadiusDisplayScale);
+	}
+	else
+	{
+		RangeDecal->DecalSize = FVector(DecalDepth, RingRadius, RingRadius);
+	}
+	
 	RangeDecal->MarkRenderStateDirty();
 	RangeDecal->SetVisibility(RingRadius > 0.0f && RangeMID != nullptr);
 
 	if (Settings.Shape == EASSkillIndicatorShape::Line)
 	{
-		AreaDecal->DecalSize = FVector(DecalDepth, Settings.Width * 0.5f, Settings.Length * 0.5f);
+		AreaDecal->DecalSize = FVector(DecalDepth, Settings.Width * 0.5f * LineWidthDisplayScale, Settings.Length * 0.5f * LineRadiusDisplayScale);
+	}
+	else if (Settings.Shape == EASSkillIndicatorShape::Cone)
+	{
+		AreaDecal->DecalSize = FVector(DecalDepth, Settings.Radius * ConeRadiusDisplayScale, Settings.Radius * ConeRadiusDisplayScale);
 	}
 	else
 	{
-		AreaDecal->DecalSize = FVector(DecalDepth, Settings.Radius, Settings.Radius);
+		AreaDecal->DecalSize = FVector(DecalDepth, Settings.Radius * CircleRadiusDisplayScale, Settings.Radius * CircleRadiusDisplayScale);
 	}
 	AreaDecal->MarkRenderStateDirty();
 	AreaDecal->SetVisibility(AreaMID != nullptr);
@@ -147,8 +166,8 @@ void AASSkillRangeIndicatorActor::UpdateIndicator()
 	FVector AreaLocation = TargetLocation;
 	if (Settings.TargetingType == EASSkillTargetingType::Direction && Settings.Shape == EASSkillIndicatorShape::Line)
 	{
-		//데칼은 중심 기준이라 직선은 길이 절반만큼 앞에 놓아야 시전자에서 시작함
-		AreaLocation = Origin + AimDirection * (Settings.Length * 0.5f);
+		//데칼 위치 수정
+		AreaLocation = Origin + AimDirection * (Settings.Length * 0.5f * LineRadiusDisplayScale);
 	}
 
 	AreaDecal->SetWorldLocationAndRotation(AreaLocation, ASSkillRangeIndicatorPrivate::MakeDecalRotation(Yaw));
