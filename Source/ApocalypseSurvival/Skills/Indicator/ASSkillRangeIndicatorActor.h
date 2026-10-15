@@ -72,11 +72,31 @@ protected:
 	//비우면 CircleMaterial 사용
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
 	TObjectPtr<UMaterialInterface> LineMaterial;
+	
+	//인디케이터 편의성을 위한 라인 범위 조정
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
+	float LineWidthDisplayScale = 0.95f;
+	
+	//인디케이터 편의성을 위한 라인 거리 조정
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
+	float LineRadiusDisplayScale = 0.95f;
 
 	//부채꼴 각도(도)를 넘길 머티리얼 스칼라 파라미터 이름 (부채꼴은 데칼 앞쪽을 향하게 그림)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
 	FName ConeAngleParameterName = TEXT("Angle");
+	
+	//인디케이터 편의성을 위한 부채꼴 범위 조정
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
+	float ConeAngleDisplayScale = 0.95f;
+	
+	//인디케이터 편의성을 위한 부채꼴 거리 조정
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
+	float ConeRadiusDisplayScale = 0.95f;
 
+	//인디케이터 편의성을 위한 원 범위 조정
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
+	float CircleRadiusDisplayScale = 0.95f;
+	
 	//데칼 투영 깊이 (경사·계단에서 끊기지 않게)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator", meta = (ClampMin = "1.0", Units = "cm"))
 	float DecalDepth = 200.0f;
