@@ -98,11 +98,17 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 
 	AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>();
 
-	// 리스폰이면 이전 캐릭터의 사망 상태가 ASC 에 남아 있다. 새 몸을 받았으니 걷어 낸다.
-	// ASC 연결보다 먼저 해야 한다. 연결 직후 "이미 죽어 있나" 검사가 도는데,
-	// 태그가 남아 있으면 새 몸에 사망 처리(이동·충돌 끄기)가 걸려 버린다.
+	// 첫 빙의면 캐릭터 정의의 기본 스탯을 넣고(한 번만), 리스폰이면 이전 캐릭터의 사망 상태를 걷어 낸다.
+	// ASC 연결보다 먼저 해야 한다. 연결할 때 이동 속도를 읽어 가고, 연결 직후 "이미 죽어 있나" 검사가 돈다.
 	if (IsValid(ASPlayerState))
 	{
+		// 다른 곳(나중의 캐릭터 선택)에서 이미 정해 줬으면 그 값을 쓴다.
+		if (!ASPlayerState->GetCharacterDefinition())
+		{
+			ASPlayerState->SetCharacterDefinition(CharacterDefinition);
+		}
+		
+		ASPlayerState->ApplyCharacterDefinitionOnce();
 		ASPlayerState->ResetForRespawn();
 	}
 

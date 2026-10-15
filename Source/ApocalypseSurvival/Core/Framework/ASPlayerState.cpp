@@ -8,6 +8,7 @@
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "Items/ASItemInstance.h"
 #include "Core/Input/ASInputTags.h"
+#include "Characters/Player/Data/ASCharacterDefinition.h"
 
 AASPlayerState::AASPlayerState()
 {
@@ -93,4 +94,50 @@ void AASPlayerState::ResetForRespawn()
 	AbilitySystemComponent->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), HealthAttributeSet->GetMaxHealth());
 	AbilitySystemComponent->SetNumericAttributeBase(UASPlayerAttributeSet::GetStaminaAttribute(), PlayerAttributeSet->GetMaxStamina());
 	AbilitySystemComponent->SetNumericAttributeBase(UASPlayerAttributeSet::GetManaAttribute(), PlayerAttributeSet->GetMaxMana());
+}
+
+void AASPlayerState::SetCharacterDefinition(const UASCharacterDefinition* InDefinition)
+{
+	if (!HasAuthority() || bCharacterDefinitionApplied)
+	{
+		return;
+	}
+	
+	CharacterDefinition = InDefinition;
+}
+
+void AASPlayerState::ApplyCharacterDefinitionOnce()
+{
+	if (!HasAuthority() || bCharacterDefinitionApplied)
+	{
+		return;
+	}
+	
+	if (!IsValid(CharacterDefinition))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PlayerState] 캐릭터 정의가 없어 어트리뷰트 기본값(C++)을 그대로 사용"));
+		return;
+	}
+	
+	// 성장 시스템이 생기기 전이라 레벨 1로 고정한다. 레벨은 이후 성장 컴포넌트가 관리한다
+	constexpr int32 StartLevel = 1;
+	
+	// 두 바퀴 도는 이유: Health 같은 현재값은 MaxHealth 를 넘지 못하게 막혀 있다.
+	// 목록 순서와 상관없이 첫 바퀴에 최대값이 들어가고, 두 번째 바퀴에 현재값이 제대로 들어간다.
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		for (const FASAttributeInitEntry& Entry : CharacterDefinition->BaseAttributes)
+		{
+			if (!Entry.Attribute.IsValid() || !AbilitySystemComponent->HasAttributeSetForAttribute(Entry.Attribute))
+			{
+				continue;
+			}
+			
+			const float Value = CharacterDefinition->GetAttributeValueAtLevel(Entry.Attribute, StartLevel, Entry.Value);
+			AbilitySystemComponent->SetNumericAttributeBase(Entry.Attribute, Value);
+		}
+	}
+	
+	bCharacterDefinitionApplied = true;
+	UE_LOG(LogTemp, Log, TEXT("[PlayerState] 캐릭터 정의 적용: %s"), *GetNameSafe(CharacterDefinition));
 }

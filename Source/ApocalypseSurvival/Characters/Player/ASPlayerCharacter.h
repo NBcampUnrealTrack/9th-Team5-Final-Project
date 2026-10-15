@@ -7,6 +7,7 @@
 
 class UASAbilitySet;
 class UASEquipmentComponent;
+class UASCharacterDefinition;
 struct FOnAttributeChangeData;
 
 /**
@@ -117,5 +118,11 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "GAS")
 	TObjectPtr<const UASAbilitySet> DefaultAbilitySet;
-
+	
+	/*
+	 * 이 캐릭터의 기본 스탯, 성장 데이터. BP 자식에서 지정한다.
+	 * 캐릭터 선택 기능이 생기면 게임모드가 PlayerState에 먼저 정해 주고, 이 값은 대체값이 된다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Character")
+	TObjectPtr<const UASCharacterDefinition> CharacterDefinition;
 };
