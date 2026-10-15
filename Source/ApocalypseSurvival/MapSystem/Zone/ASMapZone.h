@@ -51,9 +51,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boundary")
 	bool bShowBoundary = true;
 
-	/** 지면에 그리는 구역 경계선 색. */
+	/** 구역 경계선 색. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boundary")
 	FLinearColor BoundaryColor = FLinearColor::White;
+
+	/** 구역 액터의 Z 위치를 기준으로 한 경계선 윗면 높이. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boundary", meta = (Units = "cm"))
+	float BoundaryHeight = 2.f;
+
+	/** 겹치는 리본과 원판에도 같은 밀도를 유지하는 디더 마스크 불투명도. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boundary", meta = (ClampMin = "0", ClampMax = "1"))
+	float BoundaryOpacity = 0.7f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Boundary")
 	TObjectPtr<UMaterialInterface> BoundaryMaterial;

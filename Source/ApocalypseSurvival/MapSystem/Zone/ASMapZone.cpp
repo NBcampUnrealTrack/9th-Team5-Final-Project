@@ -4,7 +4,6 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/StaticMesh.h"
-#include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "MapSystem/Shared/ASMapPolygonAreaComponent.h"
@@ -17,17 +16,14 @@
 #endif
 
 #if WITH_EDITOR
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #endif
 
 namespace
 {
-	// 경계선 폭, 최대 분할 길이, 지면 위 높이, 이음새 겹침 길이와 액터 기준 추적 시작 높이 (cm).
+	// 경계선 폭 (cm). 높이와 불투명도는 구역 액터에서 설정한다.
 	constexpr double BoundaryWidth = 30.0;
-	constexpr double BoundarySegmentLength = 200.0;
-	constexpr double BoundaryHeightOffset = 2.0;
-	constexpr double BoundaryJointOverlap = 4.0;
-	constexpr double BoundaryTraceStartHeight = 100.0;
 }
 
 AASMapZone::AASMapZone()
@@ -173,60 +169,35 @@ void AASMapZone::BuildBoundary()
 		return;
 	}
 
-	BoundaryComponent = NewObject<UInstancedStaticMeshComponent>(this, TEXT("BoundaryComponent"), RF_Transient);
-	BoundaryComponent->SetupAttachment(RootComponent);
-	// 액터의 위치, 회전, 스케일과 무관하게 인스턴스 변환을 월드 좌표로 사용한다.
-	BoundaryComponent->SetAbsolute(true, true, true);
-	BoundaryComponent->SetWorldTransform(FTransform::Identity);
-	BoundaryComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	BoundaryComponent->SetGenerateOverlapEvents(false);
-	BoundaryComponent->SetCastShadow(false);
-	BoundaryComponent->bReceivesDecals = false;
-	BoundaryComponent->SetCanEverAffectNavigation(false);
-	BoundaryComponent->SetStaticMesh(BoundaryPlaneMesh);
-	UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(BoundaryMaterial, BoundaryComponent);
-	Material->SetVectorParameterValue(TEXT("Color"), BoundaryColor);
-	BoundaryComponent->SetMaterial(0, Material);
-	BoundaryComponent->RegisterComponent();
-
-	BoundaryJointComponent = NewObject<UInstancedStaticMeshComponent>(this, TEXT("BoundaryJointComponent"), RF_Transient);
-	BoundaryJointComponent->SetupAttachment(RootComponent);
-	// 중심선 꼭짓점마다 같은 머티리얼의 얇은 원판을 월드 좌표로 배치한다.
-	BoundaryJointComponent->SetAbsolute(true, true, true);
-	BoundaryJointComponent->SetWorldTransform(FTransform::Identity);
-	BoundaryJointComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	BoundaryJointComponent->SetGenerateOverlapEvents(false);
-	BoundaryJointComponent->SetCastShadow(false);
-	BoundaryJointComponent->bReceivesDecals = false;
-	BoundaryJointComponent->SetCanEverAffectNavigation(false);
-	BoundaryJointComponent->SetStaticMesh(BoundaryCylinderMesh);
-	BoundaryJointComponent->SetMaterial(0, Material);
-	BoundaryJointComponent->RegisterComponent();
+	const auto CreateBoundaryComponent = [this](const FName Name, UStaticMesh* Mesh)
+	{
+		UInstancedStaticMeshComponent* Component = NewObject<UInstancedStaticMeshComponent>(this, Name, RF_Transient);
+		Component->SetupAttachment(RootComponent);
+		// 액터의 위치, 회전, 스케일과 무관하게 인스턴스 변환을 월드 좌표로 사용한다.
+		Component->SetAbsolute(true, true, true);
+		Component->SetWorldTransform(FTransform::Identity);
+		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Component->SetGenerateOverlapEvents(false);
+		Component->SetCastShadow(false);
+		Component->bReceivesDecals = false;
+		Component->SetCanEverAffectNavigation(false);
+		Component->SetStaticMesh(Mesh);
+		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(BoundaryMaterial, Component);
+		Material->SetVectorParameterValue(TEXT("Color"), BoundaryColor);
+		Material->SetScalarParameterValue(TEXT("Opacity"), BoundaryOpacity);
+		Component->SetMaterial(0, Material);
+		Component->RegisterComponent();
+		return Component;
+	};
+	BoundaryComponent = CreateBoundaryComponent(TEXT("BoundaryComponent"), BoundaryPlaneMesh);
+	BoundaryJointComponent = CreateBoundaryComponent(TEXT("BoundaryJointComponent"), BoundaryCylinderMesh);
 
 	TArray<TArray<FVector2D>> Outlines;
 	GetAreaOutlines(Outlines);
-	const double ZoneZ = GetActorLocation().Z;
-	const FCollisionObjectQueryParams ObjectParams(ECC_WorldStatic);
-	const FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ZoneBoundary), false, this);
-	const auto GetBoundaryHeight = [this, ZoneZ, &ObjectParams, &QueryParams](const FVector2D& Center)
-	{
-		TArray<FHitResult> Hits;
-		GetWorld()->LineTraceMultiByObjectType(Hits,
-			FVector(Center.X, Center.Y, ZoneZ + BoundaryTraceStartHeight), FVector(Center.X, Center.Y, ZoneZ - 1000.0),
-			ObjectParams, QueryParams);
-		// 벽 내부에서 시작한 관통 히트는 시작 높이를 반환하므로 건너뛰고 지면을 찾는다.
-		for (const FHitResult& Hit : Hits)
-		{
-			if (!Hit.bStartPenetrating)
-			{
-				return Hit.ImpactPoint.Z + BoundaryHeightOffset;
-			}
-		}
-		return ZoneZ + BoundaryHeightOffset;
-	};
+	const double BoundaryZ = GetActorLocation().Z + BoundaryHeight;
 	const double HalfWidth = BoundaryWidth * 0.5;
 	const FVector JointScale(BoundaryWidth / 100.0, BoundaryWidth / 100.0, 0.002);
-	// 피벗 위치와 무관하게 원판 윗면을 리본과 같은 지면 위 높이에 맞춘다.
+	// 피벗 위치와 무관하게 원판 윗면을 리본과 같은 액터 기준 높이에 맞춘다.
 	const FBoxSphereBounds CylinderBounds = BoundaryCylinderMesh->GetBounds();
 	const double JointTopOffset = (CylinderBounds.Origin.Z + CylinderBounds.BoxExtent.Z) * JointScale.Z;
 	for (const TArray<FVector2D>& Outline : Outlines)
@@ -291,10 +262,10 @@ void AASMapZone::BuildBoundary()
 			}
 			const FVector2D InsetVertex = Vertices[Index] + Offset;
 			InsetVertices.Add(InsetVertex);
-			const FVector JointLocation(InsetVertex.X, InsetVertex.Y, GetBoundaryHeight(InsetVertex) - JointTopOffset);
+			const FVector JointLocation(InsetVertex.X, InsetVertex.Y, BoundaryZ - JointTopOffset);
 			BoundaryJointComponent->AddInstance(FTransform(FRotator::ZeroRotator, JointLocation, JointScale));
 		}
-		// 이동된 꼭짓점 사이에 리본을 이어 볼록·오목 모서리에서도 중심선이 끊기지 않게 한다.
+		// 안쪽 다각형의 변마다 분할이나 길이 겹침 없이 리본 하나를 배치한다.
 		for (int32 Index = 0; Index < InsetVertices.Num(); ++Index)
 		{
 			const FVector2D& Start = InsetVertices[Index];
@@ -305,16 +276,11 @@ void AASMapZone::BuildBoundary()
 				continue;
 			}
 			const FVector2D Direction = Edge / EdgeLength;
-			const int32 SegmentCount = FMath::CeilToInt(EdgeLength / BoundarySegmentLength);
-			const double SegmentLength = EdgeLength / SegmentCount;
 			const FRotator Rotation(0.0, FMath::RadiansToDegrees(FMath::Atan2(Direction.Y, Direction.X)), 0.0);
-			for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)
-			{
-				const FVector2D Center = Start + Direction * ((SegmentIndex + 0.5) * SegmentLength);
-				const FVector Location(Center.X, Center.Y, GetBoundaryHeight(Center));
-				const FVector Scale((SegmentLength + BoundaryJointOverlap) / 100.0, BoundaryWidth / 100.0, 1.0);
-				BoundaryComponent->AddInstance(FTransform(Rotation, Location, Scale));
-			}
+			const FVector2D Center = Start + Edge * 0.5;
+			const FVector Location(Center.X, Center.Y, BoundaryZ);
+			const FVector Scale(EdgeLength / 100.0, BoundaryWidth / 100.0, 1.0);
+			BoundaryComponent->AddInstance(FTransform(Rotation, Location, Scale));
 		}
 	}
 }
