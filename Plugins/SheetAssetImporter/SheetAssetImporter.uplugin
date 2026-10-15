@@ -1,0 +1,13 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0",
+  "FriendlyName": "Sheet Asset Importer",
+  "Description": "Editor-only, reflection-based CSV and Google Sheets import into DataTables and DataAssets.",
+  "Category": "Editor",
+  "CanContainContent": false,
+  "EnabledByDefault": false,
+  "Modules": [
+    { "Name": "SheetAssetImporter", "Type": "Editor", "LoadingPhase": "PostEngineInit" }
+  ]
+}
