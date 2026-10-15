@@ -1,6 +1,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 
 #include "Characters/Player/Components/ASEquipmentComponent.h"
+#include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASPlayerState.h"
@@ -316,4 +317,17 @@ void AASPlayerCharacter::RestoreFromDeath()
 	// ApplyLocalDeath 가 끈 것을 같은 순서로 되돌린다. 충돌을 먼저 켜야 걷기 모드가 바닥을 찾는다.
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	GetCharacterMovement()->SetDefaultMovementMode();
+}
+
+void AASPlayerCharacter::DebugAddExp(int32 Amount)
+{
+	AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>();
+	UASProgressionComponent* Progression = ASPlayerState ? ASPlayerState->GetProgressionComponent() : nullptr;
+	if (!Progression)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Debug] 성장 컴포넌트를 찾지 못함"));
+		return;
+	}
+	
+	Progression->AddExperience(Amount);
 }

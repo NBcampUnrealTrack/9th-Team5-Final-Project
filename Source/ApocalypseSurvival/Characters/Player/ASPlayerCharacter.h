@@ -65,6 +65,9 @@ public:
 		float Radius,
 		bool bIsMelee,
 		bool bHit);
+	
+	UFUNCTION(Exec)
+	void DebugAddExp(int32 Amount);
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -9,6 +9,7 @@
 #include "Items/ASItemInstance.h"
 #include "Core/Input/ASInputTags.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
+#include "Characters/Player/Components/ASProgressionComponent.h"
 
 AASPlayerState::AASPlayerState()
 {
@@ -21,6 +22,7 @@ AASPlayerState::AASPlayerState()
 	HealthAttributeSet = CreateDefaultSubobject<UASHealthAttributeSet>(TEXT("HealthAttributeSet"));
 	CombatAttributeSet = CreateDefaultSubobject<UASCombatAttributeSet>(TEXT("CombatAttributeSet"));
 	PlayerAttributeSet = CreateDefaultSubobject<UASPlayerAttributeSet>(TEXT("PlayerAttributeSet"));
+	ProgressionComponent = CreateDefaultSubobject<UASProgressionComponent>(TEXT("ProgressionComponent"));
 
 	// PlayerState 는 기본 복제 주기가 느려서 그대로 두면 어트리뷰트 갱신이 늦게 보인다.
 	SetNetUpdateFrequency(100.0f);

@@ -7,6 +7,7 @@
 
 class AASPlayerCharacter;
 class UTexture2D;
+class UASProgressionData;
 
 /* 레벨 1일 때 어트리뷰트 기본값 하나 */
 USTRUCT(BlueprintType)
@@ -66,6 +67,10 @@ public:
 	// 레벨업마다 오르는 값 (Max 계열과 공격력, 이동속도 등)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attributes")
 	TArray<FASAttributeGrowEntry> LevelGrowth;
+	
+	// 레벨별 필요 경험치, 최대레벨, 스킬포인트 규칙
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression")
+	TObjectPtr<const UASProgressionData> ProgressionData;
 	
 	// 레벨 1 기본값 (목록에 없으면 DefaultValue)
 	float GetBaseAttributeValue(const FGameplayAttribute& Attribute, float DefaultValue = 0.f) const;

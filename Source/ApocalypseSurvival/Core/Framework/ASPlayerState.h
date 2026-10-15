@@ -12,6 +12,7 @@ class UASHealthAttributeSet;
 class UASItemInstance;
 class UASPlayerAttributeSet;
 class UASCharacterDefinition;
+class UASProgressionComponent;
 
 
 /**
@@ -71,6 +72,9 @@ public:
 	 * 리스폰 때는 다시 넣지 않는다. 레벨업으로 오른 값이 초기화되면 안 되기 때문이다.
 	 */
 	void ApplyCharacterDefinitionOnce();
+	
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	UASProgressionComponent* GetProgressionComponent() const { return ProgressionComponent; }
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
@@ -98,4 +102,8 @@ private:
 	
 	/* 캐릭터 정의를 어트리뷰트에 이미 넣었는가. 서버만 쓴다. */
 	bool bCharacterDefinitionApplied = false;
+	
+	/* 레벨, 경험치, 스킬포인트. PlayerState에 있어서 리스폰 시 유지 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Progression", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASProgressionComponent> ProgressionComponent;
 };
