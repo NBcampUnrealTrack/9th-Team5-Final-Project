@@ -9,6 +9,9 @@ class UASMapPolygonAreaComponent;
 class USceneComponent;
 class UPrimitiveComponent;
 class UASZoneLinkDebugComponent;
+class UInstancedStaticMeshComponent;
+class UMaterialInterface;
+class UStaticMesh;
 
 /**
  * 고정 맵 구역 중 하나. 레벨에 배치하며 모든 머신에 존재한다.
@@ -44,6 +47,16 @@ public:
 	/** 매치 시작 시 위험도 (1..5). */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Map", meta = (ClampMin = "1", ClampMax = "5"))
 	int32 InitialDangerLevel = ASMap::MinDangerLevel;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boundary")
+	bool bShowBoundary = true;
+
+	/** 지면에 그리는 구역 경계선 색. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boundary")
+	FLinearColor BoundaryColor = FLinearColor::White;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Boundary")
+	TObjectPtr<UMaterialInterface> BoundaryMaterial;
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	bool ContainsLocation(const FVector& Location) const;
@@ -82,6 +95,7 @@ protected:
 
 private:
 	void RefreshAreaShapes() const;
+	void BuildBoundary();
 
 #if WITH_EDITOR
 	void RefreshLinkDebugComponents();
@@ -109,6 +123,19 @@ private:
 	/** 기본 다각형 영역. 뷰포트에서 점을 편집하거나 영역 컴포넌트를 추가한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASMapPolygonAreaComponent> MainPolygon;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> BoundaryPlaneMesh;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> BoundaryCylinderMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> BoundaryComponent;
+
+	/** 안쪽 중심선 꼭짓점의 둥근 이음새. */
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> BoundaryJointComponent;
 
 #if WITH_EDITORONLY_DATA
 	/** 레벨 편집 중 인접 구역 연결선을 표시한다. */
