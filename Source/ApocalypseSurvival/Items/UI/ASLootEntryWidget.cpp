@@ -40,9 +40,14 @@ void UASLootEntryWidget::BuildDefaultWidgetTree()
 	QuantityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuantityText"));
 	ItemNameText->SetVisibility(ESlateVisibility::Collapsed);
 	QuantityText->SetColorAndOpacity(FSlateColor(FLinearColor(0.94f, 0.96f, 0.98f, 1.0f)));
+	FSlateFontInfo QuantityFont = QuantityText->GetFont();
+	QuantityFont.Size = 11;
+	QuantityText->SetFont(QuantityFont);
+	QuantityText->SetVisibility(ESlateVisibility::Collapsed);
 	UBorder* QuantityBadge = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("QuantityBadge"));
-	QuantityBadge->SetPadding(FMargin(4.0f, 1.0f));
-	QuantityBadge->SetBrushColor(FLinearColor(0.015f, 0.025f, 0.04f, 0.88f));
+	QuantityBadge->SetPadding(FMargin(2.0f, 0.0f));
+	QuantityBadge->SetBrushColor(FLinearColor(0.015f, 0.025f, 0.04f, 0.6f));
+	QuantityBadge->SetVisibility(ESlateVisibility::Collapsed);
 	QuantityBadge->AddChild(QuantityText);
 
 	EntrySize->AddChild(ItemButton);
@@ -86,12 +91,25 @@ void UASLootEntryWidget::SetItemInstance(UASItemInstance* InItemInstance)
 
 void UASLootEntryWidget::RefreshEntry()
 {
+	const int32 Quantity = IsValid(ItemInstance) && IsValid(ItemInstance->GetItemDefinition())
+		? ItemInstance->GetQuantity() : 0;
+	const ESlateVisibility QuantityVisibility = Quantity > 1
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (IsValid(QuantityText))
+	{
+		QuantityText->SetText(Quantity > 1 ? FText::AsNumber(Quantity) : FText::GetEmpty());
+		QuantityText->SetVisibility(QuantityVisibility);
+	}
 	if (IsValid(WidgetTree))
 	{
 		if (USizeBox* EntrySize = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("EntrySize"))))
 		{
 			EntrySize->SetWidthOverride(80.0f);
 			EntrySize->SetHeightOverride(80.0f);
+		}
+		if (UBorder* QuantityBadge = Cast<UBorder>(WidgetTree->FindWidget(TEXT("QuantityBadge"))))
+		{
+			QuantityBadge->SetVisibility(QuantityVisibility);
 		}
 	}
 	if (IsValid(ItemIcon))
@@ -113,13 +131,6 @@ void UASLootEntryWidget::RefreshEntry()
 	}
 	if (IsValid(ItemButton)) ItemButton->SetToolTipText(ItemDefinition->DisplayName);
 
-	if (IsValid(QuantityText))
-	{
-		const int32 Quantity = ItemInstance->GetQuantity();
-		QuantityText->SetText(Quantity > 1
-			? FText::FromString(FString::Printf(TEXT("x%d"), Quantity))
-			: FText::GetEmpty());
-	}
 	if (IsValid(ItemButton))
 	{
 		ItemButton->SetBackgroundColor(FLinearColor(0.045f, 0.055f, 0.065f, 1.0f));
