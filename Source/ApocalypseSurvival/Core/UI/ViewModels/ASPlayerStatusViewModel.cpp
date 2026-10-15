@@ -5,6 +5,9 @@
 #include "Engine/Texture2D.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
+#include "Characters/Player/Components/ASProgressionComponent.h"
+#include "Core/Framework/ASPlayerState.h"
+#include "GameFramework/Pawn.h"
 
 namespace ASPlayerStatusViewModelPrivate
 {
@@ -55,10 +58,29 @@ void UASPlayerStatusViewModel::Initialize(UAbilitySystemComponent* InAbilitySyst
 void UASPlayerStatusViewModel::InitializeFromActor(AActor* InAbilitySystemOwner)
 {
 	Initialize(UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(InAbilitySystemOwner));
+	
+	// 레벨, 경험치는 PlayerState의 성장 컴포넌트에 있다. 폰으로 들어오면 폰의 PlayerState를 찾는다
+	const AASPlayerState* PlayerState = Cast<AASPlayerState>(InAbilitySystemOwner);
+	if (!PlayerState)
+	{
+		if (const APawn* Pawn = Cast<APawn>(InAbilitySystemOwner))
+		{
+			PlayerState = Pawn->GetPlayerState<AASPlayerState>();
+		}
+	}
+	
+	BindProgression(PlayerState ? PlayerState->GetProgressionComponent() : nullptr);
 }
 
 void UASPlayerStatusViewModel::Deinitialize()
 {
+	if (ProgressionComponent.IsValid())
+	{
+		ProgressionComponent->OnLevelChanged.RemoveDynamic(this, &ThisClass::HandleLevelChanged);
+		ProgressionComponent->OnExpChanged.RemoveDynamic(this, &ThisClass::HandleExpChanged);
+	}
+	ProgressionComponent.Reset();
+	
 	if (AbilitySystemComponent.IsValid())
 	{
 		AbilitySystemComponent
@@ -130,6 +152,21 @@ void UASPlayerStatusViewModel::SetPortraitTexture(UTexture2D* InPortraitTexture)
 	UE_MVVM_SET_PROPERTY_VALUE(PortraitTexture, InPortraitTexture);
 }
 
+void UASPlayerStatusViewModel::SetExperience(int32 InCurrentExp, int32 InExpToNextLevel)
+{
+	// 최대 레벨이면 다음 레벨 필요량이 0
+	if (InExpToNextLevel <= 0)
+	{
+		UE_MVVM_SET_PROPERTY_VALUE(ExpPercent, 1.0f);
+		UE_MVVM_SET_PROPERTY_VALUE(ExpText, NSLOCTEXT("PlayerStatusViewModel", "ExpMax", "Max"));;
+		return;
+	}
+	
+	const int32 SafeCurrentExp = FMath::Clamp(InCurrentExp, 0, InExpToNextLevel);
+	UE_MVVM_SET_PROPERTY_VALUE(ExpPercent, static_cast<float>(SafeCurrentExp) / InExpToNextLevel);
+	UE_MVVM_SET_PROPERTY_VALUE(ExpText, ASPlayerStatusViewModelPrivate::MakeResourceText(SafeCurrentExp, InExpToNextLevel));
+}
+
 void UASPlayerStatusViewModel::HandleHealthChanged(const FOnAttributeChangeData&)
 {
 	RefreshHealth();
@@ -194,4 +231,36 @@ void UASPlayerStatusViewModel::RefreshStamina()
 	SetStamina(
 		AbilitySystemComponent->GetNumericAttribute(UASPlayerAttributeSet::GetStaminaAttribute()),
 		AbilitySystemComponent->GetNumericAttribute(UASPlayerAttributeSet::GetMaxStaminaAttribute()));
+}
+
+void UASPlayerStatusViewModel::BindProgression(UASProgressionComponent* InProgressionComponent)
+{
+	if (!IsValid(InProgressionComponent))
+	{
+		return;
+	}
+	
+	ProgressionComponent = InProgressionComponent;
+	InProgressionComponent->OnLevelChanged.AddUniqueDynamic(this, &ThisClass::HandleLevelChanged);
+	InProgressionComponent->OnExpChanged.AddUniqueDynamic(this, &ThisClass::HandleExpChanged);
+	
+	// 이벤트는 바뀔 때만 오므로 지금 값을 한 번 넣는다 (리스폰 후 HUD 재생성 때도 레벨 유지)
+	SetPlayerLevel(InProgressionComponent->GetLevel());
+	SetExperience(InProgressionComponent->GetCurrentExp(), InProgressionComponent->GetExpToNextLevel());
+}
+
+void UASPlayerStatusViewModel::HandleLevelChanged(int32 NewLevel)
+{
+	SetPlayerLevel(NewLevel);
+	
+	// 클라이언트는 레벨과 경험치가 따로 복제되므로, 레벨이 바뀌면 필요량도 다시 계산한다
+	if (ProgressionComponent.IsValid())
+	{
+		SetExperience(ProgressionComponent->GetCurrentExp(), ProgressionComponent->GetExpToNextLevel());
+	}
+}
+
+void UASPlayerStatusViewModel::HandleExpChanged(int32 CurrentExp, int32 ExpToNextLevel)
+{
+	SetExperience(CurrentExp, ExpToNextLevel);
 }
