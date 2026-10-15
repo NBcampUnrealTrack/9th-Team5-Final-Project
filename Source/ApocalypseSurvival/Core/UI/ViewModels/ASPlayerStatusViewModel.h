@@ -7,6 +7,7 @@
 class AActor;
 class UTexture2D;
 class UAbilitySystemComponent;
+class UASProgressionComponent;
 struct FOnAttributeChangeData;
 
 /** 플레이어 초상화, 레벨, 체력, 마나 및 스태미나 표시용 MVVM 데이터 모델이다. */
@@ -42,6 +43,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
 	void SetPortraitTexture(UTexture2D* InPortraitTexture);
+	
+	UFUNCTION(BlueprintCallable, Category = "HUD|Player Status")
+	void SetExperience(int32 InCurrentExp, int32 InExpToNextLevel);
 
 	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
 	float GetHealthPercent() const { return HealthPercent; }
@@ -66,6 +70,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
 	UTexture2D* GetPortraitTexture() const { return PortraitTexture; }
+	
+	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
+	float GetExpPercent() const { return ExpPercent; }
+	
+	UFUNCTION(BlueprintPure, Category = "HUD|Player Status")
+	FText GetExpText() const { return ExpText; }
 
 private:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
@@ -91,6 +101,12 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UTexture2D> PortraitTexture = nullptr;
+	
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
+	float ExpPercent = 0.0f;
+	
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Player Status", meta = (AllowPrivateAccess = "true"))
+	FText ExpText;
 
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
@@ -101,8 +117,16 @@ private:
 	void RefreshHealth();
 	void RefreshMana();
 	void RefreshStamina();
+	void BindProgression(UASProgressionComponent* InProgressionComponent);
+	
+	UFUNCTION()
+	void HandleLevelChanged(int32 NewLevel);
+	
+	UFUNCTION()
+	void HandleExpChanged(int32 CurrentExp, int32 ExpToNextLevel);
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+	TWeakObjectPtr<UASProgressionComponent> ProgressionComponent;
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle MaxHealthChangedHandle;
 	FDelegateHandle ManaChangedHandle;
