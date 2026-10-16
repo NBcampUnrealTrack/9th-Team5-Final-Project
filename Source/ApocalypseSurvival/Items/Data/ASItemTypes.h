@@ -9,7 +9,9 @@ enum class EASItemType : uint8
 {
 	Weapon UMETA(DisplayName = "Weapon"),
 	Ammo UMETA(DisplayName = "Ammo"),
-	Consumable UMETA(DisplayName = "Consumable")
+	Consumable UMETA(DisplayName = "Consumable"),
+	/** Stackable crafting ingredient; it is neither equipped nor used directly. */
+	CraftingMaterial UMETA(DisplayName = "Crafting Material")
 };
 
 /** Weapon behavior category. Only meaningful when ItemType is Weapon. */
