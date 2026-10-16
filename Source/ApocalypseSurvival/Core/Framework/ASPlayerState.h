@@ -11,6 +11,9 @@ class UASCombatAttributeSet;
 class UASHealthAttributeSet;
 class UASItemInstance;
 class UASPlayerAttributeSet;
+class UASCharacterDefinition;
+class UASProgressionComponent;
+
 class UASModuleComponent;
 
 /**
@@ -59,6 +62,23 @@ public:
 	 */
 	void SetEquippedItemRecord(UASItemInstance* Item);
 	UASItemInstance* GetEquippedItemRecord() const;
+	
+	/*
+	 * 서버 전용. 이 플레이어가 쓸 캐릭터 정의를 정한다.
+	 * 이미 어트리뷰트에 적용된 뒤에는 무시한다 (게임 중 캐릭터 변경 없음).
+	 */
+	void SetCharacterDefinition(const UASCharacterDefinition* InDefinition);
+	
+	const UASCharacterDefinition* GetCharacterDefinition() const { return CharacterDefinition; }
+	
+	/*
+	 * 서버 전용. 캐릭터 정의의 기본 스탯을 어트리뷰트에 한 번만 넣는다.
+	 * 리스폰 때는 다시 넣지 않는다. 레벨업으로 오른 값이 초기화되면 안 되기 때문이다.
+	 */
+	void ApplyCharacterDefinitionOnce();
+	
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	UASProgressionComponent* GetProgressionComponent() const { return ProgressionComponent; }
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modules", meta = (AllowPrivateAccess = "true"))
@@ -82,4 +102,15 @@ private:
 
 	/** 약참조다. 인벤토리에서 버려진 아이템을 붙들어 두면 안 된다. */
 	TWeakObjectPtr<UASItemInstance> EquippedItemRecord;
+	
+	/* 이 플레이어의 캐릭터 정의. 게임모드가 접속 시 정해준다. */
+	UPROPERTY()
+	TObjectPtr<const UASCharacterDefinition> CharacterDefinition;
+	
+	/* 캐릭터 정의를 어트리뷰트에 이미 넣었는가. 서버만 쓴다. */
+	bool bCharacterDefinitionApplied = false;
+	
+	/* 레벨, 경험치, 스킬포인트. PlayerState에 있어서 리스폰 시 유지 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Progression", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASProgressionComponent> ProgressionComponent;
 };
