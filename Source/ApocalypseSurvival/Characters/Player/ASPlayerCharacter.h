@@ -8,6 +8,7 @@
 class UASAbilitySet;
 class UASEquipmentComponent;
 class UASCharacterDefinition;
+class UASCharacterRoster;
 struct FOnAttributeChangeData;
 
 /**
@@ -68,6 +69,13 @@ public:
 	
 	UFUNCTION(Exec)
 	void DebugAddExp(int32 Amount);
+	
+	// 캐릭터 선택 테스트 (선택 화면 나오기 전까지). Index 는 DebugCharacterRoster 순서
+	UFUNCTION(Exec)
+	void DebugSelectCharacter(int32 Index);
+	
+	UFUNCTION(Exec)
+	void DebugShowSelectedCharacter();
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -128,4 +136,8 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Character")
 	TObjectPtr<const UASCharacterDefinition> CharacterDefinition;
+	
+	// DebugSelectCharacter가 쓰는 캐릭터 목록 (테스트용)
+	UPROPERTY(EditDefaultsOnly, Category = "Character|Debug")
+	TObjectPtr<const UASCharacterRoster> DebugCharacterRoster;
 };
