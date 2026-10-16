@@ -2,10 +2,13 @@
 
 #include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
+#include "Characters/Player/Data/ASCharacterDefinition.h"
+#include "Characters/Player/Data/ASCharacterRoster.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
+#include "Core/Framework/ASCharacterSelectSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffectExtension.h"
@@ -14,6 +17,8 @@
 #include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "Items/ASItemInstance.h"
+#include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 
 AASPlayerCharacter::AASPlayerCharacter()
 {
@@ -330,4 +335,46 @@ void AASPlayerCharacter::DebugAddExp(int32 Amount)
 	}
 	
 	Progression->AddExperience(Amount);
+}
+
+void AASPlayerCharacter::DebugSelectCharacter(int32 Index)
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UASCharacterSelectSubsystem* SelectSubsystem = GameInstance ? GameInstance->GetSubsystem<UASCharacterSelectSubsystem>() : nullptr;
+	if (!SelectSubsystem)
+	{
+		return;
+	}
+	
+	const UASCharacterDefinition* Definition = DebugCharacterRoster ? DebugCharacterRoster->GetCharacterAt(Index) : nullptr;
+	if (!Definition)
+	{
+		const FString Message = FString::Printf(TEXT("[CharacterSelect] %d 번 캐릭터가 없다. BP_PlayerCharacter의 DebugCharacterRoster를 확인."), Index);
+		UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, Message);
+		}
+		return;
+	}
+	
+	SelectSubsystem->SetSelectedCharacter(Definition);
+	DebugShowSelectedCharacter();
+}
+
+void AASPlayerCharacter::DebugShowSelectedCharacter()
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UASCharacterSelectSubsystem* SelectSubsystem = GameInstance ? GameInstance->GetSubsystem<UASCharacterSelectSubsystem>() : nullptr;
+	const UASCharacterDefinition* Definition = SelectSubsystem ? SelectSubsystem->GetSelectedCharacter() : nullptr;
+	
+	const FString Message = Definition
+		? FString::Printf(TEXT("[CharacterSelect] 선택: %s / 캐릭터 BP: %s"), *GetNameSafe(Definition), *GetNameSafe(SelectSubsystem->GetSelectedPawnClass().Get()))
+		: FString(TEXT("[CharacterSelect] 선택 없음"));
+	
+	UE_LOG(LogTemp, Log, TEXT("%s"), *Message);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, Message);
+	}
 }
