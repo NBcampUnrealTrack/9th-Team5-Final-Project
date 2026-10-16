@@ -15,4 +15,8 @@ class APOCALYPSESURVIVAL_API UASModulePassiveAbility : public UGameplayAbility
 
 public:
 	UASModulePassiveAbility();
+
+	/** Numeric core value captured when this module was applied for the current run. */
+	UFUNCTION(BlueprintPure, Category = "Modules")
+	bool GetModuleCoreValue(float& OutValue) const;
 };

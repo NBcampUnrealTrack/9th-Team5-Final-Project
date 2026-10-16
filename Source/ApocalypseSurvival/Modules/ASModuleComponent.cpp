@@ -6,9 +6,9 @@
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "GameplayEffect.h"
-#include "Modules/Data/ASModuleDefinition.h"
 #include "Modules/Data/ASModuleSettings.h"
 #include "Modules/GAS/ASModulePassiveAbility.h"
+#include "Modules/GAS/ASModuleStatEffect.h"
 #include "Modules/Persistence/ASModuleCollectionSubsystem.h"
 #include "Net/UnrealNetwork.h"
 
@@ -21,7 +21,7 @@ UASModuleComponent::UASModuleComponent()
 void UASModuleComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME_CONDITION(UASModuleComponent, EquippedModuleIds, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(UASModuleComponent, EquippedModules, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(UASModuleComponent, bEffectsApplied, COND_OwnerOnly);
 }
 
@@ -31,7 +31,7 @@ UASAbilitySystemComponent* UASModuleComponent::GetModuleASC() const
 	return PlayerState ? PlayerState->GetASAbilitySystemComponent() : nullptr;
 }
 
-bool UASModuleComponent::ConfigureLoadout(const TArray<FName>& ModuleIds, FString& OutError)
+bool UASModuleComponent::ConfigureLoadout(const TArray<FASModuleInstanceData>& Instances, FString& OutError)
 {
 	OutError.Reset();
 	if (!GetOwner() || !GetOwner()->HasAuthority())
@@ -40,16 +40,15 @@ bool UASModuleComponent::ConfigureLoadout(const TArray<FName>& ModuleIds, FStrin
 		return false;
 	}
 	const UASModuleSettings* Settings = GetDefault<UASModuleSettings>();
-	TArray<UASModuleDefinition*> Definitions;
-	if (!Settings->ResolveLoadout(ModuleIds, Definitions, OutError)) return false;
-	TArray<FName> Normalized = ModuleIds;
+	if (!Settings->ResolveInstanceLoadout(Instances, OutError)) return false;
+	TArray<FASModuleInstanceData> Normalized = Instances;
 	Normalized.SetNum(Settings->GetSlotCount());
-	if (bEffectsApplied && Normalized != EquippedModuleIds)
+	if (bEffectsApplied && Normalized != EquippedModules)
 	{
 		OutError = TEXT("The current run's modules are locked. ResetForNextRun before changing them.");
 		return false;
 	}
-	EquippedModuleIds = MoveTemp(Normalized);
+	EquippedModules = MoveTemp(Normalized);
 	bLoadoutConfigured = true;
 	GetOwner()->ForceNetUpdate();
 	OnLoadoutChanged.Broadcast();
@@ -59,39 +58,67 @@ bool UASModuleComponent::ConfigureLoadout(const TArray<FName>& ModuleIds, FStrin
 bool UASModuleComponent::ApplyConfiguredEffects(FString& OutError)
 {
 	UASAbilitySystemComponent* ASC = GetModuleASC();
-	TArray<UASModuleDefinition*> Definitions;
-	if (!GetDefault<UASModuleSettings>()->ResolveLoadout(EquippedModuleIds, Definitions, OutError)) return false;
-	// Stage handles separately: a rejected effect must not leave a partially applied loadout.
+	const UASModuleSettings* Settings = GetDefault<UASModuleSettings>();
+	if (!ASC || !Settings->ResolveInstanceLoadout(EquippedModules, OutError)) return false;
+	// Stage handles so any failed grant rolls the entire loadout back.
 	TArray<FASAppliedModule> Pending;
 	bool bSuccess = true;
-	for (UASModuleDefinition* Definition : Definitions)
+	for (const FASModuleInstanceData& Instance : EquippedModules)
 	{
+		if (Instance.IsEmpty()) continue;
+		const FASModuleBalanceRow* Module = Settings->FindModule(Instance.ModuleId, OutError);
+		if (!Module) { bSuccess = false; break; }
 		FASAppliedModule& Entry = Pending.AddDefaulted_GetRef();
-		Entry.Definition = Definition;
-		for (const FASAbilitySet_GameplayEffect& Effect : Definition->AbilitySet->GetGrantedEffects())
+		Entry.ModuleId = Instance.ModuleId;
+		Entry.CoreValue = Module->CoreValue;
+		const auto ApplyEffect = [&](FGameplayEffectSpecHandle Spec) -> bool
 		{
-			FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
-			Context.AddSourceObject(Definition);
-			const FActiveGameplayEffectHandle Handle = ASC->ApplyGameplayEffectToSelf(
-				Effect.GameplayEffect->GetDefaultObject<UGameplayEffect>(), Effect.EffectLevel, Context);
+			if (!Spec.IsValid()) return false;
+			const FActiveGameplayEffectHandle Handle = ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data);
 			Entry.Handles.AddGameplayEffectHandle(Handle);
-			if (!Handle.IsValid()) { bSuccess = false; break; }
+			return Handle.IsValid();
+		};
+		FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+		Context.AddSourceObject(this);
+		const auto ApplyStat = [&](EASModuleStat Stat, float Value) -> bool
+		{
+			if (Stat == EASModuleStat::None) return true;
+			FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(UASModuleStatEffect::StaticClass(), 1.0f, Context);
+			if (!Spec.IsValid()) return false;
+			UASModuleStatEffect::SetMagnitude(*Spec.Data, Stat, Value);
+			return ApplyEffect(Spec);
+		};
+		if (!ApplyStat(Module->CoreStat, Entry.CoreValue)) { bSuccess = false; break; }
+		for (const FASModuleOptionRoll& Roll : Instance.Options)
+		{
+			EASModuleStat Stat;
+			if (!Settings->ResolveOptionStat(Roll, Stat, OutError) || !ApplyStat(Stat, Roll.Value)) { bSuccess = false; break; }
 		}
 		if (!bSuccess) break;
-		for (const FASAbilitySet_GameplayAbility& Ability : Definition->AbilitySet->GetGrantedAbilities())
+		if (const UASAbilitySet* Set = Module->AbilitySet.LoadSynchronous())
 		{
-			FGameplayAbilitySpec Spec(Ability.Ability, Ability.AbilityLevel, INDEX_NONE, Definition);
-			if (Ability.InputTag.IsValid()) Spec.GetDynamicSpecSourceTags().AddTag(Ability.InputTag);
-			const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
-			Entry.Handles.AddAbilitySpecHandle(Handle);
-			if (!Handle.IsValid()) { bSuccess = false; break; }
+			for (const FASAbilitySet_GameplayEffect& Effect : Set->GetGrantedEffects())
+			{
+				FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(Effect.GameplayEffect, Effect.EffectLevel, Context);
+				if (Spec.IsValid()) Spec.Data->SetSetByCallerMagnitude(UASModuleStatEffect::GetCoreMagnitudeTag(), Entry.CoreValue);
+				if (!ApplyEffect(Spec)) { bSuccess = false; break; }
+			}
+			if (!bSuccess) break;
+			for (const FASAbilitySet_GameplayAbility& Ability : Set->GetGrantedAbilities())
+			{
+				FGameplayAbilitySpec Spec(Ability.Ability, Ability.AbilityLevel, INDEX_NONE, this);
+				if (Ability.InputTag.IsValid()) Spec.GetDynamicSpecSourceTags().AddTag(Ability.InputTag);
+				const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+				Entry.Handles.AddAbilitySpecHandle(Handle);
+				if (!Handle.IsValid()) { bSuccess = false; break; }
+			}
 		}
 		if (!bSuccess) break;
 	}
 	if (!bSuccess)
 	{
 		for (FASAppliedModule& Entry : Pending) Entry.Handles.TakeFromAbilitySystem(ASC);
-		OutError = TEXT("A module effect or ability could not be granted; the loadout was rolled back.");
+		if (OutError.IsEmpty()) OutError = TEXT("A module effect or ability could not be granted; the loadout was rolled back.");
 		return false;
 	}
 	AppliedModules = MoveTemp(Pending);
@@ -101,6 +128,25 @@ bool UASModuleComponent::ApplyConfiguredEffects(FString& OutError)
 	return true;
 }
 
+bool UASModuleComponent::GetModuleCoreValue(FName ModuleId, float& OutValue) const
+{
+	OutValue = 0.0f;
+	for (const FASAppliedModule& Entry : AppliedModules)
+	{
+		if (Entry.ModuleId == ModuleId) { OutValue = Entry.CoreValue; return true; }
+	}
+	return false;
+}
+
+bool UASModuleComponent::GetAbilityCoreValue(FGameplayAbilitySpecHandle AbilityHandle, float& OutValue) const
+{
+	OutValue = 0.0f;
+	for (const FASAppliedModule& Entry : AppliedModules)
+	{
+		if (Entry.Handles.GetAbilitySpecHandles().Contains(AbilityHandle)) { OutValue = Entry.CoreValue; return true; }
+	}
+	return false;
+}
 void UASModuleComponent::InitializeForAvatar()
 {
 	UASAbilitySystemComponent* ASC = GetModuleASC();
@@ -112,7 +158,7 @@ void UASModuleComponent::InitializeForAvatar()
 		// Standalone/listen-host convenience. Remote clients need an authoritative lobby handoff.
 		const APlayerController* PC = Cast<APlayerController>(GetOwner()->GetOwner());
 		const UASModuleCollectionSubsystem* Collection = UASModuleCollectionSubsystem::Get(PC);
-		const TArray<FName> Selection = Collection ? Collection->GetEquippedModuleIds() : TArray<FName>();
+		const TArray<FASModuleInstanceData> Selection = Collection ? Collection->GetEquippedModules() : TArray<FASModuleInstanceData>();
 		if (!ConfigureLoadout(Selection, Error))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[Modules] %s"), *Error);
@@ -136,13 +182,12 @@ void UASModuleComponent::UpdatePassives(bool bActivate)
 	UASAbilitySystemComponent* ASC = GetModuleASC();
 	if (!ASC) return;
 	TArray<FGameplayAbilitySpecHandle> Handles;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	for (const FASAppliedModule& Entry : AppliedModules)
 	{
-		if (!Spec.Ability || !Spec.Ability->IsA<UASModulePassiveAbility>()) continue;
-		if (AppliedModules.ContainsByPredicate([&Spec](const FASAppliedModule& Entry)
-			{ return Spec.SourceObject.Get() == Entry.Definition.Get(); }))
+		for (const FGameplayAbilitySpecHandle& Handle : Entry.Handles.GetAbilitySpecHandles())
 		{
-			Handles.Add(Spec.Handle);
+			const FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromHandle(Handle);
+			if (Spec && Spec->Ability && Spec->Ability->IsA<UASModulePassiveAbility>()) Handles.Add(Handle);
 		}
 	}
 	for (const FGameplayAbilitySpecHandle& Handle : Handles)
@@ -151,7 +196,6 @@ void UASModuleComponent::UpdatePassives(bool bActivate)
 		else ASC->CancelAbilityHandle(Handle);
 	}
 }
-
 void UASModuleComponent::RestoreResourceBounds(bool bFillResources)
 {
 	UASAbilitySystemComponent* ASC = GetModuleASC();
@@ -192,7 +236,7 @@ void UASModuleComponent::ResetForNextRun()
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 	RemoveModuleEffects();
 	RestoreResourceBounds(false);
-	EquippedModuleIds.Reset();
+	EquippedModules.Reset();
 	bLoadoutConfigured = false;
 	GetOwner()->ForceNetUpdate();
 	OnLoadoutChanged.Broadcast();

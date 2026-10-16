@@ -56,6 +56,7 @@ struct FASAbilitySet_GrantedHandles
 	void AddGameplayEffectHandle(const FActiveGameplayEffectHandle& Handle);
 	void TakeFromAbilitySystem(UASAbilitySystemComponent* AbilitySystemComponent);
 	bool IsEmpty() const { return AbilitySpecHandles.IsEmpty() && GameplayEffectHandles.IsEmpty(); }
+	const TArray<FGameplayAbilitySpecHandle>& GetAbilitySpecHandles() const { return AbilitySpecHandles; }
 
 private:
 	UPROPERTY()

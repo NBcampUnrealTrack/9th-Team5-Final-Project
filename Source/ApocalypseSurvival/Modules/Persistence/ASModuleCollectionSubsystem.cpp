@@ -3,9 +3,36 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
-#include "Modules/Data/ASModuleDefinition.h"
 #include "Modules/Data/ASModuleSettings.h"
 #include "Modules/Persistence/ASModuleSaveGame.h"
+
+namespace
+{
+TArray<FASModuleInstanceData> BuildLoadout(const TArray<FASModuleInstanceData>& Owned, const TArray<FGuid>& Equipped)
+{
+	TArray<FASModuleInstanceData> Result;
+	Result.SetNum(Equipped.Num());
+	for (int32 Slot = 0; Slot < Equipped.Num(); ++Slot)
+	{
+		if (!Equipped[Slot].IsValid()) continue;
+		if (const FASModuleInstanceData* Found = Owned.FindByPredicate([&Equipped, Slot](const FASModuleInstanceData& Entry)
+			{ return Entry.InstanceId == Equipped[Slot]; })) Result[Slot] = *Found;
+	}
+	return Result;
+}
+
+FASModuleInstanceData ResolveSavedStats(FASModuleInstanceData Instance)
+{
+	const UASModuleSettings* Settings = GetDefault<UASModuleSettings>();
+	for (FASModuleOptionRoll& Roll : Instance.Options)
+	{
+		EASModuleStat Stat;
+		FString Error;
+		if (Settings->ResolveOptionStat(Roll, Stat, Error)) Roll.Stat = Stat;
+	}
+	return Instance;
+}
+}
 
 void UASModuleCollectionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -25,108 +52,122 @@ FString UASModuleCollectionSubsystem::GetSaveSlotName() const
 	return FString::Printf(TEXT("%s_%d"), *GetDefault<UASModuleSettings>()->SaveSlotPrefix, GetLocalPlayer()->GetControllerId());
 }
 
+TArray<FASModuleInstanceData> UASModuleCollectionSubsystem::GetEquippedModules() const
+{
+	return BuildLoadout(OwnedModules, EquippedModuleInstanceIds);
+}
+
+bool UASModuleCollectionSubsystem::OwnsModuleInstance(FGuid InstanceId) const
+{
+	return InstanceId.IsValid() && OwnedModules.ContainsByPredicate([InstanceId](const FASModuleInstanceData& Entry) { return Entry.InstanceId == InstanceId; });
+}
+
 bool UASModuleCollectionSubsystem::LoadProfile(FString& OutError)
 {
 	OutError.Reset();
 	const UASModuleSettings* Settings = GetDefault<UASModuleSettings>();
-	TArray<FName> LoadedOwned;
-	TArray<FName> LoadedEquipped;
+	TArray<FName> LoadedUnlocked;
+	TArray<FASModuleInstanceData> LoadedOwned;
+	TArray<FGuid> LoadedEquipped;
 	LoadedEquipped.SetNum(Settings->GetSlotCount());
-	if (UGameplayStatics::DoesSaveGameExist(GetSaveSlotName(), 0))
+	const FString SaveSlotName = GetSaveSlotName();
+	if (UGameplayStatics::DoesSaveGameExist(SaveSlotName, 0))
 	{
-		const UASModuleSaveGame* Save = Cast<UASModuleSaveGame>(UGameplayStatics::LoadGameFromSlot(GetSaveSlotName(), 0));
-		if (!Save || Save->DataVersion != 1)
+		const UASModuleSaveGame* Save = Cast<UASModuleSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
+		if (!Save || Save->DataVersion != 2)
 		{
-			OutError = TEXT("Module save could not be read or has an unsupported version. Existing data was preserved.");
+			OutError = TEXT("Module save is unreadable or has an unsupported version. Existing data was preserved.");
 			bProfileLoaded = false;
 			return false;
 		}
-		// Keep unknown owned IDs: temporarily unregistered content must not erase earned unlocks.
-		for (FName Id : Save->OwnedModuleIds)
+		for (FName Id : Save->UnlockedModuleIds) if (!Id.IsNone()) LoadedUnlocked.AddUnique(Id);
+		TSet<FGuid> SeenInstances;
+		for (const FASModuleInstanceData& Entry : Save->OwnedModules)
 		{
-			if (!Id.IsNone()) LoadedOwned.AddUnique(Id);
+			if (!Entry.InstanceId.IsValid() || Entry.ModuleId.IsNone() || SeenInstances.Contains(Entry.InstanceId)) continue;
+			SeenInstances.Add(Entry.InstanceId);
+			// Older saves did not capture Stat. Resolve it without changing the rolled value or ID.
+			LoadedOwned.Add(ResolveSavedStats(Entry));
 		}
-		TSet<FName> Seen;
-		for (int32 Index = 0; Index < FMath::Min(Save->EquippedModuleIds.Num(), LoadedEquipped.Num()); ++Index)
+		for (int32 Slot = 0; Slot < FMath::Min(Save->EquippedModuleInstanceIds.Num(), LoadedEquipped.Num()); ++Slot)
 		{
-			const FName Id = Save->EquippedModuleIds[Index];
+			const FGuid Id = Save->EquippedModuleInstanceIds[Slot];
+			if (!Id.IsValid()) continue;
+			const FASModuleInstanceData* Instance = LoadedOwned.FindByPredicate([Id](const FASModuleInstanceData& Entry) { return Entry.InstanceId == Id; });
+			if (!Instance || !LoadedUnlocked.Contains(Instance->ModuleId)) continue;
+			TArray<FGuid> Candidate = LoadedEquipped;
+			Candidate[Slot] = Id;
 			FString Error;
-			UASModuleDefinition* Definition = Settings->FindModule(Id, Error);
-			if (LoadedOwned.Contains(Id) && !Seen.Contains(Id) && Definition && Definition->ValidateDefinition(Error))
-			{
-				LoadedEquipped[Index] = Id;
-				Seen.Add(Id);
-			}
+			if (Settings->ResolveInstanceLoadout(BuildLoadout(LoadedOwned, Candidate), Error)) LoadedEquipped[Slot] = Id;
 		}
 	}
-	OwnedModuleIds = MoveTemp(LoadedOwned);
-	EquippedModuleIds = MoveTemp(LoadedEquipped);
+	UnlockedModuleIds = MoveTemp(LoadedUnlocked);
+	OwnedModules = MoveTemp(LoadedOwned);
+	EquippedModuleInstanceIds = MoveTemp(LoadedEquipped);
 	bProfileLoaded = true;
 	OnCollectionChanged.Broadcast();
 	return true;
 }
 
-bool UASModuleCollectionSubsystem::CommitProfile(const TArray<FName>& NewOwned, const TArray<FName>& NewEquipped, FString& OutError)
+bool UASModuleCollectionSubsystem::CommitProfile(const TArray<FName>& NewUnlocked, const TArray<FASModuleInstanceData>& NewOwned, const TArray<FGuid>& NewEquipped, FString& OutError)
 {
 	OutError.Reset();
-	if (!bProfileLoaded)
-	{
-		OutError = TEXT("Load a valid module profile before modifying progression.");
-		return false;
-	}
+	if (!bProfileLoaded) { OutError = TEXT("Load a valid module profile before modifying progression."); return false; }
 	UASModuleSaveGame* Save = Cast<UASModuleSaveGame>(UGameplayStatics::CreateSaveGameObject(UASModuleSaveGame::StaticClass()));
-	if (!Save)
-	{
-		OutError = TEXT("Could not create module save data.");
-		return false;
-	}
-	Save->OwnedModuleIds = NewOwned;
-	Save->EquippedModuleIds = NewEquipped;
-	if (!UGameplayStatics::SaveGameToSlot(Save, GetSaveSlotName(), 0))
-	{
-		OutError = TEXT("Could not save module progression. No in-memory changes were committed.");
-		return false;
-	}
-	OwnedModuleIds = NewOwned;
-	EquippedModuleIds = NewEquipped;
+	if (!Save) { OutError = TEXT("Could not create module save data."); return false; }
+	Save->UnlockedModuleIds = NewUnlocked;
+	Save->OwnedModules = NewOwned;
+	Save->EquippedModuleInstanceIds = NewEquipped;
+	if (!UGameplayStatics::SaveGameToSlot(Save, GetSaveSlotName(), 0)) { OutError = TEXT("Could not save module progression. No in-memory changes were committed."); return false; }
+	UnlockedModuleIds = NewUnlocked;
+	OwnedModules = NewOwned;
+	EquippedModuleInstanceIds = NewEquipped;
 	OnCollectionChanged.Broadcast();
 	return true;
 }
 
-bool UASModuleCollectionSubsystem::GrantModule(FName ModuleId, FString& OutError)
+bool UASModuleCollectionSubsystem::UnlockModule(FName ModuleId, FString& OutError)
 {
 	OutError.Reset();
-	UASModuleDefinition* Definition = GetDefault<UASModuleSettings>()->FindModule(ModuleId, OutError);
-	if (!Definition || !Definition->ValidateDefinition(OutError)) return false;
-	if (!bProfileLoaded)
-	{
-		OutError = TEXT("The module profile is not loaded.");
-		return false;
-	}
-	if (OwnsModule(ModuleId)) return true;
-	TArray<FName> NewOwned = OwnedModuleIds;
-	NewOwned.Add(ModuleId);
-	return CommitProfile(NewOwned, EquippedModuleIds, OutError);
+	if (!bProfileLoaded) { OutError = TEXT("The module profile is not loaded."); return false; }
+	if (!GetDefault<UASModuleSettings>()->FindModule(ModuleId, OutError)) return false;
+	if (IsModuleUnlocked(ModuleId)) return true;
+	TArray<FName> NewUnlocked = UnlockedModuleIds;
+	NewUnlocked.Add(ModuleId);
+	return CommitProfile(NewUnlocked, OwnedModules, EquippedModuleInstanceIds, OutError);
 }
 
-bool UASModuleCollectionSubsystem::EquipModule(int32 SlotIndex, FName ModuleId, FString& OutError)
+bool UASModuleCollectionSubsystem::GrantModuleInstance(const FASModuleInstanceData& Instance, FString& OutError)
 {
 	OutError.Reset();
+	if (!bProfileLoaded) { OutError = TEXT("The module profile is not loaded."); return false; }
 	const UASModuleSettings* Settings = GetDefault<UASModuleSettings>();
-	if (SlotIndex < 0 || SlotIndex >= Settings->GetSlotCount())
+	if (Instance.IsEmpty()) { OutError = TEXT("An empty module cannot be granted."); return false; }
+	if (!Settings->ResolveInstanceLoadout({Instance}, OutError)) return false;
+	const FASModuleInstanceData Reward = ResolveSavedStats(Instance);
+	if (const FASModuleInstanceData* Existing = OwnedModules.FindByPredicate([&Reward](const FASModuleInstanceData& Entry) { return Entry.InstanceId == Reward.InstanceId; }))
 	{
-		OutError = TEXT("Invalid module slot.");
+		if (ResolveSavedStats(*Existing) == Reward) return true;
+		OutError = TEXT("A different module reward already uses this instance ID.");
 		return false;
 	}
-	if (!ModuleId.IsNone() && !OwnsModule(ModuleId))
-	{
-		OutError = TEXT("Only owned modules can be equipped.");
-		return false;
-	}
-	TArray<FName> NewEquipped = EquippedModuleIds;
+	TArray<FASModuleInstanceData> NewOwned = OwnedModules;
+	NewOwned.Add(Reward);
+	TArray<FName> NewUnlocked = UnlockedModuleIds;
+	NewUnlocked.AddUnique(Reward.ModuleId);
+	return CommitProfile(NewUnlocked, NewOwned, EquippedModuleInstanceIds, OutError);
+}
+
+bool UASModuleCollectionSubsystem::EquipModule(int32 SlotIndex, FGuid InstanceId, FString& OutError)
+{
+	OutError.Reset();
+	if (!bProfileLoaded) { OutError = TEXT("The module profile is not loaded."); return false; }
+	const UASModuleSettings* Settings = GetDefault<UASModuleSettings>();
+	if (SlotIndex < 0 || SlotIndex >= Settings->GetSlotCount()) { OutError = TEXT("Invalid module slot."); return false; }
+	if (InstanceId.IsValid() && !OwnsModuleInstance(InstanceId)) { OutError = TEXT("Only owned module instances can be equipped."); return false; }
+	TArray<FGuid> NewEquipped = EquippedModuleInstanceIds;
 	NewEquipped.SetNum(Settings->GetSlotCount());
-	NewEquipped[SlotIndex] = ModuleId;
-	TArray<UASModuleDefinition*> Definitions;
-	if (!Settings->ResolveLoadout(NewEquipped, Definitions, OutError)) return false;
-	return CommitProfile(OwnedModuleIds, NewEquipped, OutError);
+	NewEquipped[SlotIndex] = InstanceId;
+	if (!Settings->ResolveInstanceLoadout(BuildLoadout(OwnedModules, NewEquipped), OutError)) return false;
+	return CommitProfile(UnlockedModuleIds, OwnedModules, NewEquipped, OutError);
 }

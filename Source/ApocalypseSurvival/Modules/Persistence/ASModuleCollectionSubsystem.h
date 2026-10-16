@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Modules/Data/ASModuleTypes.h"
 #include "Subsystems/LocalPlayerSubsystem.h"
 #include "ASModuleCollectionSubsystem.generated.h"
 
@@ -18,21 +19,29 @@ public:
 	static UASModuleCollectionSubsystem* Get(const APlayerController* PlayerController);
 
 	UFUNCTION(BlueprintPure, Category = "Modules")
-	TArray<FName> GetOwnedModuleIds() const { return OwnedModuleIds; }
+	TArray<FASModuleInstanceData> GetOwnedModules() const { return OwnedModules; }
 
 	UFUNCTION(BlueprintPure, Category = "Modules")
-	TArray<FName> GetEquippedModuleIds() const { return EquippedModuleIds; }
+	TArray<FASModuleInstanceData> GetEquippedModules() const;
 
 	UFUNCTION(BlueprintPure, Category = "Modules")
-	bool OwnsModule(FName ModuleId) const { return !ModuleId.IsNone() && OwnedModuleIds.Contains(ModuleId); }
+	TArray<FName> GetUnlockedModuleIds() const { return UnlockedModuleIds; }
 
-	/** Call when a reward is confirmed. Duplicate unlocks succeed without adding a second copy. */
-	UFUNCTION(BlueprintCallable, Category = "Modules")
-	bool GrantModule(FName ModuleId, FString& OutError);
+	UFUNCTION(BlueprintPure, Category = "Modules")
+	bool IsModuleUnlocked(FName ModuleId) const { return !ModuleId.IsNone() && UnlockedModuleIds.Contains(ModuleId); }
+	bool OwnsModuleInstance(FGuid InstanceId) const;
 
-	/** Saves the next run's selection. NAME_None clears a slot; current match effects are unchanged. */
+	/** Unlocks the module type for future rewards. */
 	UFUNCTION(BlueprintCallable, Category = "Modules")
-	bool EquipModule(int32 SlotIndex, FName ModuleId, FString& OutError);
+	bool UnlockModule(FName ModuleId, FString& OutError);
+
+	/** Adds an already-rolled reward instance; its option values are never rerolled here. */
+	UFUNCTION(BlueprintCallable, Category = "Modules")
+	bool GrantModuleInstance(const FASModuleInstanceData& Instance, FString& OutError);
+
+	/** Saves the next run's selection. An invalid FGuid clears the slot. */
+	UFUNCTION(BlueprintCallable, Category = "Modules")
+	bool EquipModule(int32 SlotIndex, FGuid InstanceId, FString& OutError);
 
 	UFUNCTION(BlueprintCallable, Category = "Modules")
 	bool LoadProfile(FString& OutError);
@@ -41,14 +50,17 @@ public:
 	FASModuleCollectionChanged OnCollectionChanged;
 
 private:
-	bool CommitProfile(const TArray<FName>& NewOwned, const TArray<FName>& NewEquipped, FString& OutError);
+	bool CommitProfile(const TArray<FName>& NewUnlocked, const TArray<FASModuleInstanceData>& NewOwned, const TArray<FGuid>& NewEquipped, FString& OutError);
 	FString GetSaveSlotName() const;
 
 	UPROPERTY(Transient)
-	TArray<FName> OwnedModuleIds;
+	TArray<FName> UnlockedModuleIds;
 
 	UPROPERTY(Transient)
-	TArray<FName> EquippedModuleIds;
+	TArray<FASModuleInstanceData> OwnedModules;
+
+	UPROPERTY(Transient)
+	TArray<FGuid> EquippedModuleInstanceIds;
 
 	/** Failed/unsupported saves must not be silently overwritten by a fresh profile. */
 	bool bProfileLoaded = false;

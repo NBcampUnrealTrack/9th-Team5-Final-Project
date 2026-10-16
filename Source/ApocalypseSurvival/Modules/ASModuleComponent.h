@@ -3,10 +3,10 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GAS/ASAbilitySet.h"
+#include "Modules/Data/ASModuleTypes.h"
 #include "ASModuleComponent.generated.h"
 
 class UASAbilitySystemComponent;
-class UASModuleDefinition;
 
 USTRUCT()
 struct FASAppliedModule
@@ -14,7 +14,10 @@ struct FASAppliedModule
 	GENERATED_BODY()
 
 	UPROPERTY()
-	TObjectPtr<UASModuleDefinition> Definition;
+	FName ModuleId;
+
+	UPROPERTY()
+	float CoreValue = 0.0f;
 
 	UPROPERTY()
 	FASAbilitySet_GrantedHandles Handles;
@@ -37,7 +40,7 @@ public:
 	 * This is intentionally not a client RPC accepting arbitrary local save data.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Modules")
-	bool ConfigureLoadout(const TArray<FName>& ModuleIds, FString& OutError);
+	bool ConfigureLoadout(const TArray<FASModuleInstanceData>& Instances, FString& OutError);
 
 	/** Call after ASC actor info/default abilities are ready. Repeated calls do not duplicate grants. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Modules")
@@ -49,10 +52,17 @@ public:
 	void ResetForNextRun();
 
 	UFUNCTION(BlueprintPure, Category = "Modules")
-	TArray<FName> GetEquippedModuleIds() const { return EquippedModuleIds; }
+	TArray<FASModuleInstanceData> GetEquippedModules() const { return EquippedModules; }
 
 	UFUNCTION(BlueprintPure, Category = "Modules")
 	bool AreEffectsApplied() const { return bEffectsApplied; }
+
+	/** Core magnitude captured for this run, also available to special module abilities. */
+	UFUNCTION(BlueprintPure, Category = "Modules")
+	bool GetModuleCoreValue(FName ModuleId, float& OutValue) const;
+
+	/** Resolve a special ability's owning module without a per-module source asset. */
+	bool GetAbilityCoreValue(FGameplayAbilitySpecHandle AbilityHandle, float& OutValue) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Modules")
 	FASModuleLoadoutChanged OnLoadoutChanged;
@@ -71,7 +81,7 @@ private:
 	void OnRep_Loadout();
 
 	UPROPERTY(ReplicatedUsing = OnRep_Loadout)
-	TArray<FName> EquippedModuleIds;
+	TArray<FASModuleInstanceData> EquippedModules;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Loadout)
 	bool bEffectsApplied = false;

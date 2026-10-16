@@ -2,9 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "Modules/Data/ASModuleTypes.h"
 #include "ASModuleSaveGame.generated.h"
 
-/** Fixed module unlocks; no live UObject references or GAS handles are serialized. */
+/** Persistent equipment instances and the lobby's selected instance IDs. */
 UCLASS()
 class APOCALYPSESURVIVAL_API UASModuleSaveGame : public USaveGame
 {
@@ -12,12 +13,14 @@ class APOCALYPSESURVIVAL_API UASModuleSaveGame : public USaveGame
 
 public:
 	UPROPERTY(SaveGame)
-	int32 DataVersion = 1;
+	int32 DataVersion = 2;
 
 	UPROPERTY(SaveGame)
-	TArray<FName> OwnedModuleIds;
+	TArray<FName> UnlockedModuleIds;
 
-	/** Index is the lobby slot. NAME_None means an empty slot. */
 	UPROPERTY(SaveGame)
-	TArray<FName> EquippedModuleIds;
+	TArray<FASModuleInstanceData> OwnedModules;
+
+	UPROPERTY(SaveGame)
+	TArray<FGuid> EquippedModuleInstanceIds;
 };
