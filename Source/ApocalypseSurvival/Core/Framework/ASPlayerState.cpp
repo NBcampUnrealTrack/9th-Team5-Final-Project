@@ -8,10 +8,12 @@
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "Items/ASItemInstance.h"
 #include "Core/Input/ASInputTags.h"
+#include "Modules/ASModuleComponent.h"
 
 AASPlayerState::AASPlayerState()
 {
 	AbilitySystemComponent = CreateDefaultSubobject<UASAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	ModuleComponent = CreateDefaultSubobject<UASModuleComponent>(TEXT("ModuleComponent"));
 
 	// Mixed: 본인 클라이언트는 효과 정보를 전부 받는다(예측과 UI 에 필요하다).
 	// 다른 클라이언트는 태그·연출·어트리뷰트 값만 받는다.

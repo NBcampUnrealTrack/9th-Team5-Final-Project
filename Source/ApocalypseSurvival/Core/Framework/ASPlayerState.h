@@ -11,6 +11,7 @@ class UASCombatAttributeSet;
 class UASHealthAttributeSet;
 class UASItemInstance;
 class UASPlayerAttributeSet;
+class UASModuleComponent;
 
 /**
  * 플레이어의 어빌리티 시스템을 소유한다.
@@ -35,6 +36,9 @@ public:
 
 	UASAbilitySystemComponent* GetASAbilitySystemComponent() const { return AbilitySystemComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Modules")
+	UASModuleComponent* GetModuleComponent() const { return ModuleComponent; }
+
 	/**
 	 * 서버 전용. 캐릭터 기본 어빌리티 세트를 한 번만 부여한다.
 	 * 어빌리티는 ASC 와 함께 여기 남으므로 리스폰 때 다시 부여하면 중복된다. 두 번째 호출부터는 무시한다.
@@ -57,6 +61,9 @@ public:
 	UASItemInstance* GetEquippedItemRecord() const;
 
 private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modules", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASModuleComponent> ModuleComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASAbilitySystemComponent> AbilitySystemComponent;
 

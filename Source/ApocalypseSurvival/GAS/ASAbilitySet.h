@@ -85,6 +85,9 @@ public:
 	 */
 	void GiveToAbilitySystem(UASAbilitySystemComponent* AbilitySystemComponent, FASAbilitySet_GrantedHandles* OutGrantedHandles, UObject* SourceObject = nullptr) const;
 
+	const TArray<FASAbilitySet_GameplayAbility>& GetGrantedAbilities() const { return GrantedGameplayAbilities; }
+	const TArray<FASAbilitySet_GameplayEffect>& GetGrantedEffects() const { return GrantedGameplayEffects; }
+
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Abilities", meta = (TitleProperty = "Ability"))
 	TArray<FASAbilitySet_GameplayAbility> GrantedGameplayAbilities;

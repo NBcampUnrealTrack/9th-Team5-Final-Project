@@ -9,6 +9,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffectExtension.h"
 #include "GAS/ASAbilitySet.h"
+#include "Modules/ASModuleComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
@@ -111,6 +112,7 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 	if (IsValid(ASPlayerState))
 	{
 		ASPlayerState->GrantDefaultAbilitySetOnce(DefaultAbilitySet);
+		ASPlayerState->GetModuleComponent()->InitializeForAvatar();
 	}
 
 	// 리스폰이면 PlayerState 에 장착 기록이 남아 있다. 옛 몸과 함께 사라진 무기를 새 몸에 다시 단다.
@@ -139,6 +141,13 @@ bool AASPlayerCharacter::IsDead() const
 
 void AASPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (AASPlayerState* ASPlayerState = Cast<AASPlayerState>(ASC->GetOwnerActor()))
+		{
+			ASPlayerState->GetModuleComponent()->SuspendForAvatar(this);
+		}
+	}
 	// ASC 는 PlayerState 에 남으므로 파괴되는 캐릭터의 구독을 반드시 풀어야 한다.
 	UnbindDeathDelegates();
 
