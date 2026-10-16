@@ -33,6 +33,23 @@ public class ApocalypseSurvival : ModuleRules
 
 			// Mass Framework
 			"MassEntity",
+			"MassCommon",
+			"MassSpawner",
+			"MassSimulation",
+			"MassLOD",
+			"MassMovement",
+			"MassRepresentation",
+			"MassActors",
+			"MassSignals",
+
+			// Mass AI / Navigation
+			"MassNavigation",
+			"MassNavMeshNavigation",
+			"MassAIBehavior",
+
+			// Mass Multiplayer
+			"MassReplication",
+			"MassAIReplication",
 
 			"Niagara",
 			"Slate",
