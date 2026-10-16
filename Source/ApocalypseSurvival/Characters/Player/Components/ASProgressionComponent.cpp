@@ -19,7 +19,7 @@ void UASProgressionComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeP
 	
 	DOREPLIFETIME(UASProgressionComponent, Level);
 	DOREPLIFETIME(UASProgressionComponent, CurrentExp);
-	DOREPLIFETIME(UASProgressionComponent, SkillPoints);
+	DOREPLIFETIME(UASProgressionComponent, UnlockedSkillUpgradeTierCount);
 }
 
 void UASProgressionComponent::AddExperience(int32 Amount)
@@ -55,18 +55,6 @@ void UASProgressionComponent::AddExperience(int32 Amount)
 	OnExpChanged.Broadcast(CurrentExp, GetExpToNextLevel());
 }
 
-bool UASProgressionComponent::SpendSkillPoints(int32 Amount)
-{
-	if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0 || SkillPoints < Amount)
-	{
-		return false;
-	}
-	
-	SkillPoints -= Amount;
-	OnSkillPointsChanged.Broadcast(SkillPoints);
-	return true;
-}
-
 int32 UASProgressionComponent::GetExpToNextLevel() const
 {
 	const UASProgressionData* Data = GetProgressionData();
@@ -88,19 +76,16 @@ void UASProgressionComponent::LevelUp()
 		ApplyLevelGrowth(Definition);
 	}
 	
-	if (const UASProgressionData* Data = GetProgressionData())
-	{
-		const int32 Gained = Data->GetSkillPointAtLevel(Level);
-		if (Gained >0)
-		{
-			SkillPoints += Gained;
-			UE_LOG(LogTemp, Log, TEXT("[Progression] 스킬포인트 +%d (보유 %d)"), Gained, SkillPoints);
-			OnSkillPointsChanged.Broadcast(SkillPoints);
-		}
-	}
-	
 	UE_LOG(LogTemp, Log, TEXT("[Progression] 레벨업: Lv.%d"), Level);
 	OnLevelChanged.Broadcast(Level);
+	
+	// 이 레벨에서 열리는 강화 단계가 있으면 알린다
+	if (const UASProgressionData* Data = GetProgressionData())
+	{
+		const int32 OldCount = UnlockedSkillUpgradeTierCount;
+		UnlockedSkillUpgradeTierCount = Data->GetUnlockedSkillUpgradeTierCount(Level);
+		BroadcastSkillUpgradeUnlocked(OldCount, UnlockedSkillUpgradeTierCount);
+	}
 }
 
 void UASProgressionComponent::ApplyLevelGrowth(const UASCharacterDefinition* Definition) const
@@ -161,7 +146,40 @@ void UASProgressionComponent::OnRep_CurrentExp()
 	OnExpChanged.Broadcast(CurrentExp, GetExpToNextLevel());
 }
 
-void UASProgressionComponent::OnRep_SkillPoints()
+void UASProgressionComponent::OnRep_UnlockedSkillUpgradeTierCount(int32 OldCount)
 {
-	OnSkillPointsChanged.Broadcast(SkillPoints);
+	BroadcastSkillUpgradeUnlocked(OldCount, UnlockedSkillUpgradeTierCount);
+}
+
+void UASProgressionComponent::BroadcastSkillUpgradeUnlocked(int32 FromCount, int32 ToCount)
+{
+	const UASProgressionData* Data = GetProgressionData();
+	if (!Data)
+	{
+		return;
+	}
+	
+	for (int32 TierIndex = FMath::Max(0, FromCount); TierIndex < ToCount; ++TierIndex)
+	{
+		if (!Data->SkillUpgradeTiers.IsValidIndex(TierIndex))
+		{
+			break;
+		}
+		
+		const FASSkillUpgradeTier& Tier = Data->SkillUpgradeTiers[TierIndex];
+		UE_LOG(LogTemp, Log, TEXT("[Progression] 스킬 강화 단계 %d 열림: Lv.%d %s (%d개 중 선택)"), TierIndex, Tier.Level, *Tier.SkillSlotTag.ToString(), Tier.ChoiceCount);
+		OnSkillUpgradeUnlocked.Broadcast(TierIndex, Tier.SkillSlotTag, Tier.ChoiceCount);
+	}
+}
+
+bool UASProgressionComponent::GetSkillUpgradeTier(int32 TierIndex, FASSkillUpgradeTier& OutTier) const
+{
+	const UASProgressionData* Data = GetProgressionData();
+	if (!Data || !Data->SkillUpgradeTiers.IsValidIndex(TierIndex))
+	{
+		return false;
+	}
+	
+	OutTier = Data->SkillUpgradeTiers[TierIndex];
+	return true;
 }
