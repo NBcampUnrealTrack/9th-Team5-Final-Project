@@ -26,51 +26,6 @@ namespace ASMapManagerPrivate
 		false,
 		TEXT("Draw zone areas, adjacency links, danger on the server."),
 		ECVF_Cheat);
-
-	AASMapSystemManager* FindManagerOrWarn(UWorld* World)
-	{
-		TActorIterator<AASMapSystemManager> It(World);
-		AASMapSystemManager* Manager = It ? *It : nullptr;
-		if (!Manager)
-		{
-			UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Map: no map manager in this world (commands run on the server/host)."));
-		}
-		return Manager;
-	}
-
-	static FAutoConsoleCommandWithWorldAndArgs DumpCommand(
-		TEXT("AS.Map.Dump"),
-		TEXT("Log zone dangers and seed."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			if (const AASMapSystemManager* Manager = FindManagerOrWarn(World))
-			{
-				Manager->DumpState();
-			}
-		}));
-
-	static FAutoConsoleCommandWithWorldAndArgs StepCommand(
-		TEXT("AS.Map.Step"),
-		TEXT("AS.Map.Step <Day> <Day|Night>: send a step directly (bypasses the GameMode clock)."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			AASMapSystemManager* Manager = FindManagerOrWarn(World);
-			if (!Manager || Args.Num() != 2)
-			{
-				return;
-			}
-
-			FASMapPhaseContext Context;
-			Context.Day = FCString::Atoi(*Args[0]);
-			if (Context.Day < 1
-				|| (!Args[1].Equals(TEXT("Day"), ESearchCase::IgnoreCase) && !Args[1].Equals(TEXT("Night"), ESearchCase::IgnoreCase)))
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Map.Step <Day >= 1> <Day|Night>"));
-				return;
-			}
-			Context.DayPhase = Args[1].Equals(TEXT("Night"), ESearchCase::IgnoreCase) ? EASDayPhase::Night : EASDayPhase::Day;
-			Manager->HandlePhaseChanged(Context);
-		}));
 }
 
 AASMapSystemManager::AASMapSystemManager()

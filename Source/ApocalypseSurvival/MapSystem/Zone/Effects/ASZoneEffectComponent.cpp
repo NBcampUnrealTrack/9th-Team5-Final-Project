@@ -5,11 +5,9 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
-#include "GameFramework/GameModeBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "GenericTeamAgentInterface.h"
-#include "HAL/IConsoleManager.h"
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
@@ -29,23 +27,6 @@ namespace ASZoneEffectComponentPrivate
 		}
 		return TeamAgent ? TeamAgent->GetGenericTeamId().GetId() : FGenericTeamId::NoTeam.GetId();
 	}
-
-	static FAutoConsoleCommandWithWorldAndArgs DumpCommand(
-		TEXT("AS.Zone.EffectDump"),
-		TEXT("Log tracked zone effects on the server/host."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			const AGameModeBase* GameMode = World ? World->GetAuthGameMode() : nullptr;
-			const UASZoneEffectComponent* Component = GameMode ? GameMode->FindComponentByClass<UASZoneEffectComponent>() : nullptr;
-			if (Component)
-			{
-				Component->DumpState();
-			}
-			else
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Zone: no zone effect component on the GameMode (server/host only)."));
-			}
-		}));
 }
 
 UASZoneEffectComponent::UASZoneEffectComponent()

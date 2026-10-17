@@ -2,7 +2,6 @@
 
 #include "ApocalypseSurvival.h"
 #include "Components/SceneComponent.h"
-#include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "MapSystem/Vision/ASFogDisplayComponent.h"
@@ -14,49 +13,6 @@
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
-
-namespace ASVisionManagerPrivate
-{
-	static FAutoConsoleCommandWithWorldAndArgs WallCommand(
-		TEXT("AS.Vision.WallOcclusion"),
-		TEXT("AS.Vision.WallOcclusion [0|1]: toggle wall occlusion for all players (default 1)."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(World);
-			AASFogOfWarManager* Manager = Subsystem ? Subsystem->GetFogOfWarManager() : nullptr;
-			if (!Manager || !Manager->HasAuthority())
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Vision: no authoritative fog manager in this world (commands run on the server/host)."));
-				return;
-			}
-			if (Args.Num() > 1 || (Args.Num() == 1 && Args[0] != TEXT("0") && Args[0] != TEXT("1")))
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Vision.WallOcclusion [0|1]"));
-				return;
-			}
-			Manager->SetWallOcclusionEnabled(Args.Num() == 0 || Args[0] == TEXT("1"));
-		}));
-
-	static FAutoConsoleCommandWithWorldAndArgs NightCommand(
-		TEXT("AS.Vision.Night"),
-		TEXT("AS.Vision.Night <0|1>: blend day/night vision on the server."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(World);
-			AASFogOfWarManager* Manager = Subsystem ? Subsystem->GetFogOfWarManager() : nullptr;
-			if (!Manager || !Manager->HasAuthority())
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Vision: no authoritative fog manager in this world (commands run on the server/host)."));
-				return;
-			}
-			if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1")))
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Vision.Night <0|1>"));
-				return;
-			}
-			Manager->SetNight(Args[0] == TEXT("1"));
-		}));
-}
 
 AASFogOfWarManager::AASFogOfWarManager()
 {
