@@ -8,6 +8,9 @@
 
 class AASMapZone;
 class UASMapDefinition;
+class UASMapStateComponent;
+class UASMapWorldSubsystem;
+class UASVisionWorldSubsystem;
 class UTexture2D;
 
 UENUM(BlueprintType)
@@ -120,6 +123,14 @@ private:
 
 	bool ComputeView(const FVector2D& LocalSize, const UASMapDefinition* Definition, FMapView& OutView) const;
 	FLinearColor GetMarkerColor(uint8 MarkerType) const;
+
+	/** 한 번의 그리기에서 레이어 함수들이 공유하는 값. */
+	struct FPaintContext;
+	void DrawZones(const FPaintContext& Context, const UASMapStateComponent& MapState, const UASMapWorldSubsystem& Subsystem,
+		int32 FillLayer, int32 LabelLayer) const;
+	void DrawVisibilityMarkers(const FPaintContext& Context, const UASVisionWorldSubsystem& VisionSubsystem, int32 Layer) const;
+	/** 사망 Layer, 아군 Layer + 1, 로컬 Layer + 2를 사용한다. */
+	void DrawPlayers(const FPaintContext& Context, const UWorld& World, int32 Layer) const;
 
 	/** 기본 브러시: 사각형과 다각형에 전달한 색상으로 틴트한다. */
 	FSlateBrush SolidBrush;
