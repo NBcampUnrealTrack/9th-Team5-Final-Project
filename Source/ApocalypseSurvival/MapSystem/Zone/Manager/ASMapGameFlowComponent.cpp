@@ -7,12 +7,16 @@
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "MapSystem/Zone/Manager/ASMapSystemManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 UASMapGameFlowComponent::UASMapGameFlowComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
 	MapManagerClass = AASMapSystemManager::StaticClass();
+	static ConstructorHelpers::FObjectFinder<UASMapDefinition> MapDefinitionFinder(
+		TEXT("/Game/ApocalypseSurvival/MapSystem/Data/DA_MapDefinition.DA_MapDefinition"));
+	MapDefinition = MapDefinitionFinder.Object;
 }
 
 void UASMapGameFlowComponent::BeginPlay()
@@ -23,6 +27,12 @@ void UASMapGameFlowComponent::BeginPlay()
 	UWorld* World = GetWorld();
 	if (!Owner || !Owner->HasAuthority() || !World)
 	{
+		return;
+	}
+
+	if (!UASMapFunctionLibrary::LevelHasMapZones(this))
+	{
+		UE_LOG(LogApocalypseSurvival, Verbose, TEXT("Map system inactive: no zone actors in this level."));
 		return;
 	}
 

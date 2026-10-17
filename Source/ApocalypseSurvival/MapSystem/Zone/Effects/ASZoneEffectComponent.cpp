@@ -16,6 +16,7 @@
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
 #include "MapSystem/Zone/Effects/ASZoneEffectDefinition.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace ASZoneEffectComponentPrivate
 {
@@ -51,6 +52,9 @@ UASZoneEffectComponent::UASZoneEffectComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
+	static ConstructorHelpers::FObjectFinder<UASZoneEffectDefinition> ZoneEffectDefinitionFinder(
+		TEXT("/Game/ApocalypseSurvival/MapSystem/Data/DA_ZoneEffectDefinition.DA_ZoneEffectDefinition"));
+	ZoneEffectDefinition = ZoneEffectDefinitionFinder.Object;
 }
 
 void UASZoneEffectComponent::BeginPlay()
@@ -58,6 +62,11 @@ void UASZoneEffectComponent::BeginPlay()
 	Super::BeginPlay();
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client || !GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	if (!UASMapFunctionLibrary::LevelHasMapZones(this))
 	{
 		return;
 	}

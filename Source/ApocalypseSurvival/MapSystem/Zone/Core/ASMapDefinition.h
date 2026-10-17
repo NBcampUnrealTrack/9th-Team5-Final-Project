@@ -4,9 +4,11 @@
 #include "Engine/DataAsset.h"
 #include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "MapSystem/Zone/Core/ASZoneDangerSchedule.h"
+#include "Templates/SubclassOf.h"
 #include "ASMapDefinition.generated.h"
 
 class UTexture2D;
+class UUserWidget;
 
 /** 맵 공통 규칙과 표시 리소스. 구역별 데이터는 레벨 액터에 둔다. */
 UCLASS(BlueprintType)
@@ -37,6 +39,14 @@ public:
 	/** 맵 위젯에서 구역 아래에 그리는 선택적 탑다운 이미지. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
 	TObjectPtr<UTexture2D> MapTexture;
+
+	/** 구역이 있는 레벨에서 로컬 플레이어 화면에 표시할 미니맵 위젯. 비우면 표시하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	TSubclassOf<UUserWidget> MinimapWidgetClass;
+
+	/** 구역이 있는 레벨에서 로컬 플레이어 화면에 표시할 구역 HUD 위젯. 비우면 표시하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	TSubclassOf<UUserWidget> ZoneHudWidgetClass;
 
 	/** 인덱스 0은 위험도 1이다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation", meta = (EditFixedSize))

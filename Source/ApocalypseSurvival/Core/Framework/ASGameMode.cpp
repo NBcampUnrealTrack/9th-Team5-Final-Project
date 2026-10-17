@@ -13,10 +13,16 @@
 #include "AbilitySystemGlobals.h"
 #include "GameplayEffect.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "MapSystem/Zone/Manager/ASMapGameFlowComponent.h"
+#include "MapSystem/Vision/ASVisionSetupComponent.h"
+#include "MapSystem/Zone/Effects/ASZoneEffectComponent.h"
 
 AASGameMode::AASGameMode()
 {
 	GameStateClass = AASGameState::StaticClass();
+	MapFlow = CreateDefaultSubobject<UASMapGameFlowComponent>(TEXT("MapFlow"));
+	VisionSetup = CreateDefaultSubobject<UASVisionSetupComponent>(TEXT("VisionSetup"));
+	ZoneEffects = CreateDefaultSubobject<UASZoneEffectComponent>(TEXT("ZoneEffects"));
 }
 
 // 규칙 조회

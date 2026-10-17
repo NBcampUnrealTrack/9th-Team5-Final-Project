@@ -1,5 +1,11 @@
 ﻿#include "Core/Framework/ASGameState.h"
 #include "Net/UnrealNetwork.h"
+#include "MapSystem/Zone/Core/ASMapStateComponent.h"
+
+AASGameState::AASGameState()
+{
+	MapState = CreateDefaultSubobject<UASMapStateComponent>(TEXT("MapState"));
+}
 
 void AASGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {

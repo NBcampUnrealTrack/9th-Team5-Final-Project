@@ -11,6 +11,12 @@
 #include "MapSystem/Zone/Manager/ASMapSystemManager.h"
 #include "MapSystem/Zone/ASMapZone.h"
 
+bool UASMapFunctionLibrary::LevelHasMapZones(const UObject* WorldContextObject)
+{
+	UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	return World && TActorIterator<AASMapZone>(World);
+}
+
 UASMapStateComponent* UASMapFunctionLibrary::GetMapStateComponent(const UObject* WorldContextObject)
 {
 	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;

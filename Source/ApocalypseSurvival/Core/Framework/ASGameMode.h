@@ -8,6 +8,9 @@
 class AASGameState;
 class AASRespawnPoint;
 class UASPlayerRecordComponent;
+class UASMapGameFlowComponent;
+class UASVisionSetupComponent;
+class UASZoneEffectComponent;
 class UDataTable;
 class UGameplayEffect;
 
@@ -151,4 +154,15 @@ protected:
 	AASGameState* GetASGameState() const;
 	
 	FTimerHandle PhaseTimerHandle;
+
+private:
+	// 맵 시스템(구역·시야·구역 효과). 구역 액터가 없는 레벨에서는 동작하지 않는다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASMapGameFlowComponent> MapFlow;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASVisionSetupComponent> VisionSetup;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASZoneEffectComponent> ZoneEffects;
 };
