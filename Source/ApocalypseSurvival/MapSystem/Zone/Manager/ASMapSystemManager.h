@@ -91,6 +91,8 @@ private:
 	void CommitEvents(const FASMapStateSnapshot& WorkingState, const FASMapEngineEvents& Events);
 	void WriteSnapshot(const FASMapStateSnapshot& WorkingState);
 	bool ValidateLevel(TArray<FString>& OutErrors) const;
+	/** 양의 면적으로 겹치는 구역 쌍을 경고한다. 초기화 검증 오류에는 포함하지 않는다. */
+	void LogZoneOverlaps() const;
 	void CollectLevelZones() const;
 	/** 등록된 액터의 구역 설정을 만든다. */
 	void BuildZoneConfigs(TArray<FASZoneConfig>& OutConfigs) const;

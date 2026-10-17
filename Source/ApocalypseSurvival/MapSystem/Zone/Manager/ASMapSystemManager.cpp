@@ -13,6 +13,7 @@
 #include "GAS/ASAbilityTags.h"
 #include "HAL/IConsoleManager.h"
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
+#include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
@@ -116,6 +117,7 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 		MapDefinition->ValidateDefinition(ValidationErrors);
 		CollectLevelZones();
 		ValidateLevel(ValidationErrors);
+		LogZoneOverlaps();
 	}
 
 	if (UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this))
@@ -501,6 +503,50 @@ bool AASMapSystemManager::ValidateLevel(TArray<FString>& OutErrors) const
 		}
 	}
 	return OutErrors.Num() == InitialErrorCount;
+}
+
+void AASMapSystemManager::LogZoneOverlaps() const
+{
+	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this);
+	if (!Subsystem)
+	{
+		return;
+	}
+
+	// GetZones는 ZoneId 사전순이므로 겹친 위치는 앞쪽 구역으로 결정된다.
+	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	for (int32 IndexA = 0; IndexA < Zones.Num(); ++IndexA)
+	{
+		const AASMapZone* ZoneA = Zones[IndexA];
+		if (ZoneA->GetZoneId().IsNone())
+		{
+			continue;
+		}
+		TArray<TArray<FVector2D>> OutlinesA;
+		ZoneA->GetAreaOutlines(OutlinesA);
+		for (int32 IndexB = IndexA + 1; IndexB < Zones.Num(); ++IndexB)
+		{
+			const AASMapZone* ZoneB = Zones[IndexB];
+			if (ZoneB->GetZoneId().IsNone())
+			{
+				continue;
+			}
+			TArray<TArray<FVector2D>> OutlinesB;
+			ZoneB->GetAreaOutlines(OutlinesB);
+			const bool bOverlaps = OutlinesA.ContainsByPredicate([&OutlinesB](const TArray<FVector2D>& OutlineA)
+			{
+				return OutlinesB.ContainsByPredicate([&OutlineA](const TArray<FVector2D>& OutlineB)
+				{
+					return ASMapShapeUtils::OutlinesOverlap(OutlineA, OutlineB);
+				});
+			});
+			if (bOverlaps)
+			{
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Zones '%s' and '%s' overlap; locations in the overlap resolve to '%s' (ZoneId order)."),
+					*ZoneA->GetZoneId().ToString(), *ZoneB->GetZoneId().ToString(), *ZoneA->GetZoneId().ToString());
+			}
+		}
+	}
 }
 
 void AASMapSystemManager::HandleZoneRegistered(AASMapZone* Zone)
