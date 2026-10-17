@@ -21,7 +21,7 @@ enum class EASMapWidgetMode : uint8
 
 /**
  * 최소 구성의 네이티브 맵. 공유 MapState에서 구역 위험도 색상과 라벨을 그린다. 또한
- * 로컬 안개 텍스처, 아군 (GameState 플레이어), 현재 보이는
+ * 로컬 안개 텍스처, 플레이어 방향 화살표 (사망 시 회색 사각형), 현재 보이는
  * 적과 목표물 (시야 대상)을 그린다. 이 클래스로 Widget Blueprint를
  * 만들고 크기를 지정한다. 자식 위젯은 필요하지 않다.
  */
@@ -57,6 +57,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
 	FLinearColor AllyColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f);
+
+	/** 사망한 플레이어(본인 포함) 표시 색. 알파 0이면 숨긴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
+	FLinearColor DeadPlayerColor = FLinearColor(0.45f, 0.45f, 0.45f, 0.8f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
 	FLinearColor EnemyColor = FLinearColor(1.0f, 0.2f, 0.2f, 1.0f);

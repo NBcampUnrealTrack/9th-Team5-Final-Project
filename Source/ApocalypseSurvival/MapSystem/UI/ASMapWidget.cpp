@@ -1,5 +1,6 @@
 ﻿#include "MapSystem/UI/ASMapWidget.h"
 
+#include "AbilitySystemComponent.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "Fonts/FontMeasure.h"
@@ -7,7 +8,9 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
+#include "GAS/ASAbilityTags.h"
 #include "GeomTools.h"
+#include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
@@ -49,6 +52,31 @@ namespace ASMapWidgetPrivate
 		}
 
 		FSlateDrawElement::MakeBox(Out, Layer, MakeGeometry(Geometry, Position, Size), Brush, ESlateDrawEffect::None, Color);
+	}
+
+	void DrawTriangle(
+		FSlateWindowElementList& Out,
+		int32 Layer,
+		const FGeometry& Geometry,
+		const FSlateResourceHandle& ResourceHandle,
+		const FVector2D& P0,
+		const FVector2D& P1,
+		const FVector2D& P2,
+		const FLinearColor& Color)
+	{
+		const FVector2D Points[] = { P0, P1, P2 };
+		const FColor VertexColor = Color.ToFColor(true);
+		TArray<FSlateVertex> Vertices;
+		Vertices.Reserve(3);
+		for (const FVector2D& Point : Points)
+		{
+			Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(
+				Geometry.GetAccumulatedRenderTransform(),
+				FVector2f(static_cast<float>(Point.X), static_cast<float>(Point.Y)),
+				FVector2f(0.5f, 0.5f), VertexColor));
+		}
+		const TArray<SlateIndex> Indices = { 0, 1, 2 };
+		FSlateDrawElement::MakeCustomVerts(Out, Layer, ResourceHandle, Vertices, Indices, nullptr, 0, 0);
 	}
 
 	void DrawCenteredText(
@@ -346,6 +374,7 @@ int32 UASMapWidget::NativePaint(
 	const APawn* LocalPawn = UASMapFunctionLibrary::GetLocalPlayerPawn(this);
 	if (const AGameStateBase* GameState = World->GetGameState())
 	{
+		// 레이어 순서: 사망 < 아군 < 로컬.
 		for (const APlayerState* PlayerState : GameState->PlayerArray)
 		{
 			const APawn* Pawn = PlayerState ? PlayerState->GetPawn() : nullptr;
@@ -354,15 +383,46 @@ int32 UASMapWidget::NativePaint(
 				continue;
 			}
 
+			const UAbilitySystemComponent* AbilitySystem = ASMapAbilityUtils::FindAbilitySystemComponent(Pawn);
+			if (AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
+			{
+				if (DeadPlayerColor.A > 0.0f)
+				{
+					const FVector2D Position = WorldToLocal(Pawn->GetActorLocation());
+					const FVector2D Size(MarkerSize, MarkerSize);
+					DrawRect(OutDrawElements, Layer, AllottedGeometry, &SolidBrush,
+						Position - Size * 0.5, Size, DeadPlayerColor);
+				}
+				continue;
+			}
+
 			const bool bLocal = Pawn == LocalPawn;
 			const float Size = bLocal ? MarkerSize * 1.6f : MarkerSize * 1.2f;
 			const FVector2D Position = WorldToLocal(Pawn->GetActorLocation());
-			DrawRect(OutDrawElements, Layer + (bLocal ? 1 : 0), AllottedGeometry, &SolidBrush,
-				Position - FVector2D(Size, Size) * 0.5, FVector2D(Size, Size), bLocal ? LocalPlayerColor : AllyColor);
+			const int32 MarkerLayer = Layer + (bLocal ? 2 : 1);
+			const FLinearColor Color = bLocal ? LocalPlayerColor : AllyColor;
+			if (!bCanDrawAreas)
+			{
+				DrawRect(OutDrawElements, MarkerLayer, AllottedGeometry, &SolidBrush,
+					Position - FVector2D(Size, Size) * 0.5, FVector2D(Size, Size), Color);
+				continue;
+			}
+
+			FVector Forward = Pawn->GetActorForwardVector();
+			Forward.Z = 0.0;
+			FVector2D Direction = WorldToLocal(Pawn->GetActorLocation() + Forward * 100.0) - Position;
+			if (!Direction.Normalize())
+			{
+				Direction = FVector2D(0.0, -1.0);
+			}
+			const FVector2D HalfLength = Direction * (Size * 0.5);
+			const FVector2D HalfWidth = FVector2D(-Direction.Y, Direction.X) * (Size * 0.4);
+			DrawTriangle(OutDrawElements, MarkerLayer, AllottedGeometry, SolidResource,
+				Position + HalfLength, Position - HalfLength + HalfWidth, Position - HalfLength - HalfWidth, Color);
 		}
 	}
 
-	return Layer + 1;
+	return Layer + 3;
 }
 
 #undef LOCTEXT_NAMESPACE
