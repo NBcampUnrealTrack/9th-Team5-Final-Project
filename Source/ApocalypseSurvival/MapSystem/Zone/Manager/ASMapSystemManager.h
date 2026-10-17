@@ -97,6 +97,8 @@ private:
 	/** 등록된 구역 액터의 연결을 양방향 합집합으로 병합한다. */
 	void MergeZoneAdjacency(TArray<FASZoneConfig>& ZoneConfigs) const;
 	void DrawDebug() const;
+	/** 호출 시점의 구역별 생존 몬스터 수와 플레이어 존재를 서버에서 센다. */
+	TMap<FName, FASZonePhaseCounts> BuildPhaseCounts() const;
 
 	void HandleZoneRegistered(AASMapZone* Zone);
 	void HandleZoneUnregistered(AASMapZone* Zone);

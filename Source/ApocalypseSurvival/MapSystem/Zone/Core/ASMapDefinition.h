@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "MapSystem/Zone/Core/ASMapTypes.h"
+#include "MapSystem/Zone/Core/ASZoneDangerSchedule.h"
 #include "ASMapDefinition.generated.h"
 
 class UTexture2D;
@@ -16,9 +17,12 @@ class APOCALYPSESURVIVAL_API UASMapDefinition : public UPrimaryDataAsset
 public:
 	UASMapDefinition();
 
-	/** 매 낮/밤 시작에 각 구역의 위험도가 1 증가할 확률. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DangerIncreaseChance = 0.7f;
+	/** 날짜별 낮/밤 위험도 증가 한도와 몬스터 우선·확률 규칙. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (RequiredAssetDataTags = "RowStructure=/Script/ApocalypseSurvival.ASZoneDangerScheduleRow"))
+	TObjectPtr<UDataTable> DangerScheduleTable;
+
+	/** 요청 날짜 이하에서 가장 큰 Day의 행. 마지막 행은 이후 날짜에도 재사용한다. */
+	const FASZoneDangerScheduleRow* FindDangerScheduleRow(int32 Day) const;
 
 	/**
 	 * 맵 텍스처가 덮는 월드 XY 사각형.

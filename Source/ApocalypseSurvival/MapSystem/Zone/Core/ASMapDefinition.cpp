@@ -15,14 +15,84 @@ UASMapDefinition::UASMapDefinition()
 	};
 }
 
+const FASZoneDangerScheduleRow* UASMapDefinition::FindDangerScheduleRow(int32 Day) const
+{
+	if (!IsValid(DangerScheduleTable) || DangerScheduleTable->GetRowStruct() != FASZoneDangerScheduleRow::StaticStruct())
+	{
+		return nullptr;
+	}
+
+	const FASZoneDangerScheduleRow* Found = nullptr;
+	for (const auto& Pair : DangerScheduleTable->GetRowMap())
+	{
+		const FASZoneDangerScheduleRow* Row = reinterpret_cast<const FASZoneDangerScheduleRow*>(Pair.Value);
+		if (Row && Row->Day <= Day && (!Found || Row->Day > Found->Day))
+		{
+			Found = Row;
+		}
+	}
+	return Found;
+}
+
 bool UASMapDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 {
 	const int32 InitialErrorCount = OutErrors.Num();
 	const FString AssetName = GetName();
 
-	if (!FMath::IsFinite(DangerIncreaseChance) || DangerIncreaseChance < 0.0f || DangerIncreaseChance > 1.0f)
+	if (!IsValid(DangerScheduleTable))
 	{
-		OutErrors.Add(FString::Printf(TEXT("%s: DangerIncreaseChance is outside 0..1."), *AssetName));
+		OutErrors.Add(AssetName + TEXT(": DangerScheduleTable is required."));
+	}
+	else if (DangerScheduleTable->GetRowStruct() != FASZoneDangerScheduleRow::StaticStruct())
+	{
+		OutErrors.Add(AssetName + TEXT(": DangerScheduleTable RowStruct must be FASZoneDangerScheduleRow."));
+	}
+	else
+	{
+		TSet<int32> Days;
+		if (DangerScheduleTable->GetRowMap().IsEmpty())
+		{
+			OutErrors.Add(AssetName + TEXT(": DangerScheduleTable needs at least one row."));
+		}
+		for (const auto& Pair : DangerScheduleTable->GetRowMap())
+		{
+			const FString RowPath = FString::Printf(TEXT("%s: DangerScheduleTable[%s]"), *AssetName, *Pair.Key.ToString());
+			const FASZoneDangerScheduleRow* Row = reinterpret_cast<const FASZoneDangerScheduleRow*>(Pair.Value);
+			if (!Row)
+			{
+				OutErrors.Add(RowPath + TEXT(" has no row data."));
+				continue;
+			}
+			if (Row->Day < 1)
+			{
+				OutErrors.Add(RowPath + TEXT(" Day must be >= 1."));
+			}
+			if (Days.Contains(Row->Day))
+			{
+				OutErrors.Add(RowPath + TEXT(" has duplicate Day."));
+			}
+			Days.Add(Row->Day);
+			if (Row->MaxRaisedZonesDay < 0 || Row->MaxRaisedZonesNight < 0)
+			{
+				OutErrors.Add(RowPath + TEXT(" MaxRaisedZonesDay and MaxRaisedZonesNight must be >= 0."));
+			}
+			if (Row->MonsterCountThreshold < 0)
+			{
+				OutErrors.Add(RowPath + TEXT(" MonsterCountThreshold must be >= 0."));
+			}
+			if (!FMath::IsFinite(Row->BaseChance) || Row->BaseChance < 0.0f || Row->BaseChance > 1.0f)
+			{
+				OutErrors.Add(RowPath + TEXT(" BaseChance must be finite and in 0..1."));
+			}
+			if (!FMath::IsFinite(Row->PlayerZoneChance) || Row->PlayerZoneChance < 0.0f || Row->PlayerZoneChance > 1.0f)
+			{
+				OutErrors.Add(RowPath + TEXT(" PlayerZoneChance must be finite and in 0..1."));
+			}
+		}
+		if (!Days.Contains(1))
+		{
+			OutErrors.Add(AssetName + TEXT(": DangerScheduleTable requires a Day 1 row."));
+		}
 	}
 
 	if (MapWorldMax.X <= MapWorldMin.X || MapWorldMax.Y <= MapWorldMin.Y)

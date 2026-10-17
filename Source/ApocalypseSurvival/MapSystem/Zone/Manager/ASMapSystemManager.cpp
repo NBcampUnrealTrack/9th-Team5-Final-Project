@@ -1,11 +1,18 @@
 ﻿#include "MapSystem/Zone/Manager/ASMapSystemManager.h"
 
 #include "ApocalypseSurvival.h"
+#include "AbilitySystemComponent.h"
+#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Components/SceneComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
+#include "GAS/ASAbilityTags.h"
 #include "HAL/IConsoleManager.h"
+#include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
@@ -145,7 +152,7 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 	TArray<FASZoneConfig> ZoneConfigs;
 	BuildZoneConfigs(ZoneConfigs);
 	MergeZoneAdjacency(ZoneConfigs);
-	RuleEngine.Configure(ZoneConfigs, MapDefinition->DangerIncreaseChance);
+	RuleEngine.Configure(ZoneConfigs);
 
 	UASMapStateComponent* State = MapState.Get();
 	State->ServerSetMapDefinition(MapDefinition);
@@ -193,9 +200,17 @@ void AASMapSystemManager::HandlePhaseChanged(const FASMapPhaseContext& PhaseCont
 		return;
 	}
 
+	const FASZoneDangerScheduleRow* Rule = MapDefinition->FindDangerScheduleRow(PhaseContext.Day);
+	if (!Rule)
+	{
+		UE_LOG(LogApocalypseSurvival, Error, TEXT("No danger schedule row for day %d; phase was not processed."), PhaseContext.Day);
+		return;
+	}
+
+	const TMap<FName, FASZonePhaseCounts> PhaseCounts = BuildPhaseCounts();
 	FASMapStateSnapshot Working = MapState->GetSnapshot();
 	FASMapEngineEvents Events;
-	if (RuleEngine.BeginStep(Working, PhaseContext, Events))
+	if (RuleEngine.BeginStep(Working, PhaseContext, *Rule, PhaseCounts, Events))
 	{
 		CommitEvents(Working, Events);
 	}
@@ -219,6 +234,54 @@ void AASMapSystemManager::StopMap()
 	}
 
 	UE_LOG(LogApocalypseSurvival, Log, TEXT("Map stopped. Final zone state kept for results."));
+}
+
+TMap<FName, FASZonePhaseCounts> AASMapSystemManager::BuildPhaseCounts() const
+{
+	TMap<FName, FASZonePhaseCounts> Counts;
+	UWorld* World = GetWorld();
+	const UASMapStateComponent* State = MapState.Get();
+	if (!HasAuthority() || !World || !State)
+	{
+		return Counts;
+	}
+
+	// 빈 구역도 0으로 포함하며 호출할 때마다 새로 센다.
+	for (const FASZoneRuntimeState& Zone : State->GetSnapshot().Zones)
+	{
+		Counts.Add(Zone.ZoneId);
+	}
+	for (AASMonsterCharacter* Monster : TActorRange<AASMonsterCharacter>(World))
+	{
+		if (IsValid(Monster) && !Monster->IsDead())
+		{
+			if (FASZonePhaseCounts* ZoneCounts = Counts.Find(FindZoneAtLocation(Monster->GetActorLocation())))
+			{
+				++ZoneCounts->MonsterCount;
+			}
+		}
+	}
+
+	if (const AGameStateBase* GameState = World->GetGameState())
+	{
+		for (const APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			const APawn* Pawn = IsValid(PlayerState) ? PlayerState->GetPawn() : nullptr;
+			if (!IsValid(Pawn))
+			{
+				continue;
+			}
+			const UAbilitySystemComponent* AbilitySystem = ASMapAbilityUtils::FindAbilitySystemComponent(Pawn);
+			if (AbilitySystem && !AbilitySystem->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
+			{
+				if (FASZonePhaseCounts* ZoneCounts = Counts.Find(FindZoneAtLocation(Pawn->GetActorLocation())))
+				{
+					ZoneCounts->bHasPlayers = true;
+				}
+			}
+		}
+	}
+	return Counts;
 }
 
 bool AASMapSystemManager::GetZoneState(FName ZoneId, FASZoneRuntimeState& OutState) const
@@ -472,9 +535,12 @@ void AASMapSystemManager::DumpState() const
 		Snapshot.bMapReady ? 1 : 0, Snapshot.bMapRunning ? 1 : 0, MatchSeed, Snapshot.MatchId,
 		*Snapshot.CurrentPhase.GetPhaseKey().ToString());
 
+	const TMap<FName, FASZonePhaseCounts> Counts = BuildPhaseCounts();
 	for (const FASZoneRuntimeState& Zone : Snapshot.Zones)
 	{
-		UE_LOG(LogApocalypseSurvival, Log, TEXT("  %-12s danger=%d"), *Zone.ZoneId.ToString(), Zone.DangerLevel);
+		const FASZonePhaseCounts ZoneCounts = Counts.FindRef(Zone.ZoneId);
+		UE_LOG(LogApocalypseSurvival, Log, TEXT("  %-12s danger=%d monsterCount=%d hasPlayers=%d"),
+			*Zone.ZoneId.ToString(), Zone.DangerLevel, ZoneCounts.MonsterCount, ZoneCounts.bHasPlayers ? 1 : 0);
 	}
 }
 
