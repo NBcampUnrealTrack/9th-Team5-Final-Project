@@ -112,11 +112,13 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 		ValidationErrors.Add(TEXT("InitializeMap: MapState is null (does the GameState have UASMapStateComponent?)."));
 	}
 
+	TArray<FASZoneConfig> ZoneConfigs;
 	if (MapDefinition)
 	{
 		MapDefinition->ValidateDefinition(ValidationErrors);
 		CollectLevelZones();
-		ValidateLevel(ValidationErrors);
+		BuildZoneConfigs(ZoneConfigs);
+		ValidateLevel(ZoneConfigs, ValidationErrors);
 		LogZoneOverlaps();
 	}
 
@@ -151,9 +153,6 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 		return false;
 	}
 
-	TArray<FASZoneConfig> ZoneConfigs;
-	BuildZoneConfigs(ZoneConfigs);
-	MergeZoneAdjacency(ZoneConfigs);
 	RuleEngine.Configure(ZoneConfigs);
 
 	UASMapStateComponent* State = MapState.Get();
@@ -376,40 +375,25 @@ void AASMapSystemManager::CollectLevelZones() const
 void AASMapSystemManager::BuildZoneConfigs(TArray<FASZoneConfig>& OutConfigs) const
 {
 	OutConfigs.Reset();
-	if (const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this))
-	{
-		for (const AASMapZone* Zone : Subsystem->GetZones())
-		{
-			FASZoneConfig& Config = OutConfigs.AddDefaulted_GetRef();
-			Config.ZoneId = Zone->GetZoneId();
-			Config.InitialDangerLevel = Zone->GetInitialDangerLevel();
-		}
-	}
-}
-
-void AASMapSystemManager::MergeZoneAdjacency(TArray<FASZoneConfig>& ZoneConfigs) const
-{
 	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this);
-	TMap<FName, int32> ConfigIndices;
-	for (int32 Index = 0; Index < ZoneConfigs.Num(); ++Index)
-	{
-		ZoneConfigs[Index].AdjacentZoneIds.Reset();
-		ConfigIndices.Add(ZoneConfigs[Index].ZoneId, Index);
-	}
-
 	if (!Subsystem)
 	{
 		return;
 	}
 
-	for (const AASMapZone* Zone : Subsystem->GetZones())
+	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	TMap<FName, int32> ConfigIndices;
+	for (const AASMapZone* Zone : Zones)
 	{
-		const int32* ZoneIndex = ConfigIndices.Find(Zone->GetZoneId());
-		if (!ZoneIndex)
-		{
-			continue;
-		}
+		ConfigIndices.Add(Zone->GetZoneId(), OutConfigs.Num());
+		FASZoneConfig& Config = OutConfigs.AddDefaulted_GetRef();
+		Config.ZoneId = Zone->GetZoneId();
+		Config.InitialDangerLevel = Zone->GetInitialDangerLevel();
+	}
 
+	for (const AASMapZone* Zone : Zones)
+	{
+		const int32 ZoneIndex = ConfigIndices.FindChecked(Zone->GetZoneId());
 		for (const AASMapZone* AdjacentZone : Zone->GetAdjacentZones())
 		{
 			if (!IsValid(AdjacentZone) || AdjacentZone->GetZoneId() == Zone->GetZoneId())
@@ -420,20 +404,20 @@ void AASMapSystemManager::MergeZoneAdjacency(TArray<FASZoneConfig>& ZoneConfigs)
 			if (const int32* AdjacentIndex = ConfigIndices.Find(AdjacentZone->GetZoneId()))
 			{
 				// 어느 한쪽에만 적혀 있어도 같은 양방향 연결을 생성한다.
-				ZoneConfigs[*ZoneIndex].AdjacentZoneIds.AddUnique(AdjacentZone->GetZoneId());
-				ZoneConfigs[*AdjacentIndex].AdjacentZoneIds.AddUnique(Zone->GetZoneId());
+				OutConfigs[ZoneIndex].AdjacentZoneIds.AddUnique(AdjacentZone->GetZoneId());
+				OutConfigs[*AdjacentIndex].AdjacentZoneIds.AddUnique(Zone->GetZoneId());
 			}
 		}
 	}
 
 	// 액터와 배열의 편집 순서에 관계없이 규칙 입력 순서를 일정하게 유지한다.
-	for (FASZoneConfig& Config : ZoneConfigs)
+	for (FASZoneConfig& Config : OutConfigs)
 	{
 		Config.AdjacentZoneIds.Sort([](const FName& A, const FName& B) { return A.LexicalLess(B); });
 	}
 }
 
-bool AASMapSystemManager::ValidateLevel(TArray<FString>& OutErrors) const
+bool AASMapSystemManager::ValidateLevel(const TArray<FASZoneConfig>& ZoneConfigs, TArray<FString>& OutErrors) const
 {
 	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this);
 	if (!Subsystem)
@@ -492,9 +476,6 @@ bool AASMapSystemManager::ValidateLevel(TArray<FString>& OutErrors) const
 	}
 
 	// 반대쪽에서만 연결했어도 이웃이 있는 것으로 판단한다.
-	TArray<FASZoneConfig> ZoneConfigs;
-	BuildZoneConfigs(ZoneConfigs);
-	MergeZoneAdjacency(ZoneConfigs);
 	for (const FASZoneConfig& Config : ZoneConfigs)
 	{
 		if (Config.AdjacentZoneIds.IsEmpty())
