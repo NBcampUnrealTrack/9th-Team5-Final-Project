@@ -4,7 +4,6 @@
 #include "Engine/DataAsset.h"
 #include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "MapSystem/Zone/Core/ASZoneDangerSchedule.h"
-#include "Templates/SubclassOf.h"
 #include "ASMapDefinition.generated.h"
 
 class UTexture2D;
@@ -40,13 +39,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
 	TObjectPtr<UTexture2D> MapTexture;
 
+	// 위젯은 소프트 참조로 둔다. 이 에셋은 GameMode 생성자에서 엔진 시작 중에 로드되는데,
+	// 하드 참조면 위젯이 MVVM 플러그인보다 먼저 로드되어 뷰모델 바인딩을 잃는다.
+
 	/** 구역이 있는 레벨에서 로컬 플레이어 화면에 표시할 미니맵 위젯. 비우면 표시하지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
-	TSubclassOf<UUserWidget> MinimapWidgetClass;
+	TSoftClassPtr<UUserWidget> MinimapWidgetClass;
 
 	/** 구역이 있는 레벨에서 로컬 플레이어 화면에 표시할 구역 HUD 위젯. 비우면 표시하지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
-	TSubclassOf<UUserWidget> ZoneHudWidgetClass;
+	TSoftClassPtr<UUserWidget> ZoneHudWidgetClass;
 
 	/** 인덱스 0은 위험도 1이다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation", meta = (EditFixedSize))

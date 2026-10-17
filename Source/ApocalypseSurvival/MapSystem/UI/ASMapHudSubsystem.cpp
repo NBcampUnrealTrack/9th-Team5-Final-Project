@@ -43,9 +43,9 @@ void UASMapHudSubsystem::TryCreateWidgets()
 	}
 	World->GetTimerManager().ClearTimer(WidgetTimer);
 
-	if (MapDefinition->MinimapWidgetClass)
+	if (UClass* MinimapClass = MapDefinition->MinimapWidgetClass.LoadSynchronous())
 	{
-		UUserWidget* Widget = CreateWidget<UUserWidget>(PlayerController, MapDefinition->MinimapWidgetClass);
+		UUserWidget* Widget = CreateWidget<UUserWidget>(PlayerController, MinimapClass);
 		if (Widget)
 		{
 			MinimapWidget = Widget;
@@ -58,9 +58,9 @@ void UASMapHudSubsystem::TryCreateWidgets()
 		}
 	}
 
-	if (MapDefinition->ZoneHudWidgetClass)
+	if (UClass* ZoneHudClass = MapDefinition->ZoneHudWidgetClass.LoadSynchronous())
 	{
-		UUserWidget* Widget = CreateWidget<UUserWidget>(PlayerController, MapDefinition->ZoneHudWidgetClass);
+		UUserWidget* Widget = CreateWidget<UUserWidget>(PlayerController, ZoneHudClass);
 		if (Widget)
 		{
 			ZoneHudWidget = Widget;
