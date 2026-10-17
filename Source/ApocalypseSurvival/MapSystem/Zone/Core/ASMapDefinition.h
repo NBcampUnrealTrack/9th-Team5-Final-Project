@@ -65,10 +65,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	FVector2D WorldToMapUV(const FVector& WorldLocation) const;
 
-	/** 맵 UV를 월드 XY 위치로 되돌린다 (Z = 0). */
-	UFUNCTION(BlueprintPure, Category = "AS|Map")
-	FVector MapUVToWorld(const FVector2D& MapUV) const;
-
 	FVector2D GetMapWorldSize() const { return (MapWorldMax - MapWorldMin).ComponentMax(FVector2D(1.0, 1.0)); }
 
 #if WITH_EDITOR

@@ -5,7 +5,6 @@
 #include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "ASMapFunctionLibrary.generated.h"
 
-class AASMapSystemManager;
 class APawn;
 class UASMapDefinition;
 class UASMapStateComponent;
@@ -27,10 +26,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static UASMapDefinition* GetMapDefinition(const UObject* WorldContextObject);
-
-	/** 서버 전용 매니저. 클라이언트에서는 null을 반환한다. */
-	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
-	static AASMapSystemManager* GetMapSystemManager(const UObject* WorldContextObject);
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static FName FindZoneIdAtLocation(const UObject* WorldContextObject, const FVector& Location);

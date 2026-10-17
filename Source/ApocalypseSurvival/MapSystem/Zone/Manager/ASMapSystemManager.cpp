@@ -15,7 +15,6 @@
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
-#include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
@@ -30,7 +29,8 @@ namespace ASMapManagerPrivate
 
 	AASMapSystemManager* FindManagerOrWarn(UWorld* World)
 	{
-		AASMapSystemManager* Manager = UASMapFunctionLibrary::GetMapSystemManager(World);
+		TActorIterator<AASMapSystemManager> It(World);
+		AASMapSystemManager* Manager = It ? *It : nullptr;
 		if (!Manager)
 		{
 			UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Map: no map manager in this world (commands run on the server/host)."));

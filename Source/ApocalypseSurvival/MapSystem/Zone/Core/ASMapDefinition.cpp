@@ -127,15 +127,6 @@ FVector2D UASMapDefinition::WorldToMapUV(const FVector& WorldLocation) const
 		1.0 - (WorldLocation.X - MapWorldMin.X) / Size.X);
 }
 
-FVector UASMapDefinition::MapUVToWorld(const FVector2D& MapUV) const
-{
-	const FVector2D Size = GetMapWorldSize();
-	return FVector(
-		MapWorldMin.X + (1.0 - MapUV.Y) * Size.X,
-		MapWorldMin.Y + MapUV.X * Size.Y,
-		0.0);
-}
-
 #if WITH_EDITOR
 EDataValidationResult UASMapDefinition::IsDataValid(FDataValidationContext& Context) const
 {
