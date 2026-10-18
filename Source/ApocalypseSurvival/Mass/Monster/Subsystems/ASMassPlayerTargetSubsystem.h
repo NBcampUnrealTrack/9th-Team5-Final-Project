@@ -17,7 +17,7 @@ struct APOCALYPSESURVIVAL_API FASMassPlayerTargetSnapshot
 	bool bAlive = false;
 };
 
-/** 서버의 플레이어 타깃을 낮은 빈도로 수집해 Mass Processor에 제공한다. */
+/** 서버의 플레이어 타깃을 낮은 빈도로 수집해 Mass 몬스터 Processor에 제공한다. */
 UCLASS(Config = Game, DefaultConfig)
 class APOCALYPSESURVIVAL_API UASMassPlayerTargetSubsystem : public UTickableWorldSubsystem
 {

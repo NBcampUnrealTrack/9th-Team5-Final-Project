@@ -6,6 +6,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GAS/ASAbilityTags.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "MassEntityConfigAsset.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "NavigationSystem.h"
@@ -36,6 +37,20 @@ void AASMassMonsterFunctionalTestActor::EndPlay(const EEndPlayReason::Type EndPl
 	GetWorldTimerManager().ClearTimer(StartTimer);
 	GetWorldTimerManager().ClearTimer(SpawnBatchTimer);
 	GetWorldTimerManager().ClearTimer(StateReportTimer);
+	GetWorldTimerManager().ClearTimer(BenchmarkSettleTimer);
+	GetWorldTimerManager().ClearTimer(CsvCaptureTimer);
+	GetWorldTimerManager().ClearTimer(BetweenCaptureTimer);
+	GetWorldTimerManager().ClearTimer(TraceCaptureTimer);
+	if (bCsvCaptureActive)
+	{
+		ExecuteBenchmarkCommand(TEXT("csvprofile stop"));
+		bCsvCaptureActive = false;
+	}
+	if (bTraceCaptureActive)
+	{
+		ExecuteBenchmarkCommand(TEXT("Trace.Stop"));
+		bTraceCaptureActive = false;
+	}
 	RemoveGrantedInvulnerability();
 	Super::EndPlay(EndPlayReason);
 }
@@ -43,7 +58,12 @@ void AASMassMonsterFunctionalTestActor::EndPlay(const EEndPlayReason::Type EndPl
 void AASMassMonsterFunctionalTestActor::TryStartTest()
 {
 	UWorld* World = GetWorld();
-	if (!World || !IsValid(EntityConfig))
+	if (!World)
+	{
+		return;
+	}
+
+	if (MonsterCount > 0 && !IsValid(EntityConfig))
 	{
 		UE_LOG(LogTemp, Error, TEXT("[MassFunctionalTest] EntityConfig is not assigned."));
 		return;
@@ -56,18 +76,25 @@ void AASMassMonsterFunctionalTestActor::TryStartTest()
 		return;
 	}
 
-	if (!BuildSpawnTransforms())
-	{
-		UE_LOG(LogTemp, Error, TEXT("[MassFunctionalTest] Could not create %d projected NavMesh spawn transforms."), MonsterCount);
-		return;
-	}
-
 	if (bGrantInvulnerability)
 	{
 		GrantPlayerInvulnerability();
 	}
 
 	NextSpawnIndex = 0;
+	if (MonsterCount == 0)
+	{
+		PendingSpawnTransforms.Reset();
+		HandleSpawnComplete();
+		return;
+	}
+
+	if (!BuildSpawnTransforms())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[MassFunctionalTest] Could not create %d projected NavMesh spawn transforms."), MonsterCount);
+		return;
+	}
+
 	SpawnNextBatch();
 	if (NextSpawnIndex < PendingSpawnTransforms.Num())
 	{
@@ -103,9 +130,22 @@ void AASMassMonsterFunctionalTestActor::SpawnNextBatch()
 	if (NextSpawnIndex >= PendingSpawnTransforms.Num())
 	{
 		GetWorldTimerManager().ClearTimer(SpawnBatchTimer);
-		UE_LOG(LogTemp, Display, TEXT("[MassFunctionalTest] Spawn complete: %d Mass monsters."), NextSpawnIndex);
-		GetWorldTimerManager().SetTimer(StateReportTimer, this,
-			&AASMassMonsterFunctionalTestActor::ReportStateCounts, FMath::Max(0.01f, StateReportDelay), false);
+		HandleSpawnComplete();
+	}
+}
+
+void AASMassMonsterFunctionalTestActor::HandleSpawnComplete()
+{
+	UE_LOG(LogTemp, Display, TEXT("[MassFunctionalTest] Spawn complete: %d Mass monsters."), NextSpawnIndex);
+	GetWorldTimerManager().SetTimer(StateReportTimer, this,
+		&AASMassMonsterFunctionalTestActor::ReportStateCounts, FMath::Max(0.01f, StateReportDelay), false);
+
+	if (bEnableBenchmarkCapture)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] Settle start N=%d Duration=%.2fs"),
+			MonsterCount, BenchmarkSettleDelay);
+		GetWorldTimerManager().SetTimer(BenchmarkSettleTimer, this,
+			&AASMassMonsterFunctionalTestActor::StartCsvCapture, FMath::Max(0.01f, BenchmarkSettleDelay), false);
 	}
 }
 
@@ -122,6 +162,67 @@ void AASMassMonsterFunctionalTestActor::ReportStateCounts()
 	UE_LOG(LogTemp, Display,
 		TEXT("[MassFunctionalTest] States Total=%d Idle=%d Chase=%d Attack=%d ReturnHome=%d Dead=%d"),
 		Counts.Total, Counts.Idle, Counts.Chase, Counts.Attack, Counts.ReturnHome, Counts.Dead);
+}
+
+void AASMassMonsterFunctionalTestActor::StartCsvCapture()
+{
+	UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] CSV start N=%d Duration=%.2fs"),
+		MonsterCount, CsvCaptureDuration);
+	ExecuteBenchmarkCommand(TEXT("csvprofile start"));
+	bCsvCaptureActive = true;
+	GetWorldTimerManager().SetTimer(CsvCaptureTimer, this,
+		&AASMassMonsterFunctionalTestActor::StopCsvCapture, FMath::Max(1.0f, CsvCaptureDuration), false);
+}
+
+void AASMassMonsterFunctionalTestActor::StopCsvCapture()
+{
+	ExecuteBenchmarkCommand(TEXT("csvprofile stop"));
+	bCsvCaptureActive = false;
+	UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] CSV stop N=%d"), MonsterCount);
+
+	if (bCaptureTrace)
+	{
+		GetWorldTimerManager().SetTimer(BetweenCaptureTimer, this,
+			&AASMassMonsterFunctionalTestActor::StartTraceCapture, FMath::Max(0.01f, BetweenCaptureDelay), false);
+	}
+	else
+	{
+		FinishBenchmark();
+	}
+}
+
+void AASMassMonsterFunctionalTestActor::StartTraceCapture()
+{
+	UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] Trace start N=%d Duration=%.2fs"),
+		MonsterCount, TraceCaptureDuration);
+	ExecuteBenchmarkCommand(TEXT("Trace.File cpu,frame,bookmark"));
+	bTraceCaptureActive = true;
+	GetWorldTimerManager().SetTimer(TraceCaptureTimer, this,
+		&AASMassMonsterFunctionalTestActor::StopTraceCapture, FMath::Max(1.0f, TraceCaptureDuration), false);
+}
+
+void AASMassMonsterFunctionalTestActor::StopTraceCapture()
+{
+	ExecuteBenchmarkCommand(TEXT("Trace.Stop"));
+	bTraceCaptureActive = false;
+	UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] Trace stop N=%d"), MonsterCount);
+	FinishBenchmark();
+}
+
+void AASMassMonsterFunctionalTestActor::FinishBenchmark()
+{
+	if (bTakeScreenshot)
+	{
+		ExecuteBenchmarkCommand(TEXT("HighResShot 1"));
+	}
+
+	ReportStateCounts();
+	UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] Done N=%d"), MonsterCount);
+}
+
+void AASMassMonsterFunctionalTestActor::ExecuteBenchmarkCommand(const FString& Command)
+{
+	UKismetSystemLibrary::ExecuteConsoleCommand(this, Command, nullptr);
 }
 
 bool AASMassMonsterFunctionalTestActor::BuildSpawnTransforms()

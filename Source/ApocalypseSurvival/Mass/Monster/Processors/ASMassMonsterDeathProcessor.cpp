@@ -6,6 +6,8 @@
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
 #include "MassExecutionContext.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "ProfilingDebugging/CsvProfiler.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterDeathProcessor)
 
@@ -36,6 +38,9 @@ void UASMassMonsterDeathProcessor::ConfigureQueries(const TSharedRef<FMassEntity
 
 void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ASMassMonsterDeathProcessor);
+	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterDeathProcessor);
+
 	NewlyDeadQuery.ForEachEntityChunk(Context, [](FMassExecutionContext& Context)
 	{
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();

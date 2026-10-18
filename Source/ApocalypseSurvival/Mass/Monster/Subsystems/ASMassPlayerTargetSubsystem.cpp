@@ -1,9 +1,11 @@
-#include "Mass/Monster/Targeting/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
 
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "ProfilingDebugging/CsvProfiler.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassPlayerTargetSubsystem)
 
@@ -30,6 +32,9 @@ void UASMassPlayerTargetSubsystem::Deinitialize()
 
 void UASMassPlayerTargetSubsystem::Tick(const float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ASMassPlayerTargetSubsystem);
+	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassPlayerTargetSubsystem);
+
 	Super::Tick(DeltaTime);
 
 	TimeUntilRefresh -= DeltaTime;

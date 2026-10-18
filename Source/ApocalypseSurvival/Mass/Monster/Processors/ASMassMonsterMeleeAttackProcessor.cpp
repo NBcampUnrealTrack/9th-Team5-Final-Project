@@ -5,11 +5,13 @@
 #include "Mass/Monster/Combat/ASMassMonsterDamageBridge.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
-#include "Mass/Monster/Targeting/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
 #include "MassExecutionContext.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "ProfilingDebugging/CsvProfiler.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterMeleeAttackProcessor)
 
@@ -33,6 +35,9 @@ void UASMassMonsterMeleeAttackProcessor::ConfigureQueries(const TSharedRef<FMass
 
 void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ASMassMonsterMeleeAttackProcessor);
+	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterMeleeAttackProcessor);
+
 	UWorld* World = GetWorld();
 	UASMassPlayerTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMassPlayerTargetSubsystem>() : nullptr;
 	if (!World || !TargetSubsystem)

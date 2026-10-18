@@ -8,6 +8,8 @@
 #include "MassMovementFragments.h"
 #include "MassNavigationFragments.h"
 #include "MassNavMeshNavigationFragments.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "ProfilingDebugging/CsvProfiler.h"
 #include "MassNavMeshNavigationProcessors.h"
 #include "NavCorridor.h"
 #include "NavigationSystem.h"
@@ -169,6 +171,9 @@ void UASMassMonsterNavigationProcessor::ConfigureQueries(const TSharedRef<FMassE
 
 void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ASMassMonsterNavigationProcessor);
+	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterNavigationProcessor);
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
