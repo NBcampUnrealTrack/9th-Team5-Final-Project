@@ -34,6 +34,7 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTargetFragment : public FMassFragmen
 	FVector CachedTargetLocation = FVector::ZeroVector;
 	float Aggro = 0.0f;
 	float RefreshTimeRemaining = 0.0f;
+	bool bRefreshScheduleInitialized = false;
 
 	bool HasTarget() const
 	{
