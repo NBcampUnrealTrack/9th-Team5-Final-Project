@@ -33,7 +33,8 @@ void UASMassMonsterSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UASMassMonsterSubsystem::Deinitialize()
 {
-	DestroyAllManagedMonsters();
+	// UMassSpawnerSubsystem의 Entity Manager가 먼저 Deinitialize될 수 있다.
+	// 월드 종료 시에는 Mass가 전체 Entity 저장소를 정리하므로 Handle만 폐기한다.
 	ManagedEntities.Reset();
 	SpawnerSubsystem = nullptr;
 	Super::Deinitialize();
