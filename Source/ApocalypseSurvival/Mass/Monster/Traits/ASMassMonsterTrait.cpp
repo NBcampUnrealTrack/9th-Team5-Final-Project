@@ -4,6 +4,7 @@
 #include "MassCommonFragments.h"
 #include "MassEntityTemplateRegistry.h"
 #include "MassEntityUtils.h"
+#include "Mass/Monster/Data/ASMassMonsterTags.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterTrait)
 
@@ -28,6 +29,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	FMassEntityManager& EntityManager = UE::Mass::Utils::GetEntityManagerChecked(World);
 	const FConstSharedStruct ConfigFragment = EntityManager.GetOrCreateConstSharedFragment(Config);
 	BuildContext.AddConstSharedFragment(ConfigFragment);
+	BuildContext.AddTag<FASMassMonsterTag>();
 
 	// 위치는 모든 Mass 몬스터의 기본 데이터다. 이동·표현 Trait는 이 Fragment를 요구해서 사용한다.
 	BuildContext.AddFragment<FTransformFragment>();

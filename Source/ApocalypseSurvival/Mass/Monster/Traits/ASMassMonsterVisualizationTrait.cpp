@@ -2,6 +2,7 @@
 
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Mass/Monster/Data/ASMassMonsterTags.h"
 #include "MassActorSubsystem.h"
 #include "MassEntityTemplateRegistry.h"
 #include "MassLODFragments.h"
@@ -13,6 +14,9 @@
 
 UASMassMonsterVisualizationTrait::UASMassMonsterVisualizationTrait()
 {
+	// Visualization LOD Processor와 동일한 필터를 사용해야 Viewer 정보가 전달된다.
+	LODParams.FilterTag = FASMassMonsterTag::StaticStruct();
+
 	Params.LODRepresentation[EMassLOD::High] = EMassRepresentationType::StaticMeshInstance;
 	Params.LODRepresentation[EMassLOD::Medium] = EMassRepresentationType::StaticMeshInstance;
 	Params.LODRepresentation[EMassLOD::Low] = EMassRepresentationType::StaticMeshInstance;
@@ -64,4 +68,5 @@ void UASMassMonsterVisualizationTrait::BuildTemplate(
 	BuildContext.AddTag<FMassCollectLODViewerInfoTag>();
 
 	Super::BuildTemplate(BuildContext, World);
+	BuildContext.RequireTag<FASMassMonsterTag>();
 }

@@ -4,6 +4,13 @@
 #include "MassEntityTypes.h"
 #include "ASMassMonsterTags.generated.h"
 
+/** 프로젝트의 일반 Mass 몬스터 Archetype을 식별한다. */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterTag : public FMassTag
+{
+	GENERATED_BODY()
+};
+
 /** 죽은 Entity를 감지·이동·공격 Query에서 제외한다. */
 USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterDeadTag : public FMassTag
