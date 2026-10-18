@@ -32,6 +32,7 @@ public class ApocalypseSurvival : ModuleRules
 			"GameplayTasks",
 
 			// Mass Framework
+			"MassCore",
 			"MassEntity",
 			"MassCommon",
 			"MassSpawner",
