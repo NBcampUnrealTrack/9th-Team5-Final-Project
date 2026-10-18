@@ -12,6 +12,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterHealthFragment : public FMassFragmen
 	GENERATED_BODY()
 
 	float CurrentHealth = 100.0f;
+	float DeathTimeRemaining = 0.0f;
+	bool bDeathTimerStarted = false;
 };
 
 /** 낮/밤 행동 모드와 현재 상위 행동 상태. */
