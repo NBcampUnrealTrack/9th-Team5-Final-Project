@@ -1,0 +1,42 @@
+#include "Mass/Monster/Traits/ASMassMonsterTrait.h"
+
+#include "Characters/Enemy/Data/ASMonsterDefinition.h"
+#include "MassEntityTemplateRegistry.h"
+#include "MassEntityUtils.h"
+
+#include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterTrait)
+
+void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildContext, const UWorld& World) const
+{
+	FASMassMonsterConfigFragment Config = Parameters;
+	if (MonsterDefinition)
+	{
+		Config.MaxHealth = MonsterDefinition->InitialAttributes.MaxHealth;
+		Config.MoveSpeed = MonsterDefinition->InitialAttributes.MoveSpeed;
+		Config.AttackPower = MonsterDefinition->InitialAttributes.AttackPower;
+		Config.AttackRange = MonsterDefinition->AttackRange;
+		Config.DetectionRadius = MonsterDefinition->DetectionRadius;
+		Config.LoseTargetRadius = MonsterDefinition->LoseTargetRadius;
+		Config.AssistAggroRadius = MonsterDefinition->AssistAggroRadius;
+		Config.DirectHitAggro = MonsterDefinition->DirectHitAggro;
+		Config.AggroDecayPerSecond = MonsterDefinition->AggroDecayPerSecond;
+		Config.DeathDespawnDelay = MonsterDefinition->DeathDespawnDelay;
+	}
+	Config.Validate();
+
+	FMassEntityManager& EntityManager = UE::Mass::Utils::GetEntityManagerChecked(World);
+	const FConstSharedStruct ConfigFragment = EntityManager.GetOrCreateConstSharedFragment(Config);
+	BuildContext.AddConstSharedFragment(ConfigFragment);
+
+	FASMassMonsterHealthFragment& Health = BuildContext.AddFragment_GetRef<FASMassMonsterHealthFragment>();
+	Health.CurrentHealth = Config.MaxHealth;
+
+	BuildContext.AddFragment<FASMassMonsterBehaviorFragment>();
+	BuildContext.AddFragment<FASMassMonsterTargetFragment>();
+	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
+
+	FASMassMonsterHomeFragment& Home = BuildContext.AddFragment_GetRef<FASMassMonsterHomeFragment>();
+	Home.LeashRadius = FMath::Max(0.0f, DefaultLeashRadius);
+	Home.ReturnAcceptanceRadius = FMath::Max(1.0f, DefaultReturnAcceptanceRadius);
+}
+
