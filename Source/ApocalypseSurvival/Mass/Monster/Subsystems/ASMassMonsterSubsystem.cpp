@@ -232,6 +232,44 @@ int32 UASMassMonsterSubsystem::GetManagedMonsterCount() const
 	return Count;
 }
 
+FASMassMonsterStateCounts UASMassMonsterSubsystem::GetManagedMonsterStateCounts() const
+{
+	FASMassMonsterStateCounts Counts;
+	if (!SpawnerSubsystem)
+	{
+		return Counts;
+	}
+
+	const FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	for (const FMassEntityHandle Entity : ManagedEntities)
+	{
+		if (!EntityManager.IsEntityValid(Entity))
+		{
+			continue;
+		}
+
+		const FASMassMonsterBehaviorFragment* Behavior =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterBehaviorFragment>(Entity);
+		if (!Behavior)
+		{
+			continue;
+		}
+
+		++Counts.Total;
+		switch (Behavior->State)
+		{
+		case EASMassMonsterState::Idle: ++Counts.Idle; break;
+		case EASMassMonsterState::Chase: ++Counts.Chase; break;
+		case EASMassMonsterState::Attack: ++Counts.Attack; break;
+		case EASMassMonsterState::ReturnHome: ++Counts.ReturnHome; break;
+		case EASMassMonsterState::Dead: ++Counts.Dead; break;
+		default: break;
+		}
+	}
+
+	return Counts;
+}
+
 bool UASMassMonsterSubsystem::CanMutateEntities(FString& OutError) const
 {
 	const UWorld* World = GetWorld();

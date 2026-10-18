@@ -40,6 +40,30 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterSpawnResult
 	bool IsSuccess() const { return Status == EASMassMonsterSpawnStatus::Success; }
 };
 
+USTRUCT(BlueprintType)
+struct APOCALYPSESURVIVAL_API FASMassMonsterStateCounts
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Mass|Monster")
+	int32 Total = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Mass|Monster")
+	int32 Idle = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Mass|Monster")
+	int32 Chase = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Mass|Monster")
+	int32 Attack = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Mass|Monster")
+	int32 ReturnHome = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Mass|Monster")
+	int32 Dead = 0;
+};
+
 /** 일반 Mass 몬스터의 생성, Handle 추적, 제거를 담당하는 서버 월드 Subsystem. */
 UCLASS()
 class APOCALYPSESURVIVAL_API UASMassMonsterSubsystem : public UWorldSubsystem
@@ -72,6 +96,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Mass|Monster")
 	int32 GetManagedMonsterCount() const;
+
+	/** 기능 검증과 벤치마크 로그에서 사용하는 현재 행동 상태 집계. */
+	UFUNCTION(BlueprintPure, Category = "Mass|Monster|Diagnostics")
+	FASMassMonsterStateCounts GetManagedMonsterStateCounts() const;
 
 private:
 	bool CanMutateEntities(FString& OutError) const;
