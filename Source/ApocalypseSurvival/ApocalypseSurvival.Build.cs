@@ -57,7 +57,10 @@ public class ApocalypseSurvival : ModuleRules
 			"SlateCore"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"SlateCore",
+			"NavCorridor"
+		});
 
 		PublicIncludePaths.AddRange(new string[] {
 			"ApocalypseSurvival",

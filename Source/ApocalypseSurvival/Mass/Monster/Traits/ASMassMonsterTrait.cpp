@@ -38,6 +38,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	BuildContext.AddFragment<FASMassMonsterBehaviorFragment>();
 	BuildContext.AddFragment<FASMassMonsterTargetFragment>();
 	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
+	BuildContext.AddFragment<FASMassMonsterNavigationFragment>();
 
 	FASMassMonsterHomeFragment& Home = BuildContext.AddFragment_GetRef<FASMassMonsterHomeFragment>();
 	Home.LeashRadius = FMath::Max(0.0f, DefaultLeashRadius);

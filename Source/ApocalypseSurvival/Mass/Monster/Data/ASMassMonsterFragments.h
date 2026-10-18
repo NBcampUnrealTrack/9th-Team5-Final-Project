@@ -70,6 +70,17 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterHomeFragment : public FMassFragment
 	float ReturnAcceptanceRadius = 100.0f;
 };
 
+/** NavMesh 경로 재요청을 Entity별로 분산하기 위한 런타임 상태. */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterNavigationFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	FVector LastRequestedGoal = FVector::ZeroVector;
+	float PathRefreshTimeRemaining = 0.0f;
+	bool bHasRequestedGoal = false;
+};
+
 /** 같은 종류의 일반 몬스터가 공유하는 읽기 전용 설정. */
 USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSharedFragment
