@@ -14,6 +14,7 @@ class UASPlayerAttributeSet;
 class UASCharacterDefinition;
 class UASProgressionComponent;
 
+class UASModuleComponent;
 
 /**
  * 플레이어의 어빌리티 시스템을 소유한다.
@@ -37,6 +38,9 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	UASAbilitySystemComponent* GetASAbilitySystemComponent() const { return AbilitySystemComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Modules")
+	UASModuleComponent* GetModuleComponent() const { return ModuleComponent; }
 
 	/**
 	 * 서버 전용. 캐릭터 기본 어빌리티 세트를 한 번만 부여한다.
@@ -77,6 +81,9 @@ public:
 	UASProgressionComponent* GetProgressionComponent() const { return ProgressionComponent; }
 
 private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modules", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASModuleComponent> ModuleComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASAbilitySystemComponent> AbilitySystemComponent;
 

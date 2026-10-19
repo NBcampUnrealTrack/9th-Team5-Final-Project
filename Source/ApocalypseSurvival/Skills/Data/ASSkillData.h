@@ -10,7 +10,7 @@ class UTexture2D;
 
 /*
  * DT_SkillStats 한 행 = 스킬 하나의 밸런스 수치
- * 스킬 종류에 맞는 칸만 사용 (근접: Melee, 투사체: Projectile, 범위: Area 카테고리)
+ * 스킬 종류에 맞는 칸만 사용 (근접: Melee, 투사체: Projectile, 범위: Area, 돌진: Dash 카테고리)
  */
 USTRUCT(BlueprintType)
 struct APOCALYPSESURVIVAL_API FASSkillStatsRow : public FTableRowBase
@@ -66,6 +66,17 @@ struct APOCALYPSESURVIVAL_API FASSkillStatsRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Area", meta = (ClampMin = "0.05", Units = "s"))
 	float TickInterval = 0.5f;
+
+	//돌진
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dash", meta = (ClampMin = "0.0", Units = "cm"))
+	float DashDistance = 600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dash", meta = (ClampMin = "0.05", Units = "s"))
+	float DashDuration = 0.25f;
+
+	//충돌 판정 반경
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dash", meta = (ClampMin = "0.0", Units = "cm"))
+	float DashHitRadius = 60.0f;
 };
 
 /*

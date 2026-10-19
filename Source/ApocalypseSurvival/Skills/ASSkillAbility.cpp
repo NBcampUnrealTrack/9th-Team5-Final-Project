@@ -139,7 +139,7 @@ void UASSkillAbility::StartSkill(const FVector& AimDirection, const FVector& Tar
 	//몽타주 없음: 즉시 발동 후 종료
 	OnSkillEffect();
 
-	if (IsActive())
+	if (IsActive() && !bEndAbilityManually)
 	{
 		FinishSkill(false);
 	}
@@ -878,7 +878,10 @@ void UASSkillAbility::HandleHitEvent(FGameplayEventData Payload)
 
 void UASSkillAbility::OnMontageCompleted()
 {
-	FinishSkill(false);
+	if (!bEndAbilityManually)
+	{
+		FinishSkill(false);
+	}
 }
 
 void UASSkillAbility::OnMontageInterrupted()
