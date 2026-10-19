@@ -126,6 +126,7 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 	if (IsValid(ASPlayerState))
 	{
 		ASPlayerState->GrantDefaultAbilitySetOnce(DefaultAbilitySet);
+		ASPlayerState->GrantCharacterAbilitySetOnce();
 		ASPlayerState->GetModuleComponent()->InitializeForAvatar();
 	}
 
