@@ -56,6 +56,7 @@ struct FASAbilitySet_GrantedHandles
 	void AddGameplayEffectHandle(const FActiveGameplayEffectHandle& Handle);
 	void TakeFromAbilitySystem(UASAbilitySystemComponent* AbilitySystemComponent);
 	bool IsEmpty() const { return AbilitySpecHandles.IsEmpty() && GameplayEffectHandles.IsEmpty(); }
+	const TArray<FGameplayAbilitySpecHandle>& GetAbilitySpecHandles() const { return AbilitySpecHandles; }
 
 private:
 	UPROPERTY()
@@ -84,6 +85,9 @@ public:
 	 * @param SourceObject       어빌리티가 자기 출처로 기억할 객체. 무기 세트라면 아이템 인스턴스.
 	 */
 	void GiveToAbilitySystem(UASAbilitySystemComponent* AbilitySystemComponent, FASAbilitySet_GrantedHandles* OutGrantedHandles, UObject* SourceObject = nullptr) const;
+
+	const TArray<FASAbilitySet_GameplayAbility>& GetGrantedAbilities() const { return GrantedGameplayAbilities; }
+	const TArray<FASAbilitySet_GameplayEffect>& GetGrantedEffects() const { return GrantedGameplayEffects; }
 
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Abilities", meta = (TitleProperty = "Ability"))
