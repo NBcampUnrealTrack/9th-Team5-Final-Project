@@ -1,10 +1,8 @@
 ﻿#include "Skills/Area/ASSkillAreaActor.h"
 
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
-#include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "Net/UnrealNetwork.h"
-#include "Skills/ASSkillAbility.h"
-#include "Skills/ASSkillTags.h"
 #include "TimerManager.h"
 
 AASSkillAreaActor::AASSkillAreaActor()
@@ -80,31 +78,26 @@ void AASSkillAreaActor::DoDamageTick()
 	--TicksRemaining;
 
 	const FVector Center = GetActorLocation();
-	TArray<AActor*> Targets = UASSkillAbility::FindSkillTargets(GetWorld(), Center, Radius, InstigatorAvatar.Get(), bCanHitPlayers);
-
-	for (AActor* Target : Targets)
+	TArray<FGameplayEffectSpecHandle> EffectSpecs;
+	if (DamageSpec.IsValid())
 	{
-		UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
+		EffectSpecs.Add(DamageSpec);
 	}
 
-	int32 MassHitCount = 0;
-	if (!bCanHitPlayers && DamageSpec.IsValid())
+	FASCombatApplyResult ApplyResult;
+	if (UASCombatTargetSubsystem* CombatTargets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
 	{
-		const float MassDamage = FMath::Max(0.0f,
-			-DamageSpec.Data->GetSetByCallerMagnitude(ASGameplayTags::Data_Damage, false, 0.0f));
-		if (UASMassMonsterSubsystem* MassMonsters = GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
-		{
-			MassHitCount = MassMonsters->ApplyDamageInRadius(Center, Radius, MassDamage, InstigatorAvatar.Get());
-		}
+		ApplyResult = CombatTargets->ApplyEffectSpecsInRadius(
+			Center, Radius, EffectSpecs, InstigatorAvatar.Get(), bCanHitPlayers);
 	}
 
 	if (bDrawDebug)
 	{
 		DrawDebugSphere(GetWorld(), Center, Radius, 16,
-			Targets.Num() > 0 || MassHitCount > 0 ? FColor::Red : FColor::Orange, false, TickInterval * 0.8f);
+			ApplyResult.HasAnyHit() ? FColor::Red : FColor::Orange, false, TickInterval * 0.8f);
 	}
 
-	BP_OnAreaTick(Targets);
+	BP_OnAreaTick(ApplyResult.ActorTargets);
 
 	if (TicksRemaining <= 0)
 	{

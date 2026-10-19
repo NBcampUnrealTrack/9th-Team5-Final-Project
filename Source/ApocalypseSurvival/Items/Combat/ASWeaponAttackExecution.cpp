@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Engine/World.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "GameFramework/Character.h"
@@ -11,9 +12,7 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Inventory/ASInventoryComponent.h"
-#include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "Skills/ASSkillAbility.h"
-#include "Skills/ASSkillTags.h"
 #include "Skills/Projectile/ASSkillProjectileActor.h"
 
 namespace ASWeaponAttackExecutionPrivate
@@ -36,33 +35,17 @@ namespace ASWeaponAttackExecutionPrivate
 		return Profile ? Profile->AmmoPerShot : 0;
 	}
 
-	void ApplyDamage(const FASWeaponAttackExecutionContext& Context, const TArray<AActor*>& Targets)
+	TArray<FGameplayEffectSpecHandle> MakeDamageSpecs(const FASWeaponAttackExecutionContext& Context)
 	{
-		const TArray<FGameplayEffectSpecHandle> DamageSpecs = UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(
-			Context.Weapon, Context.AbilitySystem);
-		for (AActor* Target : Targets)
-		{
-			for (const FGameplayEffectSpecHandle& DamageSpec : DamageSpecs)
-			{
-				UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
-			}
-		}
+		return UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(Context.Weapon, Context.AbilitySystem);
 	}
 
-	float GetMassDamage(const FASWeaponAttackExecutionContext& Context)
+	void ApplyDamage(const TConstArrayView<FGameplayEffectSpecHandle> DamageSpecs, const TArray<AActor*>& Targets)
 	{
-		float Damage = 0.0f;
-		const TArray<FGameplayEffectSpecHandle> DamageSpecs = UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(
-			Context.Weapon, Context.AbilitySystem);
-		for (const FGameplayEffectSpecHandle& DamageSpec : DamageSpecs)
+		for (AActor* Target : Targets)
 		{
-			if (DamageSpec.IsValid())
-			{
-				Damage += FMath::Max(0.0f,
-					-DamageSpec.Data->GetSetByCallerMagnitude(ASGameplayTags::Data_Damage, false, 0.0f));
-			}
+			UASCombatTargetSubsystem::ApplyEffectSpecsToActor(DamageSpecs, Target);
 		}
-		return Damage;
 	}
 
 	void KeepClosestTarget(TArray<AActor*>& Targets, const FVector& ReferenceLocation)
@@ -128,8 +111,7 @@ namespace ASWeaponAttackExecutionPrivate
 			return;
 		}
 
-		const TArray<FGameplayEffectSpecHandle> DamageSpecs = UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(
-			Context.Weapon, Context.AbilitySystem);
+		const TArray<FGameplayEffectSpecHandle> DamageSpecs = MakeDamageSpecs(Context);
 		Projectile->InitProjectile(DamageSpecs, Context.Avatar,
 			Direction, Profile.ProjectileSpeed, Context.Definition->AttackRange, Profile.ProjectilePierceCount, false);
 		Projectile->FinishSpawning(SpawnTransform);
@@ -189,6 +171,7 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 		? FMath::Min(Profile->HitboxOffset, MaxOffset) : MaxOffset;
 	const FVector Start = Context.Avatar->GetActorLocation();
 	const FVector Center = Start + Context.AimDirection * Offset;
+	const TArray<FGameplayEffectSpecHandle> DamageSpecs = ASWeaponAttackExecutionPrivate::MakeDamageSpecs(Context);
 	TArray<AActor*> Targets = UASSkillAbility::FindSkillTargets(
 		Context.Avatar->GetWorld(), Center, Radius, Context.Avatar, false);
 	if (Profile->TargetMode == EASAttackTargetMode::Single)
@@ -208,16 +191,16 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 			ASWeaponAttackExecutionPrivate::KeepClosestTarget(Targets, Center);
 		}
 	}
-	ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
-	int32 MassHitCount = 0;
-	const bool bCanHitMass = Profile->TargetMode != EASAttackTargetMode::Single || Targets.IsEmpty();
-	if (bCanHitMass)
+	ASWeaponAttackExecutionPrivate::ApplyDamage(DamageSpecs, Targets);
+	int32 NonActorHitCount = 0;
+	const bool bCanHitNonActorTargets = Profile->TargetMode != EASAttackTargetMode::Single || Targets.IsEmpty();
+	if (bCanHitNonActorTargets)
 	{
-		if (UASMassMonsterSubsystem* MassMonsters =
-			Context.Avatar->GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
+		if (UASCombatTargetSubsystem* CombatTargets =
+			Context.Avatar->GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
 		{
-			MassHitCount = MassMonsters->ApplyDamageInRadius(Center, Radius,
-				ASWeaponAttackExecutionPrivate::GetMassDamage(Context), Context.Avatar,
+			NonActorHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsInRadius(
+				Center, Radius, DamageSpecs, Context.Avatar,
 				Profile->TargetMode == EASAttackTargetMode::Single ? 1 : 0);
 		}
 	}
@@ -225,7 +208,7 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
 		Character->MulticastDrawWeaponAttackDebug(Start, Center, Radius, true,
-			!Targets.IsEmpty() || MassHitCount > 0);
+			!Targets.IsEmpty() || NonActorHitCount > 0);
 	}
 }
 
@@ -259,6 +242,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		ASWeaponAttackExecutionPrivate::SpawnDirectionalProjectile(Context, *Profile);
 		return;
 	}
+	const TArray<FGameplayEffectSpecHandle> DamageSpecs = ASWeaponAttackExecutionPrivate::MakeDamageSpecs(Context);
 
 	if (Profile->TargetMode == EASAttackTargetMode::Single)
 	{
@@ -270,7 +254,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			{
 				TArray<AActor*> Targets;
 				Targets.Add(RequestedTarget);
-				ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
+				ASWeaponAttackExecutionPrivate::ApplyDamage(DamageSpecs, Targets);
 				if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 				{
 					Character->MulticastDrawWeaponAttackDebug(Start, RequestedTarget->GetActorLocation(), TraceRadius, false, true);
@@ -300,7 +284,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	}
 
 	TArray<AActor*> Targets;
-	int32 MassHitCount = 0;
+	int32 NonActorHitCount = 0;
 	if (FirstTarget)
 	{
 		if (Profile->TargetMode == EASAttackTargetMode::Area)
@@ -317,17 +301,17 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			Targets.Add(FirstTarget);
 		}
 	}
-	else if (UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>())
+	else if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
 	{
-		TSet<int32> HitEntityIndices;
-		MassHitCount = MassMonsters->ApplyDamageAlongSegmentUnique(Start, End, TraceRadius,
-			ASWeaponAttackExecutionPrivate::GetMassDamage(Context), Context.Avatar, HitEntityIndices, 1);
+		FASCombatTargetHitSet HitTargets;
+		NonActorHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(
+			Start, End, TraceRadius, DamageSpecs, Context.Avatar, HitTargets, 1);
 	}
-	ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
+	ASWeaponAttackExecutionPrivate::ApplyDamage(DamageSpecs, Targets);
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
 		const FVector DebugEnd = FirstTarget ? Start + (End - Start) * FirstHitTime : End;
 		Character->MulticastDrawWeaponAttackDebug(Start, DebugEnd, TraceRadius, false,
-			FirstTarget != nullptr || MassHitCount > 0);
+			FirstTarget != nullptr || NonActorHitCount > 0);
 	}
 }

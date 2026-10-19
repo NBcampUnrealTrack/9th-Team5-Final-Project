@@ -3,9 +3,6 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
-#include "Skills/ASSkillAbility.h"
-#include "Skills/ASSkillTags.h"
 #include "TimerManager.h"
 
 AASSkillProjectileActor::AASSkillProjectileActor()
@@ -134,28 +131,18 @@ void AASSkillProjectileActor::Tick(const float DeltaSeconds)
 		return;
 	}
 
-	ApplyMassDamageAlongSegment(GetActorLocation());
+	ApplyNonActorDamageAlongSegment(GetActorLocation());
 }
 
-void AASSkillProjectileActor::ApplyMassDamageAlongSegment(const FVector& CurrentLocation)
+void AASSkillProjectileActor::ApplyNonActorDamageAlongSegment(const FVector& CurrentLocation)
 {
 	if (bEnded || bCanHitPlayers)
 	{
 		return;
 	}
 
-	float Damage = 0.0f;
-	for (const FGameplayEffectSpecHandle& DamageSpec : DamageSpecs)
-	{
-		if (DamageSpec.IsValid())
-		{
-			Damage += FMath::Max(0.0f,
-				-DamageSpec.Data->GetSetByCallerMagnitude(ASGameplayTags::Data_Damage, false, 0.0f));
-		}
-	}
-
 	const int32 RemainingHits = PierceCount >= 0
-		? FMath::Max(0, PierceCount + 1 - HitActors.Num() - MassHitCount)
+		? FMath::Max(0, PierceCount + 1 - HitTargets.Num())
 		: 0;
 	if (PierceCount >= 0 && RemainingHits <= 0)
 	{
@@ -163,19 +150,16 @@ void AASSkillProjectileActor::ApplyMassDamageAlongSegment(const FVector& Current
 		return;
 	}
 
-	if (Damage > 0.0f)
+	if (UASCombatTargetSubsystem* CombatTargets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
 	{
-		if (UASMassMonsterSubsystem* MassMonsters = GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
-		{
-			const float SweepRadius = CollisionComponent ? CollisionComponent->GetScaledSphereRadius() : 20.0f;
-			MassHitCount += MassMonsters->ApplyDamageAlongSegmentUnique(
-				PreviousLocation, CurrentLocation, SweepRadius, Damage, InstigatorAvatar.Get(),
-				HitMassEntityIndices, PierceCount >= 0 ? RemainingHits : 0);
-		}
+		const float SweepRadius = CollisionComponent ? CollisionComponent->GetScaledSphereRadius() : 20.0f;
+		CombatTargets->ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(
+			PreviousLocation, CurrentLocation, SweepRadius, DamageSpecs, InstigatorAvatar.Get(),
+			HitTargets, PierceCount >= 0 ? RemainingHits : 0);
 	}
 
 	PreviousLocation = CurrentLocation;
-	if (PierceCount >= 0 && HitActors.Num() + MassHitCount > PierceCount)
+	if (PierceCount >= 0 && HitTargets.Num() > PierceCount)
 	{
 		EndProjectile();
 	}
@@ -189,21 +173,22 @@ void AASSkillProjectileActor::HandleOverlap(UPrimitiveComponent* OverlappedCompo
 		return;
 	}
 
-	ApplyMassDamageAlongSegment(GetActorLocation());
+	ApplyNonActorDamageAlongSegment(GetActorLocation());
 	if (bEnded)
 	{
 		return;
 	}
 
-	if (!UASSkillAbility::IsValidSkillTarget(OtherActor, InstigatorAvatar.Get(), bCanHitPlayers) || HitActors.Contains(OtherActor))
+	if (!UASCombatTargetSubsystem::IsValidActorTarget(OtherActor, InstigatorAvatar.Get(), bCanHitPlayers)
+		|| HitTargets.ContainsActor(OtherActor))
 	{
 		return;
 	}
 
-	HitActors.Add(OtherActor);
+	HitTargets.AddActor(OtherActor);
 	OnHitTarget(OtherActor);
 
-	if (PierceCount >= 0 && HitActors.Num() + MassHitCount > PierceCount)
+	if (PierceCount >= 0 && HitTargets.Num() > PierceCount)
 	{
 		EndProjectile();
 	}
@@ -213,17 +198,14 @@ void AASSkillProjectileActor::HandleStop(const FHitResult& ImpactResult)
 {
 	if (HasAuthority())
 	{
-		ApplyMassDamageAlongSegment(ImpactResult.ImpactPoint);
+		ApplyNonActorDamageAlongSegment(ImpactResult.ImpactPoint);
 		EndProjectile();
 	}
 }
 
 void AASSkillProjectileActor::OnHitTarget_Implementation(AActor* Target)
 {
-	for (const FGameplayEffectSpecHandle& DamageSpec : DamageSpecs)
-	{
-		UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
-	}
+	UASCombatTargetSubsystem::ApplyEffectSpecsToActor(DamageSpecs, Target);
 }
 
 void AASSkillProjectileActor::OnProjectileEnd_Implementation()

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
 #include "ASSkillProjectileActor.generated.h"
@@ -69,21 +70,19 @@ private:
 
 	/** 발사 직전에 BP 기본값을 덮어써 피격용 Sphere만 충돌에 참여하게 한다. */
 	void ConfigureProjectileCollision();
-	void ApplyMassDamageAlongSegment(const FVector& CurrentLocation);
+	void ApplyNonActorDamageAlongSegment(const FVector& CurrentLocation);
 
 	void EndProjectile();
 
 	//0 = 첫 적에서 사라짐, -1 = 무한 관통
 	int32 PierceCount = 0;
-	int32 MassHitCount = 0;
 	bool bCanHitPlayers = false;
 	bool bEnded = false;
 	float FlightTime = 1.0f;
 	FVector PreviousLocation = FVector::ZeroVector;
-	TSet<int32> HitMassEntityIndices;
 
-	//같은 적 중복 피격 방지
-	TSet<TWeakObjectPtr<AActor>> HitActors;
+	// Actor/Mass 등 실제 Backend 종류와 관계없는 중복 피격 기록.
+	FASCombatTargetHitSet HitTargets;
 
 	FTimerHandle RangeTimerHandle;
 };
