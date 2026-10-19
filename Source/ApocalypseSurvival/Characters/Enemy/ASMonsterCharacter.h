@@ -44,6 +44,12 @@ class APOCALYPSESURVIVAL_API AASMonsterCharacter : public AASCharacterBase
 public:
 	AASMonsterCharacter();
 
+	/**
+	 * 몬스터는 Actor 자신이 ASC를 소유한다. AttributeSet의 초기 복제가 BeginPlay보다 먼저
+	 * 도착할 수 있으므로, 베이스 클래스가 InitAbilitySystem에서 캐시한 참조를 기다리지 않는다.
+	 */
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
 	/** 서버에서 Definition 적용과 GAS 초기화가 끝난 직후 한 번 불린다. AI 컨트롤러가 이걸 기다린다. */
 	FSimpleMulticastDelegate OnMonsterInitialized;
 

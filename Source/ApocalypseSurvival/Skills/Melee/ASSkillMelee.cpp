@@ -1,5 +1,6 @@
 ﻿#include "Skills/Melee/ASSkillMelee.h"
 
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "Skills/Data/ASSkillData.h"
 #include "Engine/World.h"
@@ -40,9 +41,25 @@ void UASSkillMelee::OnSkillEffect_Implementation()
 		});
 	}
 
+	int32 NonActorHitCount = 0;
+	if (!bCanHitPlayers)
+	{
+		if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
+		{
+			TArray<FGameplayEffectSpecHandle> EffectSpecs;
+			const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+			if (DamageSpec.IsValid())
+			{
+				EffectSpecs.Add(DamageSpec);
+			}
+			NonActorHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsInCone(
+				Center, Aim, Radius, Angle, EffectSpecs, const_cast<AActor*>(Avatar));
+		}
+	}
+
 	if (bDrawDebug)
 	{
-		const FColor Color = Targets.Num() > 0 ? FColor::Red : FColor::Green;
+		const FColor Color = Targets.Num() > 0 || NonActorHitCount > 0 ? FColor::Red : FColor::Green;
 
 		if (bIsCone)
 		{
