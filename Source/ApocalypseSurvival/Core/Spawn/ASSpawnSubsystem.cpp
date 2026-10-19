@@ -10,8 +10,20 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "MassEntityConfigAsset.h"
+#include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
+
+namespace
+{
+	struct FASResolvedMonsterSpawn
+	{
+		EASMonsterSpawnBackend SpawnBackend = EASMonsterSpawnBackend::Actor;
+		TSubclassOf<AASMonsterCharacter> MonsterClass;
+		UMassEntityConfigAsset* MassEntityConfig = nullptr;
+	};
+}
 
 bool UASSpawnSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
@@ -35,9 +47,15 @@ void UASSpawnSubsystem::HandleDayStarted(int32 Day, UDataTable* DaySpawnDataTabl
 
 void UASSpawnSubsystem::HandleNightStarted(int32 Day, UDataTable* WaveDataTable)
 {
+	int32 ExistingMonsterCount = CountAliveManagedActorMonsters();
+	if (UASMassMonsterSubsystem* MassMonsterSubsystem = GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
+	{
+		ExistingMonsterCount += MassMonsterSubsystem->SetManagedMonsterWorldBehavior(
+			EASMassMonsterWorldBehavior::NightAssault);
+	}
+
 	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
 	{
-		const int32 ExistingMonsterCount = CountAliveManagedMonsters();
 		if (ExistingMonsterCount > 0)
 		{
 			GameMode->ReportWaveSpawned(ExistingMonsterCount);
@@ -51,6 +69,10 @@ void UASSpawnSubsystem::HandleNightStarted(int32 Day, UDataTable* WaveDataTable)
 void UASSpawnSubsystem::HandleNightEnded()
 {
 	StopWave();
+	if (UASMassMonsterSubsystem* MassMonsterSubsystem = GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
+	{
+		MassMonsterSubsystem->SetManagedMonsterWorldBehavior(EASMassMonsterWorldBehavior::DayTerritory);
+	}
 }
 
 void UASSpawnSubsystem::StopAllSpawning()
@@ -141,7 +163,7 @@ int32 UASSpawnSubsystem::SpawnDayGroup(const FASDayMonsterGroupSelectionEntry& G
 		return 0;
 	}
 
-	TArray<TSubclassOf<AASMonsterCharacter>> PendingMonsterClasses;
+	TArray<FASResolvedMonsterSpawn> PendingMonsters;
 	for (const FASMonsterSpawnGroupUnitEntry& Unit : MonsterGroupData->Units)
 	{
 		if (Unit.Count <= 0)
@@ -149,27 +171,58 @@ int32 UASSpawnSubsystem::SpawnDayGroup(const FASDayMonsterGroupSelectionEntry& G
 			continue;
 		}
 
-		const TSubclassOf<AASMonsterCharacter> MonsterClass = Unit.MonsterClass.LoadSynchronous();
-		if (!MonsterClass)
+		FASResolvedMonsterSpawn ResolvedSpawn;
+		ResolvedSpawn.SpawnBackend = Unit.SpawnBackend;
+		if (Unit.SpawnBackend == EASMonsterSpawnBackend::Mass)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] 그룹 %d의 몬스터 클래스 하나가 비어 있어 제외함"),
-				GroupSelection.MonsterGroupIndex);
-			continue;
+			ResolvedSpawn.MassEntityConfig = Unit.MassEntityConfig.LoadSynchronous();
+			if (!ResolvedSpawn.MassEntityConfig)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] 그룹 %d의 Mass Entity Config가 비어 있어 제외함"),
+					GroupSelection.MonsterGroupIndex);
+				continue;
+			}
+		}
+		else
+		{
+			ResolvedSpawn.MonsterClass = Unit.MonsterClass.LoadSynchronous();
+			if (!ResolvedSpawn.MonsterClass)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] 그룹 %d의 몬스터 클래스 하나가 비어 있어 제외함"),
+					GroupSelection.MonsterGroupIndex);
+				continue;
+			}
 		}
 
 		for (int32 UnitIndex = 0; UnitIndex < Unit.Count; ++UnitIndex)
 		{
-			PendingMonsterClasses.Add(MonsterClass);
+			PendingMonsters.Add(ResolvedSpawn);
 		}
 	}
 
-	const TArray<FVector> SpawnLocations = FindDistributedSpawnLocations(SpawnPoint, PendingMonsterClasses.Num());
+	const TArray<FVector> SpawnLocations = FindDistributedSpawnLocations(SpawnPoint, PendingMonsters.Num());
 	int32 SpawnedCount = 0;
-	for (int32 Index = 0; Index < PendingMonsterClasses.Num() && Index < SpawnLocations.Num(); ++Index)
+	TMap<UMassEntityConfigAsset*, TArray<FTransform>> MassSpawnTransforms;
+	for (int32 Index = 0; Index < PendingMonsters.Num() && Index < SpawnLocations.Num(); ++Index)
 	{
-		if (SpawnMonster(PendingMonsterClasses[Index], FTransform(SpawnPoint.GetActorRotation(), SpawnLocations[Index]), true, &SpawnPoint))
+		const FTransform SpawnTransform(SpawnPoint.GetActorRotation(), SpawnLocations[Index]);
+		const FASResolvedMonsterSpawn& PendingMonster = PendingMonsters[Index];
+		if (PendingMonster.SpawnBackend == EASMonsterSpawnBackend::Mass)
+		{
+			MassSpawnTransforms.FindOrAdd(PendingMonster.MassEntityConfig).Add(SpawnTransform);
+		}
+		else if (SpawnMonster(PendingMonster.MonsterClass, SpawnTransform, true, &SpawnPoint))
 		{
 			++SpawnedCount;
+		}
+	}
+
+	for (TPair<UMassEntityConfigAsset*, TArray<FTransform>>& MassSpawnGroup : MassSpawnTransforms)
+	{
+		if (MassSpawnGroup.Key)
+		{
+			SpawnedCount += SpawnMassMonsters(*MassSpawnGroup.Key, MassSpawnGroup.Value,
+				EASMassMonsterWorldBehavior::DayTerritory, &SpawnPoint);
 		}
 	}
 
@@ -204,20 +257,39 @@ void UASSpawnSubsystem::StartWave(int32 Day, UDataTable* WaveDataTable)
 			continue;
 		}
 
-		const TSubclassOf<AASMonsterCharacter> MonsterClass = Unit.MonsterClass.LoadSynchronous();
-		if (!MonsterClass)
+		FASPendingWaveMonsterSpawn PendingSpawn;
+		PendingSpawn.SpawnBackend = Unit.SpawnBackend;
+		if (Unit.SpawnBackend == EASMonsterSpawnBackend::Mass)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 몬스터 클래스가 비어 있어 제외함"), *RowName.ToString());
-			continue;
+			PendingSpawn.MassEntityConfig = Unit.MassEntityConfig.LoadSynchronous();
+			if (!PendingSpawn.MassEntityConfig)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 Mass Entity Config가 비어 있어 제외함"), *RowName.ToString());
+				continue;
+			}
+		}
+		else
+		{
+			PendingSpawn.MonsterClass = Unit.MonsterClass.LoadSynchronous();
+			if (!PendingSpawn.MonsterClass)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 몬스터 클래스가 비어 있어 제외함"), *RowName.ToString());
+				continue;
+			}
 		}
 
 		for (int32 Index = 0; Index < Unit.Count; ++Index)
 		{
-			PendingWaveMonsterClasses.Add(MonsterClass);
+			PendingWaveMonsters.Add(PendingSpawn);
 		}
 	}
 
-	TotalWaveMonsterCount = PendingWaveMonsterClasses.Num();
+	for (int32 Index = PendingWaveMonsters.Num() - 1; Index > 0; --Index)
+	{
+		PendingWaveMonsters.Swap(Index, FMath::RandRange(0, Index));
+	}
+
+	TotalWaveMonsterCount = PendingWaveMonsters.Num();
 	if (TotalWaveMonsterCount <= 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s에 유효한 스폰 유닛이 없음"), *RowName.ToString());
@@ -242,7 +314,7 @@ void UASSpawnSubsystem::StopWave()
 		World->GetTimerManager().ClearTimer(WaveSpawnTimerHandle);
 	}
 
-	PendingWaveMonsterClasses.Reset();
+	PendingWaveMonsters.Reset();
 	TotalWaveMonsterCount = 0;
 	SpawnedWaveMonsterCount = 0;
 }
@@ -257,31 +329,68 @@ void UASSpawnSubsystem::SpawnWaveTick()
 		return;
 	}
 
-	const int32 RequestedCount = FMath::Min(ActiveWaveSpawnBatchSize, PendingWaveMonsterClasses.Num());
+	const int32 RequestedCount = FMath::Min(ActiveWaveSpawnBatchSize, PendingWaveMonsters.Num());
 	TArray<FVector> Locations;
 	if (RequestedCount <= 0 || !FindWaveSpawnLocations(RequestedCount, Locations))
 	{
 		return;
 	}
 
-	TArray<TSubclassOf<AASMonsterCharacter>> ClassesForAttempt = PendingWaveMonsterClasses;
 	int32 SpawnedThisTick = 0;
-	for (const FVector& Location : Locations)
+	TArray<int32> SuccessfulIndices;
+	TMap<UMassEntityConfigAsset*, TArray<int32>> MassIndicesByConfig;
+	for (int32 AttemptIndex = 0; AttemptIndex < RequestedCount; ++AttemptIndex)
 	{
-		if (ClassesForAttempt.IsEmpty())
+		const int32 PendingIndex = PendingWaveMonsters.Num() - 1 - AttemptIndex;
+		if (!PendingWaveMonsters.IsValidIndex(PendingIndex) || !Locations.IsValidIndex(AttemptIndex))
 		{
-			break;
+			continue;
 		}
 
-		const int32 ClassIndex = FMath::RandRange(0, ClassesForAttempt.Num() - 1);
-		const TSubclassOf<AASMonsterCharacter> MonsterClass = ClassesForAttempt[ClassIndex];
-		ClassesForAttempt.RemoveAtSwap(ClassIndex);
-
-		if (SpawnMonster(MonsterClass, FTransform(FRotator::ZeroRotator, Location), false))
+		const FASPendingWaveMonsterSpawn& PendingMonster = PendingWaveMonsters[PendingIndex];
+		if (PendingMonster.SpawnBackend == EASMonsterSpawnBackend::Mass)
 		{
-			PendingWaveMonsterClasses.RemoveSingleSwap(MonsterClass);
+			MassIndicesByConfig.FindOrAdd(PendingMonster.MassEntityConfig.Get()).Add(PendingIndex);
+		}
+		else if (SpawnMonster(PendingMonster.MonsterClass,
+			FTransform(FRotator::ZeroRotator, Locations[AttemptIndex]), false))
+		{
+			SuccessfulIndices.Add(PendingIndex);
 			++SpawnedThisTick;
 		}
+	}
+
+	for (const TPair<UMassEntityConfigAsset*, TArray<int32>>& MassGroup : MassIndicesByConfig)
+	{
+		if (!MassGroup.Key)
+		{
+			continue;
+		}
+
+		TArray<FTransform> MassTransforms;
+		MassTransforms.Reserve(MassGroup.Value.Num());
+		for (const int32 PendingIndex : MassGroup.Value)
+		{
+			const int32 AttemptIndex = PendingWaveMonsters.Num() - 1 - PendingIndex;
+			if (Locations.IsValidIndex(AttemptIndex))
+			{
+				MassTransforms.Emplace(FRotator::ZeroRotator, Locations[AttemptIndex]);
+			}
+		}
+
+		const int32 MassSpawned = SpawnMassMonsters(*MassGroup.Key, MassTransforms,
+			EASMassMonsterWorldBehavior::NightAssault);
+		if (MassSpawned == MassTransforms.Num())
+		{
+			SuccessfulIndices.Append(MassGroup.Value);
+			SpawnedThisTick += MassSpawned;
+		}
+	}
+
+	SuccessfulIndices.Sort(TGreater<int32>());
+	for (const int32 SuccessfulIndex : SuccessfulIndices)
+	{
+		PendingWaveMonsters.RemoveAt(SuccessfulIndex, 1, EAllowShrinking::No);
 	}
 
 	if (SpawnedThisTick > 0)
@@ -446,21 +555,49 @@ bool UASSpawnSubsystem::FindWaveSpawnLocations(int32 EnemyCount, TArray<FVector>
 		1,
 		Candidates.Num());
 	const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	constexpr int32 MaxAttemptsPerMonster = 24;
+	const float MinSpawnSpacing = FMath::Max(0.0f, WaveMonsterMinSpawnSpacing);
 
 	for (int32 Index = 0; Index < EnemyCount; ++Index)
 	{
 		const FVector& Point = Candidates[Index % PointCount];
-		FVector Location = Point;
-		if (NavSys)
+		FVector BestLocation = Point;
+		float BestNearestDistance = -1.0f;
+
+		for (int32 Attempt = 0; Attempt < MaxAttemptsPerMonster; ++Attempt)
 		{
 			const FVector2D Offset = FMath::RandPointInCircle(WaveSpawnScatterRadius);
-			FNavLocation NavLocation;
-			if (NavSys->ProjectPointToNavigation(Point + FVector(Offset, 0.0f), NavLocation, FVector(100.0f, 100.0f, 500.0f)))
+			FVector Candidate = Point + FVector(Offset, 0.0f);
+			if (NavSys)
 			{
-				Location = NavLocation.Location;
+				FNavLocation NavLocation;
+				if (!NavSys->ProjectPointToNavigation(Candidate, NavLocation, FVector(100.0f, 100.0f, 500.0f)))
+				{
+					continue;
+				}
+				Candidate = NavLocation.Location;
+			}
+
+			float NearestDistance = TNumericLimits<float>::Max();
+			for (const FVector& ExistingLocation : OutLocations)
+			{
+				NearestDistance = FMath::Min(NearestDistance, FVector::Dist2D(Candidate, ExistingLocation));
+			}
+
+			if (OutLocations.IsEmpty() || NearestDistance >= MinSpawnSpacing)
+			{
+				BestLocation = Candidate;
+				break;
+			}
+
+			if (NearestDistance > BestNearestDistance)
+			{
+				BestNearestDistance = NearestDistance;
+				BestLocation = Candidate;
 			}
 		}
-		OutLocations.Add(Location);
+
+		OutLocations.Add(BestLocation);
 	}
 
 	return true;
@@ -557,7 +694,45 @@ AASMonsterCharacter* UASSpawnSubsystem::SpawnMonster(TSubclassOf<AASMonsterChara
 	return Monster;
 }
 
-int32 UASSpawnSubsystem::CountAliveManagedMonsters()
+int32 UASSpawnSubsystem::SpawnMassMonsters(
+	UMassEntityConfigAsset& EntityConfig,
+	const TConstArrayView<FTransform> SpawnTransforms,
+	const EASMassMonsterWorldBehavior WorldBehavior,
+	const AASMonsterSpawnPoint* HomeSpawnPoint)
+{
+	UASMassMonsterSubsystem* MassMonsterSubsystem = GetWorld()
+		? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>()
+		: nullptr;
+	if (!MassMonsterSubsystem || SpawnTransforms.IsEmpty())
+	{
+		return 0;
+	}
+
+	TArray<FMassEntityHandle> SpawnedEntities;
+	const FASMassMonsterSpawnResult Result = MassMonsterSubsystem->SpawnMonsters(
+		EntityConfig, SpawnTransforms, WorldBehavior, SpawnedEntities);
+	if (!Result.IsSuccess())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] Mass 몬스터 생성 실패: %s"), *Result.ErrorMessage);
+		return 0;
+	}
+
+	if (HomeSpawnPoint)
+	{
+		FASMassMonsterHomeSettings HomeSettings;
+		HomeSettings.LeashRadius = HomeSpawnPoint->LeashRadius;
+		HomeSettings.ReturnAcceptanceRadius = HomeSpawnPoint->ReturnAcceptanceRadius;
+		HomeSettings.DetectionRadius = HomeSpawnPoint->DayDetectionRadius;
+		HomeSettings.LoseTargetRadius = HomeSpawnPoint->DayLoseTargetRadius;
+		HomeSettings.ReturnHealthPercentPerSecond = HomeSpawnPoint->ReturnHealthPercentPerSecond;
+		HomeSettings.ReturnMoveSpeedMultiplier = HomeSpawnPoint->ReturnMoveSpeedMultiplier;
+		MassMonsterSubsystem->ConfigureMonsterHomes(SpawnedEntities, HomeSettings);
+	}
+
+	return Result.SpawnedCount;
+}
+
+int32 UASSpawnSubsystem::CountAliveManagedActorMonsters()
 {
 	int32 Count = 0;
 	for (auto It = ManagedMonsters.CreateIterator(); It; ++It)

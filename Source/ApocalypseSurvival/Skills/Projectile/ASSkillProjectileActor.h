@@ -17,6 +17,7 @@ class APOCALYPSESURVIVAL_API AASSkillProjectileActor : public AActor
 
 public:
 	AASSkillProjectileActor();
+	virtual void Tick(float DeltaSeconds) override;
 
 	//생성 직후(FinishSpawning 전)에 호출
 	void InitProjectile(
@@ -68,14 +69,18 @@ private:
 
 	/** 발사 직전에 BP 기본값을 덮어써 피격용 Sphere만 충돌에 참여하게 한다. */
 	void ConfigureProjectileCollision();
+	void ApplyMassDamageAlongSegment(const FVector& CurrentLocation);
 
 	void EndProjectile();
 
 	//0 = 첫 적에서 사라짐, -1 = 무한 관통
 	int32 PierceCount = 0;
+	int32 MassHitCount = 0;
 	bool bCanHitPlayers = false;
 	bool bEnded = false;
 	float FlightTime = 1.0f;
+	FVector PreviousLocation = FVector::ZeroVector;
+	TSet<int32> HitMassEntityIndices;
 
 	//같은 적 중복 피격 방지
 	TSet<TWeakObjectPtr<AActor>> HitActors;

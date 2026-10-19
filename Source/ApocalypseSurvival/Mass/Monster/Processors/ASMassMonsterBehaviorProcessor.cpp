@@ -70,7 +70,7 @@ UASMassMonsterBehaviorProcessor::UASMassMonsterBehaviorProcessor()
 void UASMassMonsterBehaviorProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
-	EntityQuery.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FASMassMonsterHomeFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadWrite);
@@ -93,7 +93,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 	EntityQuery.ForEachEntityChunk(Context, [TargetSubsystem, DeltaTime](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
-		const TConstArrayView<FASMassMonsterHealthFragment> Healths = Context.GetFragmentView<FASMassMonsterHealthFragment>();
+		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
 		const TConstArrayView<FASMassMonsterHomeFragment> Homes = Context.GetFragmentView<FASMassMonsterHomeFragment>();
 		const TArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetMutableFragmentView<FASMassMonsterBehaviorFragment>();
 		const TArrayView<FASMassMonsterTargetFragment> Targets = Context.GetMutableFragmentView<FASMassMonsterTargetFragment>();
@@ -163,6 +163,13 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 
 			if (Behavior.State == EASMassMonsterState::ReturnHome)
 			{
+				FASMassMonsterHealthFragment& Health = Healths[EntityIt];
+				if (Home.ReturnHealthPercentPerSecond > 0.0f && Health.CurrentHealth < Config.MaxHealth)
+				{
+					Health.CurrentHealth = FMath::Min(Config.MaxHealth,
+						Health.CurrentHealth + Config.MaxHealth * Home.ReturnHealthPercentPerSecond * DeltaTime);
+				}
+
 				if (bAtHome)
 				{
 					Behavior.State = EASMassMonsterState::Idle;
@@ -184,8 +191,8 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 				const bool bHadTarget = Target.HasTarget();
 				const FASMassPlayerTargetSnapshot* Snapshot = bHadTarget
 					? TargetSubsystem->FindTarget(Target.TargetId)
-					: TargetSubsystem->FindClosestAliveTarget(EntityLocation, Config.DetectionRadius);
-				const float ValidDistance = bHadTarget ? Config.LoseTargetRadius : Config.DetectionRadius;
+					: TargetSubsystem->FindClosestAliveTarget(EntityLocation, Home.DetectionRadius);
+				const float ValidDistance = bHadTarget ? Home.LoseTargetRadius : Home.DetectionRadius;
 
 				const bool bValidCurrentTarget = ASMassMonsterBehavior::CopySnapshotToTarget(Snapshot, Target)
 					&& FVector::DistSquared2D(EntityLocation, Target.CachedTargetLocation)

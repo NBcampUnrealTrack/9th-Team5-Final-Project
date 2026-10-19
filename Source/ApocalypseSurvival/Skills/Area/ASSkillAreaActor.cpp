@@ -1,8 +1,10 @@
 ﻿#include "Skills/Area/ASSkillAreaActor.h"
 
 #include "DrawDebugHelpers.h"
+#include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Skills/ASSkillAbility.h"
+#include "Skills/ASSkillTags.h"
 #include "TimerManager.h"
 
 AASSkillAreaActor::AASSkillAreaActor()
@@ -85,9 +87,21 @@ void AASSkillAreaActor::DoDamageTick()
 		UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
 	}
 
+	int32 MassHitCount = 0;
+	if (!bCanHitPlayers && DamageSpec.IsValid())
+	{
+		const float MassDamage = FMath::Max(0.0f,
+			-DamageSpec.Data->GetSetByCallerMagnitude(ASGameplayTags::Data_Damage, false, 0.0f));
+		if (UASMassMonsterSubsystem* MassMonsters = GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
+		{
+			MassHitCount = MassMonsters->ApplyDamageInRadius(Center, Radius, MassDamage, InstigatorAvatar.Get());
+		}
+	}
+
 	if (bDrawDebug)
 	{
-		DrawDebugSphere(GetWorld(), Center, Radius, 16, Targets.Num() > 0 ? FColor::Red : FColor::Orange, false, TickInterval * 0.8f);
+		DrawDebugSphere(GetWorld(), Center, Radius, 16,
+			Targets.Num() > 0 || MassHitCount > 0 ? FColor::Red : FColor::Orange, false, TickInterval * 0.8f);
 	}
 
 	BP_OnAreaTick(Targets);

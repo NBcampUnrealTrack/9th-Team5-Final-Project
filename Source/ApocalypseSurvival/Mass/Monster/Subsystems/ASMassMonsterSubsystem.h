@@ -8,6 +8,32 @@
 
 class UMassEntityConfigAsset;
 class UMassSpawnerSubsystem;
+class AActor;
+
+/** 낮 필드 스폰포인트가 Entity별 Home Fragment에 덮어쓸 설정. */
+USTRUCT(BlueprintType)
+struct APOCALYPSESURVIVAL_API FASMassMonsterHomeSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mass|Monster|Home", meta = (ClampMin = "0.0", Units = "cm"))
+	float LeashRadius = 2000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mass|Monster|Home", meta = (ClampMin = "1.0", Units = "cm"))
+	float ReturnAcceptanceRadius = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mass|Monster|Home", meta = (ClampMin = "0.0", Units = "cm"))
+	float DetectionRadius = 1500.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mass|Monster|Home", meta = (ClampMin = "0.0", Units = "cm"))
+	float LoseTargetRadius = 2200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mass|Monster|Home", meta = (ClampMin = "0.0"))
+	float ReturnHealthPercentPerSecond = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mass|Monster|Home", meta = (ClampMin = "1.0"))
+	float ReturnMoveSpeedMultiplier = 1.0f;
+};
 
 UENUM(BlueprintType)
 enum class EASMassMonsterSpawnStatus : uint8
@@ -87,6 +113,14 @@ public:
 		EASMassMonsterWorldBehavior WorldBehavior,
 		TArray<FMassEntityHandle>& OutEntities);
 
+	/** 방금 생성한 낮 몬스터에 스폰포인트별 감지·귀환 설정을 적용한다. */
+	int32 ConfigureMonsterHomes(TConstArrayView<FMassEntityHandle> Entities,
+		const FASMassMonsterHomeSettings& HomeSettings);
+
+	/** 살아 있는 관리 Entity의 낮/밤 행동 모드를 일괄 전환한다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster")
+	int32 SetManagedMonsterWorldBehavior(EASMassMonsterWorldBehavior WorldBehavior);
+
 	/** 이 Subsystem이 생성하고 아직 살아 있는 몬스터만 제거한다. */
 	bool DestroyMonster(FMassEntityHandle Entity);
 	int32 DestroyMonsters(TConstArrayView<FMassEntityHandle> Entities);
@@ -97,12 +131,36 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Mass|Monster")
 	int32 GetManagedMonsterCount() const;
 
+	UFUNCTION(BlueprintPure, Category = "Mass|Monster")
+	int32 GetAliveManagedMonsterCount() const;
+
+	/** Actor 충돌체가 없는 Mass 몬스터에 원형 서버 피해를 적용한다. 반환값은 실제 피격 수다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
+	int32 ApplyDamageInRadius(const FVector& Center, float Radius, float Damage,
+		AActor* DamageInstigator, int32 MaxTargets = 0);
+
+	/** AimDirection을 중심으로 한 부채꼴 서버 피해. AngleDegrees가 360이면 원형 판정과 같다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
+	int32 ApplyDamageInCone(const FVector& Center, const FVector& AimDirection, float Radius,
+		float AngleDegrees, float Damage, AActor* DamageInstigator, int32 MaxTargets = 0);
+
+	/** Start-End 선분 주위의 Mass 몬스터에 서버 피해를 적용한다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
+	int32 ApplyDamageAlongSegment(const FVector& Start, const FVector& End, float SweepRadius,
+		float Damage, AActor* DamageInstigator, int32 MaxTargets = 1);
+
+	/** 투사체가 이미 맞힌 Entity Index를 건너뛰며 이동 선분 순서대로 피해를 적용하는 C++ 경로. */
+	int32 ApplyDamageAlongSegmentUnique(const FVector& Start, const FVector& End, float SweepRadius,
+		float Damage, AActor* DamageInstigator, TSet<int32>& InOutHitEntityIndices, int32 MaxTargets = 1);
+
 	/** 기능 검증과 벤치마크 로그에서 사용하는 현재 행동 상태 집계. */
 	UFUNCTION(BlueprintPure, Category = "Mass|Monster|Diagnostics")
 	FASMassMonsterStateCounts GetManagedMonsterStateCounts() const;
 
 private:
 	bool CanMutateEntities(FString& OutError) const;
+	int32 ApplyDamageToMatchingMonsters(float Damage, AActor* DamageInstigator, int32 MaxTargets,
+		TFunctionRef<bool(const FVector&, const struct FASMassMonsterConfigFragment&)> Predicate);
 	void CompactManagedEntities();
 
 	UPROPERTY(Transient)

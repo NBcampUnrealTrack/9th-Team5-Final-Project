@@ -254,10 +254,14 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 
 			--RemainingPathRequests;
 			const FMassEntityHandle Entity = Context.GetEntity(EntityIt);
-			const float RequestedSpeed = FMath::Min3(
+			float RequestedSpeed = FMath::Min3(
 				Config.MoveSpeed,
 				DesiredMovements[EntityIt].DesiredMaxSpeedOverride,
 				MovementParameters.MaxSpeed);
+			if (Behavior.State == EASMassMonsterState::ReturnHome)
+			{
+				RequestedSpeed *= FMath::Max(1.0f, Homes[EntityIt].ReturnMoveSpeedMultiplier);
+			}
 			const bool bPathRequested = ASMassMonsterNavigation::RequestPath(
 				*World,
 				Transforms[EntityIt].GetTransform().GetLocation(),

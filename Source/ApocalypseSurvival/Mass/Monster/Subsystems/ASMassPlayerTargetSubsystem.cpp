@@ -105,6 +105,19 @@ const FASMassPlayerTargetSnapshot* UASMassPlayerTargetSubsystem::FindClosestAliv
 	return ClosestTarget;
 }
 
+const FASMassPlayerTargetSnapshot* UASMassPlayerTargetSubsystem::FindTargetForActor(const AActor* Actor) const
+{
+	if (!IsValid(Actor))
+	{
+		return nullptr;
+	}
+
+	return TargetSnapshots.FindByPredicate([Actor](const FASMassPlayerTargetSnapshot& Snapshot)
+	{
+		return Snapshot.Pawn.Get() == Actor || Snapshot.Controller.Get() == Actor;
+	});
+}
+
 APawn* UASMassPlayerTargetSubsystem::ResolveTargetPawn(const int32 TargetId) const
 {
 	const FASMassPlayerTargetSnapshot* Snapshot = FindTarget(TargetId);

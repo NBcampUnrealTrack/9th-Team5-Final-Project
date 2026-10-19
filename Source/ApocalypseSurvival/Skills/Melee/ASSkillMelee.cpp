@@ -1,6 +1,7 @@
 ﻿#include "Skills/Melee/ASSkillMelee.h"
 
 #include "DrawDebugHelpers.h"
+#include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "Skills/Data/ASSkillData.h"
 #include "Engine/World.h"
 
@@ -40,9 +41,20 @@ void UASSkillMelee::OnSkillEffect_Implementation()
 		});
 	}
 
+	int32 MassHitCount = 0;
+	// Mass Entity에는 Actor 충돌체/ASC가 없으므로 같은 판정을 Mass Subsystem에도 전달한다.
+	if (!bCanHitPlayers)
+	{
+		if (UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>())
+		{
+			MassHitCount = MassMonsters->ApplyDamageInCone(Center, Aim, Radius, Angle,
+				CalculateDamage(), const_cast<AActor*>(Avatar));
+		}
+	}
+
 	if (bDrawDebug)
 	{
-		const FColor Color = Targets.Num() > 0 ? FColor::Red : FColor::Green;
+		const FColor Color = Targets.Num() > 0 || MassHitCount > 0 ? FColor::Red : FColor::Green;
 
 		if (bIsCone)
 		{

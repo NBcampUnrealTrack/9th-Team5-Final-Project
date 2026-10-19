@@ -45,5 +45,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	FASMassMonsterHomeFragment& Home = BuildContext.AddFragment_GetRef<FASMassMonsterHomeFragment>();
 	Home.LeashRadius = FMath::Max(0.0f, DefaultLeashRadius);
 	Home.ReturnAcceptanceRadius = FMath::Max(1.0f, DefaultReturnAcceptanceRadius);
+	Home.DetectionRadius = Config.DetectionRadius;
+	Home.LoseTargetRadius = Config.LoseTargetRadius;
 }
 

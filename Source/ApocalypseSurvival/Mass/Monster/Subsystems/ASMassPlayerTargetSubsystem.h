@@ -6,6 +6,7 @@
 
 class APawn;
 class APlayerController;
+class AActor;
 
 /** 한 번 수집한 플레이어 타깃 정보. 다음 Snapshot 갱신 전까지 읽기 전용으로 사용한다. */
 struct APOCALYPSESURVIVAL_API FASMassPlayerTargetSnapshot
@@ -34,6 +35,7 @@ public:
 	TConstArrayView<FASMassPlayerTargetSnapshot> GetTargetSnapshots() const { return TargetSnapshots; }
 	const FASMassPlayerTargetSnapshot* FindTarget(int32 TargetId) const;
 	const FASMassPlayerTargetSnapshot* FindClosestAliveTarget(const FVector& Origin, float MaxDistance) const;
+	const FASMassPlayerTargetSnapshot* FindTargetForActor(const AActor* Actor) const;
 	APawn* ResolveTargetPawn(int32 TargetId) const;
 
 	UFUNCTION(BlueprintPure, Category = "Mass|Monster|Targeting")

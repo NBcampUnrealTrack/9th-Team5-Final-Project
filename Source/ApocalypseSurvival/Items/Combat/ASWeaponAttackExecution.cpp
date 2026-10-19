@@ -11,7 +11,9 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Inventory/ASInventoryComponent.h"
+#include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "Skills/ASSkillAbility.h"
+#include "Skills/ASSkillTags.h"
 #include "Skills/Projectile/ASSkillProjectileActor.h"
 
 namespace ASWeaponAttackExecutionPrivate
@@ -45,6 +47,22 @@ namespace ASWeaponAttackExecutionPrivate
 				UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
 			}
 		}
+	}
+
+	float GetMassDamage(const FASWeaponAttackExecutionContext& Context)
+	{
+		float Damage = 0.0f;
+		const TArray<FGameplayEffectSpecHandle> DamageSpecs = UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(
+			Context.Weapon, Context.AbilitySystem);
+		for (const FGameplayEffectSpecHandle& DamageSpec : DamageSpecs)
+		{
+			if (DamageSpec.IsValid())
+			{
+				Damage += FMath::Max(0.0f,
+					-DamageSpec.Data->GetSetByCallerMagnitude(ASGameplayTags::Data_Damage, false, 0.0f));
+			}
+		}
+		return Damage;
 	}
 
 	void KeepClosestTarget(TArray<AActor*>& Targets, const FVector& ReferenceLocation)
@@ -191,10 +209,23 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 		}
 	}
 	ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
+	int32 MassHitCount = 0;
+	const bool bCanHitMass = Profile->TargetMode != EASAttackTargetMode::Single || Targets.IsEmpty();
+	if (bCanHitMass)
+	{
+		if (UASMassMonsterSubsystem* MassMonsters =
+			Context.Avatar->GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
+		{
+			MassHitCount = MassMonsters->ApplyDamageInRadius(Center, Radius,
+				ASWeaponAttackExecutionPrivate::GetMassDamage(Context), Context.Avatar,
+				Profile->TargetMode == EASAttackTargetMode::Single ? 1 : 0);
+		}
+	}
 
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
-		Character->MulticastDrawWeaponAttackDebug(Start, Center, Radius, true, !Targets.IsEmpty());
+		Character->MulticastDrawWeaponAttackDebug(Start, Center, Radius, true,
+			!Targets.IsEmpty() || MassHitCount > 0);
 	}
 }
 
@@ -269,6 +300,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	}
 
 	TArray<AActor*> Targets;
+	int32 MassHitCount = 0;
 	if (FirstTarget)
 	{
 		if (Profile->TargetMode == EASAttackTargetMode::Area)
@@ -285,10 +317,17 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			Targets.Add(FirstTarget);
 		}
 	}
+	else if (UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>())
+	{
+		TSet<int32> HitEntityIndices;
+		MassHitCount = MassMonsters->ApplyDamageAlongSegmentUnique(Start, End, TraceRadius,
+			ASWeaponAttackExecutionPrivate::GetMassDamage(Context), Context.Avatar, HitEntityIndices, 1);
+	}
 	ASWeaponAttackExecutionPrivate::ApplyDamage(Context, Targets);
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
 		const FVector DebugEnd = FirstTarget ? Start + (End - Start) * FirstHitTime : End;
-		Character->MulticastDrawWeaponAttackDebug(Start, DebugEnd, TraceRadius, false, FirstTarget != nullptr);
+		Character->MulticastDrawWeaponAttackDebug(Start, DebugEnd, TraceRadius, false,
+			FirstTarget != nullptr || MassHitCount > 0);
 	}
 }

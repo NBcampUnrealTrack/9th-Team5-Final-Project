@@ -3,11 +3,14 @@
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
 #include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
+#include "Core/Framework/ASGameMode.h"
+#include "Engine/World.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
 #include "MassExecutionContext.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "ProfilingDebugging/CsvProfiler.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterDeathProcessor)
 
@@ -41,7 +44,8 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 	TRACE_CPUPROFILER_EVENT_SCOPE(ASMassMonsterDeathProcessor);
 	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterDeathProcessor);
 
-	NewlyDeadQuery.ForEachEntityChunk(Context, [](FMassExecutionContext& Context)
+	int32 NewlyDeadCount = 0;
+	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount](FMassExecutionContext& Context)
 	{
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
 		const TArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetMutableFragmentView<FASMassMonsterBehaviorFragment>();
@@ -62,8 +66,25 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 			Behaviors[EntityIt].State = EASMassMonsterState::Dead;
 			Targets[EntityIt].Reset();
 			Context.Defer().AddTag<FASMassMonsterDeadTag>(Context.GetEntity(EntityIt));
+			++NewlyDeadCount;
 		}
 	});
+
+	if (NewlyDeadCount > 0)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (AASGameMode* GameMode = World->GetAuthGameMode<AASGameMode>())
+			{
+				// Mass 실행 중에는 밤 종료가 Entity Fragment를 즉시 변경할 수 없으므로 다음 틱에 집계한다.
+				World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
+					GameMode, [GameMode, NewlyDeadCount]()
+					{
+						GameMode->OnEnemiesKilled(NewlyDeadCount);
+					}));
+			}
+		}
+	}
 
 	const float DeltaTime = Context.GetDeltaTimeSeconds();
 	DeadQuery.ForEachEntityChunk(Context, [DeltaTime](FMassExecutionContext& Context)
