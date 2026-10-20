@@ -618,7 +618,6 @@ void UASFogDisplayComponent::BlurChangedRegions(bool bFullRecompute, bool bLocal
 
 void UASFogDisplayComponent::StartLocalFade(float FadeSeconds)
 {
-	bHasPendingFade = true;
 	if (bInitializeShownAlpha)
 	{
 		FMemory::Memcpy(ShownAlpha.GetData(), TargetAlpha.GetData(), TargetAlpha.Num());
