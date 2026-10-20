@@ -497,7 +497,11 @@ float AASGameMode::GetSpawnHeightOffset(AController* Controller)
 	
 	if (CharacterCDO && CharacterCDO->GetCapsuleComponent())
 	{
-		return CharacterCDO->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + Margin;
+		// CDO는 월드 트랜스폼이 갱신되지 않아 Scaled 값에 BP 스케일이 빠질 수 있다.
+		// bp에서 지정한 루트 스케일을 직접 곱해서 실제 캡슐 높이를 구함
+		const UCapsuleComponent* Capsule = CharacterCDO->GetCapsuleComponent();
+		const float HalfHeight = Capsule->GetUnscaledCapsuleHalfHeight() * Capsule->GetRelativeScale3D().Z;
+		return HalfHeight + Margin;
 	}
 	
 	// 캐릭터가 아니거나 캡슐이 없으면 기본값
