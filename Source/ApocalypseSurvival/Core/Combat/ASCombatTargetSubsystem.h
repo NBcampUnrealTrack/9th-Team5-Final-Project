@@ -7,6 +7,47 @@
 
 class AActor;
 
+/** 타겟 검색에 포함할 전투 백엔드 범위. */
+enum class EASCombatTargetDomain : uint8
+{
+	ActorOnly,
+	MassOnly,
+	All
+};
+
+/** 타겟 검색 규칙. 호출부는 백엔드가 아닌 검색 의도만 지정한다. */
+struct APOCALYPSESURVIVAL_API FASCombatTargetQuery
+{
+	FVector SearchOrigin = FVector::ZeroVector;
+	FVector PreferredLocation = FVector::ZeroVector;
+	float SearchRadius = 0.0f;
+	const AActor* Instigator = nullptr;
+	EASCombatTargetDomain Domain = EASCombatTargetDomain::All;
+	bool bCanHitPlayers = false;
+	bool bRequireAlive = true;
+	bool bRequireVisibleToLocalTeam = false;
+};
+
+/** Actor와 Mass Entity를 호출부에 같은 형태로 전달하는 단일 타겟 참조. */
+struct APOCALYPSESURVIVAL_API FASCombatTargetRef
+{
+	bool IsValid() const;
+	bool IsActor() const;
+	bool IsMass() const;
+	AActor* GetActor() const;
+	const FVector& GetLocation() const { return Location; }
+	float GetHitRadius() const { return HitRadius; }
+	void Reset();
+
+private:
+	TWeakObjectPtr<AActor> Actor;
+	uint64 MassTargetId = 0;
+	FVector Location = FVector::ZeroVector;
+	float HitRadius = 0.0f;
+
+	friend class UASCombatTargetSubsystem;
+};
+
 /** 투사체처럼 여러 프레임에 걸쳐 같은 대상을 한 번만 맞혀야 할 때 사용하는 Backend 비종속 기록. */
 struct APOCALYPSESURVIVAL_API FASCombatTargetHitSet
 {
@@ -48,6 +89,12 @@ public:
 
 	TArray<AActor*> FindActorTargetsInRadius(const FVector& Center, float Radius,
 		const AActor* Instigator, bool bCanHitPlayers) const;
+
+	/** Query 정책으로 Actor/Mass 후보를 모두 비교해 가장 적합한 타겟 하나를 반환한다. */
+	bool FindBestTarget(const FASCombatTargetQuery& Query, FASCombatTargetRef& OutTarget) const;
+
+	/** 이전에 반환한 타겟의 유효성, 생존 상태와 최신 위치를 갱신한다. */
+	bool RefreshTarget(const FASCombatTargetQuery& Query, FASCombatTargetRef& InOutTarget) const;
 
 	int32 ApplyEffectSpecsToActors(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 		TConstArrayView<AActor*> Targets) const;
