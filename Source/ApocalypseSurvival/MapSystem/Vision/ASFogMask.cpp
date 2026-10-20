@@ -176,20 +176,18 @@ void ASFogMask::BlurAlphaRegion(const TArray<uint8>& Source, TArray<uint8>& Dest
 	}
 }
 
-bool ASFogMask::StepToward(TArray<uint8>& Shown, const TArray<uint8>& Target, int32 Width, int32 Height, int32 MaxStep, const FIntRect& Region, FIntRect& OutDirty, bool& bOutReachedTarget)
+bool ASFogMask::LerpToward(TArray<uint8>& Shown, const TArray<uint8>& From, const TArray<uint8>& Target, int32 Width, int32 Height, float Fraction, const FIntRect& Region, FIntRect& OutDirty)
 {
 	OutDirty = FIntRect(0, 0, 0, 0);
-	bOutReachedTarget = false;
 	if (Width <= 0 || Height <= 0 || static_cast<int64>(Width) * Height != Shown.Num()
-		|| Shown.Num() != Target.Num() || MaxStep <= 0)
+		|| Shown.Num() != From.Num() || Shown.Num() != Target.Num())
 	{
 		return false;
 	}
 
 	const FIntRect Clipped(FMath::Clamp(Region.Min.X, 0, Width), FMath::Clamp(Region.Min.Y, 0, Height),
 		FMath::Clamp(Region.Max.X, 0, Width), FMath::Clamp(Region.Max.Y, 0, Height));
-	bOutReachedTarget = true;
-	MaxStep = FMath::Min(MaxStep, 255);
+	Fraction = FMath::Clamp(Fraction, 0.0f, 1.0f);
 	int32 MinX = Width;
 	int32 MinY = Height;
 	int32 MaxX = 0;
@@ -199,14 +197,14 @@ bool ASFogMask::StepToward(TArray<uint8>& Shown, const TArray<uint8>& Target, in
 		for (int32 X = Clipped.Min.X; X < Clipped.Max.X; ++X)
 		{
 			const int32 Index = Y * Width + X;
-			const int32 Delta = static_cast<int32>(Target[Index]) - Shown[Index];
-			if (Delta == 0)
+			const uint8 Alpha = static_cast<uint8>(FMath::RoundToInt(FMath::Lerp(
+				static_cast<float>(From[Index]), static_cast<float>(Target[Index]), Fraction)));
+			if (Shown[Index] == Alpha)
 			{
 				continue;
 			}
 
-			bOutReachedTarget &= FMath::Abs(Delta) <= MaxStep;
-			Shown[Index] = static_cast<uint8>(Shown[Index] + FMath::Clamp(Delta, -MaxStep, MaxStep));
+			Shown[Index] = Alpha;
 			MinX = FMath::Min(MinX, X);
 			MinY = FMath::Min(MinY, Y);
 			MaxX = FMath::Max(MaxX, X + 1);

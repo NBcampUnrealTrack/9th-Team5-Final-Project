@@ -1,8 +1,11 @@
 ﻿#include "MapSystem/Vision/ASFogDisplayComponent.h"
 
+#include "Engine/LocalPlayer.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASFogMask.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
@@ -17,6 +20,7 @@
 UASFogDisplayComponent::UASFogDisplayComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	PrimaryComponentTick.bAllowTickOnDedicatedServer = false;
 	SetIsReplicatedByDefault(false);
@@ -26,6 +30,49 @@ bool UASFogDisplayComponent::HasLocalPlayer() const
 {
 	const UWorld* World = GetWorld();
 	return GetNetMode() != NM_DedicatedServer && World && World->GetFirstLocalPlayerFromController() != nullptr;
+}
+
+const UASVisionSourceComponent* UASFogDisplayComponent::GetLocalVisionSource() const
+{
+	const UWorld* World = GetWorld();
+	const ULocalPlayer* Player = World ? World->GetFirstLocalPlayerFromController() : nullptr;
+	const APlayerController* Controller = Player ? Player->GetPlayerController(World) : nullptr;
+	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+	const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
+	if (!Pawn || !Subsystem || !VisionDefinition)
+	{
+		return nullptr;
+	}
+	const int32 LocalTeam = UASVisionFunctionLibrary::GetLocalTeamId(this);
+	for (const UASVisionSourceComponent* Source : Subsystem->GetVisionSources())
+	{
+		if (Source->GetOwner() == Pawn && Source->GetTeamId() == LocalTeam
+			&& Source->IsProvidingVision(VisionDefinition->DeadStateTag))
+		{
+			return Source;
+		}
+	}
+	return nullptr;
+}
+
+void UASFogDisplayComponent::UpdateLocalVisionParameters()
+{
+	if (!WorldFogMaterial)
+	{
+		return;
+	}
+	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
+	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
+	const UASVisionSourceComponent* Source = GetLocalVisionSource();
+	FVector Center = FVector::ZeroVector;
+	float Radius = 0.0f;
+	if (Source && Evaluator)
+	{
+		Center = Evaluator->GetTraceLocation(Source->GetOwner());
+		Radius = Source->GetVisionRadius(VisionDefinition->Settings, Manager->GetNightAlpha());
+	}
+	WorldFogMaterial->SetVectorParameterValue(TEXT("LocalVisionCenter"), FLinearColor(Center.X, Center.Y, 0.0f, 0.0f));
+	WorldFogMaterial->SetScalarParameterValue(TEXT("LocalVisionRadius"), Radius);
 }
 
 void UASFogDisplayComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -38,39 +85,61 @@ void UASFogDisplayComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;
 	}
 
-	const float FadeSeconds = VisionDefinition->Settings.FogFadeSeconds;
-	const int32 MaxStep = FadeSeconds <= 0.0f ? 255
-		: FMath::Max(1, FMath::CeilToInt(255.0f * FMath::Clamp(DeltaTime / FadeSeconds, 0.0f, 1.0f)));
-	StepShownAlpha(MaxStep);
+	UpdateLocalVisionParameters();
+	AdvancePendingFade();
 }
 
-void UASFogDisplayComponent::StepShownAlpha(int32 MaxStep)
+void UASFogDisplayComponent::UpdateShownAlpha(float Fraction)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(ASFogOfWar_FadeStep);
 
-	TArray<FIntRect> DirtyRegions;
+	ShownChangedRegions.Reset();
 	for (int32 TileIndex = 0; TileIndex < PendingFadeTiles.Num(); ++TileIndex)
 	{
 		if (!PendingFadeTiles[TileIndex])
 		{
 			continue;
 		}
+		const FIntRect Region = TileRegion(TileIndex);
 		FIntRect Dirty;
-		bool bReachedTarget;
-		if (ASFogMask::StepToward(ShownAlpha, TargetAlpha, ResolutionX, ResolutionY, MaxStep,
-			TileRegion(TileIndex), Dirty, bReachedTarget))
+		bool bChanged = ASFogMask::LerpToward(ShownAlpha, FadeFromAlpha, TargetAlpha, ResolutionX, ResolutionY,
+			Fraction, Region, Dirty);
+		FIntRect LocalTileRegion = Region;
+		LocalTileRegion.Clip(LocalRegion);
+		if (LocalTileRegion.Width() > 0 && LocalTileRegion.Height() > 0)
 		{
-			DirtyRegions.Add(Dirty);
+			auto LerpLocalAlpha = [&](TArray<uint8>& Shown, const TArray<uint8>& From, const TArray<uint8>& Target)
+			{
+				FIntRect LocalDirty;
+				if (ASFogMask::LerpToward(Shown, From, Target, ResolutionX, ResolutionY, Fraction, LocalTileRegion, LocalDirty))
+				{
+					if (bChanged)
+					{
+						Dirty.Union(LocalDirty);
+					}
+					else
+					{
+						Dirty = LocalDirty;
+					}
+					bChanged = true;
+				}
+			};
+			LerpLocalAlpha(DisplayShownAlpha, DisplayFadeFromAlpha, DisplayTargetAlpha);
+			LerpLocalAlpha(OthersShownAlpha, OthersFadeFromAlpha, OthersTargetAlpha);
 		}
-		if (bReachedTarget)
+		if (bChanged)
+		{
+			ShownChangedRegions.Add(Dirty);
+		}
+		if (Fraction >= 1.0f)
 		{
 			PendingFadeTiles[TileIndex] = 0;
 		}
 	}
-	UploadTexture(DirtyRegions);
-	if (!PendingFadeTiles.Contains(1))
+	UploadTexture(ShownChangedRegions);
+	if (Fraction >= 1.0f)
 	{
-		SetComponentTickEnabled(false);
+		bHasPendingFade = false;
 	}
 }
 
@@ -88,23 +157,37 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 
 		const int32 CellCount = ResolutionX * ResolutionY;
 		VisibleCells.Init(0, CellCount);
-		PreviousVisibleCells.Init(0, CellCount);
+		DisplayCells.Init(0, CellCount);
+		OthersCells.Init(0, CellCount);
 		ExploredCells.Init(0, CellCount);
 		RawAlpha.Init(0, CellCount);
 		TargetAlpha.SetNumUninitialized(CellCount);
 		ShownAlpha.SetNumUninitialized(CellCount);
+		FadeFromAlpha.Init(0, CellCount);
+		DisplayRawAlpha.Init(0, CellCount);
+		DisplayTargetAlpha.SetNumUninitialized(CellCount);
+		DisplayShownAlpha.SetNumUninitialized(CellCount);
+		DisplayFadeFromAlpha.Init(0, CellCount);
+		OthersRawAlpha.Init(0, CellCount);
+		OthersTargetAlpha.SetNumUninitialized(CellCount);
+		OthersShownAlpha.SetNumUninitialized(CellCount);
+		OthersFadeFromAlpha.Init(0, CellCount);
 		BlurScratch.Reset();
 		TilesX = FMath::DivideAndRoundUp(ResolutionX, TileSize);
 		TilesY = FMath::DivideAndRoundUp(ResolutionY, TileSize);
 		PreviousVisibleTiles.Init(0, TilesX * TilesY);
 		CurrentVisibleTiles.Init(0, TilesX * TilesY);
 		PendingFadeTiles.Init(0, TilesX * TilesY);
+		LocalRegion = FIntRect(0, 0, 0, 0);
 		RawChangedRegions.Reset();
 		RawChangedRegions.Reserve(TilesX * TilesY);
+		ShownChangedRegions.Reset();
+		ShownChangedRegions.Reserve(TilesX * TilesY);
 		OcclusionPoints.Reserve(512);
+		ExtendedOcclusionPoints.Reserve(512);
 		bMaskDirty = true;
 		bInitializeShownAlpha = true;
-		SetComponentTickEnabled(false);
+		bHasPendingFade = false;
 
 		if (GetNetMode() != NM_DedicatedServer)
 		{
@@ -119,6 +202,7 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 			}
 		}
 	}
+	SetComponentTickEnabled(HasLocalPlayer());
 }
 
 void UASFogDisplayComponent::UpdateWorldFog()
@@ -139,6 +223,8 @@ void UASFogDisplayComponent::UpdateWorldFog()
 			WorldFogVolume->Settings.AddBlendable(WorldFogMaterial, 1.0f);
 		}
 	}
+
+	UpdateLocalVisionParameters();
 
 	// 시야 정의나 해상도가 바뀌면 텍스처를 다시 생성한다.
 	WorldFogMaterial->SetTextureParameterValue(TEXT("FogTexture"), FogTexture);
@@ -194,18 +280,43 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
 	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
 	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
-	// 로컬 플레이어가 죽거나 관전 중이어도 계속 갱신한다. 팀원은 여전히 시야를 공유한다.
 	if (!Subsystem || !Manager || !Evaluator || !VisionDefinition || ResolutionX <= 0 || ResolutionY <= 0)
 	{
 		return;
 	}
 
-	const FASVisionSettings& Settings = VisionDefinition->Settings;
-	const bool bWallOcclusion = Manager->IsWallOcclusionEnabled();
-	const float NightAlpha = Manager->GetNightAlpha();
-	const int32 LocalTeam = UASVisionFunctionLibrary::GetLocalTeamId(this);
-	const FVector2D WorldSize = VisionDefinition->GetFogWorldSize();
+	const FLocalMaskContext Context{
+		Manager->IsWallOcclusionEnabled(), Manager->GetNightAlpha(),
+		UASVisionFunctionLibrary::GetLocalTeamId(this), VisionDefinition->GetFogWorldSize(),
+		FMath::Clamp(VisionDefinition->Settings.FogEdgeBlurTexels, 0, 8), GetLocalVisionSource()
+	};
+	AdvancePendingFade();
+	ClearPreviousVisibleCells();
+	const FIntRect PreviousLocalRegion = RasterizeTeamSources(*Subsystem, *Evaluator, Context);
+	const bool bLocalRegionChanged = LocalRegion != PreviousLocalRegion;
+	const bool bFullRecompute = RebuildRawAlpha(PreviousLocalRegion, bLocalRegionChanged);
+	if (!bFullRecompute && RawChangedRegions.IsEmpty() && !bLocalRegionChanged)
+	{
+		return;
+	}
+	BlurChangedRegions(bFullRecompute, bLocalRegionChanged, Context.BlurRadius);
+	StartLocalFade(VisionDefinition->Settings.FogFadeSeconds);
+}
 
+void UASFogDisplayComponent::AdvancePendingFade()
+{
+	// 타이머가 tick보다 먼저 온다.
+	if (bHasPendingFade)
+	{
+		const float FadeSeconds = VisionDefinition->Settings.FogFadeSeconds;
+		const float Fraction = FadeSeconds <= 0.0f ? 1.0f
+			: FMath::Clamp((GetWorld()->GetTimeSeconds() - FadeStartTime) / FadeSeconds, 0.0f, 1.0f);
+		UpdateShownAlpha(Fraction);
+	}
+}
+
+void UASFogDisplayComponent::ClearPreviousVisibleCells()
+{
 	for (int32 TileIndex = 0; TileIndex < PreviousVisibleTiles.Num(); ++TileIndex)
 	{
 		if (!PreviousVisibleTiles[TileIndex])
@@ -215,102 +326,188 @@ void UASFogDisplayComponent::UpdateLocalMask()
 		const FIntRect Region = TileRegion(TileIndex);
 		for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
 		{
-			FMemory::Memzero(VisibleCells.GetData() + Y * ResolutionX + Region.Min.X, Region.Width());
+			const int32 Start = Y * ResolutionX + Region.Min.X;
+			FMemory::Memzero(VisibleCells.GetData() + Start, Region.Width());
+			FMemory::Memzero(DisplayCells.GetData() + Start, Region.Width());
+			FMemory::Memzero(OthersCells.GetData() + Start, Region.Width());
 		}
 	}
+}
 
-	for (const UASVisionSourceComponent* Source : Subsystem->GetVisionSources())
+void UASFogDisplayComponent::TraceSource(const UASVisionEvaluatorComponent& Evaluator, const UASVisionSourceComponent* Source,
+	const FVector& Origin, float Radius, float DisplayRadius, const UASVisionSourceComponent* LocalSource)
+{
+	const FASVisionSettings& Settings = VisionDefinition->Settings;
+	const int32 RayCount = FMath::Clamp(Settings.OcclusionRayCount, 16, 512);
+	OcclusionPoints.Reset();
+	ExtendedOcclusionPoints.Reset();
+	for (int32 RayIndex = 0; RayIndex < RayCount; ++RayIndex)
 	{
-		if (Source->GetTeamId() != LocalTeam || !Source->IsProvidingVision(VisionDefinition->DeadStateTag))
+		const float Angle = 2.0f * UE_PI * static_cast<float>(RayIndex) / static_cast<float>(RayCount);
+		const FVector Direction(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f);
+		const FVector End = Origin + Direction * DisplayRadius;
+		// 확장 반경까지 한 번만 추적한다.
+		FHitResult Hit;
+		float Distance = DisplayRadius;
+		if (Evaluator.TraceVisionWall(Hit, Origin, End, Source->GetOwner()))
+		{
+			Distance = FMath::Min(DisplayRadius, static_cast<float>(Hit.Distance) + Settings.WallRevealPadding);
+		}
+		OcclusionPoints.Add(WorldToGrid(Origin + Direction * FMath::Min(Radius, Distance)));
+		if (Source == LocalSource)
+		{
+			ExtendedOcclusionPoints.Add(WorldToGrid(Origin + Direction * Distance));
+		}
+	}
+}
+
+FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsystem& Subsystem,
+	const UASVisionEvaluatorComponent& Evaluator, const FLocalMaskContext& Context)
+{
+	const FASVisionSettings& Settings = VisionDefinition->Settings;
+	for (const UASVisionSourceComponent* Source : Subsystem.GetVisionSources())
+	{
+		if (Source == Context.LocalSource || Source->GetTeamId() != Context.LocalTeam
+			|| !Source->IsProvidingVision(VisionDefinition->DeadStateTag))
 		{
 			continue;
 		}
-
-		const AActor* SourceActor = Source->GetOwner();
-		const FVector Origin = Evaluator->GetTraceLocation(SourceActor);
-		const float Radius = Source->GetVisionRadius(Settings, NightAlpha);
+		const FVector Origin = Evaluator.GetTraceLocation(Source->GetOwner());
+		const float Radius = Source->GetVisionRadius(Settings, Context.NightAlpha);
 		const FVector2D CenterGrid = WorldToGrid(Origin);
-
-		if (!bWallOcclusion)
+		if (!Context.bWallOcclusion)
 		{
-			// U는 월드 Y를, V는 월드 X를 따른다.
-			const FVector2D Radii(Radius / WorldSize.Y * ResolutionX, Radius / WorldSize.X * ResolutionY);
-			RasterizeEllipse(CenterGrid, Radii);
+			const FVector2D Radii(Radius / Context.WorldSize.Y * ResolutionX, Radius / Context.WorldSize.X * ResolutionY);
+			RasterizeEllipse(OthersCells, CenterGrid, Radii);
 			continue;
 		}
-
-		const int32 RayCount = FMath::Clamp(Settings.OcclusionRayCount, 16, 512);
-		OcclusionPoints.Reset();
-
-		for (int32 RayIndex = 0; RayIndex < RayCount; ++RayIndex)
-		{
-			const float Angle = 2.0f * UE_PI * static_cast<float>(RayIndex) / static_cast<float>(RayCount);
-			const FVector Direction(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f);
-			const FVector End = Origin + Direction * Radius;
-
-			FHitResult Hit;
-			FVector EndPoint = End;
-			if (Evaluator->TraceVisionWall(Hit, Origin, End, SourceActor))
-			{
-				const float Distance = FMath::Min(Radius, static_cast<float>(Hit.Distance) + Settings.WallRevealPadding);
-				EndPoint = Origin + Direction * Distance;
-			}
-
-			OcclusionPoints.Add(WorldToGrid(EndPoint));
-		}
-
+		TraceSource(Evaluator, Source, Origin, Radius, Radius, Context.LocalSource);
 		for (int32 Index = 0; Index < OcclusionPoints.Num(); ++Index)
 		{
-			RasterizeTriangle(CenterGrid, OcclusionPoints[Index], OcclusionPoints[(Index + 1) % OcclusionPoints.Num()]);
+			RasterizeTriangle(OthersCells, CenterGrid, OcclusionPoints[Index], OcclusionPoints[(Index + 1) % OcclusionPoints.Num()]);
 		}
 	}
 
+	const FIntRect PreviousLocalRegion = LocalRegion;
+	LocalRegion = FIntRect(0, 0, 0, 0);
+	FVector2D LocalCenter = FVector2D::ZeroVector;
+	FVector2D LocalRadii = FVector2D::ZeroVector;
+	FVector2D DisplayRadii = FVector2D::ZeroVector;
+	if (Context.LocalSource)
+	{
+		const FVector Origin = Evaluator.GetTraceLocation(Context.LocalSource->GetOwner());
+		const float Radius = Context.LocalSource->GetVisionRadius(Settings, Context.NightAlpha);
+		const float DisplayRadius = Radius + FMath::Max(0.0f, Settings.LocalVisionMargin);
+		LocalCenter = WorldToGrid(Origin);
+		LocalRadii = FVector2D(Radius / Context.WorldSize.Y * ResolutionX, Radius / Context.WorldSize.X * ResolutionY);
+		DisplayRadii = FVector2D(DisplayRadius / Context.WorldSize.Y * ResolutionX, DisplayRadius / Context.WorldSize.X * ResolutionY);
+		FVector2D Min = LocalCenter - DisplayRadii;
+		FVector2D Max = LocalCenter + DisplayRadii;
+		if (Context.bWallOcclusion)
+		{
+			TraceSource(Evaluator, Context.LocalSource, Origin, Radius, DisplayRadius, Context.LocalSource);
+			Min = LocalCenter;
+			Max = LocalCenter;
+			for (const FVector2D& Point : ExtendedOcclusionPoints)
+			{
+				Min.X = FMath::Min(Min.X, Point.X);
+				Min.Y = FMath::Min(Min.Y, Point.Y);
+				Max.X = FMath::Max(Max.X, Point.X);
+				Max.Y = FMath::Max(Max.Y, Point.Y);
+			}
+		}
+		if (Context.bWallOcclusion || (DisplayRadii.X > 0.0 && DisplayRadii.Y > 0.0))
+		{
+			const int32 MinX = FMath::FloorToInt(Min.X);
+			const int32 MinY = FMath::FloorToInt(Min.Y);
+			const int32 MaxX = FMath::CeilToInt(Max.X);
+			const int32 MaxY = FMath::CeilToInt(Max.Y);
+			// 로컬 전용 타일도 복사 전에 표시한다.
+			MarkVisibleTiles(FMath::Max(0, MinX), FMath::Max(0, MinY), FMath::Min(ResolutionX - 1, MaxX), FMath::Min(ResolutionY - 1, MaxY));
+			const int32 Padding = Context.BlurRadius + 1;
+			LocalRegion = FIntRect(FMath::Clamp(MinX - Padding, 0, ResolutionX), FMath::Clamp(MinY - Padding, 0, ResolutionY),
+				FMath::Clamp(MaxX + 1 + Padding, 0, ResolutionX), FMath::Clamp(MaxY + 1 + Padding, 0, ResolutionY));
+			if (LocalRegion.Width() <= 0 || LocalRegion.Height() <= 0)
+			{
+				LocalRegion = FIntRect(0, 0, 0, 0);
+			}
+		}
+	}
+
+	for (int32 TileIndex = 0; TileIndex < CurrentVisibleTiles.Num(); ++TileIndex)
+	{
+		if (!CurrentVisibleTiles[TileIndex])
+		{
+			continue;
+		}
+		const FIntRect Region = TileRegion(TileIndex);
+		for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
+		{
+			const int32 Start = Y * ResolutionX + Region.Min.X;
+			FMemory::Memcpy(VisibleCells.GetData() + Start, OthersCells.GetData() + Start, Region.Width());
+			FMemory::Memcpy(DisplayCells.GetData() + Start, OthersCells.GetData() + Start, Region.Width());
+		}
+	}
+	if (Context.LocalSource)
+	{
+		if (!Context.bWallOcclusion)
+		{
+			RasterizeEllipse(VisibleCells, LocalCenter, LocalRadii);
+			RasterizeEllipse(DisplayCells, LocalCenter, DisplayRadii);
+		}
+		else
+		{
+			for (int32 Index = 0; Index < OcclusionPoints.Num(); ++Index)
+			{
+				const int32 Next = (Index + 1) % OcclusionPoints.Num();
+				RasterizeTriangle(VisibleCells, LocalCenter, OcclusionPoints[Index], OcclusionPoints[Next]);
+				RasterizeTriangle(DisplayCells, LocalCenter, ExtendedOcclusionPoints[Index], ExtendedOcclusionPoints[Next]);
+			}
+		}
+	}
+	return PreviousLocalRegion;
+}
+
+bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion, bool bLocalRegionChanged)
+{
 	RawChangedRegions.Reset();
 	const uint8 Explored = static_cast<uint8>(FMath::Clamp(ExploredAlpha, 0, 255));
 	const uint8 Unexplored = static_cast<uint8>(FMath::Clamp(UnexploredAlpha, 0, 255));
 	for (int32 TileIndex = 0; TileIndex < PreviousVisibleTiles.Num(); ++TileIndex)
 	{
-		if (!bMaskDirty && !PreviousVisibleTiles[TileIndex] && !CurrentVisibleTiles[TileIndex])
-		{
-			continue;
-		}
 		const FIntRect Region = TileRegion(TileIndex);
-		bool bVisibleChanged = false;
-		for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
-		{
-			const int32 Start = Y * ResolutionX + Region.Min.X;
-			bVisibleChanged |= FMemory::Memcmp(VisibleCells.GetData() + Start,
-				PreviousVisibleCells.GetData() + Start, Region.Width()) != 0;
-			if (CurrentVisibleTiles[TileIndex])
-			{
-				for (int32 X = Region.Min.X; X < Region.Max.X; ++X)
-				{
-					const int32 Index = Y * ResolutionX + X;
-					ExploredCells[Index] |= VisibleCells[Index];
-				}
-			}
-		}
-		if (!bMaskDirty && !bVisibleChanged && !CurrentVisibleTiles[TileIndex])
+		FIntRect LocalTileRegion = Region;
+		LocalTileRegion.Clip(LocalRegion);
+		const bool bLocalTile = LocalTileRegion.Width() > 0 && LocalTileRegion.Height() > 0;
+		if (!bMaskDirty && !PreviousVisibleTiles[TileIndex] && !CurrentVisibleTiles[TileIndex] && !bLocalTile)
 		{
 			continue;
 		}
-		// 게임 판정용 셀은 이진 상태를 유지하고 표시 알파만 부드럽게 만든다.
 		int32 ChangedMinX = Region.Max.X;
 		int32 ChangedMinY = Region.Max.Y;
 		int32 ChangedMaxX = Region.Min.X;
 		int32 ChangedMaxY = Region.Min.Y;
 		for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
 		{
-			const int32 Start = Y * ResolutionX + Region.Min.X;
-			if (bMaskDirty || bVisibleChanged)
-			{
-				FMemory::Memcpy(PreviousVisibleCells.GetData() + Start, VisibleCells.GetData() + Start, Region.Width());
-			}
 			for (int32 X = Region.Min.X; X < Region.Max.X; ++X)
 			{
 				const int32 Index = Y * ResolutionX + X;
-				const uint8 Alpha = VisibleCells[Index] ? 0 : (ExploredCells[Index] ? Explored : Unexplored);
-				if (!bMaskDirty && RawAlpha[Index] != Alpha)
+				if (CurrentVisibleTiles[TileIndex])
+				{
+					ExploredCells[Index] |= VisibleCells[Index];
+				}
+				const uint8 BaseAlpha = ExploredCells[Index] ? Explored : Unexplored;
+				const uint8 Alpha = VisibleCells[Index] ? 0 : BaseAlpha;
+				bool bLocalChanged = false;
+				if (X >= LocalTileRegion.Min.X && X < LocalTileRegion.Max.X && Y >= LocalTileRegion.Min.Y && Y < LocalTileRegion.Max.Y)
+				{
+					const uint8 DisplayAlpha = DisplayCells[Index] ? 0 : BaseAlpha;
+					const uint8 OthersAlpha = OthersCells[Index] ? 0 : BaseAlpha;
+					bLocalChanged = DisplayRawAlpha[Index] != DisplayAlpha || OthersRawAlpha[Index] != OthersAlpha;
+					DisplayRawAlpha[Index] = DisplayAlpha;
+					OthersRawAlpha[Index] = OthersAlpha;
+				}
+				if (!bMaskDirty && (RawAlpha[Index] != Alpha || bLocalChanged))
 				{
 					ChangedMinX = FMath::Min(ChangedMinX, X);
 					ChangedMinY = FMath::Min(ChangedMinY, Y);
@@ -326,57 +523,181 @@ void UASFogDisplayComponent::UpdateLocalMask()
 		}
 	}
 
-	// 이번 경계는 변화가 없는 패스에서도 다음 지우기 영역이 된다.
 	Swap(PreviousVisibleTiles, CurrentVisibleTiles);
 	FMemory::Memzero(CurrentVisibleTiles.GetData(), CurrentVisibleTiles.Num());
 	const bool bFullRecompute = bMaskDirty;
 	bMaskDirty = false;
-	if (!bFullRecompute && RawChangedRegions.IsEmpty())
+	if (bLocalRegionChanged)
+	{
+		if (!bInitializeShownAlpha)
+		{
+			// 새로 들어온 셀은 현재 A에서 시작한다.
+			CopyLocalAlphaOutsideRegion(DisplayShownAlpha, OthersShownAlpha, ShownAlpha, LocalRegion, PreviousLocalRegion);
+		}
+		MarkPendingTiles(LocalRegion);
+		MarkPendingTiles(PreviousLocalRegion);
+		// 알파가 그대로여도 이전 영역의 G/R을 A로 되돌린다.
+		if (PreviousLocalRegion.Width() > 0 && PreviousLocalRegion.Height() > 0)
+		{
+			UploadTexture({ PreviousLocalRegion });
+		}
+	}
+	return bFullRecompute;
+}
+
+void UASFogDisplayComponent::CopyLocalAlphaOutsideRegion(TArray<uint8>& Display, TArray<uint8>& Others,
+	const TArray<uint8>& Alpha, const FIntRect& Region, const FIntRect& Excluded)
+{
+	for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
+	{
+		const int32 Row = Y * ResolutionX;
+		auto CopySpan = [&](int32 MinX, int32 MaxX)
+		{
+			if (MinX < MaxX)
+			{
+				FMemory::Memcpy(Display.GetData() + Row + MinX, Alpha.GetData() + Row + MinX, MaxX - MinX);
+				FMemory::Memcpy(Others.GetData() + Row + MinX, Alpha.GetData() + Row + MinX, MaxX - MinX);
+			}
+		};
+		if (Y < Excluded.Min.Y || Y >= Excluded.Max.Y)
+		{
+			CopySpan(Region.Min.X, Region.Max.X);
+		}
+		else
+		{
+			CopySpan(Region.Min.X, FMath::Min(Region.Max.X, Excluded.Min.X));
+			CopySpan(FMath::Max(Region.Min.X, Excluded.Max.X), Region.Max.X);
+		}
+	}
+}
+
+void UASFogDisplayComponent::BlurLocalAlpha(const FIntRect& Region, int32 BlurRadius)
+{
+	FIntRect LocalTileRegion = Region;
+	LocalTileRegion.Clip(LocalRegion);
+	if (LocalTileRegion.Width() <= 0 || LocalTileRegion.Height() <= 0)
 	{
 		return;
 	}
+	const FIntRect Samples(FMath::Max(0, LocalTileRegion.Min.X - BlurRadius), FMath::Max(0, LocalTileRegion.Min.Y - BlurRadius),
+		FMath::Min(ResolutionX, LocalTileRegion.Max.X + BlurRadius), FMath::Min(ResolutionY, LocalTileRegion.Max.Y + BlurRadius));
+	// 흐림이 읽는 바깥 여백은 A의 원본과 같다.
+	CopyLocalAlphaOutsideRegion(DisplayRawAlpha, OthersRawAlpha, RawAlpha, Samples, LocalRegion);
+	ASFogMask::BlurAlphaRegion(DisplayRawAlpha, DisplayTargetAlpha, ResolutionX, ResolutionY, BlurRadius, LocalTileRegion, BlurScratch);
+	ASFogMask::BlurAlphaRegion(OthersRawAlpha, OthersTargetAlpha, ResolutionX, ResolutionY, BlurRadius, LocalTileRegion, BlurScratch);
+}
 
-	const int32 BlurRadius = FMath::Clamp(Settings.FogEdgeBlurTexels, 0, 8);
+void UASFogDisplayComponent::BlurChangedRegions(bool bFullRecompute, bool bLocalRegionChanged, int32 BlurRadius)
+{
 	if (bFullRecompute)
 	{
-		ASFogMask::BlurAlphaRegion(RawAlpha, TargetAlpha, ResolutionX, ResolutionY,
-			BlurRadius, FIntRect(0, 0, ResolutionX, ResolutionY), BlurScratch);
+		ASFogMask::BlurAlphaRegion(RawAlpha, TargetAlpha, ResolutionX, ResolutionY, BlurRadius, FIntRect(0, 0, ResolutionX, ResolutionY), BlurScratch);
+		BlurLocalAlpha(LocalRegion, BlurRadius);
 		FMemory::Memset(PendingFadeTiles.GetData(), 1, PendingFadeTiles.Num());
 	}
 	else
 	{
 		for (const FIntRect& Changed : RawChangedRegions)
 		{
-			// 원본 변경 셀에서 반경만큼만 넓히면 두 흐림 패스의 영향 범위를 모두 포함한다.
+			// 두 흐림 패스의 영향 범위.
 			const FIntRect Region(FMath::Max(0, Changed.Min.X - BlurRadius), FMath::Max(0, Changed.Min.Y - BlurRadius),
 				FMath::Min(ResolutionX, Changed.Max.X + BlurRadius), FMath::Min(ResolutionY, Changed.Max.Y + BlurRadius));
-			ASFogMask::BlurAlphaRegion(RawAlpha, TargetAlpha, ResolutionX, ResolutionY,
-				BlurRadius, Region, BlurScratch);
-			for (int32 Y = Region.Min.Y / TileSize; Y <= (Region.Max.Y - 1) / TileSize; ++Y)
+			ASFogMask::BlurAlphaRegion(RawAlpha, TargetAlpha, ResolutionX, ResolutionY, BlurRadius, Region, BlurScratch);
+			if (!bLocalRegionChanged)
 			{
-				for (int32 X = Region.Min.X / TileSize; X <= (Region.Max.X - 1) / TileSize; ++X)
-				{
-					PendingFadeTiles[Y * TilesX + X] = 1;
-				}
+				BlurLocalAlpha(Region, BlurRadius);
 			}
+			MarkPendingTiles(Region);
 		}
 	}
+	if (!bFullRecompute && bLocalRegionChanged)
+	{
+		BlurLocalAlpha(LocalRegion, BlurRadius);
+	}
+}
+
+void UASFogDisplayComponent::StartLocalFade(float FadeSeconds)
+{
+	bHasPendingFade = true;
 	if (bInitializeShownAlpha)
 	{
-		// 초기 표시에는 검은 화면에서 시작하는 페이드를 적용하지 않는다.
 		FMemory::Memcpy(ShownAlpha.GetData(), TargetAlpha.GetData(), TargetAlpha.Num());
+		for (int32 Y = LocalRegion.Min.Y; Y < LocalRegion.Max.Y; ++Y)
+		{
+			const int32 Start = Y * ResolutionX + LocalRegion.Min.X;
+			FMemory::Memcpy(DisplayShownAlpha.GetData() + Start, DisplayTargetAlpha.GetData() + Start, LocalRegion.Width());
+			FMemory::Memcpy(OthersShownAlpha.GetData() + Start, OthersTargetAlpha.GetData() + Start, LocalRegion.Width());
+		}
 		bInitializeShownAlpha = false;
 		FMemory::Memzero(PendingFadeTiles.GetData(), PendingFadeTiles.Num());
-		SetComponentTickEnabled(false);
+		bHasPendingFade = false;
 		UploadTexture({ FIntRect(0, 0, ResolutionX, ResolutionY) });
 	}
-	else if (Settings.FogFadeSeconds <= 0.0f)
+	else if (FadeSeconds <= 0.0f)
 	{
-		StepShownAlpha(255);
+		UpdateShownAlpha(1.0f);
 	}
 	else
 	{
-		SetComponentTickEnabled(PendingFadeTiles.Contains(1));
+		// 진행 중인 타일도 현재 표시값에서 다시 보간한다.
+		for (int32 TileIndex = 0; TileIndex < PendingFadeTiles.Num(); ++TileIndex)
+		{
+			if (!PendingFadeTiles[TileIndex])
+			{
+				continue;
+			}
+			const FIntRect Region = TileRegion(TileIndex);
+			FIntRect LocalTileRegion = Region;
+			LocalTileRegion.Clip(LocalRegion);
+			bool bSettled = true;
+			for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
+			{
+				const int32 Start = Y * ResolutionX + Region.Min.X;
+				if (FMemory::Memcmp(ShownAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Region.Width()) != 0)
+				{
+					bSettled = false;
+					break;
+				}
+			}
+			if (bSettled && LocalTileRegion.Width() > 0 && LocalTileRegion.Height() > 0)
+			{
+				for (int32 Y = LocalTileRegion.Min.Y; Y < LocalTileRegion.Max.Y; ++Y)
+				{
+					const int32 Start = Y * ResolutionX + LocalTileRegion.Min.X;
+					if (FMemory::Memcmp(DisplayShownAlpha.GetData() + Start, DisplayTargetAlpha.GetData() + Start, LocalTileRegion.Width()) != 0
+						|| FMemory::Memcmp(OthersShownAlpha.GetData() + Start, OthersTargetAlpha.GetData() + Start, LocalTileRegion.Width()) != 0)
+					{
+						bSettled = false;
+						break;
+					}
+				}
+			}
+			// 이미 목표에 도달한 타일은 대기에서 뺀다.
+			if (bSettled)
+			{
+				PendingFadeTiles[TileIndex] = 0;
+				continue;
+			}
+			for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
+			{
+				const int32 Start = Y * ResolutionX + Region.Min.X;
+				FMemory::Memcpy(FadeFromAlpha.GetData() + Start, ShownAlpha.GetData() + Start, Region.Width());
+			}
+			if (LocalTileRegion.Width() > 0 && LocalTileRegion.Height() > 0)
+			{
+				for (int32 Y = LocalTileRegion.Min.Y; Y < LocalTileRegion.Max.Y; ++Y)
+				{
+					const int32 Start = Y * ResolutionX + LocalTileRegion.Min.X;
+					FMemory::Memcpy(DisplayFadeFromAlpha.GetData() + Start, DisplayShownAlpha.GetData() + Start, LocalTileRegion.Width());
+					FMemory::Memcpy(OthersFadeFromAlpha.GetData() + Start, OthersShownAlpha.GetData() + Start, LocalTileRegion.Width());
+				}
+			}
+		}
+		bHasPendingFade = PendingFadeTiles.Contains(1);
+		if (bHasPendingFade)
+		{
+			FadeStartTime = GetWorld()->GetTimeSeconds();
+		}
 	}
 }
 
@@ -442,7 +763,22 @@ void UASFogDisplayComponent::MarkVisibleTiles(int32 MinX, int32 MinY, int32 MaxX
 	}
 }
 
-void UASFogDisplayComponent::RasterizeEllipse(const FVector2D& Center, const FVector2D& Radii)
+void UASFogDisplayComponent::MarkPendingTiles(const FIntRect& Region)
+{
+	if (Region.Width() <= 0 || Region.Height() <= 0)
+	{
+		return;
+	}
+	for (int32 Y = Region.Min.Y / TileSize; Y <= (Region.Max.Y - 1) / TileSize; ++Y)
+	{
+		for (int32 X = Region.Min.X / TileSize; X <= (Region.Max.X - 1) / TileSize; ++X)
+		{
+			PendingFadeTiles[Y * TilesX + X] = 1;
+		}
+	}
+}
+
+void UASFogDisplayComponent::RasterizeEllipse(TArray<uint8>& Cells, const FVector2D& Center, const FVector2D& Radii)
 {
 	if (Radii.X <= 0.0 || Radii.Y <= 0.0)
 	{
@@ -463,13 +799,13 @@ void UASFogDisplayComponent::RasterizeEllipse(const FVector2D& Center, const FVe
 			const double DX = (X + 0.5 - Center.X) / Radii.X;
 			if (DX * DX + DY * DY <= 1.0)
 			{
-				VisibleCells[Y * ResolutionX + X] = 1;
+				Cells[Y * ResolutionX + X] = 1;
 			}
 		}
 	}
 }
 
-void UASFogDisplayComponent::RasterizeTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C)
+void UASFogDisplayComponent::RasterizeTriangle(TArray<uint8>& Cells, const FVector2D& A, const FVector2D& B, const FVector2D& C)
 {
 	const int32 MinX = FMath::Max(0, FMath::FloorToInt(FMath::Min3(A.X, B.X, C.X)));
 	const int32 MaxX = FMath::Min(ResolutionX - 1, FMath::CeilToInt(FMath::Max3(A.X, B.X, C.X)));
@@ -498,7 +834,7 @@ void UASFogDisplayComponent::RasterizeTriangle(const FVector2D& A, const FVector
 		int32 SpanMaxX;
 		if (ASFogMask::TriangleRowSpan(A, B, C, Area, Y, MinX, MaxX, SpanMinX, SpanMaxX))
 		{
-			FMemory::Memset(VisibleCells.GetData() + Y * ResolutionX + SpanMinX, 1, SpanMaxX - SpanMinX + 1);
+			FMemory::Memset(Cells.GetData() + Y * ResolutionX + SpanMinX, 1, SpanMaxX - SpanMinX + 1);
 		}
 	}
 }
@@ -531,9 +867,14 @@ void UASFogDisplayComponent::UploadTexture(const TArray<FIntRect>& DirtyRegions)
 			{
 				uint8* Pixel = Pixels + ((SourceY + Y) * PitchWidth + X) * 4;
 				Pixel[0] = 0; // B
-				Pixel[1] = 0; // G
-				Pixel[2] = 0; // R
-				Pixel[3] = ShownAlpha[(Dirty.Min.Y + Y) * ResolutionX + Dirty.Min.X + X];
+				const int32 GridX = Dirty.Min.X + X;
+				const int32 GridY = Dirty.Min.Y + Y;
+				const int32 Index = GridY * ResolutionX + GridX;
+				const bool bLocal = GridX >= LocalRegion.Min.X && GridX < LocalRegion.Max.X
+					&& GridY >= LocalRegion.Min.Y && GridY < LocalRegion.Max.Y;
+				Pixel[1] = bLocal ? DisplayShownAlpha[Index] : ShownAlpha[Index]; // G
+				Pixel[2] = bLocal ? OthersShownAlpha[Index] : ShownAlpha[Index]; // R
+				Pixel[3] = ShownAlpha[Index];
 			}
 		}
 		SourceY += Dirty.Height();
