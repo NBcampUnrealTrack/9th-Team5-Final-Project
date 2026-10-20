@@ -10,10 +10,12 @@
 #include "Core/Input/ASInputTags.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
+#include "Modules/ASModuleComponent.h"
 
 AASPlayerState::AASPlayerState()
 {
 	AbilitySystemComponent = CreateDefaultSubobject<UASAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	ModuleComponent = CreateDefaultSubobject<UASModuleComponent>(TEXT("ModuleComponent"));
 
 	// Mixed: 본인 클라이언트는 효과 정보를 전부 받는다(예측과 UI 에 필요하다).
 	// 다른 클라이언트는 태그·연출·어트리뷰트 값만 받는다.
@@ -61,6 +63,25 @@ void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
 		AttackSpec.GetDynamicSpecSourceTags().AddTag(ASGameplayTags::InputTag_Attack_Prepare);
 		DefaultAbilityHandles.AddAbilitySpecHandle(AbilitySystemComponent->GiveAbility(AttackSpec));
 	}
+}
+
+void AASPlayerState::GrantCharacterAbilitySetOnce()
+{
+	if (!HasAuthority() || bCharacterAbilitySetGranted)
+	{
+		return;
+	}
+	
+	const UASAbilitySet* CharacterSet = CharacterDefinition ? CharacterDefinition->CharacterAbilitySet.Get() : nullptr;
+	if (!IsValid(CharacterSet))
+	{
+		return;
+	}
+	
+	CharacterSet->GiveToAbilitySystem(AbilitySystemComponent, &CharacterAbilityHandles, this);
+	bCharacterAbilitySetGranted = true;
+	
+	UE_LOG(LogTemp, Log, TEXT("[PlayerState] 캐릭터 전용 어빌리티 세트 부여: %s"), *GetNameSafe(CharacterSet));
 }
 
 void AASPlayerState::SetEquippedItemRecord(UASItemInstance* Item)

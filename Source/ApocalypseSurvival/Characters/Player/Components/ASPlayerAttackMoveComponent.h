@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "ASPlayerAttackMoveComponent.generated.h"
 
 class AActor;
@@ -65,9 +66,9 @@ protected:
 private:
 	bool UsesAttackMoveTargeting() const;
 	float GetAttackRange() const;
-	AActor* FindBestTarget() const;
-	bool IsValidAttackTarget(const AActor* Candidate) const;
-	bool IsTargetInAttackRange(const AActor* Target) const;
+	bool FindBestTarget();
+	bool RefreshCurrentTarget(FVector& OutLocation, float& OutHitRadius);
+	bool IsTargetInAttackRange(const FVector& TargetLocation, float TargetHitRadius) const;
 	void RequestAttack(AActor* Target, const FVector& TargetLocation);
 	void UpdateTargetedCommand(double CurrentTime);
 	void RequestMove(const FVector& Destination, double CurrentTime);
@@ -89,7 +90,7 @@ private:
 
 	EASAttackMoveState State = EASAttackMoveState::Idle;
 	FVector CommandDestination = FVector::ZeroVector;
-	TWeakObjectPtr<AActor> CurrentTarget;
+	FASCombatTargetRef CurrentTarget;
 	double NextSearchTime = 0.0;
 	double NextRepathTime = 0.0;
 };

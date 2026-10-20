@@ -1,13 +1,30 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Spawn/ASMonsterSpawnBackend.h"
+#include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "ASSpawnSubsystem.generated.h"
 
 class AASMonsterCharacter;
 class AASMonsterSpawnPoint;
 class UDataTable;
+class UMassEntityConfigAsset;
 struct FASDayMonsterGroupSelectionEntry;
+
+USTRUCT()
+struct FASPendingWaveMonsterSpawn
+{
+	GENERATED_BODY()
+
+	EASMonsterSpawnBackend SpawnBackend = EASMonsterSpawnBackend::Actor;
+
+	UPROPERTY()
+	TSubclassOf<AASMonsterCharacter> MonsterClass;
+
+	UPROPERTY()
+	TObjectPtr<UMassEntityConfigAsset> MassEntityConfig;
+};
 
 /** 맵 배치 몬스터와 밤 웨이브의 위치 선정·생성·추적을 전담하는 서버 월드 Subsystem. */
 UCLASS(Config = Game, DefaultConfig)
@@ -43,7 +60,9 @@ private:
 	bool IsNearAnyLivingPlayer(const FVector& Location) const;
 	AASMonsterCharacter* SpawnMonster(TSubclassOf<AASMonsterCharacter> MonsterClass, const FTransform& SpawnTransform,
 		bool bCanAggroDuringDay, const AASMonsterSpawnPoint* HomeSpawnPoint = nullptr);
-	int32 CountAliveManagedMonsters();
+	int32 SpawnMassMonsters(UMassEntityConfigAsset& EntityConfig, TConstArrayView<FTransform> SpawnTransforms,
+		EASMassMonsterWorldBehavior WorldBehavior, const AASMonsterSpawnPoint* HomeSpawnPoint = nullptr);
+	int32 CountAliveManagedActorMonsters();
 
 	/** 플레이어와 충분히 떨어진 곳에 만들 밤 웨이브 후보 위치 설정. */
 	UPROPERTY(Config, EditAnywhere, Category = "Spawn|Wave", meta = (ClampMin = "0.0", Units = "cm"))
@@ -61,6 +80,10 @@ private:
 	UPROPERTY(Config, EditAnywhere, Category = "Spawn|Wave", meta = (ClampMin = "0.0", Units = "cm"))
 	float WaveSpawnScatterRadius = 300.0f;
 
+	/** 같은 웨이브에서 생성되는 몬스터 중심점 사이의 최소 수평 간격. */
+	UPROPERTY(Config, EditAnywhere, Category = "Spawn|Wave", meta = (ClampMin = "0.0", Units = "cm"))
+	float WaveMonsterMinSpawnSpacing = 110.0f;
+
 	TArray<TWeakObjectPtr<AASMonsterSpawnPoint>> PlacedSpawnPoints;
 	TArray<FVector> GeneratedWaveSpawnPoints;
 	TSet<TWeakObjectPtr<AASMonsterCharacter>> ManagedMonsters;
@@ -72,5 +95,5 @@ private:
 	float ActiveWaveSpawnInterval = 0.25f;
 
 	UPROPERTY(Transient)
-	TArray<TSubclassOf<AASMonsterCharacter>> PendingWaveMonsterClasses;
+	TArray<FASPendingWaveMonsterSpawn> PendingWaveMonsters;
 };

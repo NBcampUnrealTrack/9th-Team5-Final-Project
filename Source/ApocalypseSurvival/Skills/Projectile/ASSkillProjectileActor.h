@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
 #include "ASSkillProjectileActor.generated.h"
@@ -17,6 +18,7 @@ class APOCALYPSESURVIVAL_API AASSkillProjectileActor : public AActor
 
 public:
 	AASSkillProjectileActor();
+	virtual void Tick(float DeltaSeconds) override;
 
 	//생성 직후(FinishSpawning 전)에 호출
 	void InitProjectile(
@@ -68,6 +70,7 @@ private:
 
 	/** 발사 직전에 BP 기본값을 덮어써 피격용 Sphere만 충돌에 참여하게 한다. */
 	void ConfigureProjectileCollision();
+	void ApplyNonActorDamageAlongSegment(const FVector& CurrentLocation);
 
 	void EndProjectile();
 
@@ -76,9 +79,10 @@ private:
 	bool bCanHitPlayers = false;
 	bool bEnded = false;
 	float FlightTime = 1.0f;
+	FVector PreviousLocation = FVector::ZeroVector;
 
-	//같은 적 중복 피격 방지
-	TSet<TWeakObjectPtr<AActor>> HitActors;
+	// Actor/Mass 등 실제 Backend 종류와 관계없는 중복 피격 기록.
+	FASCombatTargetHitSet HitTargets;
 
 	FTimerHandle RangeTimerHandle;
 };

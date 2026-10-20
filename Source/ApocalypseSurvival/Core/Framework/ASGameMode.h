@@ -8,6 +8,9 @@
 class AASGameState;
 class AASRespawnPoint;
 class UASPlayerRecordComponent;
+class UASMapGameFlowComponent;
+class UASVisionSetupComponent;
+class UASZoneEffectComponent;
 class UDataTable;
 class UGameplayEffect;
 
@@ -18,6 +21,9 @@ class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
 	
 public:
 	AASGameMode();
+	
+	// 스폰할 캐릭터 BP: PlayerState에 정해진 캐릭터(리스폰) -> 캐릭터 선택 -> DefaultPawnClass 순
+	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 	
 	// 규칙 조회 (일차별 데이터 교체 가능)
 	virtual float GetDayDuration(int32 Day) const;
@@ -39,6 +45,9 @@ public:
 	// 적이 죽었을 때 호출. Killer는 처치한 플레이어의 컨트롤러 (없으면 nullptr)
 	UFUNCTION(BlueprintCallable, Category = "GameFlow")
 	void OnEnemyKilled(AController* Killer);
+
+	/** Mass Processor처럼 한 프레임에 여러 적이 죽는 경로에서 집계를 한 번에 반영한다. */
+	void OnEnemiesKilled(int32 Count, AController* Killer = nullptr);
 	
 	// 보스가 죽었을 때 호출
 	UFUNCTION(BlueprintCallable, Category = "GameFlow")
@@ -151,4 +160,15 @@ protected:
 	AASGameState* GetASGameState() const;
 	
 	FTimerHandle PhaseTimerHandle;
+
+private:
+	// 맵 시스템(구역·시야·구역 효과). 구역 액터가 없는 레벨에서는 동작하지 않는다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASMapGameFlowComponent> MapFlow;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASVisionSetupComponent> VisionSetup;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASZoneEffectComponent> ZoneEffects;
 };

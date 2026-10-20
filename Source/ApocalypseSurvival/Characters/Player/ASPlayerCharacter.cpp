@@ -13,12 +13,15 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffectExtension.h"
 #include "GAS/ASAbilitySet.h"
+#include "Modules/ASModuleComponent.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "Items/ASItemInstance.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Kismet/GameplayStatics.h"
+#include "NiagaraFunctionLibrary.h"
 
 AASPlayerCharacter::AASPlayerCharacter()
 {
@@ -123,6 +126,8 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 	if (IsValid(ASPlayerState))
 	{
 		ASPlayerState->GrantDefaultAbilitySetOnce(DefaultAbilitySet);
+		ASPlayerState->GrantCharacterAbilitySetOnce();
+		ASPlayerState->GetModuleComponent()->InitializeForAvatar();
 	}
 
 	// 리스폰이면 PlayerState 에 장착 기록이 남아 있다. 옛 몸과 함께 사라진 무기를 새 몸에 다시 단다.
@@ -151,8 +156,17 @@ bool AASPlayerCharacter::IsDead() const
 
 void AASPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (AASPlayerState* ASPlayerState = Cast<AASPlayerState>(ASC->GetOwnerActor()))
+		{
+			ASPlayerState->GetModuleComponent()->SuspendForAvatar(this);
+		}
+	}
 	// ASC 는 PlayerState 에 남으므로 파괴되는 캐릭터의 구독을 반드시 풀어야 한다.
 	UnbindDeathDelegates();
+	
+	UnbindProgressionDelegates();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -183,6 +197,8 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 	{
 		ApplyLocalDeath();
 	}
+	
+	BindProgressionDelegates();
 }
 
 void AASPlayerCharacter::InitAbilitySystemFromPlayerState()
@@ -377,4 +393,44 @@ void AASPlayerCharacter::DebugShowSelectedCharacter()
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, Message);
 	}
+}
+
+void AASPlayerCharacter::BindProgressionDelegates()
+{
+	const AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>();
+	if (UASProgressionComponent* Progression = ASPlayerState ? ASPlayerState->GetProgressionComponent() : nullptr)
+	{
+		Progression->OnLevelChanged.AddUniqueDynamic(this, &ThisClass::HandleLevelChanged);
+	}
+}
+
+void AASPlayerCharacter::UnbindProgressionDelegates()
+{
+	const AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>();
+	if (UASProgressionComponent* Progression = ASPlayerState ? ASPlayerState->GetProgressionComponent() : nullptr)
+	{
+		Progression->OnLevelChanged.RemoveDynamic(this, &ThisClass::HandleLevelChanged);
+	}
+}
+
+void AASPlayerCharacter::HandleLevelChanged(int32 NewLevel)
+{
+	// 화면이 없는 데디케이티드 서버는 연출이 필요 없다
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	
+	if (LevelUpEffect)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAttached(LevelUpEffect, GetRootComponent(), NAME_None,
+			FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, true);
+	}
+	
+	if (LevelUpSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, LevelUpSound, GetActorLocation());
+	}
+	
+	OnLevelUp(NewLevel);
 }

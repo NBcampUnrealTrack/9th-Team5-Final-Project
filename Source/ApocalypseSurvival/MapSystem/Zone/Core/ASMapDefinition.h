@@ -3,9 +3,11 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "MapSystem/Zone/Core/ASMapTypes.h"
+#include "MapSystem/Zone/Core/ASZoneDangerSchedule.h"
 #include "ASMapDefinition.generated.h"
 
 class UTexture2D;
+class UUserWidget;
 
 /** 맵 공통 규칙과 표시 리소스. 구역별 데이터는 레벨 액터에 둔다. */
 UCLASS(BlueprintType)
@@ -16,9 +18,12 @@ class APOCALYPSESURVIVAL_API UASMapDefinition : public UPrimaryDataAsset
 public:
 	UASMapDefinition();
 
-	/** 매 낮/밤 시작에 각 구역의 위험도가 1 증가할 확률. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DangerIncreaseChance = 0.7f;
+	/** 날짜별 낮/밤 위험도 증가 한도와 몬스터 우선·확률 규칙. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (RequiredAssetDataTags = "RowStructure=/Script/ApocalypseSurvival.ASZoneDangerScheduleRow"))
+	TObjectPtr<UDataTable> DangerScheduleTable;
+
+	/** 요청 날짜 이하에서 가장 큰 Day의 행. 마지막 행은 이후 날짜에도 재사용한다. */
+	const FASZoneDangerScheduleRow* FindDangerScheduleRow(int32 Day) const;
 
 	/**
 	 * 맵 텍스처가 덮는 월드 XY 사각형.
@@ -33,6 +38,17 @@ public:
 	/** 맵 위젯에서 구역 아래에 그리는 선택적 탑다운 이미지. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
 	TObjectPtr<UTexture2D> MapTexture;
+
+	// 위젯은 소프트 참조로 둔다. 이 에셋은 GameMode 생성자에서 엔진 시작 중에 로드되는데,
+	// 하드 참조면 위젯이 MVVM 플러그인보다 먼저 로드되어 뷰모델 바인딩을 잃는다.
+
+	/** 구역이 있는 레벨에서 로컬 플레이어 화면에 표시할 미니맵 위젯. 비우면 표시하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	TSoftClassPtr<UUserWidget> MinimapWidgetClass;
+
+	/** 구역이 있는 레벨에서 로컬 플레이어 화면에 표시할 구역 HUD 위젯. 비우면 표시하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	TSoftClassPtr<UUserWidget> ZoneHudWidgetClass;
 
 	/** 인덱스 0은 위험도 1이다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation", meta = (EditFixedSize))
@@ -50,10 +66,6 @@ public:
 	/** 월드 위치를 [0,1] 맵 UV로 변환한다. 범위 밖의 값은 [0,1] 밖에 놓인다. */
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	FVector2D WorldToMapUV(const FVector& WorldLocation) const;
-
-	/** 맵 UV를 월드 XY 위치로 되돌린다 (Z = 0). */
-	UFUNCTION(BlueprintPure, Category = "AS|Map")
-	FVector MapUVToWorld(const FVector2D& MapUV) const;
 
 	FVector2D GetMapWorldSize() const { return (MapWorldMax - MapWorldMin).ComponentMax(FVector2D(1.0, 1.0)); }
 

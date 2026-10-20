@@ -52,6 +52,13 @@ AASMonsterCharacter::AASMonsterCharacter()
 	MovementComponent->AvoidanceConsiderationRadius = 200.0f;
 }
 
+UAbilitySystemComponent* AASMonsterCharacter::GetAbilitySystemComponent() const
+{
+	// Health/Combat AttributeSet의 OnRep은 BeginPlay 전에 실행될 수 있다.
+	// 이때도 Actor-owned ASC를 반환해야 GAMEPLAYATTRIBUTE_REPNOTIFY가 복제 값을 안전하게 반영한다.
+	return OwnedAbilitySystemComponent;
+}
+
 void AASMonsterCharacter::BeginPlay()
 {
 	Super::BeginPlay();

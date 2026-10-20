@@ -1,10 +1,11 @@
-﻿#include "MapSystem/Shared/ASMapShapeUtils.h"
+#include "MapSystem/Shared/ASMapShapeUtils.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/ShapeComponent.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/Actor.h"
+#include "GeomTools.h"
 #include "MapSystem/Shared/ASMapPolygonAreaComponent.h"
 
 namespace ASMapShapeUtils
@@ -111,6 +112,85 @@ namespace ASMapShapeUtils
 			return false;
 		}
 		return true;
+	}
+
+	static bool TriangleHasSeparatingAxis(const FVector2D* A, const FVector2D* B)
+	{
+		for (int32 EdgeIndex = 0; EdgeIndex < 3; ++EdgeIndex)
+		{
+			const FVector2D& Origin = A[EdgeIndex];
+			const FVector2D Edge = A[(EdgeIndex + 1) % 3] - Origin;
+			double MinA = 0.0;
+			double MaxA = 0.0;
+			double MinB = Edge ^ (B[0] - Origin);
+			double MaxB = MinB;
+			for (int32 Index = 0; Index < 3; ++Index)
+			{
+				const double ProjectionA = Edge ^ (A[Index] - Origin);
+				const double ProjectionB = Edge ^ (B[Index] - Origin);
+				MinA = FMath::Min(MinA, ProjectionA);
+				MaxA = FMath::Max(MaxA, ProjectionA);
+				MinB = FMath::Min(MinB, ProjectionB);
+				MaxB = FMath::Max(MaxB, ProjectionB);
+			}
+			if (FMath::Min(MaxA, MaxB) - FMath::Max(MinA, MinB) <= UE_KINDA_SMALL_NUMBER * Edge.Size())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool OutlinesOverlap(const TArray<FVector2D>& A, const TArray<FVector2D>& B)
+	{
+		FString Error;
+		if (!ValidatePolygon(A, Error) || !ValidatePolygon(B, Error))
+		{
+			return false;
+		}
+
+		FBox2D BoundsA(ForceInit);
+		FBox2D BoundsB(ForceInit);
+		for (const FVector2D& Point : A)
+		{
+			BoundsA += Point;
+		}
+		for (const FVector2D& Point : B)
+		{
+			BoundsB += Point;
+		}
+		if (BoundsA.Max.X <= BoundsB.Min.X || BoundsB.Max.X <= BoundsA.Min.X
+			|| BoundsA.Max.Y <= BoundsB.Min.Y || BoundsB.Max.Y <= BoundsA.Min.Y)
+		{
+			return false;
+		}
+
+		// 삼각분할 후 삼각형 쌍 분리축 검사, 접촉은 분리로 본다
+		TArray<FVector2D> CounterClockwiseA;
+		TArray<FVector2D> CounterClockwiseB;
+		FGeomTools2D::CorrectPolygonWinding(CounterClockwiseA, A, false);
+		FGeomTools2D::CorrectPolygonWinding(CounterClockwiseB, B, false);
+		TArray<FVector2D> TrianglesA;
+		TArray<FVector2D> TrianglesB;
+		if (!FGeomTools2D::TriangulatePoly(TrianglesA, CounterClockwiseA)
+			|| !FGeomTools2D::TriangulatePoly(TrianglesB, CounterClockwiseB))
+		{
+			return false;
+		}
+
+		for (int32 IndexA = 0; IndexA + 2 < TrianglesA.Num(); IndexA += 3)
+		{
+			for (int32 IndexB = 0; IndexB + 2 < TrianglesB.Num(); IndexB += 3)
+			{
+				const FVector2D* TriangleA = &TrianglesA[IndexA];
+				const FVector2D* TriangleB = &TrianglesB[IndexB];
+				if (!TriangleHasSeparatingAxis(TriangleA, TriangleB) && !TriangleHasSeparatingAxis(TriangleB, TriangleA))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	void MakeBoxOutline(const FTransform& ComponentToWorld, const FVector& UnscaledExtent, TArray<FVector2D>& Out)
