@@ -8,6 +8,9 @@
 
 class AASMapZone;
 class UASMapDefinition;
+class UASMapStateComponent;
+class UASMapWorldSubsystem;
+class UASVisionWorldSubsystem;
 class UTexture2D;
 
 UENUM(BlueprintType)
@@ -21,7 +24,7 @@ enum class EASMapWidgetMode : uint8
 
 /**
  * 최소 구성의 네이티브 맵. 공유 MapState에서 구역 위험도 색상과 라벨을 그린다. 또한
- * 로컬 안개 텍스처, 아군 (GameState 플레이어), 현재 보이는
+ * 로컬 안개 텍스처, 플레이어 방향 화살표 (사망 시 회색 사각형), 현재 보이는
  * 적과 목표물 (시야 대상)을 그린다. 이 클래스로 Widget Blueprint를
  * 만들고 크기를 지정한다. 자식 위젯은 필요하지 않다.
  */
@@ -58,6 +61,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
 	FLinearColor AllyColor = FLinearColor(0.2f, 0.8f, 1.0f, 1.0f);
 
+	/** 사망한 플레이어(본인 포함) 표시 색. 알파 0이면 숨긴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
+	FLinearColor DeadPlayerColor = FLinearColor(0.45f, 0.45f, 0.45f, 0.8f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
 	FLinearColor EnemyColor = FLinearColor(1.0f, 0.2f, 0.2f, 1.0f);
 
@@ -76,10 +83,6 @@ public:
 	/** 비워 두면 엔진 기본 폰트를 사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map|Style")
 	FSlateFontInfo LabelFont;
-
-	/** 마지막으로 그린 뷰에서 월드 위치의 위젯 로컬 위치 (Blueprint 오버레이용). */
-	UFUNCTION(BlueprintPure, Category = "AS|Map")
-	FVector2D WorldToWidgetLocal(const FVector& WorldLocation) const;
 
 protected:
 	virtual void NativeConstruct() override;
@@ -121,10 +124,16 @@ private:
 	bool ComputeView(const FVector2D& LocalSize, const UASMapDefinition* Definition, FMapView& OutView) const;
 	FLinearColor GetMarkerColor(uint8 MarkerType) const;
 
+	/** 한 번의 그리기에서 레이어 함수들이 공유하는 값. */
+	struct FPaintContext;
+	void DrawZones(const FPaintContext& Context, const UASMapStateComponent& MapState, const UASMapWorldSubsystem& Subsystem,
+		int32 FillLayer, int32 LabelLayer) const;
+	void DrawVisibilityMarkers(const FPaintContext& Context, const UASVisionWorldSubsystem& VisionSubsystem, int32 Layer) const;
+	/** 사망 Layer, 아군 Layer + 1, 로컬 Layer + 2를 사용한다. */
+	void DrawPlayers(const FPaintContext& Context, const UWorld& World, int32 Layer) const;
+
 	/** 기본 브러시: 사각형과 다각형에 전달한 색상으로 틴트한다. */
 	FSlateBrush SolidBrush;
 	FSlateBrush MapTextureBrush;
 	FSlateBrush FogBrush;
-	mutable FMapView LastView;
-	mutable bool bHasLastView = false;
 };

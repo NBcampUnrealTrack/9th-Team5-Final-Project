@@ -6,6 +6,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerState.h"
+#include "GameplayEffect.h"
+#include "GameplayEffectExtension.h"
+#include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
@@ -37,13 +41,14 @@ void UASVisibilityComponent::BeginPlay()
 
 	if (AActor* Owner = GetOwner(); Owner && Owner->HasAuthority())
 	{
-		// 소유자의 인터페이스 포인터 초기화 전에도 직접 소유한 ASC 컴포넌트를 찾아 몬스터를 바인딩한다.
+		// 소유자의 인터페이스 포인터 초기화 전에도 직접 소유한 ASC 컴포넌트를 찾아 공격과 체력 변경을 바인딩한다.
 		// PlayerState의 ASC가 나중에 생기는 액터는 바인딩하지 않으며,
 		// NotifyAttackStarted를 직접 호출할 수 있다.
 		if (UAbilitySystemComponent* ASC = ASMapAbilityUtils::FindAbilitySystemComponent(GetOwner()))
 		{
 			BoundAbilitySystemComponent = ASC;
 			AbilityActivatedDelegateHandle = ASC->AbilityActivatedCallbacks.AddUObject(this, &UASVisibilityComponent::HandleAbilityActivated);
+			HealthChangedDelegateHandle = ASC->GetGameplayAttributeValueChangeDelegate(UASHealthAttributeSet::GetHealthAttribute()).AddUObject(this, &UASVisibilityComponent::HandleHealthChanged);
 		}
 
 		bOwnerAlwaysRelevantByDefault = Owner->bAlwaysRelevant;
@@ -65,8 +70,10 @@ void UASVisibilityComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (UAbilitySystemComponent* ASC = BoundAbilitySystemComponent.Get())
 	{
 		ASC->AbilityActivatedCallbacks.Remove(AbilityActivatedDelegateHandle);
+		ASC->GetGameplayAttributeValueChangeDelegate(UASHealthAttributeSet::GetHealthAttribute()).Remove(HealthChangedDelegateHandle);
 	}
 	AbilityActivatedDelegateHandle.Reset();
+	HealthChangedDelegateHandle.Reset();
 	BoundAbilitySystemComponent.Reset();
 
 	if (UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this))
@@ -112,6 +119,19 @@ void UASVisibilityComponent::HandleAbilityActivated(UGameplayAbility* Ability)
 	if (IsValid(Ability) && Definition && Ability->GetAssetTags().HasAny(Definition->AttackRevealAbilityTags))
 	{
 		NotifyAttackStarted();
+	}
+}
+
+void UASVisibilityComponent::HandleHealthChanged(const FOnAttributeChangeData& Data)
+{
+	if (Data.NewValue < Data.OldValue && Data.GEModData)
+	{
+		// 플레이어의 PlayerState가 가한 피해만 수풀 은폐를 해제한다.
+		const FGameplayEffectContextHandle& Context = Data.GEModData->EffectSpec.GetEffectContext();
+		if (Cast<APlayerState>(Context.GetOriginalInstigator()))
+		{
+			NotifyAttackStarted();
+		}
 	}
 }
 

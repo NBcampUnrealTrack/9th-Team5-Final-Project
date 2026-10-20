@@ -5,12 +5,17 @@
 #include "EngineUtils.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
+#include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
+#include "UObject/ConstructorHelpers.h"
 
 UASVisionSetupComponent::UASVisionSetupComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
 	FogOfWarManagerClass = AASFogOfWarManager::StaticClass();
+	static ConstructorHelpers::FObjectFinder<UASVisionDefinition> VisionDefinitionFinder(
+		TEXT("/Game/ApocalypseSurvival/MapSystem/Data/DA_VisionDefinition.DA_VisionDefinition"));
+	VisionDefinition = VisionDefinitionFinder.Object;
 }
 
 void UASVisionSetupComponent::BeginPlay()
@@ -24,7 +29,12 @@ void UASVisionSetupComponent::BeginPlay()
 		return;
 	}
 
-	// 시야 설정은 구역 시스템과 독립적으로 연결한다.
+	if (!UASMapFunctionLibrary::LevelHasMapZones(this))
+	{
+		return;
+	}
+
+	// 시야 설정은 구역 매니저와 별도로 연결한다. 구역 액터가 없는 레벨에서는 위에서 이미 반환했다.
 	TActorIterator<AASFogOfWarManager> ExistingFog(World);
 	AASFogOfWarManager* FogManager = ExistingFog ? *ExistingFog : nullptr;
 	if (!FogManager && FogOfWarManagerClass)

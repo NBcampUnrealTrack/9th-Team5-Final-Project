@@ -90,13 +90,15 @@ private:
 	/** 수정한 스냅샷을 MapState에 다시 기록한 뒤 매니저 이벤트를 발생시킨다. */
 	void CommitEvents(const FASMapStateSnapshot& WorkingState, const FASMapEngineEvents& Events);
 	void WriteSnapshot(const FASMapStateSnapshot& WorkingState);
-	bool ValidateLevel(TArray<FString>& OutErrors) const;
+	bool ValidateLevel(const TArray<FASZoneConfig>& ZoneConfigs, TArray<FString>& OutErrors) const;
+	/** 양의 면적으로 겹치는 구역 쌍을 경고한다. 초기화 검증 오류에는 포함하지 않는다. */
+	void LogZoneOverlaps() const;
 	void CollectLevelZones() const;
-	/** 등록된 액터의 구역 설정을 만든다. */
+	/** 등록된 액터의 구역 설정을 만든다. 연결은 양방향 합집합으로 병합한다. */
 	void BuildZoneConfigs(TArray<FASZoneConfig>& OutConfigs) const;
-	/** 등록된 구역 액터의 연결을 양방향 합집합으로 병합한다. */
-	void MergeZoneAdjacency(TArray<FASZoneConfig>& ZoneConfigs) const;
 	void DrawDebug() const;
+	/** 호출 시점의 구역별 생존 몬스터 수와 플레이어 존재를 서버에서 센다. */
+	TMap<FName, FASZonePhaseCounts> BuildPhaseCounts() const;
 
 	void HandleZoneRegistered(AASMapZone* Zone);
 	void HandleZoneUnregistered(AASMapZone* Zone);
