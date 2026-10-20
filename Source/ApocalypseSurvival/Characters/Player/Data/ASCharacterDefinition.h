@@ -7,7 +7,17 @@
 
 class AASPlayerCharacter;
 class UTexture2D;
+class UASAbilitySet;
 class UASProgressionData;
+
+/* 조작 난이도 (선택 화면 표시용) */
+UENUM(BlueprintType)
+enum class EASCharacterDifficulty : uint8
+{
+	Low UMETA(DisplayName = "낮음"),
+	Normal UMETA(DisplayName = "보통"),
+	High UMETA(DisplayName = "높음")
+};
 
 /* 레벨 1일 때 어트리뷰트 기본값 하나 */
 USTRUCT(BlueprintType)
@@ -35,6 +45,30 @@ struct FASAttributeGrowEntry
 	float ValuePerLevel = 0.f;
 };
 
+/* 선택 화면에 보여 줄 능력, 스킬 한 줄 (표시용) */
+USTRUCT(BlueprintType)
+struct FASSkillDisplayEntry
+{
+	GENERATED_BODY()
+	
+	// 분류 (예: 고유 특성, 액티브, 패시브, 궁극기)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Category;
+	
+	// 키 (QWER)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Key;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Name;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display", meta = (MultiLine = true))
+	FText Description;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	TSoftObjectPtr<UTexture2D> Icon;
+};
+
 /*
  * 캐릭터 1종의 고정 데이터 (기본 스탯, 레벨당 성장)
  * 메시, 애니메이션, 어빌리티 세트는 CharacterClass(캐릭터 BP)에서 지정
@@ -56,9 +90,43 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
 	TSoftObjectPtr<UTexture2D> Icon;
 	
+	// 칭호 (ex 초가속 격투자)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Title;
+	
+	// 능력명 (ex 신체 시간 가속)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText AbilityName;
+	
+	// 역할 (ex 브루저)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Role;
+	
+	// 전투 방식 (ex 근거리)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText CombatStyle;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	EASCharacterDifficulty Difficulty = EASCharacterDifficulty::Normal;
+	
+	// 대표 무기 (표시용 문구)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText RepresentativeWeapons;
+	
+	// 선택 화면 오른쪽 목록 (고유 특성 QWER 순서로 넣는다.)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display", meta = (TitleProperty = "Name"))
+	TArray<FASSkillDisplayEntry> SkillDisplays;
+	
 	// 이 캐릭터로 스폰할 BP
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character")
 	TSubclassOf<AASPlayerCharacter> CharacterClass;
+	
+	/*
+	 * 이 캐릭터 전용 어빌리티. (스킬)
+	 * 공통 어빌리티 (평타, 구르기, 사망 등)
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
+	TObjectPtr<const UASAbilitySet> CharacterAbilitySet;
 	
 	// 레벨 1 기준 어트리뷰트 값 (MaxHealth와 Health처럼 최대, 현재 둘 다 넣는다
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attributes")

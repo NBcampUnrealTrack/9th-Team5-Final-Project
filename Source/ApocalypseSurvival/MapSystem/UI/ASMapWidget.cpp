@@ -1,5 +1,6 @@
 ﻿#include "MapSystem/UI/ASMapWidget.h"
 
+#include "AbilitySystemComponent.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "Fonts/FontMeasure.h"
@@ -7,7 +8,9 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
+#include "GAS/ASAbilityTags.h"
 #include "GeomTools.h"
+#include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
@@ -49,6 +52,31 @@ namespace ASMapWidgetPrivate
 		}
 
 		FSlateDrawElement::MakeBox(Out, Layer, MakeGeometry(Geometry, Position, Size), Brush, ESlateDrawEffect::None, Color);
+	}
+
+	void DrawTriangle(
+		FSlateWindowElementList& Out,
+		int32 Layer,
+		const FGeometry& Geometry,
+		const FSlateResourceHandle& ResourceHandle,
+		const FVector2D& P0,
+		const FVector2D& P1,
+		const FVector2D& P2,
+		const FLinearColor& Color)
+	{
+		const FVector2D Points[] = { P0, P1, P2 };
+		const FColor VertexColor = Color.ToFColor(true);
+		TArray<FSlateVertex> Vertices;
+		Vertices.Reserve(3);
+		for (const FVector2D& Point : Points)
+		{
+			Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(
+				Geometry.GetAccumulatedRenderTransform(),
+				FVector2f(static_cast<float>(Point.X), static_cast<float>(Point.Y)),
+				FVector2f(0.5f, 0.5f), VertexColor));
+		}
+		const TArray<SlateIndex> Indices = { 0, 1, 2 };
+		FSlateDrawElement::MakeCustomVerts(Out, Layer, ResourceHandle, Vertices, Indices, nullptr, 0, 0);
 	}
 
 	void DrawCenteredText(
@@ -163,16 +191,6 @@ bool UASMapWidget::ComputeView(const FVector2D& LocalSize, const UASMapDefinitio
 	return true;
 }
 
-FVector2D UASMapWidget::WorldToWidgetLocal(const FVector& WorldLocation) const
-{
-	const UASMapDefinition* Definition = UASMapFunctionLibrary::GetMapDefinition(this);
-	if (!Definition || !bHasLastView)
-	{
-		return FVector2D::ZeroVector;
-	}
-	return LastView.UVToLocal(Definition->WorldToMapUV(WorldLocation));
-}
-
 FLinearColor UASMapWidget::GetMarkerColor(uint8 MarkerType) const
 {
 	switch (static_cast<EASMapMarkerType>(MarkerType))
@@ -217,6 +235,23 @@ const UASMapWidget::FZoneAreaCache& UASMapWidget::GetCachedZoneArea(const AASMap
 	return Cache;
 }
 
+struct UASMapWidget::FPaintContext
+{
+	const FGeometry& Geometry;
+	FSlateWindowElementList& Out;
+	const FMapView& View;
+	const UASMapDefinition& Definition;
+	FSlateFontInfo Font;
+	/** Slate가 초기화되지 않으면 사용자 정점(구역 채우기, 화살표)을 그릴 수 없다. */
+	bool bCanDrawCustomVerts;
+	FSlateResourceHandle SolidResource;
+
+	FVector2D WorldToLocal(const FVector& Location) const
+	{
+		return View.UVToLocal(Definition.WorldToMapUV(Location));
+	}
+};
+
 int32 UASMapWidget::NativePaint(
 	const FPaintArgs& Args,
 	const FGeometry& AllottedGeometry,
@@ -242,21 +277,20 @@ int32 UASMapWidget::NativePaint(
 	FMapView View;
 	if (!ComputeView(LocalSize, Definition, View) || !MapState || !Subsystem || !VisionSubsystem || !World)
 	{
-		bHasLastView = false;
 		return Layer;
 	}
 
-	LastView = View;
-	bHasLastView = true;
-
-	const FSlateFontInfo Font = LabelFont.HasValidFont() ? LabelFont : FCoreStyle::GetDefaultFontStyle("Bold", 9);
+	const bool bCanDrawCustomVerts = FSlateApplication::IsInitialized();
+	const FPaintContext Context{
+		AllottedGeometry,
+		OutDrawElements,
+		View,
+		*Definition,
+		LabelFont.HasValidFont() ? LabelFont : FCoreStyle::GetDefaultFontStyle("Bold", 9),
+		bCanDrawCustomVerts,
+		bCanDrawCustomVerts ? FSlateApplication::Get().GetRenderer()->GetResourceHandle(SolidBrush) : FSlateResourceHandle()};
 	const FVector2D MapTopLeft = View.UVToLocal(FVector2D::ZeroVector);
 	const FVector2D MapSize = View.UVToLocal(FVector2D::UnitVector) - MapTopLeft;
-
-	auto WorldToLocal = [&View, Definition](const FVector& Location)
-	{
-		return View.UVToLocal(Definition->WorldToMapUV(Location));
-	};
 
 	// 1. 배경 이미지.
 	if (MapTextureBrush.GetResourceObject())
@@ -267,21 +301,33 @@ int32 UASMapWidget::NativePaint(
 	// 2. 전장의 안개는 지형만 어둡게 한다. 구역 상태는 공유 맵 데이터이므로 그 위에서 읽을 수 있다.
 	const AASFogOfWarManager* FogManager = VisionSubsystem->GetFogOfWarManager();
 	const UASVisionDefinition* VisionDefinition = FogManager ? FogManager->GetVisionDefinition() : nullptr;
-	if (bShowFog && Definition && VisionDefinition && FogBrush.GetResourceObject())
+	if (bShowFog && VisionDefinition && FogBrush.GetResourceObject())
 	{
-		const FVector2D A = WorldToLocal(FVector(VisionDefinition->FogWorldMin, 0.0));
-		const FVector2D B = WorldToLocal(FVector(VisionDefinition->FogWorldMax, 0.0));
+		const FVector2D A = Context.WorldToLocal(FVector(VisionDefinition->FogWorldMin, 0.0));
+		const FVector2D B = Context.WorldToLocal(FVector(VisionDefinition->FogWorldMax, 0.0));
 		const FVector2D FogTopLeft(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y));
 		const FVector2D FogSize(FMath::Abs(A.X - B.X), FMath::Abs(A.Y - B.Y));
 		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, FogTopLeft, FogSize, FLinearColor::White);
 	}
 
 	// 3. 구역: 공유 위험도 채우기와 구역 액터의 이름.
-	const FASMapStateSnapshot& Snapshot = MapState->GetSnapshot();
-	const int32 DangerLayer = ++Layer;
+	const int32 FillLayer = ++Layer;
 	const int32 LabelLayer = ++Layer;
+	DrawZones(Context, *MapState, *Subsystem, FillLayer, LabelLayer);
 
-	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	// 4. 모든 요소 위에 마커를 표시한다. 적은 안개 텍스처가 아닌 팀 시야로 필터링한다.
+	Layer = LabelLayer + 1;
+	DrawVisibilityMarkers(Context, *VisionSubsystem, Layer);
+	DrawPlayers(Context, *World, Layer);
+	return Layer + 3;
+}
+
+void UASMapWidget::DrawZones(const FPaintContext& Context, const UASMapStateComponent& MapState, const UASMapWorldSubsystem& Subsystem,
+	int32 FillLayer, int32 LabelLayer) const
+{
+	using namespace ASMapWidgetPrivate;
+
+	const TArray<AASMapZone*> Zones = Subsystem.GetZones();
 	for (auto It = ZoneAreaCache.CreateIterator(); It; ++It)
 	{
 		if (!It.Key().IsValid() || !Zones.Contains(It.Key().Get()))
@@ -289,20 +335,18 @@ int32 UASMapWidget::NativePaint(
 			It.RemoveCurrent();
 		}
 	}
-	const bool bCanDrawAreas = FSlateApplication::IsInitialized();
-	const FSlateResourceHandle SolidResource = bCanDrawAreas
-		? FSlateApplication::Get().GetRenderer()->GetResourceHandle(SolidBrush) : FSlateResourceHandle();
 
+	const FASMapStateSnapshot& Snapshot = MapState.GetSnapshot();
 	for (const AASMapZone* Zone : Zones)
 	{
 		const FASZoneRuntimeState* State = Snapshot.FindZone(Zone->GetZoneId());
 		const int32 Danger = State ? State->DangerLevel : 1;
 
 		const FZoneAreaCache& Area = GetCachedZoneArea(Zone);
-		FLinearColor Fill = Definition->GetDangerColor(Danger);
+		FLinearColor Fill = Context.Definition.GetDangerColor(Danger);
 		Fill.A = ZoneFillOpacity;
 		const FColor VertexColor = Fill.ToFColor(true);
-		if (bCanDrawAreas)
+		if (Context.bCanDrawCustomVerts)
 		{
 			for (const TArray<FVector2D>& Triangles : Area.WorldTriangles)
 			{
@@ -316,34 +360,36 @@ int32 UASMapWidget::NativePaint(
 				Indices.Reserve(Triangles.Num());
 				for (int32 Index = 0; Index < Triangles.Num(); ++Index)
 				{
-					const FVector2D Local = WorldToLocal(FVector(Triangles[Index], 0.0));
+					const FVector2D Local = Context.WorldToLocal(FVector(Triangles[Index], 0.0));
 					Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(
-						AllottedGeometry.GetAccumulatedRenderTransform(),
+						Context.Geometry.GetAccumulatedRenderTransform(),
 						FVector2f(static_cast<float>(Local.X), static_cast<float>(Local.Y)),
 						FVector2f(0.5f, 0.5f), VertexColor));
 					Indices.Add(static_cast<SlateIndex>(Index));
 				}
-				FSlateDrawElement::MakeCustomVerts(OutDrawElements, DangerLayer, SolidResource,
+				FSlateDrawElement::MakeCustomVerts(Context.Out, FillLayer, Context.SolidResource,
 					Vertices, Indices, nullptr, 0, 0);
 			}
 		}
 
 		if (bShowZoneLabels)
 		{
-			const FVector2D Center = WorldToLocal(Zone->GetZoneCenter());
+			const FVector2D Center = Context.WorldToLocal(Zone->GetZoneCenter());
 			FText Label = FText::Format(
 				LOCTEXT("ZoneLabel", "{0} [{1}]"),
 				Zone->GetDisplayName(),
 				FText::AsNumber(Danger));
 
-			DrawCenteredText(OutDrawElements, LabelLayer, AllottedGeometry, Label, Font, Center, FLinearColor::White);
+			DrawCenteredText(Context.Out, LabelLayer, Context.Geometry, Label, Context.Font, Center, FLinearColor::White);
 		}
 	}
+}
 
-	// 4. 모든 요소 위에 마커를 표시한다. 적은 안개 텍스처가 아닌 팀 시야로 필터링한다.
-	Layer = LabelLayer + 1;
+void UASMapWidget::DrawVisibilityMarkers(const FPaintContext& Context, const UASVisionWorldSubsystem& VisionSubsystem, int32 Layer) const
+{
+	using namespace ASMapWidgetPrivate;
 
-	for (const UASVisibilityComponent* Target : VisionSubsystem->GetVisibilityTargets())
+	for (const UASVisibilityComponent* Target : VisionSubsystem.GetVisibilityTargets())
 	{
 		const AActor* Owner = Target->GetOwner();
 		if (!Owner || !Target->ShouldShowOnMap() || !Target->IsVisibleToLocalTeam())
@@ -351,32 +397,69 @@ int32 UASMapWidget::NativePaint(
 			continue;
 		}
 
-		const FVector2D Position = WorldToLocal(Owner->GetActorLocation());
+		const FVector2D Position = Context.WorldToLocal(Owner->GetActorLocation());
 		const FVector2D Size(MarkerSize, MarkerSize);
-		DrawRect(OutDrawElements, Layer, AllottedGeometry, &SolidBrush, Position - Size * 0.5, Size,
+		DrawRect(Context.Out, Layer, Context.Geometry, &SolidBrush, Position - Size * 0.5, Size,
 			GetMarkerColor(static_cast<uint8>(Target->GetMarkerType())));
+	}
+}
+
+void UASMapWidget::DrawPlayers(const FPaintContext& Context, const UWorld& World, int32 Layer) const
+{
+	using namespace ASMapWidgetPrivate;
+
+	const AGameStateBase* GameState = World.GetGameState();
+	if (!GameState)
+	{
+		return;
 	}
 
 	const APawn* LocalPawn = UASMapFunctionLibrary::GetLocalPlayerPawn(this);
-	if (const AGameStateBase* GameState = World->GetGameState())
+	for (const APlayerState* PlayerState : GameState->PlayerArray)
 	{
-		for (const APlayerState* PlayerState : GameState->PlayerArray)
+		const APawn* Pawn = PlayerState ? PlayerState->GetPawn() : nullptr;
+		if (!IsValid(Pawn))
 		{
-			const APawn* Pawn = PlayerState ? PlayerState->GetPawn() : nullptr;
-			if (!IsValid(Pawn))
-			{
-				continue;
-			}
-
-			const bool bLocal = Pawn == LocalPawn;
-			const float Size = bLocal ? MarkerSize * 1.6f : MarkerSize * 1.2f;
-			const FVector2D Position = WorldToLocal(Pawn->GetActorLocation());
-			DrawRect(OutDrawElements, Layer + (bLocal ? 1 : 0), AllottedGeometry, &SolidBrush,
-				Position - FVector2D(Size, Size) * 0.5, FVector2D(Size, Size), bLocal ? LocalPlayerColor : AllyColor);
+			continue;
 		}
-	}
 
-	return Layer + 1;
+		const UAbilitySystemComponent* AbilitySystem = ASMapAbilityUtils::FindAbilitySystemComponent(Pawn);
+		if (AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
+		{
+			if (DeadPlayerColor.A > 0.0f)
+			{
+				const FVector2D Position = Context.WorldToLocal(Pawn->GetActorLocation());
+				const FVector2D Size(MarkerSize, MarkerSize);
+				DrawRect(Context.Out, Layer, Context.Geometry, &SolidBrush,
+					Position - Size * 0.5, Size, DeadPlayerColor);
+			}
+			continue;
+		}
+
+		const bool bLocal = Pawn == LocalPawn;
+		const float Size = bLocal ? MarkerSize * 1.6f : MarkerSize * 1.2f;
+		const FVector2D Position = Context.WorldToLocal(Pawn->GetActorLocation());
+		const int32 MarkerLayer = Layer + (bLocal ? 2 : 1);
+		const FLinearColor Color = bLocal ? LocalPlayerColor : AllyColor;
+		if (!Context.bCanDrawCustomVerts)
+		{
+			DrawRect(Context.Out, MarkerLayer, Context.Geometry, &SolidBrush,
+				Position - FVector2D(Size, Size) * 0.5, FVector2D(Size, Size), Color);
+			continue;
+		}
+
+		FVector Forward = Pawn->GetActorForwardVector();
+		Forward.Z = 0.0;
+		FVector2D Direction = Context.WorldToLocal(Pawn->GetActorLocation() + Forward * 100.0) - Position;
+		if (!Direction.Normalize())
+		{
+			Direction = FVector2D(0.0, -1.0);
+		}
+		const FVector2D HalfLength = Direction * (Size * 0.5);
+		const FVector2D HalfWidth = FVector2D(-Direction.Y, Direction.X) * (Size * 0.4);
+		DrawTriangle(Context.Out, MarkerLayer, Context.Geometry, Context.SolidResource,
+			Position + HalfLength, Position - HalfLength + HalfWidth, Position - HalfLength - HalfWidth, Color);
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

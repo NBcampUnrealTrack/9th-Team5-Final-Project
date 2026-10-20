@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Core/Framework/ASGameTypes.h"
-#include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "ASMapGameFlowComponent.generated.h"
 
 class AASGameState;
@@ -15,7 +14,7 @@ class UASMapDefinition;
  * AASGameState의 단계를 맵 시스템에 전달한다.
  * GameMode의 기본 서브오브젝트로 추가한 뒤 맵 설정을 구성한다.
  * 매니저를 스폰하고 공유 맵 상태를 초기화하며, 준비되면 맵을 시작한다.
- * 낮/밤 단계는 전달하거나 시작까지 보관한다. 결과 시 맵을 중지한다.
+ * 낮/밤 단계는 실행 중인 맵에 전달한다. 결과 시 맵을 중지한다.
  */
 UCLASS(ClassGroup = (AS), meta = (BlueprintSpawnableComponent))
 class APOCALYPSESURVIVAL_API UASMapGameFlowComponent : public UActorComponent
@@ -60,7 +59,4 @@ private:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AASGameState> GameState;
-
-	FASMapPhaseContext PendingPhase;
-	bool bHasPendingPhase = false;
 };

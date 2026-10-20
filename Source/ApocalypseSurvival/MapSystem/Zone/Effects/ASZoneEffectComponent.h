@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "ActiveGameplayEffectHandle.h"
 #include "Components/ActorComponent.h"
-#include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "ASZoneEffectComponent.generated.h"
 
 class APawn;
@@ -12,6 +11,7 @@ class UASMapStateComponent;
 class UASZoneEffectDefinition;
 class UGameplayEffect;
 struct FASZoneEffectMagnitude;
+struct FASZoneEffectRow;
 
 /** GameMode에 추가하는 서버 전용 구역 효과 컴포넌트. */
 UCLASS(ClassGroup = (AS), meta = (BlueprintSpawnableComponent))
@@ -64,12 +64,11 @@ private:
 	void WarnUnknownZoneRows();
 	FActiveGameplayEffectHandle ApplyEffect(UAbilitySystemComponent* ASC, TSubclassOf<UGameplayEffect> Effect,
 		const TArray<FASZoneEffectMagnitude>& Magnitudes, int32 DangerLevel);
+	void SyncSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot, const FASZoneEffectRow* Row, int32 DangerLevel);
 	void RemoveSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot);
+	void ReleaseEntry(UAbilitySystemComponent* ASC, FEntry& Entry);
 	void RemoveEntry(UAbilitySystemComponent* ASC);
 	void RemoveAllEffects();
-
-	UFUNCTION()
-	void HandleZoneStateChanged(FName ZoneId, const FASZoneRuntimeState& State);
 
 	UFUNCTION()
 	void HandleMapStateUpdated();

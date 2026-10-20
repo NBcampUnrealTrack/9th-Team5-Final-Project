@@ -134,6 +134,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Mass|Monster")
 	int32 GetAliveManagedMonsterCount() const;
 
+	/** 공격 타겟 획득용으로 범위 안의 살아 있는 몬스터 중 선호 위치에 가장 가까운 Entity를 찾는다. */
+	bool FindBestAliveMonsterTarget(const FVector& SearchOrigin, float SearchRadius,
+		const FVector& PreferredLocation, uint64& OutTargetId, FVector& OutLocation,
+		float& OutHitRadius) const;
+
+	/** 익명 Target Id가 아직 살아 있는 관리 몬스터인지 확인하고 최신 위치를 반환한다. */
+	bool GetAliveMonsterTarget(uint64 TargetId, FVector& OutLocation, float& OutHitRadius) const;
+
 	/** Actor 충돌체가 없는 Mass 몬스터에 원형 서버 피해를 적용한다. 반환값은 실제 피격 수다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
 	int32 ApplyDamageInRadius(const FVector& Center, float Radius, float Damage,

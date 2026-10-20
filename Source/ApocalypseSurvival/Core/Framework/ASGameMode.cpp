@@ -1,22 +1,32 @@
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
 #include "Core/Spawn/ASSpawnSubsystem.h"
+#include "Core/Framework/ASPlayerRecordComponent.h"
+#include "Core/Framework/ASRespawnPoint.h"
+#include "Core/Framework/ASCharacterSelectSubsystem.h"
+#include "Core/Framework/ASPlayerState.h"
 #include "Items/Loot/ASLootDaySpawnSubsystem.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
-#include "Core/Framework/ASPlayerRecordComponent.h"
-#include "Core/Framework/ASRespawnPoint.h"
+#include "Characters/Player/ASPlayerCharacter.h"
+#include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "EngineUtils.h"
 #include "Components/CapsuleComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GameplayEffect.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "MapSystem/Zone/Manager/ASMapGameFlowComponent.h"
+#include "MapSystem/Vision/ASVisionSetupComponent.h"
+#include "MapSystem/Zone/Effects/ASZoneEffectComponent.h"
 
 AASGameMode::AASGameMode()
 {
 	GameStateClass = AASGameState::StaticClass();
+	MapFlow = CreateDefaultSubobject<UASMapGameFlowComponent>(TEXT("MapFlow"));
+	VisionSetup = CreateDefaultSubobject<UASVisionSetupComponent>(TEXT("VisionSetup"));
+	ZoneEffects = CreateDefaultSubobject<UASZoneEffectComponent>(TEXT("ZoneEffects"));
 }
 
 // 규칙 조회
@@ -322,8 +332,37 @@ void AASGameMode::OnBossDefeated()
 	TryEndNightEarly();
 }
 
-// 사망과 리스폰
+UClass* AASGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
+{
+	AASPlayerState* PlayerState = InController ? InController->GetPlayerState<AASPlayerState>() : nullptr;
+	if (PlayerState)
+	{
+		// 리스폰: 이미 정해진 캐릭터로 다시 스폰
+		const UASCharacterDefinition* Definition = PlayerState->GetCharacterDefinition();
+		
+		// 첫 스폰: 캐릭터 선택에서 고른 캐릭터 (로컬 플레이어만. 멀티 로비는 선택을 서버로 보내는 단계가 따로 필요)
+		if (!Definition && InController->IsLocalController())
+		{
+			const UGameInstance* GameInstance = GetGameInstance();
+			const UASCharacterSelectSubsystem* SelectSubsystem = GameInstance ? GameInstance->GetSubsystem<UASCharacterSelectSubsystem>() : nullptr;
+			Definition = SelectSubsystem ? SelectSubsystem->GetSelectedCharacter() : nullptr;
+			
+			if (Definition)
+			{
+				PlayerState->SetCharacterDefinition(Definition);
+			}
+		}
+		
+		if (Definition && Definition->CharacterClass)
+		{
+			return Definition->CharacterClass;
+		}
+	}
+	
+	return Super::GetDefaultPawnClassForController_Implementation(InController);
+}
 
+// 사망과 리스폰
 void AASGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);

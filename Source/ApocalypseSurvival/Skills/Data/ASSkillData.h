@@ -77,6 +77,12 @@ struct APOCALYPSESURVIVAL_API FASSkillStatsRow : public FTableRowBase
 	//충돌 판정 반경
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dash", meta = (ClampMin = "0.0", Units = "cm"))
 	float DashHitRadius = 60.0f;
+	
+	//버프 지속시간
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Buff", meta = (ClampMin = "0.0", Units = "s"))
+	float BuffDuration = 1.0f;
+	
+	
 };
 
 /*

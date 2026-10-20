@@ -11,6 +11,7 @@
 #include "Skills/Data/ASSkillData.h"
 #include "TimerManager.h"
 #include "GameFramework/RootMotionSource.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 
 namespace ASSkillDashPrivate
 {
@@ -64,13 +65,14 @@ void UASSkillDash::OnSkillEffect_Implementation()
 
 	bDashStopped = false;
 	LastSweepLocation = StartLocation;
+	DashHitTargets.Reset();
 
 	//서버·클라이언트 모두 실행 (LocalPredicted라 내 화면에서도 바로 움직임)
 	DashTask = UAbilityTask_ApplyRootMotionMoveToForce::ApplyRootMotionMoveToForce(
 		this, NAME_None, TargetLocation, FMath::Max(DashDuration, 0.05f),
-		/*bSetNewMovementMode*/ false, MOVE_Walking,
-		/*bRestrictSpeedToExpected*/ true,
-		/*PathOffsetCurve*/ nullptr,
+		false, MOVE_Walking,
+		 true,
+		 nullptr,
 		//끝나면 미끄러지지 않고 멈춤
 		ERootMotionFinishVelocityMode::SetVelocity, FVector::ZeroVector, 0.0f);
 
@@ -133,6 +135,7 @@ void UASSkillDash::CheckDashHit()
 		return;
 	}
 
+	const FVector SweepStart = LastSweepLocation;
 	const FVector CurrentLocation = Avatar->GetActorLocation();
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASSkillDash), false, Avatar);
@@ -140,7 +143,7 @@ void UASSkillDash::CheckDashHit()
 	TArray<FHitResult> Hits;
 	World->SweepMultiByObjectType(
 		Hits,
-		LastSweepLocation,
+		SweepStart,
 		CurrentLocation,
 		FQuat::Identity,
 		FCollisionObjectQueryParams(ECC_Pawn),
@@ -149,7 +152,7 @@ void UASSkillDash::CheckDashHit()
 
 	if (bDrawDebug)
 	{
-		DrawDebugLine(World, LastSweepLocation, CurrentLocation, FColor::Cyan, false, 1.0f, 0, 2.0f);
+		DrawDebugLine(World, SweepStart, CurrentLocation, FColor::Cyan, false, 1.0f, 0, 2.0f);
 		DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Cyan, false, 1.0f);
 	}
 
@@ -170,6 +173,37 @@ void UASSkillDash::CheckDashHit()
 
 	if (!FirstTarget)
 	{
+		if (HasSkillAuthority() && !bCanHitPlayers)
+		{
+			if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
+			{
+				TArray<FGameplayEffectSpecHandle> EffectSpecs;
+				const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+				if (DamageSpec.IsValid())
+				{
+					EffectSpecs.Add(DamageSpec);
+				}
+				
+				const int32 MassHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(
+					SweepStart,
+					CurrentLocation,
+					DashHitRadius,
+					EffectSpecs,
+					Avatar,
+					DashHitTargets,
+					1);
+				
+				if (MassHitCount > 0)
+				{
+					if (bDrawDebug)
+					{
+						DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Red, false, 1.0f);
+					}
+					
+					StopDash();
+				}
+			}
+		}
 		return;
 	}
 

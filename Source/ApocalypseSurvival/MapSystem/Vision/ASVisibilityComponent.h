@@ -7,6 +7,7 @@
 class UAbilitySystemComponent;
 class UGameplayAbility;
 class UPrimitiveComponent;
+struct FOnAttributeChangeData;
 
 /** 미니맵 / 확장 맵에서 대상을 그리는 방식. */
 UENUM(BlueprintType)
@@ -82,6 +83,7 @@ private:
 	void OnRep_VisibleTeamMask();
 
 	void HandleAbilityActivated(UGameplayAbility* Ability);
+	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void UpdateLocalPresentation(bool bForce);
 	void SetOwnerPresentationVisible(bool bVisible);
 
@@ -113,6 +115,7 @@ private:
 
 	TWeakObjectPtr<UAbilitySystemComponent> BoundAbilitySystemComponent;
 	FDelegateHandle AbilityActivatedDelegateHandle;
+	FDelegateHandle HealthChangedDelegateHandle;
 	double RevealEndServerTime = 0.0;
 	bool bOwnerAlwaysRelevantByDefault = false;
 	bool bLocallyVisible = true;
