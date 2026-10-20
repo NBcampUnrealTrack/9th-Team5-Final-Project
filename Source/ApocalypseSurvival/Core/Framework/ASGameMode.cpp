@@ -269,7 +269,12 @@ void AASGameMode::ReportWaveSpawned(int32 Count)
 
 void AASGameMode::OnEnemyKilled(AController* Killer)
 {
-	if (IsGameEnded()) return;
+	OnEnemiesKilled(1, Killer);
+}
+
+void AASGameMode::OnEnemiesKilled(const int32 Count, AController* Killer)
+{
+	if (IsGameEnded() || Count <= 0) return;
 	
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
@@ -277,13 +282,19 @@ void AASGameMode::OnEnemyKilled(AController* Killer)
 	// 웨이브 처치 수는 밤에만 집계
 	if (GS->GetCurrentPhase() == EGamePhase::Night)
 	{
-		GS->AddWaveKilled();
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			GS->AddWaveKilled();
+		}
 	}
 	
 	// 개인 처치 수 (처치자가 플레이어일 때만)
 	if (UASPlayerRecordComponent* Record = GetOrCreateRecord(Killer))
 	{
-		Record->AddKill();
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			Record->AddKill();
+		}
 	}
 	
 	// 집계 후 전멸 여부 확인

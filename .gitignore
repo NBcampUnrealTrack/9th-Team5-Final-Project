@@ -176,3 +176,7 @@ Plugins/**/Binaries/*
 Plugins/**/Intermediate/*
 
 # End of https://www.toptal.com/developers/gitignore/api/rider,unrealengine
+
+# Local benchmark outputs and documentation
+/Content/ApocalypseSurvival/Tests/ActorBenchmark/Results/
+/Docs/

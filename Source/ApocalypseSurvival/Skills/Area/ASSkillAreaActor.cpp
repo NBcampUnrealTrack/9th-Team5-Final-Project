@@ -1,8 +1,8 @@
 ﻿#include "Skills/Area/ASSkillAreaActor.h"
 
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "Net/UnrealNetwork.h"
-#include "Skills/ASSkillAbility.h"
 #include "TimerManager.h"
 
 AASSkillAreaActor::AASSkillAreaActor()
@@ -78,19 +78,26 @@ void AASSkillAreaActor::DoDamageTick()
 	--TicksRemaining;
 
 	const FVector Center = GetActorLocation();
-	TArray<AActor*> Targets = UASSkillAbility::FindSkillTargets(GetWorld(), Center, Radius, InstigatorAvatar.Get(), bCanHitPlayers);
-
-	for (AActor* Target : Targets)
+	TArray<FGameplayEffectSpecHandle> EffectSpecs;
+	if (DamageSpec.IsValid())
 	{
-		UASSkillAbility::ApplyDamageSpecToTarget(DamageSpec, Target);
+		EffectSpecs.Add(DamageSpec);
+	}
+
+	FASCombatApplyResult ApplyResult;
+	if (UASCombatTargetSubsystem* CombatTargets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+	{
+		ApplyResult = CombatTargets->ApplyEffectSpecsInRadius(
+			Center, Radius, EffectSpecs, InstigatorAvatar.Get(), bCanHitPlayers);
 	}
 
 	if (bDrawDebug)
 	{
-		DrawDebugSphere(GetWorld(), Center, Radius, 16, Targets.Num() > 0 ? FColor::Red : FColor::Orange, false, TickInterval * 0.8f);
+		DrawDebugSphere(GetWorld(), Center, Radius, 16,
+			ApplyResult.HasAnyHit() ? FColor::Red : FColor::Orange, false, TickInterval * 0.8f);
 	}
 
-	BP_OnAreaTick(Targets);
+	BP_OnAreaTick(ApplyResult.ActorTargets);
 
 	if (TicksRemaining <= 0)
 	{

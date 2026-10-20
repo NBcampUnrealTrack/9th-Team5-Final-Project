@@ -32,14 +32,35 @@ public class ApocalypseSurvival : ModuleRules
 			"GameplayTasks",
 
 			// Mass Framework
+			"MassCore",
 			"MassEntity",
+			"MassCommon",
+			"MassSpawner",
+			"MassSimulation",
+			"MassLOD",
+			"MassMovement",
+			"MassRepresentation",
+			"MassActors",
+			"MassSignals",
+
+			// Mass AI / Navigation
+			"MassNavigation",
+			"MassNavMeshNavigation",
+			"MassAIBehavior",
+
+			// Mass Multiplayer
+			"MassReplication",
+			"MassAIReplication",
 
 			"Niagara",
 			"Slate",
 			"SlateCore"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"SlateCore",
+			"NavCorridor"
+		});
 
 		PublicIncludePaths.AddRange(new string[] {
 			"ApocalypseSurvival",
