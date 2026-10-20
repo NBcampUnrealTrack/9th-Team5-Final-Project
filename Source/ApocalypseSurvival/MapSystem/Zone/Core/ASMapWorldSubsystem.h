@@ -26,7 +26,7 @@ public:
 	void UnregisterZone(AASMapZone* Zone);
 
 	/** ZoneId 순으로 정렬된 등록 구역. 여러 액터가 ID를 공유할 수 있다 (검증에서 보고). */
-	TArray<AASMapZone*> GetZones() const;
+	const TArray<AASMapZone*>& GetZones() const;
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	AASMapZone* FindZone(FName ZoneId) const;
@@ -61,4 +61,6 @@ private:
 	}
 
 	TArray<TWeakObjectPtr<AASMapZone>> Zones;
+	mutable TArray<AASMapZone*> SortedZones;
+	mutable bool bSortedZonesDirty = true;
 };
