@@ -45,6 +45,30 @@ struct FASAttributeGrowEntry
 	float ValuePerLevel = 0.f;
 };
 
+/* 선택 화면에 보여 줄 능력, 스킬 한 줄 (표시용) */
+USTRUCT(BlueprintType)
+struct FASSkillDisplayEntry
+{
+	GENERATED_BODY()
+	
+	// 분류 (예: 고유 특성, 액티브, 패시브, 궁극기)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Category;
+	
+	// 키 (QWER)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Key;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	FText Name;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display", meta = (MultiLine = true))
+	FText Description;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
+	TSoftObjectPtr<UTexture2D> Icon;
+};
+
 /*
  * 캐릭터 1종의 고정 데이터 (기본 스탯, 레벨당 성장)
  * 메시, 애니메이션, 어빌리티 세트는 CharacterClass(캐릭터 BP)에서 지정
@@ -88,6 +112,10 @@ public:
 	// 대표 무기 (표시용 문구)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display")
 	FText RepresentativeWeapons;
+	
+	// 선택 화면 오른쪽 목록 (고유 특성 QWER 순서로 넣는다.)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Display", meta = (TitleProperty = "Name"))
+	TArray<FASSkillDisplayEntry> SkillDisplays;
 	
 	// 이 캐릭터로 스폰할 BP
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character")
