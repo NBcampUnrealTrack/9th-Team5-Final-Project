@@ -3,17 +3,21 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "Modules/Data/ASModuleTypes.h"
+#include "Quests/Persistence/ASQuestSaveData.h"
 #include "ASModuleSaveGame.generated.h"
 
-/** Persistent equipment instances and the lobby's selected instance IDs. */
+/** Personal profile. Version 3 adds quests; version 2 module profiles remain readable. */
 UCLASS()
 class APOCALYPSESURVIVAL_API UASModuleSaveGame : public USaveGame
 {
 	GENERATED_BODY()
 
 public:
+	static constexpr int32 CurrentVersion = 3;
+	static constexpr int32 LegacyModuleVersion = 2;
+
 	UPROPERTY(SaveGame)
-	int32 DataVersion = 2;
+	int32 DataVersion = CurrentVersion;
 
 	UPROPERTY(SaveGame)
 	TArray<FName> UnlockedModuleIds;
@@ -23,4 +27,7 @@ public:
 
 	UPROPERTY(SaveGame)
 	TArray<FGuid> EquippedModuleInstanceIds;
+
+	UPROPERTY(SaveGame)
+	FASQuestSaveData QuestProgress;
 };
