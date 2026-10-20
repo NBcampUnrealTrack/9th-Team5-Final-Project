@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "GAS/Characters/Enemies/Abilities/ASMonsterPatternAbility.h"
 #include "ASMonsterChargeAbility.generated.h"
 
@@ -67,7 +68,7 @@ private:
 
 	FVector ChargeDirection = FVector::ForwardVector;
 	float ChargeElapsedTime = 0.0f;
-	TSet<TWeakObjectPtr<AActor>> HitActors;
+	FASCombatTargetHitSet HitTargets;
 	TWeakObjectPtr<AASMonsterAttackIndicatorActor> ActiveIndicator;
 	FTimerHandle WindupTimerHandle;
 	FTimerHandle ChargeTimerHandle;

@@ -18,8 +18,8 @@ protected:
 	virtual void ApplySkillStats(const FASSkillStatsRow& Stats) override;
 	virtual FASSkillIndicatorSettings GetIndicatorSettings_Implementation() const override;
 
-	//판정에 맞은 대상 처리 (기본: 데미지)
-	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill|Melee")
+	// Actor 전용 레거시 훅. 효과 적용은 UASCombatTargetSubsystem이 담당한다.
+	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill|Melee", meta = (DeprecatedFunction, DeprecationMessage = "Use the unified combat target path. This event is no longer called by UASSkillMelee."))
 	void OnTargetsHit(const TArray<AActor*>& Targets);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Melee", meta = (ClampMin = "0.0", Units = "cm"))

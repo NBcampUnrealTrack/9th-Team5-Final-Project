@@ -818,9 +818,19 @@ TArray<AActor*> UASSkillAbility::FindSkillTargets(const UWorld* World, const FVe
 	const UASCombatTargetSubsystem* CombatTargets = World
 		? World->GetSubsystem<UASCombatTargetSubsystem>()
 		: nullptr;
-	return CombatTargets
-		? CombatTargets->FindActorTargetsInRadius(Center, Radius, Instigator, bCanHitPlayers)
-		: TArray<AActor*>();
+	if (!CombatTargets)
+	{
+		return TArray<AActor*>();
+	}
+
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = Center;
+	Query.SearchRadius = Radius;
+	Query.Instigator = Instigator;
+	Query.Domain = EASCombatTargetDomain::ActorOnly;
+	Query.bCanHitPlayers = bCanHitPlayers;
+	Query.bRequireAlive = false;
+	return CombatTargets->FindActorTargets(Query);
 }
 
 void UASSkillAbility::ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& DamageSpec, AActor* Target)
@@ -832,8 +842,17 @@ TArray<AActor*> UASSkillAbility::FindTargetsInRadius(const FVector& Center, floa
 {
 	const AActor* Avatar = GetAvatarActorFromActorInfo();
 	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
-
-	TArray<AActor*> Targets = FindSkillTargets(World, Center, Radius, Avatar, bCanHitPlayers);
+	const UASCombatTargetSubsystem* CombatTargets = World
+		? World->GetSubsystem<UASCombatTargetSubsystem>()
+		: nullptr;
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = Center;
+	Query.SearchRadius = Radius;
+	Query.Instigator = Avatar;
+	Query.Domain = EASCombatTargetDomain::ActorOnly;
+	Query.bCanHitPlayers = bCanHitPlayers;
+	Query.bRequireAlive = false;
+	TArray<AActor*> Targets = CombatTargets ? CombatTargets->FindActorTargets(Query) : TArray<AActor*>();
 
 	if (bDrawDebug && World)
 	{
@@ -867,7 +886,7 @@ void UASSkillAbility::ApplySkillDamage(AActor* Target)
 		return;
 	}
 
-	ApplyDamageSpecToTarget(MakeDamageSpec(), Target);
+	UASCombatTargetSubsystem::ApplyEffectSpecToActor(MakeDamageSpec(), Target);
 }
 
 void UASSkillAbility::HandleHitEvent(FGameplayEventData Payload)

@@ -138,18 +138,6 @@ void UASSkillDash::CheckDashHit()
 	const FVector SweepStart = LastSweepLocation;
 	const FVector CurrentLocation = Avatar->GetActorLocation();
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASSkillDash), false, Avatar);
-
-	TArray<FHitResult> Hits;
-	World->SweepMultiByObjectType(
-		Hits,
-		SweepStart,
-		CurrentLocation,
-		FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn),
-		FCollisionShape::MakeSphere(DashHitRadius),
-		Params);
-
 	if (bDrawDebug)
 	{
 		DrawDebugLine(World, SweepStart, CurrentLocation, FColor::Cyan, false, 1.0f, 0, 2.0f);
@@ -158,64 +146,47 @@ void UASSkillDash::CheckDashHit()
 
 	LastSweepLocation = CurrentLocation;
 
-	//가장 먼저 닿은 유효 대상 1명
-	AActor* FirstTarget = nullptr;
-	float FirstTime = TNumericLimits<float>::Max();
-	for (const FHitResult& Hit : Hits)
+	UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
+	if (!CombatTargets)
 	{
-		AActor* HitActor = Hit.GetActor();
-		if (Hit.Time < FirstTime && IsValidSkillTarget(HitActor, Avatar, bCanHitPlayers))
-		{
-			FirstTarget = HitActor;
-			FirstTime = Hit.Time;
-		}
-	}
-
-	if (!FirstTarget)
-	{
-		if (HasSkillAuthority() && !bCanHitPlayers)
-		{
-			if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
-			{
-				TArray<FGameplayEffectSpecHandle> EffectSpecs;
-				const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
-				if (DamageSpec.IsValid())
-				{
-					EffectSpecs.Add(DamageSpec);
-				}
-				
-				const int32 MassHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(
-					SweepStart,
-					CurrentLocation,
-					DashHitRadius,
-					EffectSpecs,
-					Avatar,
-					DashHitTargets,
-					1);
-				
-				if (MassHitCount > 0)
-				{
-					if (bDrawDebug)
-					{
-						DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Red, false, 1.0f);
-					}
-					
-					StopDash();
-				}
-			}
-		}
 		return;
 	}
 
-	//데미지는 서버에서만 (경직은 몬스터가 데미지를 받으면 스스로 적용)
+	FASCombatTargetQuery Query;
+	Query.Shape = EASCombatTargetShape::Segment;
+	Query.SearchOrigin = SweepStart;
+	Query.EndLocation = CurrentLocation;
+	Query.SearchRadius = DashHitRadius;
+	Query.Instigator = Avatar;
+	Query.bCanHitPlayers = bCanHitPlayers;
+	Query.MaxTargets = 1;
+
+	bool bHitTarget = false;
 	if (HasSkillAuthority())
 	{
-		ApplySkillDamage(FirstTarget);
+		TArray<FGameplayEffectSpecHandle> EffectSpecs;
+		const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+		if (DamageSpec.IsValid())
+		{
+			EffectSpecs.Add(DamageSpec);
+		}
+
+		bHitTarget = CombatTargets->ResolveAndApply(Query, EffectSpecs, &DashHitTargets).HasAnyHit();
+	}
+	else
+	{
+		Query.Domain = EASCombatTargetDomain::ActorOnly;
+		bHitTarget = !CombatTargets->FindActorTargets(Query).IsEmpty();
+	}
+
+	if (!bHitTarget)
+	{
+		return;
 	}
 
 	if (bDrawDebug)
 	{
-		DrawDebugSphere(World, FirstTarget->GetActorLocation(), DashHitRadius, 12, FColor::Red, false, 1.0f);
+		DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Red, false, 1.0f);
 	}
 
 	StopDash();

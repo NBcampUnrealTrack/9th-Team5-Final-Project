@@ -5,6 +5,7 @@
 #include "MassEntityTemplateRegistry.h"
 #include "MassEntityUtils.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualFragment.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterTrait)
 
@@ -38,6 +39,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	Health.CurrentHealth = Config.MaxHealth;
 
 	BuildContext.AddFragment<FASMassMonsterBehaviorFragment>();
+	BuildContext.AddFragment<FASMassMonsterTemporaryVisualFragment>();
 	BuildContext.AddFragment<FASMassMonsterTargetFragment>();
 	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
 	BuildContext.AddFragment<FASMassMonsterNavigationFragment>();

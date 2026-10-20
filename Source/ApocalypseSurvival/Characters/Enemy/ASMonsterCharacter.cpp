@@ -35,7 +35,6 @@ AASMonsterCharacter::AASMonsterCharacter()
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	AIControllerClass = AASMonsterAIController::StaticClass();
 	TeamId = ASTeam::Monster();
-
 	OwnedAbilitySystemComponent = CreateDefaultSubobject<UASAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	// 일반 몬스터는 소유 클라이언트가 없으므로 전체 Effect 목록 대신 태그/큐/Attribute만 동기화한다.
 	OwnedAbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);

@@ -87,8 +87,12 @@ void AASSkillAreaActor::DoDamageTick()
 	FASCombatApplyResult ApplyResult;
 	if (UASCombatTargetSubsystem* CombatTargets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
 	{
-		ApplyResult = CombatTargets->ApplyEffectSpecsInRadius(
-			Center, Radius, EffectSpecs, InstigatorAvatar.Get(), bCanHitPlayers);
+		FASCombatTargetQuery Query;
+		Query.SearchOrigin = Center;
+		Query.SearchRadius = Radius;
+		Query.Instigator = InstigatorAvatar.Get();
+		Query.bCanHitPlayers = bCanHitPlayers;
+		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs);
 	}
 
 	if (bDrawDebug)
