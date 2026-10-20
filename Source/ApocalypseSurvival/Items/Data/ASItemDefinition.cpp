@@ -17,6 +17,7 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 		bValid = false;
 	};
 	if (ItemId.IsNone()) Error(TEXT("ItemId must be set."));
+	if (!IsValidLootRarity(Rarity)) Error(TEXT("Rarity must be Uncommon, Rare, Epic, or Legendary."));
 	if (MaxStackSize < 1) Error(TEXT("MaxStackSize must be positive."));
 	if (ItemType == EASItemType::Weapon)
 	{

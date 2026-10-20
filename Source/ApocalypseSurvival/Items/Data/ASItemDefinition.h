@@ -40,6 +40,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	EASItemType ItemType = EASItemType::Weapon;
 
+	/** Authored per definition; independent of the chest that drops this item. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	EASLootRarity Rarity = EASLootRarity::Uncommon;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "1", UIMin = "1"))
 	int32 MaxStackSize = 1;
 
