@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Modules/Data/ASModuleTypes.h"
+#include "Quests/Persistence/ASQuestSaveData.h"
 #include "Subsystems/LocalPlayerSubsystem.h"
 #include "ASModuleCollectionSubsystem.generated.h"
 
@@ -46,11 +47,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Modules")
 	bool LoadProfile(FString& OutError);
 
+	UFUNCTION(BlueprintPure, Category = "Profile")
+	bool IsProfileLoaded() const { return bProfileLoaded; }
+
+	UFUNCTION(BlueprintPure, Category = "Quest|Save")
+	FASQuestSaveData GetSavedQuestProgress() const { return QuestProgress; }
+
+	/** Writes quests and current module ownership/unlocks together in the existing personal slot. */
+	UFUNCTION(BlueprintCallable, Category = "Quest|Save")
+	bool SaveQuestProgress(const FASQuestSaveData& Progress, FString& OutError);
+
 	UPROPERTY(BlueprintAssignable, Category = "Modules")
 	FASModuleCollectionChanged OnCollectionChanged;
 
 private:
 	bool CommitProfile(const TArray<FName>& NewUnlocked, const TArray<FASModuleInstanceData>& NewOwned, const TArray<FGuid>& NewEquipped, FString& OutError);
+	bool CommitPlayerProfile(const TArray<FName>& NewUnlocked, const TArray<FASModuleInstanceData>& NewOwned,
+		const TArray<FGuid>& NewEquipped, const FASQuestSaveData& NewQuests, FString& OutError);
 	FString GetSaveSlotName() const;
 
 	UPROPERTY(Transient)
@@ -61,6 +74,9 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FGuid> EquippedModuleInstanceIds;
+
+	UPROPERTY(Transient)
+	FASQuestSaveData QuestProgress;
 
 	/** Failed/unsupported saves must not be silently overwritten by a fresh profile. */
 	bool bProfileLoaded = false;
