@@ -2,13 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Skills/ASSkillAbility.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "ASSkillDash.generated.h"
 
 class UAbilityTask_ApplyRootMotionMoveToForce;
 
-/**
- * 
- */
 UCLASS()
 class APOCALYPSESURVIVAL_API UASSkillDash : public UASSkillAbility
 {
@@ -67,4 +65,6 @@ private:
 	FVector LastSweepLocation = FVector::ZeroVector;
 	
 	bool bDashStopped = false;
+	
+	FASCombatTargetHitSet DashHitTargets;
 };
