@@ -16,8 +16,8 @@ namespace ASFogMask
 	 * Scratch는 영역 열과 반경만큼 확장한 행의 수평 패스를 보관하는 별도 재사용 버퍼이다. 반경 0은 영역 복사, 잘못된 크기/빈 영역은 무시한다. */
 	APOCALYPSESURVIVAL_API void BlurAlphaRegion(const TArray<uint8>& Source, TArray<uint8>& Dest, int32 Width, int32 Height, int32 Radius, const FIntRect& Region, TArray<uint8>& Scratch);
 
-	/** 잘린 Region의 표시 알파를 목표로 최대 MaxStep만큼 이동하고 영역 전체의 도달 여부를 보고한다.
+	/** 잘린 Region의 표시 알파를 From에서 Target으로 보간한다. Fraction은 0..1로 제한하고 반올림한다.
 	 * 변경 셀의 최소 사각형은 그리드 좌표로 Min 포함, Max 제외이며 반환값은 변경 여부이다.
-	 * 빈 영역은 도달로 보고하며, 잘못된 크기 또는 MaxStep <= 0은 변경 없음과 미도달로 보고한다. */
-	APOCALYPSESURVIVAL_API bool StepToward(TArray<uint8>& Shown, const TArray<uint8>& Target, int32 Width, int32 Height, int32 MaxStep, const FIntRect& Region, FIntRect& OutDirty, bool& bOutReachedTarget);
+	 * 잘못된 크기나 빈 영역은 변경 없음으로 보고한다. */
+	APOCALYPSESURVIVAL_API bool LerpToward(TArray<uint8>& Shown, const TArray<uint8>& From, const TArray<uint8>& Target, int32 Width, int32 Height, float Fraction, const FIntRect& Region, FIntRect& OutDirty);
 }

@@ -302,7 +302,7 @@ int32 UASMapWidget::NativePaint(
 		const FVector2D B = Context.WorldToLocal(FVector(VisionDefinition->FogWorldMax, 0.0));
 		const FVector2D FogTopLeft(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y));
 		const FVector2D FogSize(FMath::Abs(A.X - B.X), FMath::Abs(A.Y - B.Y));
-		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, FogTopLeft, FogSize, FLinearColor::White);
+		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, FogTopLeft, FogSize, FLinearColor(0, 0, 0, 1));
 	}
 
 	// 3. 구역: 공유 위험도 채우기와 구역 액터의 이름.
