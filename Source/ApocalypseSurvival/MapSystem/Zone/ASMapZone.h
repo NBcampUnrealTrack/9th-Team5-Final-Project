@@ -70,7 +70,7 @@ public:
 	bool ContainsLocation(const FVector& Location) const;
 
 	/** 영역 컴포넌트의 월드 XY 외곽선 (맵 위젯에서 사용). */
-	void GetAreaOutlines(TArray<TArray<FVector2D>>& OutOutlines) const;
+	const TArray<TArray<FVector2D>>& GetAreaOutlines() const;
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map")
 	FVector GetZoneCenter() const;
@@ -153,6 +153,9 @@ private:
 
 	/** 영역 컴포넌트는 이 액터가 소유한다. 약한 포인터로 리플렉션 대상인 가변 캐시를 피한다. */
 	mutable TArray<TWeakObjectPtr<UPrimitiveComponent>> CachedAreaShapes;
+	// 플레이 중 영역 도형이 바뀌어도 외곽선·중심 캐시는 갱신되지 않는다 (포함 판정은 컴포넌트를 직접 검사하므로 영향 없음).
+	mutable TArray<TArray<FVector2D>> CachedOutlines;
+	mutable FVector CachedCenter = FVector::ZeroVector;
 
 	mutable bool bAreaShapesCached = false;
 };
