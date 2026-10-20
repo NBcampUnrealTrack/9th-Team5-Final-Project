@@ -411,8 +411,16 @@ void AASGameMode::OnPlayerDied(AController* DeadController)
 	}
 	
 	// 대기 시간 후 리스폰
+	// 대기 중 컨트롤러가 사라질 수 있으므로(접속 종료 등) 약한 참조로 잡아 둔다.
+	TWeakObjectPtr<AController> WeakController = DeadController;
 	FTimerHandle RespawnHandle;
-	FTimerDelegate RespawnDelegate = FTimerDelegate::CreateUObject(this, &AASGameMode::RespawnPlayer, DeadController);
+	FTimerDelegate RespawnDelegate = FTimerDelegate::CreateWeakLambda(this, [this, WeakController]()
+	{
+		if (AController* Controller = WeakController.Get())
+		{
+			RespawnPlayer(Controller);
+		}
+	});
 	GetWorldTimerManager().SetTimer(RespawnHandle, RespawnDelegate, RespawnDelay, false);
 }
 
