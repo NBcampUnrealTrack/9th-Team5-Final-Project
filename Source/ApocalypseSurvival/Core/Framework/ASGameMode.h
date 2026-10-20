@@ -42,6 +42,9 @@ public:
 	// 적이 죽었을 때 호출. Killer는 처치한 플레이어의 컨트롤러 (없으면 nullptr)
 	UFUNCTION(BlueprintCallable, Category = "GameFlow")
 	void OnEnemyKilled(AController* Killer);
+
+	/** Mass Processor처럼 한 프레임에 여러 적이 죽는 경로에서 집계를 한 번에 반영한다. */
+	void OnEnemiesKilled(int32 Count, AController* Killer = nullptr);
 	
 	// 보스가 죽었을 때 호출
 	UFUNCTION(BlueprintCallable, Category = "GameFlow")

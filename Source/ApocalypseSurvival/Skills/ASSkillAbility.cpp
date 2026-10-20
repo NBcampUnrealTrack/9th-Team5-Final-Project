@@ -1,18 +1,16 @@
 ﻿#include "ASSkillAbility.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "DrawDebugHelpers.h"
-#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
-#include "GenericTeamAgentInterface.h"
 #include "GameplayEffect.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Skills/ASSkillTags.h"
@@ -141,7 +139,7 @@ void UASSkillAbility::StartSkill(const FVector& AimDirection, const FVector& Tar
 	//몽타주 없음: 즉시 발동 후 종료
 	OnSkillEffect();
 
-	if (IsActive())
+	if (IsActive() && !bEndAbilityManually)
 	{
 		FinishSkill(false);
 	}
@@ -812,84 +810,22 @@ bool UASSkillAbility::HasSkillAuthority() const
 
 bool UASSkillAbility::IsValidSkillTarget(const AActor* Target, const AActor* Instigator, bool bCanHitPlayers)
 {
-	if (!IsValid(Target) || Target == Instigator)
-	{
-		return false;
-	}
-
-	if (!bCanHitPlayers)
-	{
-		if (const APawn* Pawn = Cast<APawn>(Target); Pawn && Pawn->IsPlayerControlled())
-		{
-			return false;
-		}
-	}
-
-	// 투사체와 범위 공격 모두 이 함수를 거치므로, 여기서 같은 팀/중립 팀을 한 번에 제외한다.
-	// 공격자는 적대 팀에만 피해를 준다. 따라서 몬스터 투사체는 플레이어만, 플레이어 공격은
-	// 몬스터만 유효 타깃으로 판단한다.
-	if (const IGenericTeamAgentInterface* InstigatorTeam = Cast<IGenericTeamAgentInterface>(Instigator))
-	{
-		if (InstigatorTeam->GetTeamAttitudeTowards(*Target) != ETeamAttitude::Hostile)
-		{
-			return false;
-		}
-	}
-
-	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Target)) != nullptr;
+	return UASCombatTargetSubsystem::IsValidActorTarget(Target, Instigator, bCanHitPlayers);
 }
 
 TArray<AActor*> UASSkillAbility::FindSkillTargets(const UWorld* World, const FVector& Center, float Radius, const AActor* Instigator, bool bCanHitPlayers)
 {
-	TArray<AActor*> Targets;
-
-	if (!World || Radius <= 0.0f)
-	{
-		return Targets;
-	}
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASSkillFindTargets), false, Instigator);
-
-	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(
-		Overlaps,
-		Center,
-		FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn),
-		FCollisionShape::MakeSphere(Radius),
-		Params);
-
-	for (const FOverlapResult& Overlap : Overlaps)
-	{
-		AActor* Actor = Overlap.GetActor();
-		if (IsValidSkillTarget(Actor, Instigator, bCanHitPlayers))
-		{
-			Targets.AddUnique(Actor);
-		}
-	}
-
-	return Targets;
+	const UASCombatTargetSubsystem* CombatTargets = World
+		? World->GetSubsystem<UASCombatTargetSubsystem>()
+		: nullptr;
+	return CombatTargets
+		? CombatTargets->FindActorTargetsInRadius(Center, Radius, Instigator, bCanHitPlayers)
+		: TArray<AActor*>();
 }
 
 void UASSkillAbility::ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& DamageSpec, AActor* Target)
 {
-	if (!DamageSpec.IsValid() || !Target)
-	{
-		return;
-	}
-
-	if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target))
-	{
-		// 기존 GE_Damage 에셋이 아직 UASDamageGameplayEffect로 리패런트되지 않았어도,
-		// 모든 스킬·무기 공격이 거치는 공통 입구에서 서버 피해를 우선 차단한다.
-		// 리패런트 후에는 GE 자체의 Tag Requirements가 이 검사를 이중으로 보장한다.
-		if (TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Invulnerable))
-		{
-			return;
-		}
-
-		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
-	}
+	UASCombatTargetSubsystem::ApplyEffectSpecToActor(DamageSpec, Target);
 }
 
 TArray<AActor*> UASSkillAbility::FindTargetsInRadius(const FVector& Center, float Radius) const
@@ -942,7 +878,10 @@ void UASSkillAbility::HandleHitEvent(FGameplayEventData Payload)
 
 void UASSkillAbility::OnMontageCompleted()
 {
-	FinishSkill(false);
+	if (!bEndAbilityManually)
+	{
+		FinishSkill(false);
+	}
 }
 
 void UASSkillAbility::OnMontageInterrupted()

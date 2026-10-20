@@ -205,12 +205,16 @@ protected:
 
 	UFUNCTION()
 	virtual void OnMontageInterrupted();
+	
+	//스킬 종료(자식 클래스가 직접 끝낼 때 호출)
+	void FinishSkill(bool bWasCancelled);
+	
+	//true면 몽타주 자동으로 끝내지 않음 (자식이 직접 FinishSkill 호출)
+	bool bEndAbilityManually = false;
 
 private:
 	UFUNCTION()
 	void HandleHitEvent(FGameplayEventData Payload);
-
-	void FinishSkill(bool bWasCancelled);
 
 	//시전 순간의 조준 방향 계산 (커서는 본인 클라이언트·호스트에서만 읽힘)
 	FVector ComputeAimDirection() const;
