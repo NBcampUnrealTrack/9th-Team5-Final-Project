@@ -18,6 +18,12 @@
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
+#include "Mass/Monster/Data/ASMassMonsterFragments.h"
+#include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "MassCommonFragments.h"
+#include "MassEntityQuery.h"
+#include "MassEntitySubsystem.h"
+#include "MassExecutionContext.h"
 
 namespace ASMapManagerPrivate
 {
@@ -26,6 +32,37 @@ namespace ASMapManagerPrivate
 		false,
 		TEXT("Draw zone areas, adjacency links, danger on the server."),
 		ECVF_Cheat);
+
+	static TArray<FVector> GetAliveMassMonsterLocations(UWorld* World)
+	{
+		TArray<FVector> Locations;
+		UMassEntitySubsystem* Subsystem = World ? World->GetSubsystem<UMassEntitySubsystem>() : nullptr;
+		if (!Subsystem)
+		{
+			return Locations;
+		}
+
+		FMassEntityManager& EntityManager = Subsystem->GetMutableEntityManager();
+		FMassEntityQuery Query(EntityManager.AsShared());
+		Query.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
+		Query.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
+		Query.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadOnly);
+		FMassExecutionContext Context(EntityManager, 0.0f, false);
+		Query.ForEachEntityChunk(Context, [&Locations](FMassExecutionContext& ChunkContext)
+		{
+			const TConstArrayView<FTransformFragment> Transforms = ChunkContext.GetFragmentView<FTransformFragment>();
+			const TConstArrayView<FASMassMonsterHealthFragment> Healths = ChunkContext.GetFragmentView<FASMassMonsterHealthFragment>();
+			for (FMassExecutionContext::FEntityIterator EntityIt = ChunkContext.CreateEntityIterator(); EntityIt; ++EntityIt)
+			{
+				// 사망 태그는 늦게 추가되므로 HP로 Mass 몬스터의 생존을 판단한다.
+				if (Healths[EntityIt].CurrentHealth > 0.0f)
+				{
+					Locations.Add(Transforms[EntityIt].GetTransform().GetLocation());
+				}
+			}
+		});
+		return Locations;
+	}
 }
 
 AASMapSystemManager::AASMapSystemManager()
@@ -215,6 +252,14 @@ TMap<FName, FASZonePhaseCounts> AASMapSystemManager::BuildPhaseCounts() const
 			{
 				++ZoneCounts->MonsterCount;
 			}
+		}
+	}
+
+	for (const FVector& Location : ASMapManagerPrivate::GetAliveMassMonsterLocations(World))
+	{
+		if (FASZonePhaseCounts* ZoneCounts = Counts.Find(FindZoneAtLocation(Location)))
+		{
+			++ZoneCounts->MonsterCount;
 		}
 	}
 
