@@ -55,12 +55,15 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo) override;
 
 	//공격 대상이 될 수 있는지 (자신·아군 제외, ASC 보유)
+	UE_DEPRECATED(5.8, "Build FASCombatTargetQuery and use UASCombatTargetSubsystem instead.")
 	static bool IsValidSkillTarget(const AActor* Target, const AActor* Instigator, bool bCanHitPlayers);
 
 	//원 범위 안의 공격 대상
+	UE_DEPRECATED(5.8, "Build FASCombatTargetQuery and use UASCombatTargetSubsystem::FindActorTargets instead.")
 	static TArray<AActor*> FindSkillTargets(const UWorld* World, const FVector& Center, float Radius, const AActor* Instigator, bool bCanHitPlayers);
 
 	//데미지 스펙을 대상에게 적용 (서버에서 호출)
+	UE_DEPRECATED(5.8, "Use UASCombatTargetSubsystem::ResolveAndApply instead.")
 	static void ApplyDamageSpecToTarget(const FGameplayEffectSpecHandle& DamageSpec, AActor* Target);
 	
 	//스킬 아이콘 반환 (SkillData 아이콘 우선)
@@ -121,7 +124,7 @@ protected:
 	ACharacter* GetOwnerCharacter() const;
 
 	//범위 안의 공격 대상
-	UFUNCTION(BlueprintCallable, Category = "AS|Skill|Target")
+	UFUNCTION(BlueprintCallable, Category = "AS|Skill|Target", meta = (DeprecatedFunction, DeprecationMessage = "Build FASCombatTargetQuery and use UASCombatTargetSubsystem instead."))
 	TArray<AActor*> FindTargetsInRadius(const FVector& Center, float Radius) const;
 
 	//데미지 스펙 생성 (투사체·범위 액터에 넘길 때 사용)
@@ -129,7 +132,7 @@ protected:
 	FGameplayEffectSpecHandle MakeDamageSpec() const;
 
 	//데미지 적용 (서버 전용)
-	UFUNCTION(BlueprintCallable, Category = "AS|Skill|Damage")
+	UFUNCTION(BlueprintCallable, Category = "AS|Skill|Damage", meta = (DeprecatedFunction, DeprecationMessage = "Use UASCombatTargetSubsystem::ResolveAndApply instead."))
 	void ApplySkillDamage(AActor* Target);
 
 	//서버인지

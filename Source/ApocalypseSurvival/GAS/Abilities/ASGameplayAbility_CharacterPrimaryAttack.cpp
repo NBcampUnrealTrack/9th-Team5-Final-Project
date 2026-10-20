@@ -6,6 +6,7 @@
 #include "Animation/AnimMontage.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -17,7 +18,6 @@
 #include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "MapSystem/Vision/ASVisionSourceComponent.h"
 #include "Skills/ASSkillTags.h"
-#include "Skills/ASSkillAbility.h"
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
 
 UASGameplayAbility_CharacterPrimaryAttack::UASGameplayAbility_CharacterPrimaryAttack()
@@ -389,7 +389,7 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 		return !OutAimDirection.IsNearlyZero();
 	}
 
-	if (!UASSkillAbility::IsValidSkillTarget(RequestedTarget, Context.Avatar, false))
+	if (!UASCombatTargetSubsystem::IsValidActorTarget(RequestedTarget, Context.Avatar, false))
 	{
 		return false;
 	}

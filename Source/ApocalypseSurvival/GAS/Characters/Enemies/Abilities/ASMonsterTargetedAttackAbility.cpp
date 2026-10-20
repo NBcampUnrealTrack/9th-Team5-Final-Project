@@ -3,6 +3,8 @@
 #include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "Engine/World.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 
 UASMonsterTargetedAttackAbility::UASMonsterTargetedAttackAbility()
@@ -51,9 +53,24 @@ void UASMonsterTargetedAttackAbility::ActivateAbility(const FGameplayAbilitySpec
 void UASMonsterTargetedAttackAbility::OnSkillEffect_Implementation()
 {
 	AActor* Target = LockedTarget.Get();
-	if (HasSkillAuthority() && IsValidSkillTarget(Target, GetAvatarActorFromActorInfo(), bCanHitPlayers))
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
+	if (HasSkillAuthority() && UASCombatTargetSubsystem::IsValidActorTarget(Target, Avatar, bCanHitPlayers)
+		&& World)
 	{
-		ApplySkillDamage(Target);
+		if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
+		{
+			FASCombatTargetQuery Query;
+			Query.SearchOrigin = Target->GetActorLocation();
+			Query.SearchRadius = 1.0f;
+			Query.Instigator = Avatar;
+			Query.ExplicitActor = Target;
+			Query.Domain = EASCombatTargetDomain::ActorOnly;
+			Query.bCanHitPlayers = bCanHitPlayers;
+			Query.MaxTargets = 1;
+			const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+			CombatTargets->ResolveAndApply(Query, MakeArrayView(&DamageSpec, 1));
+		}
 	}
 }
 
