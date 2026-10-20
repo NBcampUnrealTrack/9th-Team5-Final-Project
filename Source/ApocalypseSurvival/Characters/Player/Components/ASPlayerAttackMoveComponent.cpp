@@ -1,16 +1,13 @@
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 
-#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Core/Framework/ASPlayerController.h"
-#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Combat/ASWeaponAttackProfile.h"
 #include "Items/Data/ASItemDefinition.h"
-#include "MapSystem/Vision/ASVisionFunctionLibrary.h"
-#include "Skills/ASSkillAbility.h"
 
 UASPlayerAttackMoveComponent::UASPlayerAttackMoveComponent()
 {
@@ -69,10 +66,13 @@ bool UASPlayerAttackMoveComponent::ConfirmAttackMove(const FVector& Destination)
 
 	// 사거리 안의 대상은 Controller에 공격 요청만 전달한다.
 	// Ability 활성화와 조준 UI 종료는 Controller/Primary Attack이 담당한다.
-	if (AActor* Target = FindBestTarget(); Target && IsTargetInAttackRange(Target))
+	FVector TargetLocation;
+	float TargetHitRadius = 0.0f;
+	if (FindBestTarget() && RefreshCurrentTarget(TargetLocation, TargetHitRadius)
+		&& IsTargetInAttackRange(TargetLocation, TargetHitRadius))
 	{
 		State = EASAttackMoveState::Idle;
-		RequestAttack(Target, Target->GetActorLocation());
+		RequestAttack(CurrentTarget.GetActor(), TargetLocation);
 		return true;
 	}
 
@@ -153,82 +153,74 @@ float UASPlayerAttackMoveComponent::GetAttackRange() const
 	return Definition ? FMath::Max(0.0f, Definition->AttackRange) : 0.0f;
 }
 
-AActor* UASPlayerAttackMoveComponent::FindBestTarget() const
+bool UASPlayerAttackMoveComponent::FindBestTarget()
 {
 	const AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
 	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
 	UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
 	if (!Pawn || !World)
 	{
-		return nullptr;
+		return false;
 	}
 
 	const float AcquireRadius = FMath::Max(GetAttackRange(), MinimumAcquireRadius);
-	TArray<FOverlapResult> Overlaps;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASAttackMoveAcquire), false, Pawn);
-	World->OverlapMultiByObjectType(Overlaps, Pawn->GetActorLocation(), FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(AcquireRadius), Params);
-
-	AActor* CursorTarget = nullptr;
-	float CursorDistanceSquared = TNumericLimits<float>::Max();
-	AActor* PawnTarget = nullptr;
-	float PawnDistanceSquared = TNumericLimits<float>::Max();
-
-	for (const FOverlapResult& Overlap : Overlaps)
+	const UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
+	if (!CombatTargets)
 	{
-		AActor* Candidate = Overlap.GetActor();
-		if (!IsValidAttackTarget(Candidate))
-		{
-			continue;
-		}
-
-		const float CandidateToPawnSquared = FVector::DistSquared2D(Candidate->GetActorLocation(), Pawn->GetActorLocation());
-		if (CandidateToPawnSquared < PawnDistanceSquared)
-		{
-			PawnTarget = Candidate;
-			PawnDistanceSquared = CandidateToPawnSquared;
-		}
-
-		const float CandidateToCursorSquared = FVector::DistSquared2D(Candidate->GetActorLocation(), CommandDestination);
-		// 사거리 안 후보 중 클릭 지점에 가장 가까운 적을 항상 우선한다.
-		if (CandidateToCursorSquared < CursorDistanceSquared)
-		{
-			CursorTarget = Candidate;
-			CursorDistanceSquared = CandidateToCursorSquared;
-		}
+		CurrentTarget.Reset();
+		return false;
 	}
 
-	return CursorTarget ? CursorTarget : PawnTarget;
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = Pawn->GetActorLocation();
+	Query.PreferredLocation = CommandDestination;
+	Query.SearchRadius = AcquireRadius;
+	Query.Instigator = Pawn;
+	Query.Domain = EASCombatTargetDomain::All;
+	Query.bRequireVisibleToLocalTeam = true;
+	return CombatTargets->FindBestTarget(Query, CurrentTarget);
 }
 
-bool UASPlayerAttackMoveComponent::IsValidAttackTarget(const AActor* Candidate) const
+bool UASPlayerAttackMoveComponent::RefreshCurrentTarget(FVector& OutLocation, float& OutHitRadius)
 {
 	const AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
 	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
-	if (!Pawn || !Candidate || Candidate == Pawn || !UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Candidate))
+	const UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
+	const UASCombatTargetSubsystem* CombatTargets =
+		World ? World->GetSubsystem<UASCombatTargetSubsystem>() : nullptr;
+	if (!Pawn || !CombatTargets)
+	{
+		CurrentTarget.Reset();
+		return false;
+	}
+
+	FASCombatTargetQuery Query;
+	Query.Instigator = Pawn;
+	Query.Domain = EASCombatTargetDomain::All;
+	Query.bRequireVisibleToLocalTeam = true;
+	if (!CombatTargets->RefreshTarget(Query, CurrentTarget))
 	{
 		return false;
 	}
 
-	if (const AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(Candidate); Monster && Monster->IsDead())
-	{
-		return false;
-	}
-
-	return UASSkillAbility::IsValidSkillTarget(Candidate, Pawn, false);
+	OutLocation = CurrentTarget.GetLocation();
+	OutHitRadius = CurrentTarget.GetHitRadius();
+	return true;
 }
 
-bool UASPlayerAttackMoveComponent::IsTargetInAttackRange(const AActor* Target) const
+bool UASPlayerAttackMoveComponent::IsTargetInAttackRange(
+	const FVector& TargetLocation,
+	const float TargetHitRadius) const
 {
 	const AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
 	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
-	if (!Pawn || !Target)
+	if (!Pawn)
 	{
 		return false;
 	}
 
-	const float Range = GetAttackRange() + AttackRangeTolerance;
-	return FVector::DistSquared2D(Pawn->GetActorLocation(), Target->GetActorLocation()) <= FMath::Square(Range);
+	const float Range = GetAttackRange() + AttackRangeTolerance + FMath::Max(0.0f, TargetHitRadius);
+	return FVector::DistSquared2D(Pawn->GetActorLocation(), TargetLocation) <= FMath::Square(Range);
 }
 
 void UASPlayerAttackMoveComponent::RequestAttack(AActor* Target, const FVector& TargetLocation)
@@ -251,18 +243,17 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 
 	if (State == EASAttackMoveState::Attacking) return;
 
-	if (!IsValidAttackTarget(CurrentTarget.Get()))
+	FVector TargetLocation;
+	float TargetHitRadius = 0.0f;
+	bool bHasTarget = RefreshCurrentTarget(TargetLocation, TargetHitRadius);
+	if (!bHasTarget && CurrentTime >= NextSearchTime)
 	{
-		CurrentTarget.Reset();
-	}
-
-	if (!CurrentTarget.IsValid() && CurrentTime >= NextSearchTime)
-	{
-		CurrentTarget = FindBestTarget();
+		FindBestTarget();
+		bHasTarget = RefreshCurrentTarget(TargetLocation, TargetHitRadius);
 		NextSearchTime = CurrentTime + SearchInterval;
 	}
 
-	if (!CurrentTarget.IsValid())
+	if (!bHasTarget)
 	{
 		State = EASAttackMoveState::Seeking;
 		if (FVector::DistSquared2D(Pawn->GetActorLocation(), CommandDestination)
@@ -276,16 +267,16 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 		return;
 	}
 
-	if (IsTargetInAttackRange(CurrentTarget.Get()))
+	if (IsTargetInAttackRange(TargetLocation, TargetHitRadius))
 	{
 		Controller->StopMovement();
 		State = EASAttackMoveState::Attacking;
-		RequestAttack(CurrentTarget.Get(), CurrentTarget->GetActorLocation());
+		RequestAttack(CurrentTarget.GetActor(), TargetLocation);
 		return;
 	}
 
 	State = EASAttackMoveState::Chasing;
-	RequestMove(CurrentTarget->GetActorLocation(), CurrentTime);
+	RequestMove(TargetLocation, CurrentTime);
 }
 
 void UASPlayerAttackMoveComponent::RequestMove(const FVector& Destination, const double CurrentTime)

@@ -337,6 +337,110 @@ int32 UASMassMonsterSubsystem::GetAliveManagedMonsterCount() const
 	return Count;
 }
 
+bool UASMassMonsterSubsystem::FindBestAliveMonsterTarget(
+	const FVector& SearchOrigin,
+	const float SearchRadius,
+	const FVector& PreferredLocation,
+	uint64& OutTargetId,
+	FVector& OutLocation,
+	float& OutHitRadius) const
+{
+	OutTargetId = 0;
+	OutLocation = FVector::ZeroVector;
+	OutHitRadius = 0.0f;
+	if (!SpawnerSubsystem || SearchRadius < 0.0f)
+	{
+		return false;
+	}
+
+	const FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	float BestPreferredDistanceSquared = TNumericLimits<float>::Max();
+	float BestOriginDistanceSquared = TNumericLimits<float>::Max();
+	FMassEntityHandle BestEntity;
+
+	for (const FMassEntityHandle Entity : ManagedEntities)
+	{
+		if (!EntityManager.IsEntityValid(Entity))
+		{
+			continue;
+		}
+
+		const FASMassMonsterHealthFragment* Health =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+		const FASMassMonsterConfigFragment* Config =
+			EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
+		if (!Health || Health->CurrentHealth <= 0.0f || !Transform || !Config)
+		{
+			continue;
+		}
+
+		const FVector Location = Transform->GetTransform().GetLocation();
+		const float HitRadius = FMath::Max(0.0f, Config->HitRadius);
+		const float OriginDistanceSquared = FVector::DistSquared2D(SearchOrigin, Location);
+		if (OriginDistanceSquared > FMath::Square(SearchRadius + HitRadius))
+		{
+			continue;
+		}
+
+		const float PreferredDistanceSquared = FVector::DistSquared2D(PreferredLocation, Location);
+		if (PreferredDistanceSquared > BestPreferredDistanceSquared
+			|| (FMath::IsNearlyEqual(PreferredDistanceSquared, BestPreferredDistanceSquared)
+				&& OriginDistanceSquared >= BestOriginDistanceSquared))
+		{
+			continue;
+		}
+
+		BestEntity = Entity;
+		BestPreferredDistanceSquared = PreferredDistanceSquared;
+		BestOriginDistanceSquared = OriginDistanceSquared;
+		OutLocation = Location;
+		OutHitRadius = HitRadius;
+	}
+
+	if (!BestEntity.IsSet())
+	{
+		return false;
+	}
+
+	OutTargetId = BestEntity.AsNumber();
+	return true;
+}
+
+bool UASMassMonsterSubsystem::GetAliveMonsterTarget(
+	const uint64 TargetId,
+	FVector& OutLocation,
+	float& OutHitRadius) const
+{
+	OutLocation = FVector::ZeroVector;
+	OutHitRadius = 0.0f;
+	if (!SpawnerSubsystem || TargetId == 0)
+	{
+		return false;
+	}
+
+	const FMassEntityHandle Entity = FMassEntityHandle::FromNumber(TargetId);
+	const FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	if (!EntityManager.IsEntityValid(Entity) || !ManagedEntities.Contains(Entity))
+	{
+		return false;
+	}
+
+	const FASMassMonsterHealthFragment* Health =
+		EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
+	const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+	const FASMassMonsterConfigFragment* Config =
+		EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
+	if (!Health || Health->CurrentHealth <= 0.0f || !Transform || !Config)
+	{
+		return false;
+	}
+
+	OutLocation = Transform->GetTransform().GetLocation();
+	OutHitRadius = FMath::Max(0.0f, Config->HitRadius);
+	return true;
+}
+
 int32 UASMassMonsterSubsystem::ApplyDamageInRadius(
 	const FVector& Center,
 	const float Radius,

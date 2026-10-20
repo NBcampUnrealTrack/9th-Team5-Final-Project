@@ -1,19 +1,63 @@
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 
+#include <GAS/ASAbilityTags.h>
+
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GenericTeamAgentInterface.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
+#include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "Skills/ASSkillTags.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASCombatTargetSubsystem)
 
+namespace
+{
+	bool IsAliveActorTarget(const AActor* Target)
+	{
+		const UAbilitySystemComponent* TargetASC =
+			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Target));
+		return TargetASC
+			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead);
+	}
+}
+
 bool FASCombatTargetHitSet::ContainsActor(const AActor* Actor) const
 {
 	return IsValid(Actor) && Actors.Contains(Actor);
+}
+
+bool FASCombatTargetRef::IsValid() const
+{
+	return Actor.IsValid() || MassTargetId != 0;
+}
+
+bool FASCombatTargetRef::IsActor() const
+{
+	return Actor.IsValid();
+}
+
+bool FASCombatTargetRef::IsMass() const
+{
+	return MassTargetId != 0;
+}
+
+AActor* FASCombatTargetRef::GetActor() const
+{
+	return Actor.Get();
+}
+
+void FASCombatTargetRef::Reset()
+{
+	Actor.Reset();
+	MassTargetId = 0;
+	Location = FVector::ZeroVector;
+	HitRadius = 0.0f;
 }
 
 bool FASCombatTargetHitSet::AddActor(AActor* Actor)
@@ -136,6 +180,120 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargetsInRadius(
 		}
 	}
 	return Targets;
+}
+
+bool UASCombatTargetSubsystem::FindBestTarget(
+	const FASCombatTargetQuery& Query,
+	FASCombatTargetRef& OutTarget) const
+{
+	OutTarget.Reset();
+	const UWorld* World = GetWorld();
+	if (!World || Query.SearchRadius < 0.0f)
+	{
+		return false;
+	}
+
+	float BestPreferredDistanceSquared = TNumericLimits<float>::Max();
+	float BestOriginDistanceSquared = TNumericLimits<float>::Max();
+	auto IsBetterCandidate = [&Query, &BestPreferredDistanceSquared, &BestOriginDistanceSquared](const FVector& Location)
+	{
+		const float PreferredDistanceSquared = FVector::DistSquared2D(Location, Query.PreferredLocation);
+		const float OriginDistanceSquared = FVector::DistSquared2D(Location, Query.SearchOrigin);
+		return PreferredDistanceSquared < BestPreferredDistanceSquared
+			|| (FMath::IsNearlyEqual(PreferredDistanceSquared, BestPreferredDistanceSquared)
+				&& OriginDistanceSquared < BestOriginDistanceSquared);
+	};
+
+	if (Query.Domain != EASCombatTargetDomain::MassOnly)
+	{
+		const TArray<AActor*> ActorTargets = FindActorTargetsInRadius(
+			Query.SearchOrigin, Query.SearchRadius, Query.Instigator, Query.bCanHitPlayers);
+		for (AActor* Actor : ActorTargets)
+		{
+			if (Query.bRequireAlive && !IsAliveActorTarget(Actor))
+			{
+				continue;
+			}
+
+			if (Query.bRequireVisibleToLocalTeam
+				&& !UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor))
+			{
+				continue;
+			}
+
+			const FVector Location = Actor->GetActorLocation();
+			if (!IsBetterCandidate(Location))
+			{
+				continue;
+			}
+
+			OutTarget.Reset();
+			OutTarget.Actor = Actor;
+			OutTarget.Location = Location;
+			BestPreferredDistanceSquared = FVector::DistSquared2D(Location, Query.PreferredLocation);
+			BestOriginDistanceSquared = FVector::DistSquared2D(Location, Query.SearchOrigin);
+		}
+	}
+
+	if (Query.Domain != EASCombatTargetDomain::ActorOnly)
+	{
+		const UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
+		uint64 MassTargetId = 0;
+		FVector MassLocation;
+		float MassHitRadius = 0.0f;
+		if (MassMonsters && MassMonsters->FindBestAliveMonsterTarget(
+			Query.SearchOrigin, Query.SearchRadius, Query.PreferredLocation,
+			MassTargetId, MassLocation, MassHitRadius)
+			&& IsBetterCandidate(MassLocation))
+		{
+			OutTarget.Reset();
+			OutTarget.MassTargetId = MassTargetId;
+			OutTarget.Location = MassLocation;
+			OutTarget.HitRadius = MassHitRadius;
+		}
+	}
+
+	return OutTarget.IsValid();
+}
+
+bool UASCombatTargetSubsystem::RefreshTarget(
+	const FASCombatTargetQuery& Query,
+	FASCombatTargetRef& InOutTarget) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		InOutTarget.Reset();
+		return false;
+	}
+
+	if (InOutTarget.IsActor())
+	{
+		AActor* Actor = InOutTarget.GetActor();
+		if (Query.Domain != EASCombatTargetDomain::MassOnly
+			&& IsValidActorTarget(Actor, Query.Instigator, Query.bCanHitPlayers)
+			&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
+			&& (!Query.bRequireVisibleToLocalTeam
+				|| UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor)))
+		{
+			InOutTarget.Location = Actor->GetActorLocation();
+			InOutTarget.HitRadius = 0.0f;
+			return true;
+		}
+	}
+	else if (InOutTarget.IsMass())
+	{
+		const UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
+		if (Query.Domain != EASCombatTargetDomain::ActorOnly && MassMonsters
+			&& MassMonsters->GetAliveMonsterTarget(
+				InOutTarget.MassTargetId, InOutTarget.Location, InOutTarget.HitRadius))
+		{
+			return true;
+		}
+	}
+
+	InOutTarget.Reset();
+	return false;
 }
 
 int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActors(

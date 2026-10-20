@@ -47,6 +47,9 @@ public:
 	 * 어빌리티는 ASC 와 함께 여기 남으므로 리스폰 때 다시 부여하면 중복된다. 두 번째 호출부터는 무시한다.
 	 */
 	void GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet);
+	
+	// 서버전용. 캐릭터 정의의 전용 어빌리티 세트를 한번만 부여한다. 비어있으면 생략
+	void GrantCharacterAbilitySetOnce();
 
 	/**
 	 * 서버 전용. 새 캐릭터에 빙의할 때 사망 상태를 걷어 낸다.
@@ -99,6 +102,12 @@ private:
 	/** 기본 세트가 부여한 어빌리티 핸들. 비어 있으면 아직 부여 전이다. */
 	UPROPERTY()
 	FASAbilitySet_GrantedHandles DefaultAbilityHandles;
+	
+	// 캐릭터 전용 세트의 부여 기록
+	UPROPERTY()
+	FASAbilitySet_GrantedHandles CharacterAbilityHandles;
+	
+	bool bCharacterAbilitySetGranted = false;
 
 	/** 약참조다. 인벤토리에서 버려진 아이템을 붙들어 두면 안 된다. */
 	TWeakObjectPtr<UASItemInstance> EquippedItemRecord;

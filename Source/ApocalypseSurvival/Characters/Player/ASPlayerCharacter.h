@@ -9,6 +9,8 @@ class UASAbilitySet;
 class UASEquipmentComponent;
 class UASCharacterDefinition;
 class UASCharacterRoster;
+class UNiagaraSystem;
+class USoundBase;
 struct FOnAttributeChangeData;
 
 /**
@@ -89,6 +91,10 @@ protected:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Death")
 	void OnDeathStarted();
+	
+	// 레벨업 순간 호출 (서버, 클라 모두). 화면 문구 같은 보이는 것은 BP에서 붙인다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Progression")
+	void OnLevelUp(int32 NewLevel);
 
 private:
 	void InitAbilitySystemFromPlayerState();
@@ -109,6 +115,13 @@ private:
 
 	/** ApplyLocalDeath 를 되돌린다. 사망 태그가 새 몸에 잘못 걸렸다가 떨어질 때 쓴다. */
 	void RestoreFromDeath();
+	
+	// 성장 컴포넌트(PlayerState) 레벨업 이벤트 구독. ASC 연결 때 걸고 EndPlay에서 푼다
+	void BindProgressionDelegates();
+	void UnbindProgressionDelegates();
+	
+	UFUNCTION()
+	void HandleLevelChanged(int32 NewLevel);
 
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle DeadTagChangedHandle;
@@ -140,4 +153,11 @@ private:
 	// DebugSelectCharacter가 쓰는 캐릭터 목록 (테스트용)
 	UPROPERTY(EditDefaultsOnly, Category = "Character|Debug")
 	TObjectPtr<const UASCharacterRoster> DebugCharacterRoster;
+	
+	// 레벨업 이펙트, 사운드 (리소스 나오면 BP에서 지정, 비어있으면 생략)
+	UPROPERTY(EditDefaultsOnly, Category = "Progression|LevelUp")
+	TObjectPtr<UNiagaraSystem> LevelUpEffect;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Progression|LevelUp")
+	TObjectPtr<USoundBase> LevelUpSound;
 };
