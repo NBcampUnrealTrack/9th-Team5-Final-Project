@@ -15,6 +15,9 @@ namespace ASMapShapeUtils
 	/** 점 3개 이상, 면적 1 cm² 이상, 비인접 변의 교차가 없는 다각형인지 검사한다. */
 	APOCALYPSESURVIVAL_API bool ValidatePolygon(const TArray<FVector2D>& Polygon, FString& OutError);
 
+	/** 두 다각형이 양의 면적으로 겹치는지 검사한다. 공유 경계와 꼭짓점 접촉은 겹침으로 세지 않는다. */
+	APOCALYPSESURVIVAL_API bool OutlinesOverlap(const TArray<FVector2D>& A, const TArray<FVector2D>& B);
+
 	/** 회전과 스케일을 적용한 박스의 네 월드 XY 모서리. */
 	APOCALYPSESURVIVAL_API void MakeBoxOutline(const FTransform& ComponentToWorld, const FVector& UnscaledExtent, TArray<FVector2D>& Out);
 	/** 로컬 XY 원에 회전과 스케일을 적용한 월드 XY 외곽선. */

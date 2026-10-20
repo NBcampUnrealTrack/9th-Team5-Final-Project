@@ -8,8 +8,13 @@
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
-#include "MapSystem/Zone/Manager/ASMapSystemManager.h"
 #include "MapSystem/Zone/ASMapZone.h"
+
+bool UASMapFunctionLibrary::LevelHasMapZones(const UObject* WorldContextObject)
+{
+	UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	return World && TActorIterator<AASMapZone>(World);
+}
 
 UASMapStateComponent* UASMapFunctionLibrary::GetMapStateComponent(const UObject* WorldContextObject)
 {
@@ -22,18 +27,6 @@ UASMapDefinition* UASMapFunctionLibrary::GetMapDefinition(const UObject* WorldCo
 {
 	const UASMapStateComponent* MapState = GetMapStateComponent(WorldContextObject);
 	return MapState ? MapState->GetMapDefinition() : nullptr;
-}
-
-AASMapSystemManager* UASMapFunctionLibrary::GetMapSystemManager(const UObject* WorldContextObject)
-{
-	UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
-	if (!World)
-	{
-		return nullptr;
-	}
-
-	TActorIterator<AASMapSystemManager> It(World);
-	return It ? *It : nullptr;
 }
 
 FName UASMapFunctionLibrary::FindZoneIdAtLocation(const UObject* WorldContextObject, const FVector& Location)

@@ -7,9 +7,7 @@
 
 class UASVisionDefinition;
 class UASFogDisplayComponent;
-class UASVisibilityComponent;
 class UASVisionEvaluatorComponent;
-class UASVisionSourceComponent;
 class UTexture2D;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASOnWallOcclusionChangedSignature, bool, bEnabled);
@@ -88,16 +86,6 @@ public:
 	/** 이 머신의 탐색 데이터를 지운다. */
 	UFUNCTION(BlueprintCallable, Category = "AS|Vision")
 	void ResetExplored();
-
-	/**
-	 * 테스트에 공개된 핵심 시야 규칙.
-	 * @param bWallOcclusion 시야 매니저의 공유 옵션.
-	 */
-	bool CanSourceSeeTarget(
-		const UASVisionSourceComponent* Source,
-		const UASVisibilityComponent* Target,
-		double ServerTime,
-		bool bWallOcclusion) const;
 
 	/** 로컬 안개의 벽 트레이스에 사용하는 공유 평가기. */
 	UASVisionEvaluatorComponent* GetVisionEvaluator() const { return VisionEvaluatorComponent; }

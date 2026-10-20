@@ -5,17 +5,16 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
-#include "GameFramework/GameModeBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "GenericTeamAgentInterface.h"
-#include "HAL/IConsoleManager.h"
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
 #include "MapSystem/Zone/Effects/ASZoneEffectDefinition.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace ASZoneEffectComponentPrivate
 {
@@ -28,29 +27,15 @@ namespace ASZoneEffectComponentPrivate
 		}
 		return TeamAgent ? TeamAgent->GetGenericTeamId().GetId() : FGenericTeamId::NoTeam.GetId();
 	}
-
-	static FAutoConsoleCommandWithWorldAndArgs DumpCommand(
-		TEXT("AS.Zone.EffectDump"),
-		TEXT("Log tracked zone effects on the server/host."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			const AGameModeBase* GameMode = World ? World->GetAuthGameMode() : nullptr;
-			const UASZoneEffectComponent* Component = GameMode ? GameMode->FindComponentByClass<UASZoneEffectComponent>() : nullptr;
-			if (Component)
-			{
-				Component->DumpState();
-			}
-			else
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Zone: no zone effect component on the GameMode (server/host only)."));
-			}
-		}));
 }
 
 UASZoneEffectComponent::UASZoneEffectComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
+	static ConstructorHelpers::FObjectFinder<UASZoneEffectDefinition> ZoneEffectDefinitionFinder(
+		TEXT("/Game/ApocalypseSurvival/MapSystem/Data/DA_ZoneEffectDefinition.DA_ZoneEffectDefinition"));
+	ZoneEffectDefinition = ZoneEffectDefinitionFinder.Object;
 }
 
 void UASZoneEffectComponent::BeginPlay()
@@ -58,6 +43,11 @@ void UASZoneEffectComponent::BeginPlay()
 	Super::BeginPlay();
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client || !GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	if (!UASMapFunctionLibrary::LevelHasMapZones(this))
 	{
 		return;
 	}
@@ -104,14 +94,12 @@ void UASZoneEffectComponent::BindMapState(UASMapStateComponent* NewMapState)
 	}
 	if (UASMapStateComponent* OldMapState = MapState.Get())
 	{
-		OldMapState->OnZoneStateChanged.RemoveDynamic(this, &UASZoneEffectComponent::HandleZoneStateChanged);
 		OldMapState->OnMapStateUpdated.RemoveDynamic(this, &UASZoneEffectComponent::HandleMapStateUpdated);
 		OldMapState->OnMatchReset.RemoveDynamic(this, &UASZoneEffectComponent::HandleMatchReset);
 	}
 	MapState = NewMapState;
 	if (NewMapState)
 	{
-		NewMapState->OnZoneStateChanged.AddDynamic(this, &UASZoneEffectComponent::HandleZoneStateChanged);
 		NewMapState->OnMapStateUpdated.AddDynamic(this, &UASZoneEffectComponent::HandleMapStateUpdated);
 		NewMapState->OnMatchReset.AddDynamic(this, &UASZoneEffectComponent::HandleMatchReset);
 	}
@@ -145,8 +133,7 @@ void UASZoneEffectComponent::UpdateEffects()
 		{
 			FEntry Entry = It.Value();
 			It.RemoveCurrent();
-			RemoveSlot(ASC, Entry.DangerEffect);
-			RemoveSlot(ASC, Entry.ZoneEffect);
+			ReleaseEntry(ASC, Entry);
 		}
 	}
 
@@ -181,51 +168,11 @@ void UASZoneEffectComponent::UpdateEffects()
 
 		// 기본 행과 위험도가 같으면 구역 이동만으로는 기본 효과를 다시 적용하지 않는다.
 		FEffectSlot& DangerSlot = Entry.DangerEffect;
-		if (BaseRow && BaseRow->Effect)
-		{
-			if (DangerSlot.ZoneId != BaseRow->ZoneId || DangerSlot.TeamId != BaseRow->TeamId
-				|| DangerSlot.Effect != BaseRow->Effect || DangerSlot.DangerLevel != Zone->DangerLevel
-				|| !ASC->GetActiveGameplayEffect(DangerSlot.Handle))
-			{
-				RemoveSlot(ASC, DangerSlot);
-				DangerSlot.Handle = ApplyEffect(ASC, BaseRow->Effect, BaseRow->Magnitudes, Zone->DangerLevel);
-				if (DangerSlot.Handle.IsValid())
-				{
-					DangerSlot.ZoneId = BaseRow->ZoneId;
-					DangerSlot.TeamId = BaseRow->TeamId;
-					DangerSlot.Effect = BaseRow->Effect;
-					DangerSlot.DangerLevel = Zone->DangerLevel;
-				}
-			}
-		}
-		else
-		{
-			RemoveSlot(ASC, DangerSlot);
-		}
+		SyncSlot(ASC, DangerSlot, BaseRow, Zone->DangerLevel);
 
 		// 구역 슬롯은 선택된 행의 키, GE, 위험도가 바뀔 때만 다시 적용한다.
 		FEffectSlot& ZoneSlot = Entry.ZoneEffect;
-		if (Row && Row->Effect)
-		{
-			if (ZoneSlot.ZoneId != Row->ZoneId || ZoneSlot.TeamId != Row->TeamId
-				|| ZoneSlot.Effect != Row->Effect || ZoneSlot.DangerLevel != Zone->DangerLevel
-				|| !ASC->GetActiveGameplayEffect(ZoneSlot.Handle))
-			{
-				RemoveSlot(ASC, ZoneSlot);
-				ZoneSlot.Handle = ApplyEffect(ASC, Row->Effect, Row->Magnitudes, Zone->DangerLevel);
-				if (ZoneSlot.Handle.IsValid())
-				{
-					ZoneSlot.ZoneId = Row->ZoneId;
-					ZoneSlot.TeamId = Row->TeamId;
-					ZoneSlot.Effect = Row->Effect;
-					ZoneSlot.DangerLevel = Zone->DangerLevel;
-				}
-			}
-		}
-		else
-		{
-			RemoveSlot(ASC, ZoneSlot);
-		}
+		SyncSlot(ASC, ZoneSlot, Row, Zone->DangerLevel);
 
 		if (!DangerSlot.Handle.IsValid() && !ZoneSlot.Handle.IsValid())
 		{
@@ -240,8 +187,7 @@ void UASZoneEffectComponent::UpdateEffects()
 			UAbilitySystemComponent* ASC = It.Key().Get();
 			FEntry Entry = It.Value();
 			It.RemoveCurrent();
-			RemoveSlot(ASC, Entry.DangerEffect);
-			RemoveSlot(ASC, Entry.ZoneEffect);
+			ReleaseEntry(ASC, Entry);
 		}
 	}
 }
@@ -318,6 +264,32 @@ FActiveGameplayEffectHandle UASZoneEffectComponent::ApplyEffect(UAbilitySystemCo
 	return ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 }
 
+void UASZoneEffectComponent::SyncSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot,
+	const FASZoneEffectRow* Row, int32 DangerLevel)
+{
+	if (Row && Row->Effect)
+	{
+		if (Slot.ZoneId != Row->ZoneId || Slot.TeamId != Row->TeamId
+			|| Slot.Effect != Row->Effect || Slot.DangerLevel != DangerLevel
+			|| !ASC->GetActiveGameplayEffect(Slot.Handle))
+		{
+			RemoveSlot(ASC, Slot);
+			Slot.Handle = ApplyEffect(ASC, Row->Effect, Row->Magnitudes, DangerLevel);
+			if (Slot.Handle.IsValid())
+			{
+				Slot.ZoneId = Row->ZoneId;
+				Slot.TeamId = Row->TeamId;
+				Slot.Effect = Row->Effect;
+				Slot.DangerLevel = DangerLevel;
+			}
+		}
+	}
+	else
+	{
+		RemoveSlot(ASC, Slot);
+	}
+}
+
 void UASZoneEffectComponent::RemoveSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot)
 {
 	const FActiveGameplayEffectHandle Handle = Slot.Handle;
@@ -329,13 +301,18 @@ void UASZoneEffectComponent::RemoveSlot(UAbilitySystemComponent* ASC, FEffectSlo
 	}
 }
 
+void UASZoneEffectComponent::ReleaseEntry(UAbilitySystemComponent* ASC, FEntry& Entry)
+{
+	RemoveSlot(ASC, Entry.DangerEffect);
+	RemoveSlot(ASC, Entry.ZoneEffect);
+}
+
 void UASZoneEffectComponent::RemoveEntry(UAbilitySystemComponent* ASC)
 {
 	FEntry Entry;
 	if (Entries.RemoveAndCopyValue(ASC, Entry))
 	{
-		RemoveSlot(ASC, Entry.DangerEffect);
-		RemoveSlot(ASC, Entry.ZoneEffect);
+		ReleaseEntry(ASC, Entry);
 	}
 }
 
@@ -347,14 +324,8 @@ void UASZoneEffectComponent::RemoveAllEffects()
 	for (auto& Pair : OldEntries)
 	{
 		UAbilitySystemComponent* ASC = Pair.Key.Get();
-		RemoveSlot(ASC, Pair.Value.DangerEffect);
-		RemoveSlot(ASC, Pair.Value.ZoneEffect);
+		ReleaseEntry(ASC, Pair.Value);
 	}
-}
-
-void UASZoneEffectComponent::HandleZoneStateChanged(FName ZoneId, const FASZoneRuntimeState& State)
-{
-	UpdateEffects();
 }
 
 void UASZoneEffectComponent::HandleMapStateUpdated()
@@ -368,11 +339,8 @@ void UASZoneEffectComponent::HandleMatchReset()
 	{
 		return;
 	}
-	{
-		TGuardValue<bool> UpdatingGuard(bUpdating, true);
-		RemoveAllEffects();
-	}
-	UpdateEffects();
+	TGuardValue<bool> UpdatingGuard(bUpdating, true);
+	RemoveAllEffects();
 }
 
 int32 UASZoneEffectComponent::GetAppliedDangerLevel(const AActor* Actor) const

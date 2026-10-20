@@ -65,6 +65,25 @@ void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
 	}
 }
 
+void AASPlayerState::GrantCharacterAbilitySetOnce()
+{
+	if (!HasAuthority() || bCharacterAbilitySetGranted)
+	{
+		return;
+	}
+	
+	const UASAbilitySet* CharacterSet = CharacterDefinition ? CharacterDefinition->CharacterAbilitySet.Get() : nullptr;
+	if (!IsValid(CharacterSet))
+	{
+		return;
+	}
+	
+	CharacterSet->GiveToAbilitySystem(AbilitySystemComponent, &CharacterAbilityHandles, this);
+	bCharacterAbilitySetGranted = true;
+	
+	UE_LOG(LogTemp, Log, TEXT("[PlayerState] 캐릭터 전용 어빌리티 세트 부여: %s"), *GetNameSafe(CharacterSet));
+}
+
 void AASPlayerState::SetEquippedItemRecord(UASItemInstance* Item)
 {
 	EquippedItemRecord = Item;

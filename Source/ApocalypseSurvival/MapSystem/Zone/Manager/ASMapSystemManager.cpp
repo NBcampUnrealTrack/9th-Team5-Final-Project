@@ -1,16 +1,29 @@
 ﻿#include "MapSystem/Zone/Manager/ASMapSystemManager.h"
 
 #include "ApocalypseSurvival.h"
+#include "AbilitySystemComponent.h"
+#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Components/SceneComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
+#include "GAS/ASAbilityTags.h"
 #include "HAL/IConsoleManager.h"
+#include "MapSystem/Shared/ASMapAbilityUtils.h"
+#include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
-#include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
+#include "Mass/Monster/Data/ASMassMonsterFragments.h"
+#include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "MassCommonFragments.h"
+#include "MassEntityQuery.h"
+#include "MassEntitySubsystem.h"
+#include "MassExecutionContext.h"
 
 namespace ASMapManagerPrivate
 {
@@ -20,49 +33,36 @@ namespace ASMapManagerPrivate
 		TEXT("Draw zone areas, adjacency links, danger on the server."),
 		ECVF_Cheat);
 
-	AASMapSystemManager* FindManagerOrWarn(UWorld* World)
+	static TArray<FVector> GetAliveMassMonsterLocations(UWorld* World)
 	{
-		AASMapSystemManager* Manager = UASMapFunctionLibrary::GetMapSystemManager(World);
-		if (!Manager)
+		TArray<FVector> Locations;
+		UMassEntitySubsystem* Subsystem = World ? World->GetSubsystem<UMassEntitySubsystem>() : nullptr;
+		if (!Subsystem)
 		{
-			UE_LOG(LogApocalypseSurvival, Warning, TEXT("AS.Map: no map manager in this world (commands run on the server/host)."));
+			return Locations;
 		}
-		return Manager;
+
+		FMassEntityManager& EntityManager = Subsystem->GetMutableEntityManager();
+		FMassEntityQuery Query(EntityManager.AsShared());
+		Query.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
+		Query.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
+		Query.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadOnly);
+		FMassExecutionContext Context(EntityManager, 0.0f, false);
+		Query.ForEachEntityChunk(Context, [&Locations](FMassExecutionContext& ChunkContext)
+		{
+			const TConstArrayView<FTransformFragment> Transforms = ChunkContext.GetFragmentView<FTransformFragment>();
+			const TConstArrayView<FASMassMonsterHealthFragment> Healths = ChunkContext.GetFragmentView<FASMassMonsterHealthFragment>();
+			for (FMassExecutionContext::FEntityIterator EntityIt = ChunkContext.CreateEntityIterator(); EntityIt; ++EntityIt)
+			{
+				// 사망 태그는 늦게 추가되므로 HP로 Mass 몬스터의 생존을 판단한다.
+				if (Healths[EntityIt].CurrentHealth > 0.0f)
+				{
+					Locations.Add(Transforms[EntityIt].GetTransform().GetLocation());
+				}
+			}
+		});
+		return Locations;
 	}
-
-	static FAutoConsoleCommandWithWorldAndArgs DumpCommand(
-		TEXT("AS.Map.Dump"),
-		TEXT("Log zone dangers and seed."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			if (const AASMapSystemManager* Manager = FindManagerOrWarn(World))
-			{
-				Manager->DumpState();
-			}
-		}));
-
-	static FAutoConsoleCommandWithWorldAndArgs StepCommand(
-		TEXT("AS.Map.Step"),
-		TEXT("AS.Map.Step <Day> <Day|Night>: send a step directly (bypasses the GameMode clock)."),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
-		{
-			AASMapSystemManager* Manager = FindManagerOrWarn(World);
-			if (!Manager || Args.Num() != 2)
-			{
-				return;
-			}
-
-			FASMapPhaseContext Context;
-			Context.Day = FCString::Atoi(*Args[0]);
-			if (Context.Day < 1
-				|| (!Args[1].Equals(TEXT("Day"), ESearchCase::IgnoreCase) && !Args[1].Equals(TEXT("Night"), ESearchCase::IgnoreCase)))
-			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Map.Step <Day >= 1> <Day|Night>"));
-				return;
-			}
-			Context.DayPhase = Args[1].Equals(TEXT("Night"), ESearchCase::IgnoreCase) ? EASDayPhase::Night : EASDayPhase::Day;
-			Manager->HandlePhaseChanged(Context);
-		}));
 }
 
 AASMapSystemManager::AASMapSystemManager()
@@ -104,11 +104,14 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 		ValidationErrors.Add(TEXT("InitializeMap: MapState is null (does the GameState have UASMapStateComponent?)."));
 	}
 
+	TArray<FASZoneConfig> ZoneConfigs;
 	if (MapDefinition)
 	{
 		MapDefinition->ValidateDefinition(ValidationErrors);
 		CollectLevelZones();
-		ValidateLevel(ValidationErrors);
+		BuildZoneConfigs(ZoneConfigs);
+		ValidateLevel(ZoneConfigs, ValidationErrors);
+		LogZoneOverlaps();
 	}
 
 	if (UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this))
@@ -142,10 +145,7 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 		return false;
 	}
 
-	TArray<FASZoneConfig> ZoneConfigs;
-	BuildZoneConfigs(ZoneConfigs);
-	MergeZoneAdjacency(ZoneConfigs);
-	RuleEngine.Configure(ZoneConfigs, MapDefinition->DangerIncreaseChance);
+	RuleEngine.Configure(ZoneConfigs);
 
 	UASMapStateComponent* State = MapState.Get();
 	State->ServerSetMapDefinition(MapDefinition);
@@ -193,9 +193,17 @@ void AASMapSystemManager::HandlePhaseChanged(const FASMapPhaseContext& PhaseCont
 		return;
 	}
 
+	const FASZoneDangerScheduleRow* Rule = MapDefinition->FindDangerScheduleRow(PhaseContext.Day);
+	if (!Rule)
+	{
+		UE_LOG(LogApocalypseSurvival, Error, TEXT("No danger schedule row for day %d; phase was not processed."), PhaseContext.Day);
+		return;
+	}
+
+	const TMap<FName, FASZonePhaseCounts> PhaseCounts = BuildPhaseCounts();
 	FASMapStateSnapshot Working = MapState->GetSnapshot();
 	FASMapEngineEvents Events;
-	if (RuleEngine.BeginStep(Working, PhaseContext, Events))
+	if (RuleEngine.BeginStep(Working, PhaseContext, *Rule, PhaseCounts, Events))
 	{
 		CommitEvents(Working, Events);
 	}
@@ -219,6 +227,62 @@ void AASMapSystemManager::StopMap()
 	}
 
 	UE_LOG(LogApocalypseSurvival, Log, TEXT("Map stopped. Final zone state kept for results."));
+}
+
+TMap<FName, FASZonePhaseCounts> AASMapSystemManager::BuildPhaseCounts() const
+{
+	TMap<FName, FASZonePhaseCounts> Counts;
+	UWorld* World = GetWorld();
+	const UASMapStateComponent* State = MapState.Get();
+	if (!HasAuthority() || !World || !State)
+	{
+		return Counts;
+	}
+
+	// 빈 구역도 0으로 포함하며 호출할 때마다 새로 센다.
+	for (const FASZoneRuntimeState& Zone : State->GetSnapshot().Zones)
+	{
+		Counts.Add(Zone.ZoneId);
+	}
+	for (AASMonsterCharacter* Monster : TActorRange<AASMonsterCharacter>(World))
+	{
+		if (IsValid(Monster) && !Monster->IsDead())
+		{
+			if (FASZonePhaseCounts* ZoneCounts = Counts.Find(FindZoneAtLocation(Monster->GetActorLocation())))
+			{
+				++ZoneCounts->MonsterCount;
+			}
+		}
+	}
+
+	for (const FVector& Location : ASMapManagerPrivate::GetAliveMassMonsterLocations(World))
+	{
+		if (FASZonePhaseCounts* ZoneCounts = Counts.Find(FindZoneAtLocation(Location)))
+		{
+			++ZoneCounts->MonsterCount;
+		}
+	}
+
+	if (const AGameStateBase* GameState = World->GetGameState())
+	{
+		for (const APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			const APawn* Pawn = IsValid(PlayerState) ? PlayerState->GetPawn() : nullptr;
+			if (!IsValid(Pawn))
+			{
+				continue;
+			}
+			const UAbilitySystemComponent* AbilitySystem = ASMapAbilityUtils::FindAbilitySystemComponent(Pawn);
+			if (AbilitySystem && !AbilitySystem->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
+			{
+				if (FASZonePhaseCounts* ZoneCounts = Counts.Find(FindZoneAtLocation(Pawn->GetActorLocation())))
+				{
+					ZoneCounts->bHasPlayers = true;
+				}
+			}
+		}
+	}
+	return Counts;
 }
 
 bool AASMapSystemManager::GetZoneState(FName ZoneId, FASZoneRuntimeState& OutState) const
@@ -311,40 +375,25 @@ void AASMapSystemManager::CollectLevelZones() const
 void AASMapSystemManager::BuildZoneConfigs(TArray<FASZoneConfig>& OutConfigs) const
 {
 	OutConfigs.Reset();
-	if (const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this))
-	{
-		for (const AASMapZone* Zone : Subsystem->GetZones())
-		{
-			FASZoneConfig& Config = OutConfigs.AddDefaulted_GetRef();
-			Config.ZoneId = Zone->GetZoneId();
-			Config.InitialDangerLevel = Zone->GetInitialDangerLevel();
-		}
-	}
-}
-
-void AASMapSystemManager::MergeZoneAdjacency(TArray<FASZoneConfig>& ZoneConfigs) const
-{
 	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this);
-	TMap<FName, int32> ConfigIndices;
-	for (int32 Index = 0; Index < ZoneConfigs.Num(); ++Index)
-	{
-		ZoneConfigs[Index].AdjacentZoneIds.Reset();
-		ConfigIndices.Add(ZoneConfigs[Index].ZoneId, Index);
-	}
-
 	if (!Subsystem)
 	{
 		return;
 	}
 
-	for (const AASMapZone* Zone : Subsystem->GetZones())
+	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	TMap<FName, int32> ConfigIndices;
+	for (const AASMapZone* Zone : Zones)
 	{
-		const int32* ZoneIndex = ConfigIndices.Find(Zone->GetZoneId());
-		if (!ZoneIndex)
-		{
-			continue;
-		}
+		ConfigIndices.Add(Zone->GetZoneId(), OutConfigs.Num());
+		FASZoneConfig& Config = OutConfigs.AddDefaulted_GetRef();
+		Config.ZoneId = Zone->GetZoneId();
+		Config.InitialDangerLevel = Zone->GetInitialDangerLevel();
+	}
 
+	for (const AASMapZone* Zone : Zones)
+	{
+		const int32 ZoneIndex = ConfigIndices.FindChecked(Zone->GetZoneId());
 		for (const AASMapZone* AdjacentZone : Zone->GetAdjacentZones())
 		{
 			if (!IsValid(AdjacentZone) || AdjacentZone->GetZoneId() == Zone->GetZoneId())
@@ -355,20 +404,20 @@ void AASMapSystemManager::MergeZoneAdjacency(TArray<FASZoneConfig>& ZoneConfigs)
 			if (const int32* AdjacentIndex = ConfigIndices.Find(AdjacentZone->GetZoneId()))
 			{
 				// 어느 한쪽에만 적혀 있어도 같은 양방향 연결을 생성한다.
-				ZoneConfigs[*ZoneIndex].AdjacentZoneIds.AddUnique(AdjacentZone->GetZoneId());
-				ZoneConfigs[*AdjacentIndex].AdjacentZoneIds.AddUnique(Zone->GetZoneId());
+				OutConfigs[ZoneIndex].AdjacentZoneIds.AddUnique(AdjacentZone->GetZoneId());
+				OutConfigs[*AdjacentIndex].AdjacentZoneIds.AddUnique(Zone->GetZoneId());
 			}
 		}
 	}
 
 	// 액터와 배열의 편집 순서에 관계없이 규칙 입력 순서를 일정하게 유지한다.
-	for (FASZoneConfig& Config : ZoneConfigs)
+	for (FASZoneConfig& Config : OutConfigs)
 	{
 		Config.AdjacentZoneIds.Sort([](const FName& A, const FName& B) { return A.LexicalLess(B); });
 	}
 }
 
-bool AASMapSystemManager::ValidateLevel(TArray<FString>& OutErrors) const
+bool AASMapSystemManager::ValidateLevel(const TArray<FASZoneConfig>& ZoneConfigs, TArray<FString>& OutErrors) const
 {
 	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this);
 	if (!Subsystem)
@@ -427,9 +476,6 @@ bool AASMapSystemManager::ValidateLevel(TArray<FString>& OutErrors) const
 	}
 
 	// 반대쪽에서만 연결했어도 이웃이 있는 것으로 판단한다.
-	TArray<FASZoneConfig> ZoneConfigs;
-	BuildZoneConfigs(ZoneConfigs);
-	MergeZoneAdjacency(ZoneConfigs);
 	for (const FASZoneConfig& Config : ZoneConfigs)
 	{
 		if (Config.AdjacentZoneIds.IsEmpty())
@@ -438,6 +484,50 @@ bool AASMapSystemManager::ValidateLevel(TArray<FString>& OutErrors) const
 		}
 	}
 	return OutErrors.Num() == InitialErrorCount;
+}
+
+void AASMapSystemManager::LogZoneOverlaps() const
+{
+	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this);
+	if (!Subsystem)
+	{
+		return;
+	}
+
+	// GetZones는 ZoneId 사전순이므로 겹친 위치는 앞쪽 구역으로 결정된다.
+	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	for (int32 IndexA = 0; IndexA < Zones.Num(); ++IndexA)
+	{
+		const AASMapZone* ZoneA = Zones[IndexA];
+		if (ZoneA->GetZoneId().IsNone())
+		{
+			continue;
+		}
+		TArray<TArray<FVector2D>> OutlinesA;
+		ZoneA->GetAreaOutlines(OutlinesA);
+		for (int32 IndexB = IndexA + 1; IndexB < Zones.Num(); ++IndexB)
+		{
+			const AASMapZone* ZoneB = Zones[IndexB];
+			if (ZoneB->GetZoneId().IsNone())
+			{
+				continue;
+			}
+			TArray<TArray<FVector2D>> OutlinesB;
+			ZoneB->GetAreaOutlines(OutlinesB);
+			const bool bOverlaps = OutlinesA.ContainsByPredicate([&OutlinesB](const TArray<FVector2D>& OutlineA)
+			{
+				return OutlinesB.ContainsByPredicate([&OutlineA](const TArray<FVector2D>& OutlineB)
+				{
+					return ASMapShapeUtils::OutlinesOverlap(OutlineA, OutlineB);
+				});
+			});
+			if (bOverlaps)
+			{
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Zones '%s' and '%s' overlap; locations in the overlap resolve to '%s' (ZoneId order)."),
+					*ZoneA->GetZoneId().ToString(), *ZoneB->GetZoneId().ToString(), *ZoneA->GetZoneId().ToString());
+			}
+		}
+	}
 }
 
 void AASMapSystemManager::HandleZoneRegistered(AASMapZone* Zone)
@@ -472,9 +562,12 @@ void AASMapSystemManager::DumpState() const
 		Snapshot.bMapReady ? 1 : 0, Snapshot.bMapRunning ? 1 : 0, MatchSeed, Snapshot.MatchId,
 		*Snapshot.CurrentPhase.GetPhaseKey().ToString());
 
+	const TMap<FName, FASZonePhaseCounts> Counts = BuildPhaseCounts();
 	for (const FASZoneRuntimeState& Zone : Snapshot.Zones)
 	{
-		UE_LOG(LogApocalypseSurvival, Log, TEXT("  %-12s danger=%d"), *Zone.ZoneId.ToString(), Zone.DangerLevel);
+		const FASZonePhaseCounts ZoneCounts = Counts.FindRef(Zone.ZoneId);
+		UE_LOG(LogApocalypseSurvival, Log, TEXT("  %-12s danger=%d monsterCount=%d hasPlayers=%d"),
+			*Zone.ZoneId.ToString(), Zone.DangerLevel, ZoneCounts.MonsterCount, ZoneCounts.bHasPlayers ? 1 : 0);
 	}
 }
 
