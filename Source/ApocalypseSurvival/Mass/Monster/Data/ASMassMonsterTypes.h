@@ -29,7 +29,9 @@ enum class EASMassMonsterAttackPattern : uint8
 	Melee,
 	RangedProjectile,
 	Suicide,
-	Charge
+	Charge,
+	Summon,
+	HasteSupport
 };
 
 /** 공격 준비와 실행 결과를 Processor 사이에서 공유하는 런타임 상태. */
@@ -38,6 +40,7 @@ enum class EASMassMonsterAttackState : uint8
 {
 	Ready,
 	Windup,
+	Executing,
 	Recovering
 };
 

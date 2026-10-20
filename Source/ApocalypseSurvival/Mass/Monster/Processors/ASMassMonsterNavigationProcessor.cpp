@@ -162,6 +162,8 @@ void UASMassMonsterNavigationProcessor::ConfigureQueries(const TSharedRef<FMassE
 	EntityQuery.AddRequirement<FMassNavMeshCachedPathFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FMassNavMeshShortPathFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterModifierFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterHomeFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterNavigationFragment>(EMassFragmentAccess::ReadWrite);
@@ -190,6 +192,8 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 		const TConstArrayView<FAgentHeightFragment> AgentHeights = Context.GetFragmentView<FAgentHeightFragment>();
 		const TConstArrayView<FMassDesiredMovementFragment> DesiredMovements = Context.GetFragmentView<FMassDesiredMovementFragment>();
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
+		const TConstArrayView<FASMassMonsterCombatFragment> Combats = Context.GetFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterModifierFragment> Modifiers = Context.GetFragmentView<FASMassMonsterModifierFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TConstArrayView<FASMassMonsterHomeFragment> Homes = Context.GetFragmentView<FASMassMonsterHomeFragment>();
 
@@ -207,6 +211,18 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 			FMassNavMeshShortPathFragment& ShortPath = ShortPaths[EntityIt];
 			FASMassMonsterNavigationFragment& NavigationState = NavigationStates[EntityIt];
 			const FASMassMonsterBehaviorFragment& Behavior = Behaviors[EntityIt];
+			const FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
+
+			// 돌진 준비/실행 중에는 NavMesh 경로 추종이 Transform을 덮어쓰지 않도록 완전히 멈춘다.
+			if (Config.AttackPattern == EASMassMonsterAttackPattern::Charge
+				&& (Combat.AttackState == EASMassMonsterAttackState::Windup
+					|| Combat.AttackState == EASMassMonsterAttackState::Executing))
+			{
+				ASMassMonsterNavigation::Stop(*World, MoveTarget, CachedPath, ShortPath);
+				NavigationState.bHasRequestedGoal = false;
+				NavigationState.PathRefreshTimeRemaining = 0.0f;
+				continue;
+			}
 
 			FVector Goal = FVector::ZeroVector;
 			float EndDistanceThreshold = 20.0f;
@@ -215,7 +231,10 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 			if (Behavior.State == EASMassMonsterState::Chase && Targets[EntityIt].HasTarget())
 			{
 				Goal = Targets[EntityIt].CachedTargetLocation;
-				EndDistanceThreshold = FMath::Max(20.0f, Config.AttackRange);
+				const float EffectiveAttackRange = Combats[EntityIt].bUseFallbackMelee
+					? Config.FallbackMeleeAttackRange
+					: Config.AttackRange;
+				EndDistanceThreshold = FMath::Max(20.0f, EffectiveAttackRange);
 				bShouldMove = true;
 			}
 			else if (Behavior.State == EASMassMonsterState::ReturnHome)
@@ -232,6 +251,13 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 				NavigationState.PathRefreshTimeRemaining = 0.0f;
 				continue;
 			}
+
+			// 버프 지속 중에는 이미 잡힌 경로를 다시 요청하지 않아도 속도를 즉시 반영한다.
+			const float EffectiveMoveSpeed = Config.MoveSpeed * FMath::Max(1.0f, Modifiers[EntityIt].MoveSpeedMultiplier);
+			MoveTarget.DesiredSpeed.Set(FMath::Min3(
+				EffectiveMoveSpeed,
+				DesiredMovements[EntityIt].DesiredMaxSpeedOverride,
+				MovementParameters.MaxSpeed));
 
 			NavigationState.PathRefreshTimeRemaining = FMath::Max(0.0f, NavigationState.PathRefreshTimeRemaining - DeltaTime);
 
@@ -255,7 +281,7 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 			--RemainingPathRequests;
 			const FMassEntityHandle Entity = Context.GetEntity(EntityIt);
 			float RequestedSpeed = FMath::Min3(
-				Config.MoveSpeed,
+				EffectiveMoveSpeed,
 				DesiredMovements[EntityIt].DesiredMaxSpeedOverride,
 				MovementParameters.MaxSpeed);
 			if (Behavior.State == EASMassMonsterState::ReturnHome)
