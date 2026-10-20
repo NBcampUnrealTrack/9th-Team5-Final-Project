@@ -24,6 +24,8 @@ void UASVisionEvaluatorComponent::Configure(UASVisionDefinition* Definition)
 bool UASVisionEvaluatorComponent::CanSourceSeeTarget(
 	const UASVisionSourceComponent* Source,
 	const UASVisibilityComponent* Target,
+	FName SourceBush,
+	TOptional<FName>& TargetBush,
 	double ServerTime,
 	bool bWallOcclusion,
 	float NightAlpha) const
@@ -44,15 +46,16 @@ bool UASVisionEvaluatorComponent::CanSourceSeeTarget(
 		return false;
 	}
 
-	// 수풀 은폐는 벽 옵션과 독립적이며 공격 노출로만 해제된다.
-	if (const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this))
+	// 수풀 은폐는 벽 옵션과 독립적이며 공격 노출로만 해제된다. 대상 수풀은 범위 안에 들어온 첫 소스에서만 찾는다.
+	if (!TargetBush.IsSet())
 	{
-		const FName TargetBush = Subsystem->FindBushIdAtLocation(TargetLocation);
-		const bool bRevealed = Target->GetRevealEndServerTime() > ServerTime;
-		if (!TargetBush.IsNone() && !bRevealed && Subsystem->FindBushIdAtLocation(SourceLocation) != TargetBush)
-		{
-			return false;
-		}
+		const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
+		TargetBush = Subsystem ? Subsystem->FindBushIdAtLocation(TargetLocation) : NAME_None;
+	}
+	const bool bRevealed = Target->GetRevealEndServerTime() > ServerTime;
+	if (!TargetBush->IsNone() && !bRevealed && SourceBush != *TargetBush)
+	{
+		return false;
 	}
 
 	// 노출은 벽이나 거리 조건을 우회하지 않는다.
@@ -81,11 +84,14 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 	const float NightAlpha = Manager->GetNightAlpha();
 
 	TMap<int32, TArray<UASVisionSourceComponent*>> SourcesByTeam;
+	TMap<const UASVisionSourceComponent*, FName> SourceBushIds;
 	for (UASVisionSourceComponent* Source : Subsystem->GetVisionSources())
 	{
 		if (Source->IsProvidingVision(VisionDefinition->DeadStateTag))
 		{
 			SourcesByTeam.FindOrAdd(Source->GetTeamId()).Add(Source);
+			const AActor* SourceActor = Source->GetOwner();
+			SourceBushIds.Add(Source, SourceActor ? Subsystem->FindBushIdAtLocation(SourceActor->GetActorLocation()) : NAME_None);
 		}
 	}
 
@@ -97,6 +103,7 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 			continue;
 		}
 
+		TOptional<FName> TargetBush;
 		uint8 Mask = 0;
 		for (const TPair<int32, TArray<UASVisionSourceComponent*>>& Team : SourcesByTeam)
 		{
@@ -107,7 +114,8 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 
 			for (const UASVisionSourceComponent* Source : Team.Value)
 			{
-				if (Source->GetOwner() == Target->GetOwner() || CanSourceSeeTarget(Source, Target, Now, bWallOcclusion, NightAlpha))
+				if (Source->GetOwner() == Target->GetOwner()
+					|| CanSourceSeeTarget(Source, Target, SourceBushIds.FindChecked(Source), TargetBush, Now, bWallOcclusion, NightAlpha))
 				{
 					Mask |= static_cast<uint8>(1 << Team.Key);
 					break;
