@@ -12,7 +12,6 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Inventory/ASInventoryComponent.h"
-#include "Skills/ASSkillAbility.h"
 #include "Skills/Projectile/ASSkillProjectileActor.h"
 
 namespace ASWeaponAttackExecutionPrivate
@@ -38,33 +37,6 @@ namespace ASWeaponAttackExecutionPrivate
 	TArray<FGameplayEffectSpecHandle> MakeDamageSpecs(const FASWeaponAttackExecutionContext& Context)
 	{
 		return UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(Context.Weapon, Context.AbilitySystem);
-	}
-
-	void ApplyDamage(const TConstArrayView<FGameplayEffectSpecHandle> DamageSpecs, const TArray<AActor*>& Targets)
-	{
-		for (AActor* Target : Targets)
-		{
-			UASCombatTargetSubsystem::ApplyEffectSpecsToActor(DamageSpecs, Target);
-		}
-	}
-
-	void KeepClosestTarget(TArray<AActor*>& Targets, const FVector& ReferenceLocation)
-	{
-		if (Targets.Num() <= 1) return;
-		AActor* ClosestTarget = nullptr;
-		float ClosestDistanceSquared = TNumericLimits<float>::Max();
-		for (AActor* Target : Targets)
-		{
-			if (!IsValid(Target)) continue;
-			const float DistanceSquared = FVector::DistSquared2D(Target->GetActorLocation(), ReferenceLocation);
-			if (DistanceSquared < ClosestDistanceSquared)
-			{
-				ClosestTarget = Target;
-				ClosestDistanceSquared = DistanceSquared;
-			}
-		}
-		Targets.Reset();
-		if (ClosestTarget) Targets.Add(ClosestTarget);
 	}
 
 	void SpawnDirectionalProjectile(const FASWeaponAttackExecutionContext& Context, const UASRangedAttackProfile& Profile)
@@ -172,43 +144,39 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 	const FVector Start = Context.Avatar->GetActorLocation();
 	const FVector Center = Start + Context.AimDirection * Offset;
 	const TArray<FGameplayEffectSpecHandle> DamageSpecs = ASWeaponAttackExecutionPrivate::MakeDamageSpecs(Context);
-	TArray<AActor*> Targets = UASSkillAbility::FindSkillTargets(
-		Context.Avatar->GetWorld(), Center, Radius, Context.Avatar, false);
+	UASCombatTargetSubsystem* CombatTargets =
+		Context.Avatar->GetWorld()->GetSubsystem<UASCombatTargetSubsystem>();
+	if (!CombatTargets)
+	{
+		return;
+	}
+
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = Center;
+	Query.SearchRadius = Radius;
+	Query.Instigator = Context.Avatar;
 	if (Profile->TargetMode == EASAttackTargetMode::Single)
 	{
 		AActor* RequestedTarget = Context.RequestedTarget.Get();
 		const bool bRequestedTargetInRange = IsValid(RequestedTarget)
-			&& UASSkillAbility::IsValidSkillTarget(RequestedTarget, Context.Avatar, false)
+			&& UASCombatTargetSubsystem::IsValidActorTarget(RequestedTarget, Context.Avatar, false)
 			&& FVector::DistSquared2D(Context.Avatar->GetActorLocation(), RequestedTarget->GetActorLocation())
 			<= FMath::Square(AttackRange + 15.0f);
 		if (bRequestedTargetInRange)
 		{
-			Targets.Reset();
-			Targets.Add(RequestedTarget);
+			Query.Domain = EASCombatTargetDomain::ActorOnly;
+			Query.ExplicitActor = RequestedTarget;
+			Query.SearchOrigin = RequestedTarget->GetActorLocation();
+			Query.SearchRadius = 1.0f;
 		}
-		else
-		{
-			ASWeaponAttackExecutionPrivate::KeepClosestTarget(Targets, Center);
-		}
+		Query.MaxTargets = 1;
 	}
-	ASWeaponAttackExecutionPrivate::ApplyDamage(DamageSpecs, Targets);
-	int32 NonActorHitCount = 0;
-	const bool bCanHitNonActorTargets = Profile->TargetMode != EASAttackTargetMode::Single || Targets.IsEmpty();
-	if (bCanHitNonActorTargets)
-	{
-		if (UASCombatTargetSubsystem* CombatTargets =
-			Context.Avatar->GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
-		{
-			NonActorHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsInRadius(
-				Center, Radius, DamageSpecs, Context.Avatar,
-				Profile->TargetMode == EASAttackTargetMode::Single ? 1 : 0);
-		}
-	}
+	const FASCombatApplyResult ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
 
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
 		Character->MulticastDrawWeaponAttackDebug(Start, Center, Radius, true,
-			!Targets.IsEmpty() || NonActorHitCount > 0);
+			ApplyResult.HasAnyHit());
 	}
 }
 
@@ -249,12 +217,20 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		if (AActor* RequestedTarget = Context.RequestedTarget.Get(); IsValid(RequestedTarget))
 		{
 			const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f;
-			if (UASSkillAbility::IsValidSkillTarget(RequestedTarget, Context.Avatar, false)
+			if (UASCombatTargetSubsystem::IsValidActorTarget(RequestedTarget, Context.Avatar, false)
 				&& FVector::DistSquared2D(Context.Avatar->GetActorLocation(), RequestedTarget->GetActorLocation()) <= FMath::Square(AllowedRange))
 			{
-				TArray<AActor*> Targets;
-				Targets.Add(RequestedTarget);
-				ASWeaponAttackExecutionPrivate::ApplyDamage(DamageSpecs, Targets);
+				if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
+				{
+					FASCombatTargetQuery Query;
+					Query.SearchOrigin = RequestedTarget->GetActorLocation();
+					Query.SearchRadius = 1.0f;
+					Query.Instigator = Context.Avatar;
+					Query.Domain = EASCombatTargetDomain::ActorOnly;
+					Query.ExplicitActor = RequestedTarget;
+					Query.MaxTargets = 1;
+					CombatTargets->ResolveAndApply(Query, DamageSpecs);
+				}
 				if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 				{
 					Character->MulticastDrawWeaponAttackDebug(Start, RequestedTarget->GetActorLocation(), TraceRadius, false, true);
@@ -275,7 +251,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	for (const FHitResult& Hit : Hits)
 	{
 		AActor* Target = Hit.GetActor();
-		if (UASSkillAbility::IsValidSkillTarget(Target, Context.Avatar, false)
+		if (UASCombatTargetSubsystem::IsValidActorTarget(Target, Context.Avatar, false)
 			&& (!FirstTarget || Hit.Time < FirstHitTime))
 		{
 			FirstTarget = Target;
@@ -283,35 +259,62 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		}
 	}
 
-	TArray<AActor*> Targets;
-	int32 NonActorHitCount = 0;
+	FASCombatApplyResult ApplyResult;
 	if (FirstTarget)
 	{
+		UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
+		if (!CombatTargets)
+		{
+			return;
+		}
+
+		FASCombatTargetQuery Query;
+		Query.Instigator = Context.Avatar;
 		if (Profile->TargetMode == EASAttackTargetMode::Area)
 		{
 			const FVector ImpactCenter = Start + (End - Start) * FirstHitTime;
-			Targets = UASSkillAbility::FindSkillTargets(
-				World, ImpactCenter, FMath::Max(0.0f, Profile->AreaRadius), Context.Avatar, false);
-			// The direct-hit target must always take damage even when its collision bounds
-			// place the actor origin just outside a very small AreaRadius.
-			Targets.AddUnique(FirstTarget);
+			Query.SearchOrigin = ImpactCenter;
+			Query.SearchRadius = FMath::Max(0.0f, Profile->AreaRadius);
+			ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
+			if (!ApplyResult.ActorTargets.Contains(FirstTarget))
+			{
+				FASCombatTargetQuery DirectQuery;
+				DirectQuery.SearchOrigin = FirstTarget->GetActorLocation();
+				DirectQuery.SearchRadius = 1.0f;
+				DirectQuery.Instigator = Context.Avatar;
+				DirectQuery.Domain = EASCombatTargetDomain::ActorOnly;
+				DirectQuery.ExplicitActor = FirstTarget;
+				DirectQuery.MaxTargets = 1;
+				ApplyResult.ActorTargets.Append(CombatTargets->ResolveAndApply(DirectQuery, DamageSpecs).ActorTargets);
+			}
 		}
 		else
 		{
-			Targets.Add(FirstTarget);
+			Query.SearchOrigin = FirstTarget->GetActorLocation();
+			Query.SearchRadius = 1.0f;
+			Query.Domain = EASCombatTargetDomain::ActorOnly;
+			Query.ExplicitActor = FirstTarget;
+			Query.MaxTargets = 1;
+			ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
 		}
 	}
 	else if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
 	{
 		FASCombatTargetHitSet HitTargets;
-		NonActorHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(
-			Start, End, TraceRadius, DamageSpecs, Context.Avatar, HitTargets, 1);
+		FASCombatTargetQuery Query;
+		Query.Shape = EASCombatTargetShape::Segment;
+		Query.SearchOrigin = Start;
+		Query.EndLocation = End;
+		Query.SearchRadius = TraceRadius;
+		Query.Instigator = Context.Avatar;
+		Query.Domain = EASCombatTargetDomain::MassOnly;
+		Query.MaxTargets = 1;
+		ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs, &HitTargets);
 	}
-	ASWeaponAttackExecutionPrivate::ApplyDamage(DamageSpecs, Targets);
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
 		const FVector DebugEnd = FirstTarget ? Start + (End - Start) * FirstHitTime : End;
 		Character->MulticastDrawWeaponAttackDebug(Start, DebugEnd, TraceRadius, false,
-			FirstTarget != nullptr || NonActorHitCount > 0);
+			ApplyResult.HasAnyHit());
 	}
 }

@@ -9,6 +9,7 @@
 #include "MassSpawnerSubsystem.h"
 #include "MassSpawnerTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
+#include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualFragment.h"
 #include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
 #include "StructUtils/StructView.h"
 
@@ -17,6 +18,7 @@
 namespace
 {
 	constexpr int32 MaxMassMonsterSpawnBatchSize = 10000;
+	constexpr float TemporaryVisualHitFlashDuration = 0.12f;
 }
 
 bool UASMassMonsterSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -152,6 +154,14 @@ FASMassMonsterSpawnResult UASMassMonsterSubsystem::SpawnMonsters(
 			EntityManager.GetFragmentDataChecked<FASMassMonsterBehaviorFragment>(Entity);
 		Behavior.State = EASMassMonsterState::Idle;
 		Behavior.WorldBehavior = WorldBehavior;
+
+		if (FASMassMonsterTemporaryVisualFragment* TemporaryVisual =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Entity))
+		{
+			TemporaryVisual->SpawnWorldBehavior = WorldBehavior;
+			TemporaryVisual->HitFlashTimeRemaining = 0.0f;
+			TemporaryVisual->bHasAppliedState = false;
+		}
 	}
 
 	ManagedEntities.Append(SpawnedEntities);
@@ -595,6 +605,11 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 		}
 
 		Health->CurrentHealth = FMath::Max(0.0f, Health->CurrentHealth - Damage);
+		if (FASMassMonsterTemporaryVisualFragment* TemporaryVisual =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Candidate.Entity))
+		{
+			TemporaryVisual->HitFlashTimeRemaining = TemporaryVisualHitFlashDuration;
+		}
 		if (InstigatorSnapshot && InstigatorSnapshot->bAlive)
 		{
 			if (FASMassMonsterTargetFragment* Target =
@@ -652,6 +667,11 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 		}
 
 		Health->CurrentHealth = FMath::Max(0.0f, Health->CurrentHealth - Damage);
+		if (FASMassMonsterTemporaryVisualFragment* TemporaryVisual =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Entity))
+		{
+			TemporaryVisual->HitFlashTimeRemaining = TemporaryVisualHitFlashDuration;
+		}
 		if (InstigatorSnapshot && InstigatorSnapshot->bAlive)
 		{
 			if (FASMassMonsterTargetFragment* Target =
