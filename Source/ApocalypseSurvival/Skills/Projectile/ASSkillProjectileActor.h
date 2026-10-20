@@ -43,8 +43,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	//적에게 맞았을 때 (기본: 데미지, 서버)
-	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill|Projectile")
+	// Actor 전용 레거시 훅. 효과 적용은 UASCombatTargetSubsystem이 담당한다.
+	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill|Projectile", meta = (DeprecatedFunction, DeprecationMessage = "Use the unified combat target path. This event is no longer called by AASSkillProjectileActor."))
 	void OnHitTarget(AActor* Target);
 
 	//사라지기 직전 (폭발 등 확장용, 서버)
@@ -70,7 +70,7 @@ private:
 
 	/** 발사 직전에 BP 기본값을 덮어써 피격용 Sphere만 충돌에 참여하게 한다. */
 	void ConfigureProjectileCollision();
-	void ApplyNonActorDamageAlongSegment(const FVector& CurrentLocation);
+	void ResolveHitsAlongSegment(const FVector& CurrentLocation);
 
 	void EndProjectile();
 

@@ -68,7 +68,13 @@ bool UASPlayerAttackMoveComponent::ConfirmAttackMove(const FVector& Destination)
 	// Ability 활성화와 조준 UI 종료는 Controller/Primary Attack이 담당한다.
 	FVector TargetLocation;
 	float TargetHitRadius = 0.0f;
-	if (FindBestTarget() && RefreshCurrentTarget(TargetLocation, TargetHitRadius)
+	const float ClickTargetingRadius = GetAttackRange() + AttackRangeTolerance;
+	const bool bClickIsInAttackRange = FVector::DistSquared2D(Pawn->GetActorLocation(), Destination)
+		<= FMath::Square(ClickTargetingRadius);
+	const EASCombatTargetSortPolicy InitialSortPolicy = bClickIsInAttackRange
+		? EASCombatTargetSortPolicy::NearestToPriorityLocation
+		: EASCombatTargetSortPolicy::NearestToSearchOrigin;
+	if (FindBestTarget(InitialSortPolicy) && RefreshCurrentTarget(TargetLocation, TargetHitRadius)
 		&& IsTargetInAttackRange(TargetLocation, TargetHitRadius))
 	{
 		State = EASAttackMoveState::Idle;
@@ -153,7 +159,7 @@ float UASPlayerAttackMoveComponent::GetAttackRange() const
 	return Definition ? FMath::Max(0.0f, Definition->AttackRange) : 0.0f;
 }
 
-bool UASPlayerAttackMoveComponent::FindBestTarget()
+bool UASPlayerAttackMoveComponent::FindBestTarget(const EASCombatTargetSortPolicy SortPolicy)
 {
 	const AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
 	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
@@ -173,10 +179,11 @@ bool UASPlayerAttackMoveComponent::FindBestTarget()
 
 	FASCombatTargetQuery Query;
 	Query.SearchOrigin = Pawn->GetActorLocation();
-	Query.PreferredLocation = CommandDestination;
 	Query.SearchRadius = AcquireRadius;
 	Query.Instigator = Pawn;
 	Query.Domain = EASCombatTargetDomain::All;
+	Query.SortPolicy = SortPolicy;
+	Query.PriorityLocation = CommandDestination;
 	Query.bRequireVisibleToLocalTeam = true;
 	return CombatTargets->FindBestTarget(Query, CurrentTarget);
 }
@@ -248,7 +255,7 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 	bool bHasTarget = RefreshCurrentTarget(TargetLocation, TargetHitRadius);
 	if (!bHasTarget && CurrentTime >= NextSearchTime)
 	{
-		FindBestTarget();
+		FindBestTarget(EASCombatTargetSortPolicy::NearestToSearchOrigin);
 		bHasTarget = RefreshCurrentTarget(TargetLocation, TargetHitRadius);
 		NextSearchTime = CurrentTime + SearchInterval;
 	}

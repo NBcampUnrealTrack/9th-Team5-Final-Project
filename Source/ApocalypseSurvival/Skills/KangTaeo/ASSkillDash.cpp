@@ -11,6 +11,7 @@
 #include "Skills/Data/ASSkillData.h"
 #include "TimerManager.h"
 #include "GameFramework/RootMotionSource.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 
 namespace ASSkillDashPrivate
 {
@@ -64,13 +65,14 @@ void UASSkillDash::OnSkillEffect_Implementation()
 
 	bDashStopped = false;
 	LastSweepLocation = StartLocation;
+	DashHitTargets.Reset();
 
 	//서버·클라이언트 모두 실행 (LocalPredicted라 내 화면에서도 바로 움직임)
 	DashTask = UAbilityTask_ApplyRootMotionMoveToForce::ApplyRootMotionMoveToForce(
 		this, NAME_None, TargetLocation, FMath::Max(DashDuration, 0.05f),
-		/*bSetNewMovementMode*/ false, MOVE_Walking,
-		/*bRestrictSpeedToExpected*/ true,
-		/*PathOffsetCurve*/ nullptr,
+		false, MOVE_Walking,
+		 true,
+		 nullptr,
 		//끝나면 미끄러지지 않고 멈춤
 		ERootMotionFinishVelocityMode::SetVelocity, FVector::ZeroVector, 0.0f);
 
@@ -133,55 +135,58 @@ void UASSkillDash::CheckDashHit()
 		return;
 	}
 
+	const FVector SweepStart = LastSweepLocation;
 	const FVector CurrentLocation = Avatar->GetActorLocation();
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASSkillDash), false, Avatar);
-
-	TArray<FHitResult> Hits;
-	World->SweepMultiByObjectType(
-		Hits,
-		LastSweepLocation,
-		CurrentLocation,
-		FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn),
-		FCollisionShape::MakeSphere(DashHitRadius),
-		Params);
 
 	if (bDrawDebug)
 	{
-		DrawDebugLine(World, LastSweepLocation, CurrentLocation, FColor::Cyan, false, 1.0f, 0, 2.0f);
+		DrawDebugLine(World, SweepStart, CurrentLocation, FColor::Cyan, false, 1.0f, 0, 2.0f);
 		DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Cyan, false, 1.0f);
 	}
 
 	LastSweepLocation = CurrentLocation;
 
-	//가장 먼저 닿은 유효 대상 1명
-	AActor* FirstTarget = nullptr;
-	float FirstTime = TNumericLimits<float>::Max();
-	for (const FHitResult& Hit : Hits)
-	{
-		AActor* HitActor = Hit.GetActor();
-		if (Hit.Time < FirstTime && IsValidSkillTarget(HitActor, Avatar, bCanHitPlayers))
-		{
-			FirstTarget = HitActor;
-			FirstTime = Hit.Time;
-		}
-	}
-
-	if (!FirstTarget)
+	UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
+	if (!CombatTargets)
 	{
 		return;
 	}
 
-	//데미지는 서버에서만 (경직은 몬스터가 데미지를 받으면 스스로 적용)
+	FASCombatTargetQuery Query;
+	Query.Shape = EASCombatTargetShape::Segment;
+	Query.SearchOrigin = SweepStart;
+	Query.EndLocation = CurrentLocation;
+	Query.SearchRadius = DashHitRadius;
+	Query.Instigator = Avatar;
+	Query.bCanHitPlayers = bCanHitPlayers;
+	Query.MaxTargets = 1;
+
+	bool bHitTarget = false;
 	if (HasSkillAuthority())
 	{
-		ApplySkillDamage(FirstTarget);
+		TArray<FGameplayEffectSpecHandle> EffectSpecs;
+		const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+		if (DamageSpec.IsValid())
+		{
+			EffectSpecs.Add(DamageSpec);
+		}
+
+		bHitTarget = CombatTargets->ResolveAndApply(Query, EffectSpecs, &DashHitTargets).HasAnyHit();
+	}
+	else
+	{
+		Query.Domain = EASCombatTargetDomain::ActorOnly;
+		bHitTarget = !CombatTargets->FindActorTargets(Query).IsEmpty();
+	}
+
+	if (!bHitTarget)
+	{
+		return;
 	}
 
 	if (bDrawDebug)
 	{
-		DrawDebugSphere(World, FirstTarget->GetActorLocation(), DashHitRadius, 12, FColor::Red, false, 1.0f);
+		DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Red, false, 1.0f);
 	}
 
 	StopDash();
