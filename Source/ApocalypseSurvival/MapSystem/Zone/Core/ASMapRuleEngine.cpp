@@ -3,15 +3,13 @@
 #include "Math/RandomStream.h"
 #include "Misc/Crc.h"
 
-void FASMapRuleEngine::Configure(const TArray<FASZoneConfig>& InZones, float InDangerIncreaseChance)
+void FASMapRuleEngine::Configure(const TArray<FASZoneConfig>& InZones)
 {
 	Zones = InZones;
 	Zones.Sort([](const FASZoneConfig& A, const FASZoneConfig& B)
 	{
 		return A.ZoneId.LexicalLess(B.ZoneId);
 	});
-	DangerIncreaseChance = FMath::IsFinite(InDangerIncreaseChance)
-		? FMath::Clamp(InDangerIncreaseChance, 0.0f, 1.0f) : 0.0f;
 	ZoneIndex.Reset();
 	for (int32 Index = 0; Index < Zones.Num(); ++Index)
 	{
@@ -33,7 +31,9 @@ void FASMapRuleEngine::ResetMatch(int32 InMatchSeed, FASMapStateSnapshot& State)
 	}
 }
 
-bool FASMapRuleEngine::BeginStep(FASMapStateSnapshot& State, const FASMapPhaseContext& Context, FASMapEngineEvents& OutEvents)
+bool FASMapRuleEngine::BeginStep(FASMapStateSnapshot& State, const FASMapPhaseContext& Context,
+	const FASZoneDangerScheduleRow& Rule, const TMap<FName, FASZonePhaseCounts>& PhaseCounts,
+	FASMapEngineEvents& OutEvents)
 {
 	const FName PhaseKey = Context.GetPhaseKey();
 	if (ProcessedPhaseKeys.Contains(PhaseKey))
@@ -42,6 +42,53 @@ bool FASMapRuleEngine::BeginStep(FASMapStateSnapshot& State, const FASMapPhaseCo
 	}
 	ProcessedPhaseKeys.Add(PhaseKey);
 	State.CurrentPhase = Context;
+	const int32 Quota = Context.DayPhase == EASDayPhase::Night ? Rule.MaxRaisedZonesNight : Rule.MaxRaisedZonesDay;
+	if (Quota <= 0)
+	{
+		return true;
+	}
+
+	TArray<FASZoneRuntimeState*> EligibleZones;
+	TArray<FASZoneRuntimeState*> MonsterZones;
+	for (const FASZoneConfig& Config : Zones)
+	{
+		FASZoneRuntimeState* ZoneState = State.Zones.FindByPredicate([&Config](const FASZoneRuntimeState& Zone)
+		{
+			return Zone.ZoneId == Config.ZoneId;
+		});
+		if (!ZoneState || ZoneState->DangerLevel >= ASMap::MaxDangerLevel)
+		{
+			continue;
+		}
+		EligibleZones.Add(ZoneState);
+		// 첫 스텝도 현재 생존 몬스터 수로 우선 후보를 정한다.
+		if (PhaseCounts.FindRef(Config.ZoneId).MonsterCount >= Rule.MonsterCountThreshold)
+		{
+			MonsterZones.Add(ZoneState);
+		}
+	}
+	MonsterZones.Sort([&PhaseCounts](const FASZoneRuntimeState& A, const FASZoneRuntimeState& B)
+	{
+		const int32 CountA = PhaseCounts.FindRef(A.ZoneId).MonsterCount;
+		const int32 CountB = PhaseCounts.FindRef(B.ZoneId).MonsterCount;
+		return CountA == CountB ? A.ZoneId.LexicalLess(B.ZoneId) : CountA > CountB;
+	});
+
+	TSet<FName> RaisedZones;
+	for (FASZoneRuntimeState* Zone : MonsterZones)
+	{
+		++Zone->DangerLevel;
+		RaisedZones.Add(Zone->ZoneId);
+		OutEvents.ChangedZones.Add(Zone->ZoneId);
+		if (RaisedZones.Num() == Quota)
+		{
+			return true;
+		}
+	}
+	EligibleZones.RemoveAll([&RaisedZones](const FASZoneRuntimeState* Zone)
+	{
+		return RaisedZones.Contains(Zone->ZoneId);
+	});
 
 	// FName 내부 인덱스 대신 문자열 CRC를 사용해 같은 매치와 스텝을 재현한다.
 	const FString StepString = PhaseKey.ToString().ToLower();
@@ -49,18 +96,23 @@ bool FASMapRuleEngine::BeginStep(FASMapStateSnapshot& State, const FASMapPhaseCo
 	const uint32 Seed = FCrc::MemCrc32(&MatchSeed, sizeof(MatchSeed), StepHash);
 	FRandomStream Stream(static_cast<int32>(Seed));
 
-	// 설정은 ZoneId 순이다. 최대 위험도 구역도 추첨해 뒤 구역의 난수 순서를 유지한다.
-	for (const FASZoneConfig& Config : Zones)
+	// ZoneId 순에서 시작해 같은 스트림으로 Fisher-Yates 셔플 후 확률을 추첨한다.
+	for (int32 Index = EligibleZones.Num() - 1; Index > 0; --Index)
 	{
-		const float Roll = Stream.FRand();
-		FASZoneRuntimeState* ZoneState = State.Zones.FindByPredicate([&Config](const FASZoneRuntimeState& Zone)
+		EligibleZones.Swap(Index, Stream.RandRange(0, Index));
+	}
+	for (FASZoneRuntimeState* Zone : EligibleZones)
+	{
+		const float Chance = PhaseCounts.FindRef(Zone->ZoneId).bHasPlayers ? Rule.PlayerZoneChance : Rule.BaseChance;
+		if (Stream.FRand() < Chance)
 		{
-			return Zone.ZoneId == Config.ZoneId;
-		});
-		if (ZoneState && Roll < DangerIncreaseChance && ZoneState->DangerLevel < ASMap::MaxDangerLevel)
-		{
-			++ZoneState->DangerLevel;
-			OutEvents.ChangedZones.Add(Config.ZoneId);
+			++Zone->DangerLevel;
+			RaisedZones.Add(Zone->ZoneId);
+			OutEvents.ChangedZones.Add(Zone->ZoneId);
+			if (RaisedZones.Num() == Quota)
+			{
+				break;
+			}
 		}
 	}
 	return true;

@@ -5,7 +5,6 @@
 #include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "ASMapFunctionLibrary.generated.h"
 
-class AASMapSystemManager;
 class APawn;
 class UASMapDefinition;
 class UASMapStateComponent;
@@ -17,16 +16,16 @@ class APOCALYPSESURVIVAL_API UASMapFunctionLibrary : public UBlueprintFunctionLi
 	GENERATED_BODY()
 
 public:
+	/** 등록 순서와 무관하게 레벨에 구역 액터가 있는지 확인한다. */
+	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
+	static bool LevelHasMapZones(const UObject* WorldContextObject);
+
 	/** 현재 GameState의 MapState 컴포넌트 (있는 경우). */
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static UASMapStateComponent* GetMapStateComponent(const UObject* WorldContextObject);
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static UASMapDefinition* GetMapDefinition(const UObject* WorldContextObject);
-
-	/** 서버 전용 매니저. 클라이언트에서는 null을 반환한다. */
-	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
-	static AASMapSystemManager* GetMapSystemManager(const UObject* WorldContextObject);
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static FName FindZoneIdAtLocation(const UObject* WorldContextObject, const FVector& Location);

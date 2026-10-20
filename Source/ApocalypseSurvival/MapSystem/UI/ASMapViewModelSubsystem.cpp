@@ -41,7 +41,7 @@ void UASMapViewModelSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 
-	if (InWorld.GetNetMode() == NM_DedicatedServer)
+	if (InWorld.GetNetMode() == NM_DedicatedServer || !UASMapFunctionLibrary::LevelHasMapZones(&InWorld))
 	{
 		return;
 	}

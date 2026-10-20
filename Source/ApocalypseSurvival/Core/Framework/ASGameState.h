@@ -5,12 +5,16 @@
 #include "Core/Framework/ASGameTypes.h"
 #include "ASGameState.generated.h"
 
+class UASMapStateComponent;
+
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameState : public AGameState
 {
 	GENERATED_BODY()
 	
 public:
+	AASGameState();
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	// 서버 전용 (GameMode가 호출)
@@ -58,4 +62,8 @@ protected:
 	
 	UFUNCTION()
 	void OnRep_CurrentPhase();
+
+private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASMapStateComponent> MapState;
 };

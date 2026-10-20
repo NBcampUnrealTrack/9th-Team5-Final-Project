@@ -26,7 +26,7 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision")
 	bool bWallOcclusionByDefault = true;
 
-	/** 수풀 안의 공격자가 노출 상태를 유지하는 시간. */
+	/** 수풀 안에서 공격하거나 플레이어에게 피해를 받은 대상이 노출 상태를 유지하는 시간. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "s"))
 	float AttackRevealSeconds = 3.0f;
 
