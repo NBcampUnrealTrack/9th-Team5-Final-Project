@@ -35,4 +35,13 @@ namespace ASGameplayTags
 
 	//강태오 레드라인 버프 중 (나중에 적중 시 충격파 등 조건에 사용)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Taeo_Redline);
+
+	//강태오 오버클록 버프 중 (GE_Taeo_Overclock이 붙임, 적중 시 스태미나 회복 조건)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Taeo_Overclock);
+
+	//적중 이벤트 (피해를 준 순간 공격자 ASC로 전송, 전투 서브시스템에서 보낼 예정)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Hit_Dealt);
+
+	//공격 종류: 기본 공격 (적중 이벤트 InstigatorTags에 담아 구분)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attack_Basic);
 }

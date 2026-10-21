@@ -45,7 +45,7 @@ void UASSkillRedline::ApplySelfEffect(TSubclassOf<UGameplayEffect> EffectClass)
 		return;
 	}
 
-	//버프 시간 = 장판 시간 (SkillData가 있으면 DT의 Area Duration 값)
+	//버프 시간 = 장판 시간 (SkillData가 있으면 DT의 Area Duration 값)`
 	if (Duration > 0.0f)
 	{
 		SpecHandle.Data->SetDuration(Duration, true);
