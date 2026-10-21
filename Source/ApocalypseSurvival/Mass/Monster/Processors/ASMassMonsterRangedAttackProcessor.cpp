@@ -63,6 +63,11 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
+			if (Config.AttackPattern != EASMassMonsterAttackPattern::RangedProjectile)
+			{
+				continue;
+			}
+
 			FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
 			if (CurrentTime < Combat.NextAttackTimeSeconds)
 			{

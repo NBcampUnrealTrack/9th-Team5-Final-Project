@@ -33,5 +33,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Monster|Home", meta = (ClampMin = "1.0", Units = "cm"))
 	float DefaultReturnAcceptanceRadius = 100.0f;
+
+	/** 끄면 임시 상태 색상 큐브 대신 Visualization Trait에 지정한 종류별 메시·머티리얼을 그대로 표시한다. */
+	UPROPERTY(EditAnywhere, Category = "Monster|Visual")
+	bool bUseTemporaryStateVisual = true;
 };
 

@@ -113,6 +113,17 @@ public:
 		EASMassMonsterWorldBehavior WorldBehavior,
 		TArray<FMassEntityHandle>& OutEntities);
 
+	/**
+	 * Mass Processor가 실행 중일 때 사용할 지연 생성 요청.
+	 * Entity Manager 처리 구간이 끝난 뒤 생성하며, 실제 생성 수만 밤 웨이브 집계에 반영한다.
+	 */
+	bool QueueMonsterSpawns(UMassEntityConfigAsset* EntityConfig,
+		TConstArrayView<FTransform> SpawnTransforms,
+		EASMassMonsterWorldBehavior WorldBehavior,
+		int32 InitialTargetId,
+		const FVector& InitialTargetLocation,
+		bool bCountTowardWave);
+
 	/** 방금 생성한 낮 몬스터에 스폰포인트별 감지·귀환 설정을 적용한다. */
 	int32 ConfigureMonsterHomes(TConstArrayView<FMassEntityHandle> Entities,
 		const FASMassMonsterHomeSettings& HomeSettings);
@@ -166,14 +177,31 @@ public:
 	FASMassMonsterStateCounts GetManagedMonsterStateCounts() const;
 
 private:
+	struct FQueuedMonsterSpawnRequest
+	{
+		TWeakObjectPtr<UMassEntityConfigAsset> EntityConfig;
+		TArray<FTransform> SpawnTransforms;
+		EASMassMonsterWorldBehavior WorldBehavior = EASMassMonsterWorldBehavior::DayTerritory;
+		int32 InitialTargetId = INDEX_NONE;
+		FVector InitialTargetLocation = FVector::ZeroVector;
+		bool bCountTowardWave = false;
+	};
+
 	bool CanMutateEntities(FString& OutError) const;
 	int32 ApplyDamageToMatchingMonsters(float Damage, AActor* DamageInstigator, int32 MaxTargets,
 		TFunctionRef<bool(const FVector&, const struct FASMassMonsterConfigFragment&)> Predicate);
+	void FlushQueuedMonsterSpawns();
+	void ScheduleQueuedMonsterSpawnFlush();
+	void ConfigureInitialTargets(TConstArrayView<FMassEntityHandle> Entities, int32 TargetId,
+		const FVector& TargetLocation);
 	void CompactManagedEntities();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMassSpawnerSubsystem> SpawnerSubsystem;
 
 	TArray<FMassEntityHandle> ManagedEntities;
+	TArray<FQueuedMonsterSpawnRequest> QueuedMonsterSpawnRequests;
+	FTimerHandle QueuedMonsterSpawnFlushTimerHandle;
+	bool bQueuedMonsterSpawnFlushScheduled = false;
 	bool bMutationInProgress = false;
 };

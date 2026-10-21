@@ -57,6 +57,13 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
 			FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
+			const bool bUsesMelee = Config.AttackPattern == EASMassMonsterAttackPattern::Melee
+				|| Combat.bUseFallbackMelee;
+			if (!bUsesMelee)
+			{
+				continue;
+			}
+
 			if (CurrentTime < Combat.NextAttackTimeSeconds)
 			{
 				Combat.AttackState = EASMassMonsterAttackState::Recovering;
@@ -64,8 +71,7 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 			}
 
 			Combat.AttackState = EASMassMonsterAttackState::Ready;
-			if (Config.AttackPattern != EASMassMonsterAttackPattern::Melee
-				|| Behaviors[EntityIt].State != EASMassMonsterState::Attack
+			if (Behaviors[EntityIt].State != EASMassMonsterState::Attack
 				|| !Targets[EntityIt].HasTarget())
 			{
 				continue;
@@ -73,14 +79,23 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 
 			APawn* TargetPawn = TargetSubsystem->ResolveTargetPawn(Targets[EntityIt].TargetId);
 			const FVector SourceLocation = Transforms[EntityIt].GetTransform().GetLocation();
+			const float EffectiveAttackRange = Combat.bUseFallbackMelee
+				? Config.FallbackMeleeAttackRange
+				: Config.AttackRange;
+			const float EffectiveAttackPower = Combat.bUseFallbackMelee
+				? Config.FallbackMeleeAttackPower
+				: Config.AttackPower;
+			const float EffectiveCooldown = Combat.bUseFallbackMelee
+				? Config.FallbackMeleeAttackCooldown
+				: Config.AttackCooldown;
 			if (!IsValid(TargetPawn)
-				|| FVector::DistSquared2D(SourceLocation, TargetPawn->GetActorLocation()) > FMath::Square(Config.AttackRange))
+				|| FVector::DistSquared2D(SourceLocation, TargetPawn->GetActorLocation()) > FMath::Square(EffectiveAttackRange))
 			{
 				continue;
 			}
 
-			ASMassMonsterDamage::ApplyToActor(TargetPawn, Config.AttackPower, SourceLocation);
-			Combat.NextAttackTimeSeconds = CurrentTime + Config.AttackCooldown;
+			ASMassMonsterDamage::ApplyToActor(TargetPawn, EffectiveAttackPower, SourceLocation);
+			Combat.NextAttackTimeSeconds = CurrentTime + EffectiveCooldown;
 			Combat.AttackState = EASMassMonsterAttackState::Recovering;
 		}
 	});

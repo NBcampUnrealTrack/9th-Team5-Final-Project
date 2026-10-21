@@ -39,9 +39,13 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	Health.CurrentHealth = Config.MaxHealth;
 
 	BuildContext.AddFragment<FASMassMonsterBehaviorFragment>();
-	BuildContext.AddFragment<FASMassMonsterTemporaryVisualFragment>();
+	if (bUseTemporaryStateVisual)
+	{
+		BuildContext.AddFragment<FASMassMonsterTemporaryVisualFragment>();
+	}
 	BuildContext.AddFragment<FASMassMonsterTargetFragment>();
 	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
+	BuildContext.AddFragment<FASMassMonsterModifierFragment>();
 	BuildContext.AddFragment<FASMassMonsterNavigationFragment>();
 
 	FASMassMonsterHomeFragment& Home = BuildContext.AddFragment_GetRef<FASMassMonsterHomeFragment>();

@@ -49,11 +49,15 @@ namespace ASMassMonsterBehavior
 	static void SetCombatApproachState(
 		const FVector& EntityLocation,
 		const FASMassMonsterConfigFragment& Config,
+		const FASMassMonsterCombatFragment& Combat,
 		const FASMassMonsterTargetFragment& Target,
 		FASMassMonsterBehaviorFragment& Behavior)
 	{
 		const float DistanceSquared = FVector::DistSquared2D(EntityLocation, Target.CachedTargetLocation);
-		Behavior.State = DistanceSquared <= FMath::Square(Config.AttackRange)
+		const float EffectiveAttackRange = Combat.bUseFallbackMelee
+			? Config.FallbackMeleeAttackRange
+			: Config.AttackRange;
+		Behavior.State = DistanceSquared <= FMath::Square(EffectiveAttackRange)
 			? EASMassMonsterState::Attack
 			: EASMassMonsterState::Chase;
 	}
@@ -71,6 +75,7 @@ void UASMassMonsterBehaviorProcessor::ConfigureQueries(const TSharedRef<FMassEnt
 {
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterHomeFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadWrite);
@@ -94,6 +99,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
+		const TConstArrayView<FASMassMonsterCombatFragment> Combats = Context.GetFragmentView<FASMassMonsterCombatFragment>();
 		const TConstArrayView<FASMassMonsterHomeFragment> Homes = Context.GetFragmentView<FASMassMonsterHomeFragment>();
 		const TArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetMutableFragmentView<FASMassMonsterBehaviorFragment>();
 		const TArrayView<FASMassMonsterTargetFragment> Targets = Context.GetMutableFragmentView<FASMassMonsterTargetFragment>();
@@ -153,7 +159,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 					continue;
 				}
 
-				ASMassMonsterBehavior::SetCombatApproachState(EntityLocation, Config, Target, Behavior);
+				ASMassMonsterBehavior::SetCombatApproachState(EntityLocation, Config, Combats[EntityIt], Target, Behavior);
 				continue;
 			}
 
@@ -210,7 +216,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 				continue;
 			}
 
-			ASMassMonsterBehavior::SetCombatApproachState(EntityLocation, Config, Target, Behavior);
+			ASMassMonsterBehavior::SetCombatApproachState(EntityLocation, Config, Combats[EntityIt], Target, Behavior);
 		}
 	});
 }
