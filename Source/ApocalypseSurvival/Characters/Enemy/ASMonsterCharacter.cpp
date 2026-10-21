@@ -25,6 +25,7 @@
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
+#include "Items/Loot/ASMonsterDropSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -552,6 +553,11 @@ void AASMonsterCharacter::HandleDeath()
 	SetHealthBarEnabled(false);
 	SetTargetedAttackMaterialTint(false);
 	AwardExperienceToKiller();
+	if (UASMonsterDropSubsystem* DropSubsystem = GetWorld()->GetSubsystem<UASMonsterDropSubsystem>())
+	{
+		DropSubsystem->SpawnDrops(MonsterDefinition ? MonsterDefinition->DropGroup : FDataTableRowHandle(),
+			GetActorLocation(), LastDamageKillerController.Get());
+	}
 	ReportDeathToGameMode();
 
 	// 사망 직전의 공격 몽타주/타격 이벤트가 계속되는 것을 막는다.

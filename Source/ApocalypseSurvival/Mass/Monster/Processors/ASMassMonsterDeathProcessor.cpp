@@ -8,6 +8,8 @@
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
+#include "Items/Loot/ASMonsterDropSubsystem.h"
+#include "MassCommonFragments.h"
 #include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
@@ -17,6 +19,16 @@
 #include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterDeathProcessor)
+
+namespace
+{
+	struct FASPendingMonsterDrop
+	{
+		FDataTableRowHandle DropGroup;
+		FVector Location = FVector::ZeroVector;
+		TWeakObjectPtr<AController> KillerController;
+	};
+}
 
 UASMassMonsterDeathProcessor::UASMassMonsterDeathProcessor()
 	: NewlyDeadQuery(*this)
@@ -33,6 +45,7 @@ UASMassMonsterDeathProcessor::UASMassMonsterDeathProcessor()
 void UASMassMonsterDeathProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
 	NewlyDeadQuery.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadWrite);
+	NewlyDeadQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
 	NewlyDeadQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadWrite);
 	NewlyDeadQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadWrite);
 	NewlyDeadQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
@@ -52,12 +65,14 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 
 	int32 NewlyDeadCount = 0;
 	TMap<TWeakObjectPtr<AController>, int32> ExperienceByController;
+	TArray<FASPendingMonsterDrop> PendingDrops;
 	const UASMassPlayerTargetSubsystem* PlayerTargets = GetWorld()
 		? GetWorld()->GetSubsystem<UASMassPlayerTargetSubsystem>()
 		: nullptr;
-	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount, &ExperienceByController, PlayerTargets](FMassExecutionContext& Context)
+	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount, &ExperienceByController, &PendingDrops, PlayerTargets](FMassExecutionContext& Context)
 	{
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
+		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetMutableFragmentView<FASMassMonsterBehaviorFragment>();
 		const TArrayView<FASMassMonsterTargetFragment> Targets = Context.GetMutableFragmentView<FASMassMonsterTargetFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
@@ -73,14 +88,24 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 			Health.CurrentHealth = 0.0f;
 			Health.DeathTimeRemaining = Config.DeathDespawnDelay;
 			Health.bDeathTimerStarted = true;
-			if (Config.ExperienceReward > 0 && PlayerTargets)
+			if (PlayerTargets)
 			{
 				if (const FASMassPlayerTargetSnapshot* KillerSnapshot =
 					PlayerTargets->FindTarget(Health.LastDamageInstigatorTargetId))
 				{
 					if (AController* KillerController = KillerSnapshot->Controller.Get())
 					{
-						ExperienceByController.FindOrAdd(TWeakObjectPtr<AController>(KillerController)) += Config.ExperienceReward;
+						if (Config.ExperienceReward > 0)
+						{
+							ExperienceByController.FindOrAdd(TWeakObjectPtr<AController>(KillerController)) += Config.ExperienceReward;
+						}
+						if (Config.DropGroup.DataTable && !Config.DropGroup.RowName.IsNone())
+						{
+							FASPendingMonsterDrop& PendingDrop = PendingDrops.AddDefaulted_GetRef();
+							PendingDrop.DropGroup = Config.DropGroup;
+							PendingDrop.Location = Transforms[EntityIt].GetTransform().GetLocation();
+							PendingDrop.KillerController = KillerController;
+						}
 					}
 				}
 			}
@@ -99,7 +124,8 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 			{
 				// Mass 실행 중에는 밤 종료가 Entity Fragment를 즉시 변경할 수 없으므로 다음 틱에 집계한다.
 				World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
-					GameMode, [GameMode, NewlyDeadCount, ExperienceByController = MoveTemp(ExperienceByController)]()
+					GameMode, [GameMode, NewlyDeadCount, ExperienceByController = MoveTemp(ExperienceByController),
+						PendingDrops = MoveTemp(PendingDrops)]()
 					{
 						GameMode->OnEnemiesKilled(NewlyDeadCount);
 						for (const TPair<TWeakObjectPtr<AController>, int32>& Entry : ExperienceByController)
@@ -110,6 +136,14 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 							if (UASProgressionComponent* Progression = PlayerState ? PlayerState->GetProgressionComponent() : nullptr)
 							{
 								Progression->AddExperience(Entry.Value);
+							}
+						}
+						if (UASMonsterDropSubsystem* DropSubsystem = GameMode->GetWorld()->GetSubsystem<UASMonsterDropSubsystem>())
+						{
+							for (const FASPendingMonsterDrop& PendingDrop : PendingDrops)
+							{
+								DropSubsystem->SpawnDrops(PendingDrop.DropGroup, PendingDrop.Location,
+									PendingDrop.KillerController.Get());
 							}
 						}
 					}));

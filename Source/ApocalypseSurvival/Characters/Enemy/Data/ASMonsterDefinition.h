@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
 #include "ASMonsterDefinition.generated.h"
 
@@ -71,6 +72,11 @@ public:
 	/** 플레이어가 이 몬스터를 처치했을 때 지급할 기본 경험치. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rewards", meta = (ClampMin = "0"))
 	int32 ExperienceReward = 10;
+
+	/** 몬스터 처치 시 추첨할 드랍 그룹 행. 비어 있으면 아이템을 드랍하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rewards",
+		meta = (RowType = "/Script/ApocalypseSurvival.ASMonsterDropGroupRow"))
+	FDataTableRowHandle DropGroup;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster")
 	FASMonsterInitialAttributes InitialAttributes;

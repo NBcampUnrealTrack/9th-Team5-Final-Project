@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataTable.h"
 #include "MassEntityTypes.h"
 #include "MassLODTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
@@ -148,6 +149,10 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 	/** 플레이어가 이 Mass 몬스터를 처치했을 때 지급할 기본 경험치. */
 	UPROPERTY(EditAnywhere, Category = "Rewards", meta = (ClampMin = "0"))
 	int32 ExperienceReward = 10;
+
+	/** Actor 몬스터와 공유하는 몬스터 드랍 그룹. 비어 있으면 아이템을 드랍하지 않는다. */
+	UPROPERTY(EditAnywhere, Category = "Rewards", meta = (RowType = "/Script/ApocalypseSurvival.ASMonsterDropGroupRow"))
+	FDataTableRowHandle DropGroup;
 
 	UPROPERTY(EditAnywhere, Category = "Attributes", meta = (ClampMin = "1.0"))
 	float MaxHealth = 100.0f;
