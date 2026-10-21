@@ -52,6 +52,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Progression|SkillUpgrade")
 	bool GetSkillUpgradeTier(int32 TierIndex, FASSkillUpgradeTier& OutTier) const;
 	
+	// 클라이언트에 캐릭터 정의(성장 데이터)가 늦게 도착했을 때 PlayerState가 호출한다. 경험치 UI를 다시 갱신한다.
+	void NotifyProgressionDataChanged();
+	
 	// UI용 이벤트 (서버는 값 변경 시, 클라이언트는 복제 도착 시 호출)
 	UPROPERTY(BlueprintAssignable, Category = "Progression")
 	FASOnLevelChanged OnLevelChanged;

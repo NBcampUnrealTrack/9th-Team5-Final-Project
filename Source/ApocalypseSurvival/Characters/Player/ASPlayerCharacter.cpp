@@ -22,6 +22,13 @@
 #include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
+#include "TimerManager.h"
+#include "Net/UnrealNetwork.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "EngineUtils.h"
 
 AASPlayerCharacter::AASPlayerCharacter()
 {
@@ -192,10 +199,20 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 		->RegisterGameplayTagEvent(ASGameplayTags::State_Dead, EGameplayTagEventType::NewOrRemoved)
 		.AddUObject(this, &AASPlayerCharacter::HandleDeadTagChanged);
 
+	DownedTagChangedHandle = ASC
+	->RegisterGameplayTagEvent(ASGameplayTags::State_Downed, EGameplayTagEventType::NewOrRemoved)
+	.AddUObject(this, &AASPlayerCharacter::HandleDownedTagChanged);
+
 	// 늦게 접속한 클라이언트는 이미 죽어 있는 플레이어를 받을 수 있다. 태그 알림은 그때 오지 않는다.
 	if (IsDead())
 	{
 		ApplyLocalDeath();
+	}
+	
+	// 늦게 접속한 클라이언트는 이미 쓰러진 플레이어를 받을 수 있다.
+	if (IsDowned())
+	{
+		HandleDownedTagChanged(ASGameplayTags::State_Downed, 1);
 	}
 	
 	BindProgressionDelegates();
@@ -230,17 +247,33 @@ void AASPlayerCharacter::UnbindDeathDelegates()
 				->RegisterGameplayTagEvent(ASGameplayTags::State_Dead, EGameplayTagEventType::NewOrRemoved)
 				.Remove(DeadTagChangedHandle);
 		}
+		
+		if (DownedTagChangedHandle.IsValid())
+		{
+			ASC
+				->RegisterGameplayTagEvent(ASGameplayTags::State_Downed, EGameplayTagEventType::NewOrRemoved)
+				.Remove(DownedTagChangedHandle);
+		}
 	}
 
 	HealthChangedHandle.Reset();
 	DeadTagChangedHandle.Reset();
+	DownedTagChangedHandle.Reset();
 }
 
 void AASPlayerCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-	if (Data.NewValue > 0.0f || !HasAuthority() || !IsValid(ASC) || IsDead())
+	if (Data.NewValue > 0.0f || !HasAuthority() || !IsValid(ASC) || IsDead() || IsDowned())
 	{
+		return;
+	}
+
+	// 멀티 규칙: 바로 죽지 않고 쓰러져서 파티원의 부활을 기다린다.
+	const AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>();
+	if (GameMode && GameMode->IsDownedEnabled())
+	{
+		EnterDowned();
 		return;
 	}
 
@@ -255,8 +288,19 @@ void AASPlayerCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 		Payload.OptionalObject = Data.GEModData->EffectSpec.Def;
 	}
 
+	RequestDeath(Payload);
+}
+
+void AASPlayerCharacter::RequestDeath(const FGameplayEventData& Payload)
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!HasAuthority() || !IsValid(ASC) || IsDead())
+	{
+		return;
+	}
+
 	// 사망 어빌리티가 이 이벤트로 켜진다. 돌려주는 값은 켜진 어빌리티 수다.
-	const int32 ActivatedCount = ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
+	const int32 ActivatedCount = ASC->HandleGameplayEvent(ASGameplayTags::GameplayEvent_Death, &Payload);
 	if (ActivatedCount == 0)
 	{
 		// 어빌리티 세트에 사망 어빌리티가 없다. 연출 없이 바로 죽인다. 리스폰이 막히는 것보다 낫다.
@@ -265,6 +309,292 @@ void AASPlayerCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 		StartDeath();
 		FinishDeath();
 	}
+}
+
+bool AASPlayerCharacter::IsDowned() const
+{
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	return ASC && ASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed);
+}
+
+void AASPlayerCharacter::EnterDowned()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!HasAuthority() || !IsValid(ASC) || IsDead() || IsDowned())
+	{
+		return;
+	}
+
+	// 하던 공격, 스킬, 회피를 끊는다. 사망과 같이 SurvivesDeath 가 붙은 것만 남긴다.
+	FGameplayTagContainer SurvivingTags;
+	SurvivingTags.AddTag(ASGameplayTags::Ability_Behavior_SurvivesDeath);
+	ASC->CancelAbilities(nullptr, &SurvivingTags);
+
+	// 모든 머신에 복제되는 태그. 이 줄에서 서버의 HandleDownedTagChanged 가 바로 불린다.
+	ASC->AddLooseGameplayTag(ASGameplayTags::State_Downed, 1, EGameplayTagReplicationState::TagAndCountToAll);
+
+	GetWorldTimerManager().SetTimer(BleedOutTimerHandle, this, &AASPlayerCharacter::BleedOut, DownedDuration, false);
+
+	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+	{
+		GameMode->OnPlayerDowned(GetController());
+	}
+}
+
+void AASPlayerCharacter::BleedOut()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!HasAuthority() || !IsValid(ASC) || !IsDowned())
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(BleedOutTimerHandle);
+
+	// 사망을 먼저 시작해서 사망 태그가 붙은 뒤에 쓰러짐 태그를 뗀다. 그 사이 이동이 잠깐 살아나지 않게 하기 위해서다.
+	FGameplayEventData Payload;
+	Payload.EventTag = ASGameplayTags::GameplayEvent_Death;
+	Payload.Target = this;
+	RequestDeath(Payload);
+
+	ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Downed, 1, EGameplayTagReplicationState::TagAndCountToAll);
+}
+
+void AASPlayerCharacter::HandleDownedTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+
+	if (NewCount > 0)
+	{
+		// 진행 중인 길찾기를 끊고 제자리에 멈춘다. 충돌은 유지해서 파티원이 다가갈 수 있게 한다.
+		if (AController* OwnController = GetController())
+		{
+			OwnController->StopMovement();
+		}
+		MoveComp->StopMovementImmediately();
+		MoveComp->DisableMovement();
+		OnDownedChanged(true);
+	}
+	else
+	{
+		// 부활이면 다시 걷는다. 시간 초과로 사망하는 중이면 사망 처리가 이동을 맡는다.
+		if (!IsDead())
+		{
+			MoveComp->SetMovementMode(MOVE_Walking);
+		}
+		OnDownedChanged(false);
+	}
+}
+
+void AASPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AASPlayerCharacter, bBeingRevived);
+}
+
+void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	// 캐릭터 전용 매핑을 추가한다. 리스폰으로 새 캐릭터가 붙어도 같은 에셋이라 중복되지 않는다.
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			if (CharacterMappingContext)
+			{
+				Subsystem->AddMappingContext(CharacterMappingContext, 1);
+			}
+		}
+	}
+
+	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+		if (ReviveAction)
+		{
+			EnhancedInput->BindAction(ReviveAction, ETriggerEvent::Started, this, &AASPlayerCharacter::OnRevivePressed);
+		}
+	}
+}
+
+void AASPlayerCharacter::OnRevivePressed()
+{
+	if (IsDead() || IsDowned())
+	{
+		return;
+	}
+
+	AASPlayerCharacter* Target = FindReviveTarget();
+	if (!Target)
+	{
+		return;
+	}
+
+	// 부활 중에 움직이면 취소되므로 이동을 먼저 멈춘다.
+	if (AController* OwnController = GetController())
+	{
+		OwnController->StopMovement();
+	}
+	GetCharacterMovement()->StopMovementImmediately();
+
+	ServerRequestRevive(Target);
+}
+
+AASPlayerCharacter* AASPlayerCharacter::FindReviveTarget() const
+{
+	AASPlayerCharacter* BestTarget = nullptr;
+	float BestDistanceSq = FMath::Square(ReviveRange);
+
+	for (TActorIterator<AASPlayerCharacter> It(GetWorld()); It; ++It)
+	{
+		AASPlayerCharacter* Other = *It;
+		if (Other == this || !Other->IsDowned() || Other->IsDead() || Other->IsBeingRevived())
+		{
+			continue;
+		}
+
+		const float DistanceSq = FVector::DistSquared(Other->GetActorLocation(), GetActorLocation());
+		if (DistanceSq <= BestDistanceSq)
+		{
+			BestDistanceSq = DistanceSq;
+			BestTarget = Other;
+		}
+	}
+
+	return BestTarget;
+}
+
+void AASPlayerCharacter::ServerRequestRevive_Implementation(AASPlayerCharacter* Target)
+{
+	// 클라이언트 요청이라 서버에서 다시 확인한다.
+	if (!Target || Target == this || IsDead() || IsDowned())
+	{
+		return;
+	}
+
+	if (FVector::DistSquared(Target->GetActorLocation(), GetActorLocation()) > FMath::Square(Target->ReviveRange))
+	{
+		return;
+	}
+
+	Target->StartRevive(this);
+}
+
+void AASPlayerCharacter::StartRevive(AASPlayerCharacter* Reviver)
+{
+	if (!HasAuthority() || !Reviver || !IsDowned() || IsDead() || bBeingRevived)
+	{
+		return;
+	}
+
+	ActiveReviver = Reviver;
+	ReviveElapsed = 0.f;
+	bBeingRevived = true;
+	OnRep_BeingRevived(); // 서버는 OnRep 이 자동으로 불리지 않는다.
+
+	// 부활시키는 사람이 공격, 스킬, 회피를 쓰면 취소한다.
+	if (UAbilitySystemComponent* ReviverASC = Reviver->GetAbilitySystemComponent())
+	{
+		ReviverAbilitySystem = ReviverASC;
+		ReviverAbilityActivatedHandle = ReviverASC->AbilityActivatedCallbacks.AddUObject(this, &AASPlayerCharacter::HandleReviverAbilityActivated);
+	}
+
+	// 부활받는 동안은 사망까지 남은 시간이 줄지 않는다.
+	GetWorldTimerManager().PauseTimer(BleedOutTimerHandle);
+
+	constexpr float TickInterval = 0.1f;
+	GetWorldTimerManager().SetTimer(ReviveTickTimerHandle, this, &AASPlayerCharacter::TickRevive, TickInterval, true);
+
+	UE_LOG(LogTemp, Log, TEXT("[Downed] %s 가 %s 부활 시작"), *GetNameSafe(Reviver), *GetName());
+}
+
+void AASPlayerCharacter::TickRevive()
+{
+	const AASPlayerCharacter* Reviver = ActiveReviver.Get();
+
+	// 부활시키는 사람이 움직이거나, 멀어지거나, 쓰러지거나, 죽으면 취소. 범위와 속도에 약간 여유를 둔다.
+	constexpr float RangeMargin = 50.f;
+	constexpr float MoveSpeedThreshold = 50.f;
+	const bool bStillValid = IsDowned() && Reviver && !Reviver->IsDead() && !Reviver->IsDowned()
+		&& Reviver->GetVelocity().SizeSquared2D() <= FMath::Square(MoveSpeedThreshold)
+		&& FVector::DistSquared(Reviver->GetActorLocation(), GetActorLocation()) <= FMath::Square(ReviveRange + RangeMargin);
+
+	if (!bStillValid)
+	{
+		CancelRevive();
+		return;
+	}
+
+	ReviveElapsed += GetWorldTimerManager().GetTimerRate(ReviveTickTimerHandle);
+	if (ReviveElapsed >= ReviveDuration)
+	{
+		Revive();
+	}
+}
+
+void AASPlayerCharacter::HandleReviverAbilityActivated(UGameplayAbility* Ability)
+{
+	UE_LOG(LogTemp, Log, TEXT("[Downed] 부활 중 어빌리티 사용(%s)"), *GetNameSafe(Ability));
+	CancelRevive();
+}
+
+void AASPlayerCharacter::ClearReviver()
+{
+	// ASC 는 PlayerState 에 남으므로 구독을 반드시 푼다.
+	if (UAbilitySystemComponent* ReviverASC = ReviverAbilitySystem.Get())
+	{
+		ReviverASC->AbilityActivatedCallbacks.Remove(ReviverAbilityActivatedHandle);
+	}
+
+	ReviverAbilitySystem.Reset();
+	ReviverAbilityActivatedHandle.Reset();
+	ActiveReviver.Reset();
+}
+
+void AASPlayerCharacter::CancelRevive()
+{
+	if (!HasAuthority() || !bBeingRevived)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(ReviveTickTimerHandle);
+	ClearReviver();
+	bBeingRevived = false;
+	OnRep_BeingRevived();
+
+	// 멈춰 둔 사망 타이머를 이어서 진행
+	GetWorldTimerManager().UnPauseTimer(BleedOutTimerHandle);
+
+	UE_LOG(LogTemp, Log, TEXT("[Downed] %s 부활 취소"), *GetName());
+}
+
+void AASPlayerCharacter::Revive()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!HasAuthority() || !IsValid(ASC) || !IsDowned() || IsDead())
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(ReviveTickTimerHandle);
+	GetWorldTimerManager().ClearTimer(BleedOutTimerHandle);
+	ClearReviver();
+	bBeingRevived = false;
+	OnRep_BeingRevived();
+
+	// 체력을 먼저 채운 뒤 쓰러짐 태그를 뗀다. 체력이 0 인 채로 태그가 떨어지면 다시 쓰러질 수 있다.
+	const float MaxHealth = ASC->GetNumericAttribute(UASHealthAttributeSet::GetMaxHealthAttribute());
+	ASC->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), MaxHealth * ReviveHealthRatio);
+	ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Downed, 1, EGameplayTagReplicationState::TagAndCountToAll);
+
+	UE_LOG(LogTemp, Log, TEXT("[Downed] %s 부활 완료 (체력 %.0f)"), *GetName(), MaxHealth * ReviveHealthRatio);
+}
+
+void AASPlayerCharacter::OnRep_BeingRevived()
+{
+	OnBeingRevivedChanged(bBeingRevived);
 }
 
 void AASPlayerCharacter::HandleDeadTagChanged(const FGameplayTag Tag, int32 NewCount)
@@ -342,6 +672,13 @@ void AASPlayerCharacter::RestoreFromDeath()
 
 void AASPlayerCharacter::DebugAddExp(int32 Amount)
 {
+	// 경험치는 서버만 바꿀 수 있다. 클라이언트에서 입력하면 서버에 요청한다.
+	if (!HasAuthority())
+	{
+		ServerDebugAddExp(Amount);
+		return;
+	}
+	
 	AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>();
 	UASProgressionComponent* Progression = ASPlayerState ? ASPlayerState->GetProgressionComponent() : nullptr;
 	if (!Progression)
@@ -351,6 +688,31 @@ void AASPlayerCharacter::DebugAddExp(int32 Amount)
 	}
 	
 	Progression->AddExperience(Amount);
+}
+
+void AASPlayerCharacter::ServerDebugAddExp_Implementation(int32 Amount)
+{
+	DebugAddExp(Amount);
+}
+
+void AASPlayerCharacter::DebugKillSelf()
+{
+	if (!HasAuthority())
+	{
+		ServerDebugKillSelf();
+		return;
+	}
+	
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		// 실제 피해와 같은 경로(체력 0 -> 쓰러짐 또는 사망)를 탄다.
+		ASC->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), 0.f);
+	}
+}
+
+void AASPlayerCharacter::ServerDebugKillSelf_Implementation()
+{
+	DebugKillSelf();
 }
 
 void AASPlayerCharacter::DebugSelectCharacter(int32 Index)

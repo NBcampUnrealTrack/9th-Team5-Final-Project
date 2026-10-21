@@ -25,6 +25,9 @@ public:
 	// 스폰할 캐릭터 BP: PlayerState에 정해진 캐릭터(리스폰) -> 캐릭터 선택 -> DefaultPawnClass 순
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 	
+	// 서버 전용. 클라이언트의 캐릭터 선택이 도착했을 때 PlayerState가 호출한다. 아직 스폰 전이면 스폰한다.
+	void NotifyCharacterSelectionReceived(APlayerController* PlayerController);
+	
 	// 규칙 조회 (일차별 데이터 교체 가능)
 	virtual float GetDayDuration(int32 Day) const;
 	virtual float GetNightDuration(int32 Day) const;
@@ -61,6 +64,15 @@ public:
 	// 플레이어가 죽었을 때 호출. 데스카운트 초과면 패배, 아니면 리스폰
 	UFUNCTION(BlueprintCallable, Category = "Death")
 	void OnPlayerDied(AController* DeadController);
+
+	// 멀티 규칙(쓰러짐, 부활, 리스폰 없음)을 쓰는가. 혼자 실행(Standalone)이면 기존 싱글 규칙
+bool IsMultiplayerRules() const;
+	
+	// 체력이 0이 됐을 때 사망 대신 쓰러지는가 (멀티 규칙)
+	bool IsDownedEnabled() const { return IsMultiplayerRules(); }
+	
+	// 플레이어가 쓰러졌을 때 캐릭터가 호출 (서버 전용). 전멸이면 패배
+	void OnPlayerDowned(AController* DownedController);
 		
 	// 맵에 배치된 리스폰 포인트 목록
 	TArray<AASRespawnPoint*> GetAvailableRespawnPoints() const;
@@ -82,6 +94,13 @@ public:
 protected:
 	virtual void HandleMatchHasStarted() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	
+	// 원격 클라이언트는 캐릭터 선택이 도착할 때까지 스폰하지 않는다.
+	virtual bool PlayerCanRestart_Implementation(APlayerController* Player) override;
+
+	// 클라이언트 캐릭터 선택을 기다리는 최대 시간. 넘으면 기본 캐릭터로 스폰
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn", meta = (ClampMin = "0.5", Units = "s"))
+	float CharacterSelectTimeout = 5.f;
 	
 	// 게임 시작 전 대기 시간 (초)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Time")
@@ -162,6 +181,9 @@ protected:
 	FTimerHandle PhaseTimerHandle;
 
 private:
+	// 서 있는 플레이어(살아 있고 쓰러지지 않음)가 한 명도 없으면 패배
+	void CheckPartyWipe();
+	
 	// 맵 시스템(구역·시야·구역 효과). 구역 액터가 없는 레벨에서는 동작하지 않는다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASMapGameFlowComponent> MapFlow;
