@@ -11,4 +11,8 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Skill_Throw, "Cooldown.Skill.Throw");
 	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Skill_DoT, "Cooldown.Skill.DoT");
 	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Skill_Shared, "Cooldown.Skill.Shared");
+	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Skill_BreakRush, "Cooldown.Skill.BreakRush");
+	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Skill_Overclock, "Cooldown.Skill.Overclock");
+	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Skill_Redline, "Cooldown.Skill.Redline");
+	UE_DEFINE_GAMEPLAY_TAG(State_Taeo_Redline, "State.Taeo.Redline");
 }

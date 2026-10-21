@@ -27,4 +27,12 @@ namespace ASGameplayTags
 	
 	//공용 스킬 쿨타임 태크
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Shared);
+
+	//강태오 스킬 쿨타임 태그 (DA_Skill_*의 Cooldown Tag에 사용)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_BreakRush);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Overclock);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Redline);
+
+	//강태오 레드라인 버프 중 (나중에 적중 시 충격파 등 조건에 사용)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Taeo_Redline);
 }
