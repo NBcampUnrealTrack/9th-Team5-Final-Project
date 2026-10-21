@@ -15,6 +15,7 @@ class UASMonsterTargetingComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UWidgetComponent;
+class AController;
 struct FOnAttributeChangeData;
 struct FGameplayEffectSpec;
 struct FActiveGameplayEffectHandle;
@@ -135,9 +136,10 @@ protected:
 	void ApplyMonsterDefinition();
 
 	/**
-	 * 서버 전용. 체력이 0 이하가 되면 한 번만 불린다.
+	 * 서버 전용. 체력이 0 이하가 된 다음 틱에 한 번만 불린다.
+	 * 피해 Effect의 처치자 정보가 먼저 기록되도록 한 틱 지연한다.
 	 * 죽음 태그만 붙이고 이동과 AI 정지는 StopMovementAndAI 로 넘긴다.
-	 * 애니메이션, 충돌 해제, 소멸, 보상은 아직 없다.
+	 * 애니메이션, 충돌 해제, 소멸은 이후 처리한다. 경험치는 막타 플레이어에게 지급한다.
 	 */
 	virtual void HandleDeath();
 
@@ -193,6 +195,9 @@ private:
 	void UnbindDamageEffectDelegate();
 	void HandleGameplayEffectApplied(UAbilitySystemComponent* TargetAbilitySystemComponent,
 		const FGameplayEffectSpec& AppliedEffect, FActiveGameplayEffectHandle ActiveEffectHandle);
+	void QueueDeathHandling();
+	void RecordDamageInstigator(AActor* InstigatorActor);
+	void AwardExperienceToKiller() const;
 
 	bool bMonsterInitialized = false;
 	/** Subsystem 밖에서 생성한 기존 몬스터의 낮 탐지 동작은 유지한다. 밤 웨이브만 NightOnly로 명시 설정한다. */
@@ -207,6 +212,8 @@ private:
 	float ReturnMoveSpeedMultiplier = 1.0f;
 	bool bHealthBarEnabled = false;
 	bool bHealthBarVisibleRequested = false;
+	bool bDeathHandlingQueued = false;
+	TWeakObjectPtr<AController> LastDamageKillerController;
 
 	/** bHealthBarEnabled && bHealthBarVisibleRequested일 때만 지연 생성한다. */
 	UPROPERTY(Transient)

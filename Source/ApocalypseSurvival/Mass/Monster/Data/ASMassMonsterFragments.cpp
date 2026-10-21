@@ -2,6 +2,7 @@
 
 void FASMassMonsterConfigFragment::Validate()
 {
+	ExperienceReward = FMath::Max(0, ExperienceReward);
 	MaxHealth = FMath::Max(1.0f, MaxHealth);
 	MoveSpeed = FMath::Max(0.0f, MoveSpeed);
 	HitRadius = FMath::Max(0.0f, HitRadius);

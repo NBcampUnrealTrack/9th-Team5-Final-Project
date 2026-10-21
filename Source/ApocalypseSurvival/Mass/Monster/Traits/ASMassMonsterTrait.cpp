@@ -17,6 +17,12 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 		Config.MaxHealth = MonsterDefinition->InitialAttributes.MaxHealth;
 		Config.MoveSpeed = MonsterDefinition->InitialAttributes.MoveSpeed;
 		Config.AttackPower = MonsterDefinition->InitialAttributes.AttackPower;
+		Config.ExperienceReward = MonsterDefinition->ExperienceReward;
+		// Definition에 드랍 그룹이 설정된 경우에만 우선한다. 비어 있으면 Mass 전용 Parameters 값을 보존한다.
+		if (MonsterDefinition->DropGroup.DataTable && !MonsterDefinition->DropGroup.RowName.IsNone())
+		{
+			Config.DropGroup = MonsterDefinition->DropGroup;
+		}
 		Config.AttackRange = MonsterDefinition->AttackRange;
 		Config.DetectionRadius = MonsterDefinition->DetectionRadius;
 		Config.LoseTargetRadius = MonsterDefinition->LoseTargetRadius;
