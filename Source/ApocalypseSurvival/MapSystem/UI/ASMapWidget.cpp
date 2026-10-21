@@ -19,6 +19,7 @@
 #include "MapSystem/Vision/ASFogOfWarManager.h"
 #include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
+#include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
 #include "Rendering/DrawElements.h"
@@ -85,15 +86,10 @@ namespace ASMapWidgetPrivate
 		const FGeometry& Geometry,
 		const FText& Text,
 		const FSlateFontInfo& Font,
+		const FVector2D& TextSize,
 		const FVector2D& Center,
 		const FLinearColor& Color)
 	{
-		FVector2D TextSize(120.0, 16.0);
-		if (FSlateApplication::IsInitialized())
-		{
-			TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Text, Font);
-		}
-
 		FSlateDrawElement::MakeText(
 			Out,
 			Layer,
@@ -206,16 +202,15 @@ FLinearColor UASMapWidget::GetMarkerColor(uint8 MarkerType) const
 	}
 }
 
-const UASMapWidget::FZoneAreaCache& UASMapWidget::GetCachedZoneArea(const AASMapZone* Zone) const
+UASMapWidget::FZoneAreaCache& UASMapWidget::GetCachedZoneArea(const AASMapZone* Zone) const
 {
-	TArray<TArray<FVector2D>> Outlines;
-	Zone->GetAreaOutlines(Outlines);
+	const bool bNewEntry = !ZoneAreaCache.Contains(TWeakObjectPtr<const AASMapZone>(Zone));
 	FZoneAreaCache& Cache = ZoneAreaCache.FindOrAdd(TWeakObjectPtr<const AASMapZone>(Zone));
-	if (Cache.Outlines != Outlines)
+	if (bNewEntry)
 	{
-		Cache.Outlines = MoveTemp(Outlines);
-		Cache.WorldTriangles.Reset(Cache.Outlines.Num());
-		for (const TArray<FVector2D>& Outline : Cache.Outlines)
+		const TArray<TArray<FVector2D>>& Outlines = Zone->GetAreaOutlines();
+		Cache.WorldTriangles.Reset(Outlines.Num());
+		for (const TArray<FVector2D>& Outline : Outlines)
 		{
 			TArray<FVector2D>& Triangles = Cache.WorldTriangles.AddDefaulted_GetRef();
 			FString Error;
@@ -307,7 +302,7 @@ int32 UASMapWidget::NativePaint(
 		const FVector2D B = Context.WorldToLocal(FVector(VisionDefinition->FogWorldMax, 0.0));
 		const FVector2D FogTopLeft(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y));
 		const FVector2D FogSize(FMath::Abs(A.X - B.X), FMath::Abs(A.Y - B.Y));
-		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, FogTopLeft, FogSize, FLinearColor::White);
+		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, FogTopLeft, FogSize, FLinearColor(0, 0, 0, 1));
 	}
 
 	// 3. 구역: 공유 위험도 채우기와 구역 액터의 이름.
@@ -327,7 +322,7 @@ void UASMapWidget::DrawZones(const FPaintContext& Context, const UASMapStateComp
 {
 	using namespace ASMapWidgetPrivate;
 
-	const TArray<AASMapZone*> Zones = Subsystem.GetZones();
+	const TArray<AASMapZone*>& Zones = Subsystem.GetZones();
 	for (auto It = ZoneAreaCache.CreateIterator(); It; ++It)
 	{
 		if (!It.Key().IsValid() || !Zones.Contains(It.Key().Get()))
@@ -342,7 +337,7 @@ void UASMapWidget::DrawZones(const FPaintContext& Context, const UASMapStateComp
 		const FASZoneRuntimeState* State = Snapshot.FindZone(Zone->GetZoneId());
 		const int32 Danger = State ? State->DangerLevel : 1;
 
-		const FZoneAreaCache& Area = GetCachedZoneArea(Zone);
+		FZoneAreaCache& Area = GetCachedZoneArea(Zone);
 		FLinearColor Fill = Context.Definition.GetDangerColor(Danger);
 		Fill.A = ZoneFillOpacity;
 		const FColor VertexColor = Fill.ToFColor(true);
@@ -375,12 +370,23 @@ void UASMapWidget::DrawZones(const FPaintContext& Context, const UASMapStateComp
 		if (bShowZoneLabels)
 		{
 			const FVector2D Center = Context.WorldToLocal(Zone->GetZoneCenter());
-			FText Label = FText::Format(
-				LOCTEXT("ZoneLabel", "{0} [{1}]"),
-				Zone->GetDisplayName(),
-				FText::AsNumber(Danger));
+			const FText DisplayName = Zone->GetDisplayName();
+			const bool bLabelChanged = Area.DangerLevel != Danger || !Area.DisplayName.EqualTo(DisplayName);
+			if (bLabelChanged)
+			{
+				Area.DangerLevel = Danger;
+				Area.DisplayName = DisplayName;
+				Area.Label = FText::Format(LOCTEXT("ZoneLabel", "{0} [{1}]"), DisplayName, FText::AsNumber(Danger));
+			}
+			if (bLabelChanged || !Area.Font.IsIdenticalTo(Context.Font))
+			{
+				Area.Font = Context.Font;
+				Area.LabelSize = Context.bCanDrawCustomVerts
+					? FVector2D(FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Area.Label, Context.Font))
+					: FVector2D(120.0, 16.0);
+			}
 
-			DrawCenteredText(Context.Out, LabelLayer, Context.Geometry, Label, Context.Font, Center, FLinearColor::White);
+			DrawCenteredText(Context.Out, LabelLayer, Context.Geometry, Area.Label, Context.Font, Area.LabelSize, Center, FLinearColor::White);
 		}
 	}
 }
@@ -389,10 +395,11 @@ void UASMapWidget::DrawVisibilityMarkers(const FPaintContext& Context, const UAS
 {
 	using namespace ASMapWidgetPrivate;
 
+	const int32 LocalTeam = UASVisionFunctionLibrary::GetLocalTeamId(this);
 	for (const UASVisibilityComponent* Target : VisionSubsystem.GetVisibilityTargets())
 	{
 		const AActor* Owner = Target->GetOwner();
-		if (!Owner || !Target->ShouldShowOnMap() || !Target->IsVisibleToLocalTeam())
+		if (!Owner || !Target->ShouldShowOnMap() || !Target->IsVisibleToTeam(LocalTeam))
 		{
 			continue;
 		}

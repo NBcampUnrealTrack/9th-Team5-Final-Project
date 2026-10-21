@@ -381,7 +381,7 @@ void AASMapSystemManager::BuildZoneConfigs(TArray<FASZoneConfig>& OutConfigs) co
 		return;
 	}
 
-	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	const TArray<AASMapZone*>& Zones = Subsystem->GetZones();
 	TMap<FName, int32> ConfigIndices;
 	for (const AASMapZone* Zone : Zones)
 	{
@@ -426,7 +426,7 @@ bool AASMapSystemManager::ValidateLevel(const TArray<FASZoneConfig>& ZoneConfigs
 		return false;
 	}
 	const int32 InitialErrorCount = OutErrors.Num();
-	const TArray<AASMapZone*> LevelZones = Subsystem->GetZones();
+	const TArray<AASMapZone*>& LevelZones = Subsystem->GetZones();
 	if (LevelZones.IsEmpty())
 	{
 		OutErrors.Add(TEXT("ValidateLevel: no zone actors in the level."));
@@ -495,7 +495,7 @@ void AASMapSystemManager::LogZoneOverlaps() const
 	}
 
 	// GetZones는 ZoneId 사전순이므로 겹친 위치는 앞쪽 구역으로 결정된다.
-	const TArray<AASMapZone*> Zones = Subsystem->GetZones();
+	const TArray<AASMapZone*>& Zones = Subsystem->GetZones();
 	for (int32 IndexA = 0; IndexA < Zones.Num(); ++IndexA)
 	{
 		const AASMapZone* ZoneA = Zones[IndexA];
@@ -503,8 +503,7 @@ void AASMapSystemManager::LogZoneOverlaps() const
 		{
 			continue;
 		}
-		TArray<TArray<FVector2D>> OutlinesA;
-		ZoneA->GetAreaOutlines(OutlinesA);
+		const TArray<TArray<FVector2D>>& OutlinesA = ZoneA->GetAreaOutlines();
 		for (int32 IndexB = IndexA + 1; IndexB < Zones.Num(); ++IndexB)
 		{
 			const AASMapZone* ZoneB = Zones[IndexB];
@@ -512,8 +511,7 @@ void AASMapSystemManager::LogZoneOverlaps() const
 			{
 				continue;
 			}
-			TArray<TArray<FVector2D>> OutlinesB;
-			ZoneB->GetAreaOutlines(OutlinesB);
+			const TArray<TArray<FVector2D>>& OutlinesB = ZoneB->GetAreaOutlines();
 			const bool bOverlaps = OutlinesA.ContainsByPredicate([&OutlinesB](const TArray<FVector2D>& OutlineA)
 			{
 				return OutlinesB.ContainsByPredicate([&OutlineA](const TArray<FVector2D>& OutlineB)
@@ -587,8 +585,7 @@ void AASMapSystemManager::DrawDebug() const
 		const FASZoneRuntimeState* ZoneState = State->GetSnapshot().FindZone(Zone->GetZoneId());
 
 		FLinearColor Color = MapDefinition->GetDangerColor(ZoneState ? ZoneState->DangerLevel : 1);
-		TArray<TArray<FVector2D>> Outlines;
-		Zone->GetAreaOutlines(Outlines);
+		const TArray<TArray<FVector2D>>& Outlines = Zone->GetAreaOutlines();
 		const float Z = Zone->GetActorLocation().Z;
 		for (const TArray<FVector2D>& Outline : Outlines)
 		{
