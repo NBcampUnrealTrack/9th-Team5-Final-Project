@@ -28,9 +28,13 @@ struct APOCALYPSESURVIVAL_API FASSkillStatsRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common", meta = (ClampMin = "0.0", Units = "s"))
 	float Cooldown = 0.0f;
 
-	//0이면 코스트 GE에 적힌 값 사용
+	//0이면 코스트 GE에 적힌 값 사용 - 마나
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common", meta = (ClampMin = "0.0"))
 	float ManaCost = 0.0f;
+
+	//0이면 코스트 GE에 적힌 값 사용 - 스태미나
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common", meta = (ClampMin = "0.0"))
+	float StaminaCost = 0.0f;
 
 	//위치형 최대 사거리
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Common", meta = (ClampMin = "0.0", Units = "cm"))
