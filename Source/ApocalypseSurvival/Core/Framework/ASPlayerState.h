@@ -33,6 +33,17 @@ class APOCALYPSESURVIVAL_API AASPlayerState : public APlayerState, public IAbili
 
 public:
 	AASPlayerState();
+	
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// 클라이언트에서 컨트롤러와 연결될 때 호출된다. 여기서 고른 캐릭터를 서버로 보낸다.
+	virtual void ClientInitialize(AController* C) override;
+
+	// 서버 전용. 이 플레이어의 캐릭터 선택을 받았는가 (선택 없음을 받은 것도 포함)
+	bool HasReceivedCharacterSelection() const { return bCharacterSelectionReceived; }
+
+	// 서버 전용. 선택이 오지 않아 기본 캐릭터로 진행할 때 게임모드가 호출한다.
+	void MarkCharacterSelectionReceived() { bCharacterSelectionReceived = true; }
 
 	/** IAbilitySystemInterface. GAS 가 액터에서 ASC 를 찾을 때 쓰는 표준 경로다. */
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -84,6 +95,14 @@ public:
 	UASProgressionComponent* GetProgressionComponent() const { return ProgressionComponent; }
 
 private:
+	// 클라이언트 -> 서버. 고른 캐릭터 정의를 보낸다. 고르지 않았으면 nullptr
+	UFUNCTION(Server, Reliable)
+	void ServerSubmitCharacterSelection(const UASCharacterDefinition* InDefinition);
+	
+	// 클라이언트: 캐릭터 정의가 도착하면 성장 UI를 다시 갱신한다.
+	UFUNCTION()
+	void OnRep_CharacterDefinition();
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modules", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASModuleComponent> ModuleComponent;
 
@@ -112,9 +131,15 @@ private:
 	/** 약참조다. 인벤토리에서 버려진 아이템을 붙들어 두면 안 된다. */
 	TWeakObjectPtr<UASItemInstance> EquippedItemRecord;
 	
-	/* 이 플레이어의 캐릭터 정의. 게임모드가 접속 시 정해준다. */
-	UPROPERTY()
+	/* 이 플레이어의 캐릭터 정의. 서버가 정하고 모든 클라이언트에 복제한다. */
+	UPROPERTY(ReplicatedUsing = OnRep_CharacterDefinition)
 	TObjectPtr<const UASCharacterDefinition> CharacterDefinition;
+
+	/* 서버 전용. 캐릭터 선택을 받았는가. 받기 전에는 게임모드가 스폰을 보류한다. */
+	bool bCharacterSelectionReceived = false;
+
+	/* 클라이언트 전용. 선택을 이미 보냈는가 (중복 전송 방지) */
+	bool bCharacterSelectionSent = false;
 	
 	/* 캐릭터 정의를 어트리뷰트에 이미 넣었는가. 서버만 쓴다. */
 	bool bCharacterDefinitionApplied = false;
