@@ -369,6 +369,56 @@ void AASGameMode::PostLogin(APlayerController* NewPlayer)
 	
 	// 접속한 플레이어에게 기록 컴포넌트 미리 붙이기
 	GetOrCreateRecord(NewPlayer);
+	
+	// 원격 클라이언트: 캐릭터 선택이 끝내 오지 않으면 기본 캐릭터로 진행
+	if (NewPlayer && !NewPlayer->IsLocalController())
+	{
+		TWeakObjectPtr<APlayerController> WeakPlayer = NewPlayer;
+		FTimerHandle SelectTimeoutHandle;
+		FTimerDelegate SelectTimeoutDelegate = FTimerDelegate::CreateWeakLambda(this, [this, WeakPlayer]()
+		{
+			APlayerController* PlayerController = WeakPlayer.Get();
+			AASPlayerState* PlayerState = PlayerController ? PlayerController->GetPlayerState<AASPlayerState>() : nullptr;
+			if (!PlayerState || PlayerState->HasReceivedCharacterSelection())
+			{
+				return;
+			}
+			
+			UE_LOG(LogTemp, Warning, TEXT("[CharacterSelect] %s 선택이 오지 않아 기본 캐릭터로 스폰"), *GetNameSafe(PlayerController));
+			PlayerState->MarkCharacterSelectionReceived();
+			NotifyCharacterSelectionReceived(PlayerController);
+		});
+		GetWorldTimerManager().SetTimer(SelectTimeoutHandle, SelectTimeoutDelegate, CharacterSelectTimeout, false);
+	}
+}
+
+bool AASGameMode::PlayerCanRestart_Implementation(APlayerController* Player)
+{
+	// 원격 클라이언트는 캐릭터 선택을 받기 전까지 스폰 보류
+	if (Player && !Player->IsLocalController())
+	{
+		const AASPlayerState* PlayerState = Player->GetPlayerState<AASPlayerState>();
+		if (PlayerState && !PlayerState->HasReceivedCharacterSelection())
+		{
+			return false;
+		}
+	}
+	
+	return Super::PlayerCanRestart_Implementation(Player);
+}
+
+void AASGameMode::NotifyCharacterSelectionReceived(APlayerController* PlayerController)
+{
+	if (!PlayerController || PlayerController->GetPawn() || IsGameEnded())
+	{
+		return;
+	}
+	
+	// 매치 시작 전이면 HandleMatchHasStarted가 스폰한다.
+	if (PlayerCanRestart(PlayerController))
+	{
+		RestartPlayer(PlayerController);
+	}
 }
 
 UASPlayerRecordComponent* AASGameMode::GetOrCreateRecord(AController* Controller) const

@@ -25,6 +25,9 @@ public:
 	// 스폰할 캐릭터 BP: PlayerState에 정해진 캐릭터(리스폰) -> 캐릭터 선택 -> DefaultPawnClass 순
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 	
+	// 서버 전용. 클라이언트의 캐릭터 선택이 도착했을 때 PlayerState가 호출한다. 아직 스폰 전이면 스폰한다.
+	void NotifyCharacterSelectionReceived(APlayerController* PlayerController);
+	
 	// 규칙 조회 (일차별 데이터 교체 가능)
 	virtual float GetDayDuration(int32 Day) const;
 	virtual float GetNightDuration(int32 Day) const;
@@ -82,6 +85,13 @@ public:
 protected:
 	virtual void HandleMatchHasStarted() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	
+	// 원격 클라이언트는 캐릭터 선택이 도착할 때까지 스폰하지 않는다.
+	virtual bool PlayerCanRestart_Implementation(APlayerController* Player) override;
+
+	// 클라이언트 캐릭터 선택을 기다리는 최대 시간. 넘으면 기본 캐릭터로 스폰
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn", meta = (ClampMin = "0.5", Units = "s"))
+	float CharacterSelectTimeout = 5.f;
 	
 	// 게임 시작 전 대기 시간 (초)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Time")

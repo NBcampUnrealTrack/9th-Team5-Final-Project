@@ -342,6 +342,13 @@ void AASPlayerCharacter::RestoreFromDeath()
 
 void AASPlayerCharacter::DebugAddExp(int32 Amount)
 {
+	// 경험치는 서버만 바꿀 수 있다. 클라이언트에서 입력하면 서버에 요청한다.
+	if (!HasAuthority())
+	{
+		ServerDebugAddExp(Amount);
+		return;
+	}
+	
 	AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>();
 	UASProgressionComponent* Progression = ASPlayerState ? ASPlayerState->GetProgressionComponent() : nullptr;
 	if (!Progression)
@@ -351,6 +358,11 @@ void AASPlayerCharacter::DebugAddExp(int32 Amount)
 	}
 	
 	Progression->AddExperience(Amount);
+}
+
+void AASPlayerCharacter::ServerDebugAddExp_Implementation(int32 Amount)
+{
+	DebugAddExp(Amount);
 }
 
 void AASPlayerCharacter::DebugSelectCharacter(int32 Index)

@@ -8,9 +8,15 @@
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "Items/ASItemInstance.h"
 #include "Core/Input/ASInputTags.h"
+#include "Core/Framework/ASCharacterSelectSubsystem.h"
+#include "Core/Framework/ASGameMode.h"
+#include "GameFramework/PlayerController.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Modules/ASModuleComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "Engine/GameInstance.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 
 AASPlayerState::AASPlayerState()
 {
@@ -28,6 +34,70 @@ AASPlayerState::AASPlayerState()
 
 	// PlayerState 는 기본 복제 주기가 느려서 그대로 두면 어트리뷰트 갱신이 늦게 보인다.
 	SetNetUpdateFrequency(100.0f);
+}
+
+void AASPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AASPlayerState, CharacterDefinition);
+}
+
+void AASPlayerState::ClientInitialize(AController* C)
+{
+	Super::ClientInitialize(C);
+
+	// 리슨 서버 호스트는 게임모드가 로컬 선택을 직접 읽는다.
+	if (HasAuthority() || bCharacterSelectionSent)
+	{
+		return;
+	}
+
+	const APlayerController* PC = Cast<APlayerController>(C);
+	if (!PC || !PC->IsLocalController())
+	{
+		return;
+	}
+
+	const UGameInstance* GameInstance = PC->GetGameInstance();
+	const UASCharacterSelectSubsystem* SelectSubsystem = GameInstance ? GameInstance->GetSubsystem<UASCharacterSelectSubsystem>() : nullptr;
+	const UASCharacterDefinition* Selected = SelectSubsystem ? SelectSubsystem->GetSelectedCharacter() : nullptr;
+
+	bCharacterSelectionSent = true;
+	ServerSubmitCharacterSelection(Selected);
+}
+
+void AASPlayerState::ServerSubmitCharacterSelection_Implementation(const UASCharacterDefinition* InDefinition)
+{
+	if (bCharacterSelectionReceived)
+	{
+		return;
+	}
+
+	// 플레이어 캐릭터 정의만 받는다. 이상한 값이면 기본 캐릭터로 진행
+	if (InDefinition && InDefinition->CharacterClass)
+	{
+		SetCharacterDefinition(InDefinition);
+	}
+	else if (InDefinition)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[CharacterSelect] 캐릭터 클래스가 없는 정의 %s, 기본 캐릭터로 진행"), *GetNameSafe(InDefinition));
+	}
+
+	bCharacterSelectionReceived = true;
+
+	if (AASGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AASGameMode>() : nullptr)
+	{
+		GameMode->NotifyCharacterSelectionReceived(GetPlayerController());
+	}
+}
+
+void AASPlayerState::OnRep_CharacterDefinition()
+{
+	if (ProgressionComponent)
+	{
+		ProgressionComponent->NotifyProgressionDataChanged();
+	}
 }
 
 UAbilitySystemComponent* AASPlayerState::GetAbilitySystemComponent() const

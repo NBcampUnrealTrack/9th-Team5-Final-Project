@@ -72,6 +72,10 @@ public:
 	UFUNCTION(Exec)
 	void DebugAddExp(int32 Amount);
 	
+	// 클라이언트에서 입력한 DebugAddExp를 서버에서 실행
+	UFUNCTION(Server, Reliable)
+	void ServerDebugAddExp(int32 Amount);
+	
 	// 캐릭터 선택 테스트 (선택 화면 나오기 전까지). Index 는 DebugCharacterRoster 순서
 	UFUNCTION(Exec)
 	void DebugSelectCharacter(int32 Index);
