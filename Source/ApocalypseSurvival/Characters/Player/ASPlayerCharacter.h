@@ -12,6 +12,10 @@ class UASCharacterRoster;
 class UNiagaraSystem;
 class USoundBase;
 struct FOnAttributeChangeData;
+class UInputAction;
+class UInputMappingContext;
+class UGameplayAbility;
+struct FGameplayEventData;
 
 /**
  * 플레이어가 조종하는 캐릭터.
@@ -56,6 +60,27 @@ public:
 	 * 게임모드에 알려 데스카운트와 리스폰을 맡긴다. 게임모드가 이 캐릭터를 파괴하고 새로 만든다.
 	 */
 	void FinishDeath();
+	
+	/* 쓰러져서 부활을 기다리는 중인가 (멀티 전용). 모든 머신에서 같은 답을 준다. */
+	UFUNCTION(BlueprintPure, Category = "Downed")
+	bool IsDowned() const;
+	
+	/* 서버 전용. 멀티 규칙에서 체력이 0이 되면 사망 대신 쓰러진다. */
+	void EnterDowned();
+	
+	/** 서버 전용. 쓰러진 시간이 다 되면 사망으로 넘어간다. */
+	void BleedOut();
+	
+	/** 서버 전용. 부활 완료. 체력을 일부 채우고 일어난다. */
+	void Revive();
+
+	/** 누군가 부활시키는 중인가 (UI용, 모든 머신) */
+	UFUNCTION(BlueprintPure, Category = "Downed")
+	bool IsBeingRevived() const { return bBeingRevived; }
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	
+	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	UASEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
@@ -76,6 +101,13 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugAddExp(int32 Amount);
 	
+	// 자기 캐릭터 체력을 0으로 (멀티면 쓰러짐, 싱글이면 사망). 클라이언트에서 입력해도 서버에서 처리
+	UFUNCTION(Exec)
+	void DebugKillSelf();
+	
+	UFUNCTION(Server, Reliable)
+	void ServerDebugKillSelf();
+	
 	// 캐릭터 선택 테스트 (선택 화면 나오기 전까지). Index 는 DebugCharacterRoster 순서
 	UFUNCTION(Exec)
 	void DebugSelectCharacter(int32 Index);
@@ -95,6 +127,38 @@ protected:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Death")
 	void OnDeathStarted();
+	
+	/** 쓰러지거나 일어날 때 모든 머신에서 불린다. 쓰러진 자세, 남은 시간 UI 같은 보이는 것은 BP에서 붙인다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Downed")
+	void OnDownedChanged(bool bDowned);
+
+	/** 쓰러진 뒤 사망까지 걸리는 시간 (임시값) */
+	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "1.0", Units = "s"))
+	float DownedDuration = 30.f;
+	
+	/** 부활에 걸리는 시간 (임시값) */
+	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "0.1", Units = "s"))
+	float ReviveDuration = 5.f;
+
+	/** 부활 시 회복하는 체력 비율 (임시값) */
+	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+	float ReviveHealthRatio = 0.3f;
+
+	/** 부활을 시작하고 유지할 수 있는 거리 (임시값) */
+	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "50.0", Units = "cm"))
+	float ReviveRange = 250.f;
+
+	/** 부활이 시작되거나 끝날 때(완료/취소) 모든 머신에서 불린다. 진행 바 같은 UI는 BP에서 붙인다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Downed")
+	void OnBeingRevivedChanged(bool bRevivedNow);
+	
+	/** 캐릭터 전용 입력 매핑 (부활 F키). 공용 IMC_Default 와 별도로 추가한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputMappingContext> CharacterMappingContext;
+
+	/** 부활 입력 */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> ReviveAction;
 	
 	// 레벨업 순간 호출 (서버, 클라 모두). 화면 문구 같은 보이는 것은 BP에서 붙인다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Progression")
@@ -119,6 +183,48 @@ private:
 
 	/** ApplyLocalDeath 를 되돌린다. 사망 태그가 새 몸에 잘못 걸렸다가 떨어질 때 쓴다. */
 	void RestoreFromDeath();
+	
+	/** 서버 전용. 사망 이벤트로 사망 어빌리티를 켠다. 어빌리티가 없으면 연출 없이 바로 사망 처리한다. */
+	void RequestDeath(const FGameplayEventData& Payload);
+
+	/** 쓰러짐 태그가 붙거나 떨어졌을 때. 모든 머신에서 불린다. */
+	void HandleDownedTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	FDelegateHandle DownedTagChangedHandle;
+	FTimerHandle BleedOutTimerHandle;
+
+	/** 서버 전용. 부활 시작 / 취소 / 진행 확인 */
+void StartRevive(AASPlayerCharacter* Reviver);
+	void CancelRevive();
+	void TickRevive();
+
+	UFUNCTION()
+	void OnRep_BeingRevived();
+
+	UPROPERTY(ReplicatedUsing = OnRep_BeingRevived)
+	bool bBeingRevived = false;
+
+	/** 서버 전용. 지금 부활시키는 중인 파티원 */
+	TWeakObjectPtr<AASPlayerCharacter> ActiveReviver;
+
+	FTimerHandle ReviveTickTimerHandle;
+	float ReviveElapsed = 0.f;
+	
+	/** 로컬: F키. 가까운 쓰러진 파티원을 찾아 서버에 부활을 요청한다. */
+	void OnRevivePressed();
+	AASPlayerCharacter* FindReviveTarget() const;
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestRevive(AASPlayerCharacter* Target);
+
+	/** 서버 전용. 부활시키는 사람이 어빌리티를 쓰면 부활 취소 */
+	void HandleReviverAbilityActivated(UGameplayAbility* Ability);
+
+	/** 서버 전용. 부활시키는 사람 정보와 구독을 정리한다. */
+	void ClearReviver();
+
+	TWeakObjectPtr<UAbilitySystemComponent> ReviverAbilitySystem;
+	FDelegateHandle ReviverAbilityActivatedHandle;
 	
 	// 성장 컴포넌트(PlayerState) 레벨업 이벤트 구독. ASC 연결 때 걸고 EndPlay에서 푼다
 	void BindProgressionDelegates();

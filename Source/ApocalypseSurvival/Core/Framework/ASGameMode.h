@@ -64,6 +64,15 @@ public:
 	// 플레이어가 죽었을 때 호출. 데스카운트 초과면 패배, 아니면 리스폰
 	UFUNCTION(BlueprintCallable, Category = "Death")
 	void OnPlayerDied(AController* DeadController);
+
+	// 멀티 규칙(쓰러짐, 부활, 리스폰 없음)을 쓰는가. 혼자 실행(Standalone)이면 기존 싱글 규칙
+bool IsMultiplayerRules() const;
+	
+	// 체력이 0이 됐을 때 사망 대신 쓰러지는가 (멀티 규칙)
+	bool IsDownedEnabled() const { return IsMultiplayerRules(); }
+	
+	// 플레이어가 쓰러졌을 때 캐릭터가 호출 (서버 전용). 전멸이면 패배
+	void OnPlayerDowned(AController* DownedController);
 		
 	// 맵에 배치된 리스폰 포인트 목록
 	TArray<AASRespawnPoint*> GetAvailableRespawnPoints() const;
@@ -172,6 +181,9 @@ protected:
 	FTimerHandle PhaseTimerHandle;
 
 private:
+	// 서 있는 플레이어(살아 있고 쓰러지지 않음)가 한 명도 없으면 패배
+	void CheckPartyWipe();
+	
 	// 맵 시스템(구역·시야·구역 효과). 구역 액터가 없는 레벨에서는 동작하지 않는다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASMapGameFlowComponent> MapFlow;

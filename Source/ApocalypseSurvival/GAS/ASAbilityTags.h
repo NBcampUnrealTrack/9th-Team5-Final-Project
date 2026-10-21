@@ -16,6 +16,12 @@ namespace ASGameplayTags
 	 * 모든 머신에 복제되므로 입력 차단과 사망 연출은 이 태그만 보고 각자 처리한다.
 	 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
+	
+	/**
+	 * 쓰러짐 (멀티 전용). 체력이 0이 되면 사망 대신 붙고, 파티원이 부활시키거나 시간이 다 되면 뗀다.
+	 * 모든 머신에 복제되므로 이동 정지와 쓰러진연출은 이 태그만 보고 각자 처리한다.
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Downed);
 
 	/** 피해 무적. 지속형 GE가 부여하며, 피해 GE는 이 태그가 있으면 적용되지 않는다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable);
