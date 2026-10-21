@@ -68,6 +68,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster")
 	FText DisplayName;
 
+	/** 플레이어가 이 몬스터를 처치했을 때 지급할 기본 경험치. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rewards", meta = (ClampMin = "0"))
+	int32 ExperienceReward = 10;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster")
 	FASMonsterInitialAttributes InitialAttributes;
 

@@ -4,7 +4,11 @@
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
 #include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
 #include "Core/Framework/ASGameMode.h"
+#include "Core/Framework/ASPlayerState.h"
+#include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Controller.h"
+#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
 #include "MassExecutionContext.h"
@@ -22,6 +26,8 @@ UASMassMonsterDeathProcessor::UASMassMonsterDeathProcessor()
 	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Server);
 	ExecutionOrder.ExecuteInGroup = UE::Mass::ProcessorGroupNames::Behavior;
 	ExecutionOrder.ExecuteBefore.Add(UASMassMonsterBehaviorProcessor::StaticClass()->GetFName());
+	// 사망 집계와 경험치 지급은 GameMode, PlayerState, TimerManager를 만지므로 게임 스레드에서 실행한다.
+	bRequiresGameThreadExecution = true;
 }
 
 void UASMassMonsterDeathProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
@@ -45,7 +51,11 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterDeathProcessor);
 
 	int32 NewlyDeadCount = 0;
-	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount](FMassExecutionContext& Context)
+	TMap<TWeakObjectPtr<AController>, int32> ExperienceByController;
+	const UASMassPlayerTargetSubsystem* PlayerTargets = GetWorld()
+		? GetWorld()->GetSubsystem<UASMassPlayerTargetSubsystem>()
+		: nullptr;
+	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount, &ExperienceByController, PlayerTargets](FMassExecutionContext& Context)
 	{
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
 		const TArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetMutableFragmentView<FASMassMonsterBehaviorFragment>();
@@ -63,6 +73,17 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 			Health.CurrentHealth = 0.0f;
 			Health.DeathTimeRemaining = Config.DeathDespawnDelay;
 			Health.bDeathTimerStarted = true;
+			if (Config.ExperienceReward > 0 && PlayerTargets)
+			{
+				if (const FASMassPlayerTargetSnapshot* KillerSnapshot =
+					PlayerTargets->FindTarget(Health.LastDamageInstigatorTargetId))
+				{
+					if (AController* KillerController = KillerSnapshot->Controller.Get())
+					{
+						ExperienceByController.FindOrAdd(TWeakObjectPtr<AController>(KillerController)) += Config.ExperienceReward;
+					}
+				}
+			}
 			Behaviors[EntityIt].State = EASMassMonsterState::Dead;
 			Targets[EntityIt].Reset();
 			Context.Defer().AddTag<FASMassMonsterDeadTag>(Context.GetEntity(EntityIt));
@@ -78,9 +99,19 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 			{
 				// Mass 실행 중에는 밤 종료가 Entity Fragment를 즉시 변경할 수 없으므로 다음 틱에 집계한다.
 				World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
-					GameMode, [GameMode, NewlyDeadCount]()
+					GameMode, [GameMode, NewlyDeadCount, ExperienceByController = MoveTemp(ExperienceByController)]()
 					{
 						GameMode->OnEnemiesKilled(NewlyDeadCount);
+						for (const TPair<TWeakObjectPtr<AController>, int32>& Entry : ExperienceByController)
+						{
+							AController* KillerController = Entry.Key.Get();
+							AASPlayerState* PlayerState = KillerController
+								? KillerController->GetPlayerState<AASPlayerState>() : nullptr;
+							if (UASProgressionComponent* Progression = PlayerState ? PlayerState->GetProgressionComponent() : nullptr)
+							{
+								Progression->AddExperience(Entry.Value);
+							}
+						}
 					}));
 			}
 		}

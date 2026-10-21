@@ -19,6 +19,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterHealthFragment : public FMassFragmen
 	float CurrentHealth = 100.0f;
 	float DeathTimeRemaining = 0.0f;
 	bool bDeathTimerStarted = false;
+	/** 가장 최근에 피해를 준 플레이어의 Mass TargetId. 경험치 수령자 판정에만 쓴다. */
+	int32 LastDamageInstigatorTargetId = INDEX_NONE;
 };
 
 /** 낮/밤 행동 모드와 현재 상위 행동 상태. */
@@ -142,6 +144,10 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FName MonsterTypeId = NAME_None;
+
+	/** 플레이어가 이 Mass 몬스터를 처치했을 때 지급할 기본 경험치. */
+	UPROPERTY(EditAnywhere, Category = "Rewards", meta = (ClampMin = "0"))
+	int32 ExperienceReward = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Attributes", meta = (ClampMin = "1.0"))
 	float MaxHealth = 100.0f;

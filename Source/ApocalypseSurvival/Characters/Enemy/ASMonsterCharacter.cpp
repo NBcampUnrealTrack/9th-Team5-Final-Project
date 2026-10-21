@@ -7,6 +7,7 @@
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Characters/Enemy/UI/ASMonsterHealthBarWidget.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
+#include "Core/Framework/ASPlayerState.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "EngineUtils.h"
@@ -18,13 +19,17 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Controller.h"
+#include "GameFramework/Pawn.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Skills/ASSkillTags.h"
+#include "TimerManager.h"
 
 AASMonsterCharacter::AASMonsterCharacter()
 {
@@ -520,15 +525,22 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
 
 void AASMonsterCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
-	// 죽음 판정은 서버만 한다. 클라이언트는 복제된 Dead 태그로 알게 된다.
+	// 죽음 판정은 서버만 한다. 피해 Effect delegate에서 막타 정보를 기록할 수 있도록
+	// 실제 죽음 처리는 다음 틱으로 미룬다. 클라이언트는 복제된 Dead 태그로 알게 된다.
 	if (HasAuthority() && Data.NewValue <= 0.0f)
 	{
-		HandleDeath();
+		QueueDeathHandling();
 	}
 }
 
 void AASMonsterCharacter::HandleDeath()
 {
+	bDeathHandlingQueued = false;
+	if (OwnedHealthAttributeSet && OwnedHealthAttributeSet->GetHealth() > 0.0f)
+	{
+		return;
+	}
+
 	if (IsDead())
 	{
 		return;
@@ -539,6 +551,7 @@ void AASMonsterCharacter::HandleDeath()
 	OwnedAbilitySystemComponent->AddMinimalReplicationGameplayTag(ASGameplayTags::State_Monster_Dead);
 	SetHealthBarEnabled(false);
 	SetTargetedAttackMaterialTint(false);
+	AwardExperienceToKiller();
 	ReportDeathToGameMode();
 
 	// 사망 직전의 공격 몽타주/타격 이벤트가 계속되는 것을 막는다.
@@ -591,7 +604,7 @@ void AASMonsterCharacter::ReportDeathToGameMode_Implementation()
 {
 	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
 	{
-		GameMode->OnEnemyKilled(nullptr);
+		GameMode->OnEnemyKilled(LastDamageKillerController.Get());
 	}
 }
 
@@ -661,12 +674,6 @@ void AASMonsterCharacter::HandleGameplayEffectApplied(UAbilitySystemComponent* T
 		return;
 	}
 
-	// 치명타는 체력 변경 콜백에서 이미 Dead 상태가 됐으므로 경직과 어그로를 만들지 않는다.
-	if (IsDead())
-	{
-		return;
-	}
-
 	const FGameplayEffectContextHandle& EffectContext = AppliedEffect.GetContext();
 	// 플레이어 ASC는 PlayerState에 있으므로 OriginalInstigator가 Pawn이 아닐 수 있다.
 	// EffectCauser는 실제 시전자 Avatar(플레이어 캐릭터)이므로 타깃 컴포넌트가 유효한 공격자로 판정할 수 있다.
@@ -680,7 +687,69 @@ void AASMonsterCharacter::HandleGameplayEffectApplied(UAbilitySystemComponent* T
 		InstigatorActor = EffectContext.GetInstigator();
 	}
 
+	RecordDamageInstigator(InstigatorActor);
+
+	// 치명타는 체력 변경 콜백에서 사망 처리가 예약됐으므로 경직과 어그로를 만들지 않는다.
+	if (IsDead() || bDeathHandlingQueued)
+	{
+		return;
+	}
+
 	// 투사체가 파괴된 뒤에도 Effect Context의 EffectCauser(발사한 플레이어)를 사용한다.
 	NotifyDamagedBy(InstigatorActor);
 	ApplyHitReact();
+}
+
+void AASMonsterCharacter::QueueDeathHandling()
+{
+	if (bDeathHandlingQueued || IsDead() || !GetWorld())
+	{
+		return;
+	}
+
+	bDeathHandlingQueued = true;
+	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		HandleDeath();
+	}));
+}
+
+void AASMonsterCharacter::RecordDamageInstigator(AActor* InstigatorActor)
+{
+	// 환경 피해나 스크립트 피해는 이전 플레이어의 막타 기록을 이어받지 않는다.
+	LastDamageKillerController.Reset();
+
+	AController* pController = Cast<AController>(InstigatorActor);
+	if (!Controller)
+	{
+		if (const APawn* Pawn = Cast<APawn>(InstigatorActor))
+		{
+			pController = Pawn->GetController();
+		}
+		else if (const APawn* OwnerPawn = InstigatorActor ? Cast<APawn>(InstigatorActor->GetOwner()) : nullptr)
+		{
+			pController = OwnerPawn->GetController();
+		}
+	}
+
+	if (IsValid(pController) && pController->IsPlayerController())
+	{
+		LastDamageKillerController = pController;
+	}
+}
+
+void AASMonsterCharacter::AwardExperienceToKiller() const
+{
+	const int32 Experience = MonsterDefinition ? MonsterDefinition->ExperienceReward : 0;
+	AController* KillerController = LastDamageKillerController.Get();
+	if (Experience <= 0 || !IsValid(KillerController))
+	{
+		return;
+	}
+
+	AASPlayerState* pPlayerState = KillerController->GetPlayerState<AASPlayerState>();
+	if (UASProgressionComponent* Progression = pPlayerState ? pPlayerState->GetProgressionComponent() : nullptr)
+	{
+		Progression->AddExperience(Experience);
+	}
 }

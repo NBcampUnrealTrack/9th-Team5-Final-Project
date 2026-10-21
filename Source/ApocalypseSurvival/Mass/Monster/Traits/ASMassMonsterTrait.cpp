@@ -17,6 +17,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 		Config.MaxHealth = MonsterDefinition->InitialAttributes.MaxHealth;
 		Config.MoveSpeed = MonsterDefinition->InitialAttributes.MoveSpeed;
 		Config.AttackPower = MonsterDefinition->InitialAttributes.AttackPower;
+		Config.ExperienceReward = MonsterDefinition->ExperienceReward;
 		Config.AttackRange = MonsterDefinition->AttackRange;
 		Config.DetectionRadius = MonsterDefinition->DetectionRadius;
 		Config.LoseTargetRadius = MonsterDefinition->LoseTargetRadius;
