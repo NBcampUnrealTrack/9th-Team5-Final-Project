@@ -1,5 +1,6 @@
 #include "Mass/Monster/Processors/ASMassMonsterHasteSupportProcessor.h"
 
+#include "Characters/Enemy/ASMonsterAttackIndicatorActor.h"
 #include "Engine/World.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
@@ -24,6 +25,28 @@ namespace ASMassMonsterHaste
 		float Multiplier = 1.0f;
 		double EndTimeSeconds = 0.0;
 	};
+
+	static void SpawnIndicator(UWorld& World, const FASMassMonsterConfigFragment& Config, const FVector& Origin)
+	{
+		if (!Config.HasteIndicatorClass || Config.HasteWindupDuration <= 0.0f)
+		{
+			return;
+		}
+
+		const FTransform SpawnTransform(FRotator::ZeroRotator, Origin);
+		AASMonsterAttackIndicatorActor* Indicator = World.SpawnActorDeferred<AASMonsterAttackIndicatorActor>(
+			Config.HasteIndicatorClass, SpawnTransform, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Indicator)
+		{
+			return;
+		}
+
+		Indicator->InitializeIndicator(EASMonsterAttackIndicatorShape::Circle, Config.HasteRadius,
+			0.0f, 0.0f, Config.HasteWindupDuration);
+		Indicator->FinishSpawning(SpawnTransform);
+		Indicator->SetLifeSpan(Config.HasteWindupDuration);
+	}
 }
 
 UASMassMonsterHasteSupportProcessor::UASMassMonsterHasteSupportProcessor()
@@ -65,7 +88,7 @@ void UASMassMonsterHasteSupportProcessor::Execute(FMassEntityManager& EntityMana
 
 	const double CurrentTime = World->GetTimeSeconds();
 	TArray<ASMassMonsterHaste::FHastePulse> Pulses;
-	HasteSourceQuery.ForEachEntityChunk(Context, [CurrentTime, &Pulses](FMassExecutionContext& Context)
+	HasteSourceQuery.ForEachEntityChunk(Context, [World, CurrentTime, &Pulses](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
@@ -101,6 +124,8 @@ void UASMassMonsterHasteSupportProcessor::Execute(FMassEntityManager& EntityMana
 
 				Combat.PhaseEndTimeSeconds = CurrentTime + Config.HasteWindupDuration;
 				Combat.AttackState = EASMassMonsterAttackState::Windup;
+				ASMassMonsterHaste::SpawnIndicator(*World, Config,
+					Transforms[EntityIt].GetTransform().GetLocation());
 				continue;
 			}
 

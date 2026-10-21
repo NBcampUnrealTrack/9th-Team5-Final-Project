@@ -1,9 +1,12 @@
 #include "Mass/Monster/Processors/ASMassMonsterSuicideAttackProcessor.h"
 
+#include "Characters/Enemy/ASMonsterAttackIndicatorActor.h"
 #include "Engine/World.h"
 #include "Mass/Monster/Combat/ASMassMonsterDamageBridge.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
+#include "Mass/Monster/Processors/ASMassMonsterNavigationProcessor.h"
 #include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
@@ -14,11 +17,38 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterSuicideAttackProcessor)
 
+namespace ASMassMonsterSuicide
+{
+	static void SpawnIndicator(UWorld& World, const FASMassMonsterConfigFragment& Config, const FVector& Origin)
+	{
+		if (!Config.SuicideIndicatorClass || Config.SuicideWindupDuration <= 0.0f)
+		{
+			return;
+		}
+
+		const FTransform SpawnTransform(FRotator::ZeroRotator, Origin);
+		AASMonsterAttackIndicatorActor* Indicator = World.SpawnActorDeferred<AASMonsterAttackIndicatorActor>(
+			Config.SuicideIndicatorClass, SpawnTransform, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Indicator)
+		{
+			return;
+		}
+
+		Indicator->InitializeIndicator(EASMonsterAttackIndicatorShape::Circle, Config.SuicideRadius,
+			0.0f, 0.0f, Config.SuicideWindupDuration);
+		Indicator->FinishSpawning(SpawnTransform);
+		Indicator->SetLifeSpan(Config.SuicideWindupDuration);
+	}
+}
+
 UASMassMonsterSuicideAttackProcessor::UASMassMonsterSuicideAttackProcessor()
 	: EntityQuery(*this)
 {
 	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Server);
 	ExecutionOrder.ExecuteInGroup = UE::Mass::ProcessorGroupNames::Tasks;
+	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterBehaviorProcessor::StaticClass()->GetFName());
+	ExecutionOrder.ExecuteBefore.Add(UASMassMonsterNavigationProcessor::StaticClass()->GetFName());
 	bRequiresGameThreadExecution = true;
 }
 
@@ -47,7 +77,7 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 
 	const double CurrentTime = World->GetTimeSeconds();
 	const TConstArrayView<FASMassPlayerTargetSnapshot> TargetSnapshots = TargetSubsystem->GetTargetSnapshots();
-	EntityQuery.ForEachEntityChunk(Context, [CurrentTime, TargetSnapshots](FMassExecutionContext& Context)
+	EntityQuery.ForEachEntityChunk(Context, [World, CurrentTime, TargetSnapshots](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
@@ -80,6 +110,8 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 				Combat.PhaseEndTimeSeconds = CurrentTime + Config.SuicideWindupDuration;
 				Combat.bPrimaryEffectApplied = false;
 				Combat.AttackState = EASMassMonsterAttackState::Windup;
+				ASMassMonsterSuicide::SpawnIndicator(*World, Config,
+					Transforms[EntityIt].GetTransform().GetLocation());
 				continue;
 			}
 

@@ -6,6 +6,7 @@
 #include "ASMassMonsterFragments.generated.h"
 
 class AASMassMonsterProjectile;
+class AASMonsterAttackIndicatorActor;
 class UMassEntityConfigAsset;
 
 /** Entity마다 독립적으로 보유하는 현재 체력. 최대 체력은 종류별 공유 설정에 둔다. */
@@ -177,11 +178,19 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 	UPROPERTY(EditAnywhere, Category = "Combat|Charge", meta = (ClampMin = "1.0", Units = "cm"))
 	float ChargeHitRadius = 110.0f;
 
+	/** 선딜 동안 돌진 경로를 표시한다. 보통 BP_Indicator_Charge를 지정한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Charge")
+	TSubclassOf<AASMonsterAttackIndicatorActor> ChargeIndicatorClass;
+
 	UPROPERTY(EditAnywhere, Category = "Combat|Suicide", meta = (ClampMin = "0.0", Units = "s"))
 	float SuicideWindupDuration = 1.1f;
 
 	UPROPERTY(EditAnywhere, Category = "Combat|Suicide", meta = (ClampMin = "1.0", Units = "cm"))
 	float SuicideRadius = 320.0f;
+
+	/** 선딜 동안 폭발 범위를 표시한다. 보통 BP_Indicator_Radial을 지정한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Suicide")
+	TSubclassOf<AASMonsterAttackIndicatorActor> SuicideIndicatorClass;
 
 	UPROPERTY(EditAnywhere, Category = "Combat|Summon")
 	TObjectPtr<UMassEntityConfigAsset> SummonedEntityConfig;
@@ -212,6 +221,10 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Combat|Haste", meta = (ClampMin = "0.0", Units = "s"))
 	float HasteWindupDuration = 0.6f;
+
+	/** 선딜 동안 이속 강화 범위를 표시한다. 버프 전용 색상의 원형 Indicator를 지정한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Haste")
+	TSubclassOf<AASMonsterAttackIndicatorActor> HasteIndicatorClass;
 
 	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0", Units = "cm"))
 	float DetectionRadius = 1500.0f;

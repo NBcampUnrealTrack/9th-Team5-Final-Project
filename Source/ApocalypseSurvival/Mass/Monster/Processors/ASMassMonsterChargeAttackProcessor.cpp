@@ -1,7 +1,7 @@
 #include "Mass/Monster/Processors/ASMassMonsterChargeAttackProcessor.h"
 
+#include "Characters/Enemy/ASMonsterAttackIndicatorActor.h"
 #include "Engine/World.h"
-#include "GameFramework/Pawn.h"
 #include "Mass/Monster/Combat/ASMassMonsterDamageBridge.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
@@ -17,8 +17,6 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterChargeAttackProcessor)
 
-DEFINE_LOG_CATEGORY_STATIC(LogASMassMonsterCharge, Log, All);
-
 namespace ASMassMonsterCharge
 {
 	static bool IsPointWithinSegmentRadius(const FVector& Point, const FVector& Start, const FVector& End, const float Radius)
@@ -27,6 +25,30 @@ namespace ASMassMonsterCharge
 		const FVector Start2D(Start.X, Start.Y, 0.0f);
 		const FVector End2D(End.X, End.Y, 0.0f);
 		return FMath::PointDistToSegmentSquared(Point2D, Start2D, End2D) <= FMath::Square(Radius);
+	}
+
+	static void SpawnIndicator(UWorld& World, const FASMassMonsterConfigFragment& Config,
+		const FVector& Origin, const FVector& Direction)
+	{
+		if (!Config.ChargeIndicatorClass || Config.ChargeWindupDuration <= 0.0f)
+		{
+			return;
+		}
+
+		const FVector IndicatorLocation = Origin + Direction * (Config.ChargeDistance * 0.5f);
+		const FTransform SpawnTransform(Direction.Rotation(), IndicatorLocation);
+		AASMonsterAttackIndicatorActor* Indicator = World.SpawnActorDeferred<AASMonsterAttackIndicatorActor>(
+			Config.ChargeIndicatorClass, SpawnTransform, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Indicator)
+		{
+			return;
+		}
+
+		Indicator->InitializeIndicator(EASMonsterAttackIndicatorShape::Rectangle, 0.0f,
+			Config.ChargeDistance, Config.ChargeHitRadius * 2.0f, Config.ChargeWindupDuration);
+		Indicator->FinishSpawning(SpawnTransform);
+		Indicator->SetLifeSpan(Config.ChargeWindupDuration);
 	}
 }
 
@@ -64,24 +86,8 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 
 	const double CurrentTime = World->GetTimeSeconds();
 	const float DeltaTime = Context.GetDeltaTimeSeconds();
-	int32 ChargeEntityCount = 0;
-	int32 TargetCount = 0;
-	int32 InRangeCount = 0;
-	int32 ChaseCount = 0;
-	int32 BehaviorAttackCount = 0;
-	int32 ReadyCount = 0;
-	int32 WindupCount = 0;
-	int32 ExecutingCount = 0;
-	int32 RecoveringCount = 0;
-	float MinimumTargetDistance = TNumericLimits<float>::Max();
-	float DiagnosticAttackRange = 0.0f;
-	float DiagnosticChargeDistance = 0.0f;
-	float DiagnosticChargeDuration = 0.0f;
-	EntityQuery.ForEachEntityChunk(Context,
-		[World, TargetSubsystem, CurrentTime, DeltaTime, &ChargeEntityCount, &TargetCount, &InRangeCount,
-			&ChaseCount, &BehaviorAttackCount, &ReadyCount, &WindupCount, &ExecutingCount, &RecoveringCount,
-			&MinimumTargetDistance, &DiagnosticAttackRange, &DiagnosticChargeDistance, &DiagnosticChargeDuration]
-		(FMassExecutionContext& Context)
+	const TConstArrayView<FASMassPlayerTargetSnapshot> TargetSnapshots = TargetSubsystem->GetTargetSnapshots();
+	EntityQuery.ForEachEntityChunk(Context, [this, World, CurrentTime, DeltaTime, TargetSnapshots](FMassExecutionContext& Context)
 	{
 		const TArrayView<FTransformFragment> Transforms = Context.GetMutableFragmentView<FTransformFragment>();
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
@@ -93,35 +99,11 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 		{
 			return;
 		}
-		DiagnosticAttackRange = Config.AttackRange;
-		DiagnosticChargeDistance = Config.ChargeDistance;
-		DiagnosticChargeDuration = Config.ChargeDuration;
-
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
-			++ChargeEntityCount;
 			FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
 			FTransform& Transform = Transforms[EntityIt].GetMutableTransform();
 			const FMassEntityHandle Entity = Context.GetEntity(EntityIt);
-			if (Behaviors[EntityIt].State == EASMassMonsterState::Chase)
-			{
-				++ChaseCount;
-			}
-			else if (Behaviors[EntityIt].State == EASMassMonsterState::Attack)
-			{
-				++BehaviorAttackCount;
-			}
-			if (Targets[EntityIt].HasTarget())
-			{
-				++TargetCount;
-				const float TargetDistance = FVector::Dist2D(
-					Transform.GetLocation(), Targets[EntityIt].CachedTargetLocation);
-				MinimumTargetDistance = FMath::Min(MinimumTargetDistance, TargetDistance);
-				if (TargetDistance <= Config.AttackRange)
-				{
-					++InRangeCount;
-				}
-			}
 
 			switch (Combat.AttackState)
 			{
@@ -157,13 +139,9 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				Combat.bPrimaryEffectApplied = false;
 				Combat.PhaseEndTimeSeconds = CurrentTime + Config.ChargeWindupDuration;
 				Combat.AttackState = EASMassMonsterAttackState::Windup;
+				HitTargetIdsByEntity.Remove(Entity);
 				Transform.SetRotation(Direction.Rotation().Quaternion());
-				UE_LOG(LogASMassMonsterCharge, Warning,
-					TEXT("[MassChargeDiag] Entity=%d Ready->Windup Distance=%.1f Range=%.1f Direction=%s"),
-					Entity.Index,
-					FVector::Dist2D(Transform.GetLocation(), Targets[EntityIt].CachedTargetLocation),
-					Config.AttackRange,
-					*Direction.ToCompactString());
+				ASMassMonsterCharge::SpawnIndicator(*World, Config, Transform.GetLocation(), Direction);
 				break;
 			}
 			case EASMassMonsterAttackState::Windup:
@@ -171,9 +149,6 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				{
 					Combat.PhaseEndTimeSeconds = CurrentTime + Config.ChargeDuration;
 					Combat.AttackState = EASMassMonsterAttackState::Executing;
-					UE_LOG(LogASMassMonsterCharge, Warning,
-						TEXT("[MassChargeDiag] Entity=%d Windup->Executing Location=%s"),
-						Entity.Index, *Transform.GetLocation().ToCompactString());
 				}
 				break;
 
@@ -183,36 +158,31 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				const float RemainingDistance = FMath::Max(0.0f, Config.ChargeDistance - Combat.ChargeDistanceTraveled);
 				const float StepDistance = FMath::Min(Config.ChargeDistance / SafeDuration * DeltaTime, RemainingDistance);
 				const FVector Start = Transform.GetLocation();
-				const FVector DesiredEnd = Start + Combat.LockedDirection * StepDistance;
-				FHitResult BlockingHit;
-				const bool bHitWorld = World->SweepSingleByChannel(BlockingHit, Start, DesiredEnd, FQuat::Identity,
-					ECC_WorldStatic, FCollisionShape::MakeSphere(Config.ChargeHitRadius));
-				const FVector End = bHitWorld ? BlockingHit.Location : DesiredEnd;
+				const FVector End = Start + Combat.LockedDirection * StepDistance;
 				Transform.SetLocation(End);
 				Combat.ChargeDistanceTraveled += FVector::Dist2D(Start, End);
 
-				if (!Combat.bPrimaryEffectApplied)
+				TSet<int32>& HitTargetIds = HitTargetIdsByEntity.FindOrAdd(Entity);
+				for (const FASMassPlayerTargetSnapshot& Snapshot : TargetSnapshots)
 				{
-					APawn* TargetPawn = TargetSubsystem->ResolveTargetPawn(Combat.LockedTargetId);
-					if (IsValid(TargetPawn)
-						&& ASMassMonsterCharge::IsPointWithinSegmentRadius(TargetPawn->GetActorLocation(), Start, End,
-							Config.ChargeHitRadius))
+					if (!Snapshot.bAlive || !Snapshot.Pawn.IsValid() || HitTargetIds.Contains(Snapshot.TargetId)
+						|| !ASMassMonsterCharge::IsPointWithinSegmentRadius(
+							Snapshot.Location, Start, End, Config.ChargeHitRadius))
 					{
-						ASMassMonsterDamage::ApplyToActor(TargetPawn, Config.AttackPower, Start);
-						Combat.bPrimaryEffectApplied = true;
+						continue;
 					}
+
+					ASMassMonsterDamage::ApplyToActor(Snapshot.Pawn.Get(), Config.AttackPower, Start);
+					HitTargetIds.Add(Snapshot.TargetId);
+					Combat.bPrimaryEffectApplied = true;
 				}
 
-				if (bHitWorld || Combat.ChargeDistanceTraveled >= Config.ChargeDistance
+				if (Combat.ChargeDistanceTraveled >= Config.ChargeDistance
 					|| CurrentTime >= Combat.PhaseEndTimeSeconds)
 				{
-					UE_LOG(LogASMassMonsterCharge, Warning,
-						TEXT("[MassChargeDiag] Entity=%d Executing->Recovering Traveled=%.1f HitWorld=%d TimedOut=%d Location=%s"),
-						Entity.Index, Combat.ChargeDistanceTraveled, bHitWorld ? 1 : 0,
-						CurrentTime >= Combat.PhaseEndTimeSeconds ? 1 : 0,
-						*Transform.GetLocation().ToCompactString());
 					Combat.NextAttackTimeSeconds = CurrentTime + Config.AttackCooldown;
 					Combat.AttackState = EASMassMonsterAttackState::Recovering;
+					HitTargetIdsByEntity.Remove(Entity);
 				}
 				break;
 			}
@@ -227,28 +197,6 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 			default:
 				break;
 			}
-
-			switch (Combat.AttackState)
-			{
-			case EASMassMonsterAttackState::Ready: ++ReadyCount; break;
-			case EASMassMonsterAttackState::Windup: ++WindupCount; break;
-			case EASMassMonsterAttackState::Executing: ++ExecutingCount; break;
-			case EASMassMonsterAttackState::Recovering: ++RecoveringCount; break;
-			default: break;
-			}
 		}
 	});
-
-	if (CurrentTime >= NextDiagnosticLogTimeSeconds)
-	{
-		NextDiagnosticLogTimeSeconds = CurrentTime + 1.0;
-		const float ReportedMinimumDistance = MinimumTargetDistance == TNumericLimits<float>::Max()
-			? -1.0f
-			: MinimumTargetDistance;
-		UE_LOG(LogASMassMonsterCharge, Warning,
-			TEXT("[MassChargeDiag] Tick Entities=%d Targets=%d InRange=%d Behavior[Chase=%d Attack=%d] Combat[Ready=%d Windup=%d Executing=%d Recovering=%d] MinDistance=%.1f AttackRange=%.1f ChargeDistance=%.1f ChargeDuration=%.2f"),
-			ChargeEntityCount, TargetCount, InRangeCount, ChaseCount, BehaviorAttackCount,
-			ReadyCount, WindupCount, ExecutingCount, RecoveringCount,
-			ReportedMinimumDistance, DiagnosticAttackRange, DiagnosticChargeDistance, DiagnosticChargeDuration);
-	}
 }

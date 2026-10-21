@@ -19,5 +19,5 @@ protected:
 
 private:
 	FMassEntityQuery EntityQuery;
-	double NextDiagnosticLogTimeSeconds = 0.0;
+	TMap<FMassEntityHandle, TSet<int32>> HitTargetIdsByEntity;
 };

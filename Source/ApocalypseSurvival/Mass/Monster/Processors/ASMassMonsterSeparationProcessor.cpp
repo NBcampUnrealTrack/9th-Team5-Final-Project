@@ -40,6 +40,8 @@ void UASMassMonsterSeparationProcessor::ConfigureQueries(const TSharedRef<FMassE
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FAgentRadiusFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
 }
 
@@ -53,11 +55,19 @@ void UASMassMonsterSeparationProcessor::Execute(FMassEntityManager& EntityManage
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TConstArrayView<FAgentRadiusFragment> Radii = Context.GetFragmentView<FAgentRadiusFragment>();
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
+		const TConstArrayView<FASMassMonsterCombatFragment> Combats = Context.GetFragmentView<FASMassMonsterCombatFragment>();
+		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
 		Agents.Reserve(Agents.Num() + Context.GetNumEntities());
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
-			if (Behaviors[EntityIt].State == EASMassMonsterState::Dead)
+			const bool bIgnoresSeparation =
+				(Config.AttackPattern == EASMassMonsterAttackPattern::Charge
+					&& Combats[EntityIt].AttackState == EASMassMonsterAttackState::Executing)
+				|| (Config.AttackPattern == EASMassMonsterAttackPattern::Suicide
+					&& Combats[EntityIt].AttackState == EASMassMonsterAttackState::Windup);
+			if (Behaviors[EntityIt].State == EASMassMonsterState::Dead
+				|| bIgnoresSeparation)
 			{
 				continue;
 			}

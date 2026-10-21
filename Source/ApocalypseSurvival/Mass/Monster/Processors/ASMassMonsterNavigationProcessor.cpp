@@ -213,10 +213,14 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 			const FASMassMonsterBehaviorFragment& Behavior = Behaviors[EntityIt];
 			const FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
 
-			// 돌진 준비/실행 중에는 NavMesh 경로 추종이 Transform을 덮어쓰지 않도록 완전히 멈춘다.
-			if (Config.AttackPattern == EASMassMonsterAttackPattern::Charge
-				&& (Combat.AttackState == EASMassMonsterAttackState::Windup
-					|| Combat.AttackState == EASMassMonsterAttackState::Executing))
+			// 돌진 준비/실행과 자폭 시전 중에는 행동 상태가 Chase로 바뀌어도 이동을 재개하지 않는다.
+			const bool bLocksMovementForPattern =
+				(Config.AttackPattern == EASMassMonsterAttackPattern::Charge
+					&& (Combat.AttackState == EASMassMonsterAttackState::Windup
+						|| Combat.AttackState == EASMassMonsterAttackState::Executing))
+				|| (Config.AttackPattern == EASMassMonsterAttackPattern::Suicide
+					&& Combat.AttackState == EASMassMonsterAttackState::Windup);
+			if (bLocksMovementForPattern)
 			{
 				ASMassMonsterNavigation::Stop(*World, MoveTarget, CachedPath, ShortPath);
 				NavigationState.bHasRequestedGoal = false;
