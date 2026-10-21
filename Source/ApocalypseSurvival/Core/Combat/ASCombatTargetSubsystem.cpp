@@ -154,31 +154,73 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargetsInRadius(
 	const AActor* Instigator,
 	const bool bCanHitPlayers) const
 {
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = Center;
+	Query.SearchRadius = Radius;
+	Query.Instigator = Instigator;
+	Query.Domain = EASCombatTargetDomain::ActorOnly;
+	Query.bCanHitPlayers = bCanHitPlayers;
+	Query.bRequireAlive = false;
+	return FindActorTargets(Query);
+}
+
+TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTargetQuery& Query) const
+{
 	TArray<AActor*> Targets;
-	const UWorld* World = GetWorld();
-	if (!World || Radius <= 0.0f)
+	if (Query.Domain == EASCombatTargetDomain::MassOnly)
 	{
 		return Targets;
 	}
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASCombatFindTargets), false, Instigator);
-	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(
-		Overlaps,
-		Center,
-		FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn),
-		FCollisionShape::MakeSphere(Radius),
-		Params);
-
-	for (const FOverlapResult& Overlap : Overlaps)
+	const UWorld* World = GetWorld();
+	if (!World || Query.SearchRadius < 0.0f)
 	{
-		AActor* Actor = Overlap.GetActor();
-		if (IsValidActorTarget(Actor, Instigator, bCanHitPlayers))
+		return Targets;
+	}
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASCombatFindTargets), false, Query.Instigator);
+	const FCollisionObjectQueryParams ObjectParams(ECC_Pawn);
+	if (Query.Shape == EASCombatTargetShape::Segment && !Query.SearchOrigin.Equals(Query.EndLocation))
+	{
+		TArray<FHitResult> Hits;
+		World->SweepMultiByObjectType(Hits, Query.SearchOrigin, Query.EndLocation, FQuat::Identity,
+			ObjectParams, FCollisionShape::MakeSphere(Query.SearchRadius), Params);
+		for (const FHitResult& Hit : Hits)
 		{
-			Targets.AddUnique(Actor);
+			AActor* Actor = Hit.GetActor();
+			if ((!Query.ExplicitActor || Actor == Query.ExplicitActor)
+				&& IsValidActorTarget(Actor, Query.Instigator, Query.bCanHitPlayers)
+				&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
+				&& (!Query.bRequireVisibleToLocalTeam || UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor))
+				&& MatchesQueryShape(Query, Actor->GetActorLocation(), 0.0f))
+			{
+				Targets.AddUnique(Actor);
+			}
 		}
 	}
+	else
+	{
+		TArray<FOverlapResult> Overlaps;
+		World->OverlapMultiByObjectType(Overlaps, Query.SearchOrigin, FQuat::Identity, ObjectParams,
+			FCollisionShape::MakeSphere(Query.SearchRadius), Params);
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			AActor* Actor = Overlap.GetActor();
+			if ((!Query.ExplicitActor || Actor == Query.ExplicitActor)
+				&& IsValidActorTarget(Actor, Query.Instigator, Query.bCanHitPlayers)
+				&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
+				&& (!Query.bRequireVisibleToLocalTeam || UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor))
+				&& MatchesQueryShape(Query, Actor->GetActorLocation(), 0.0f))
+			{
+				Targets.AddUnique(Actor);
+			}
+		}
+	}
+
+	Targets.Sort([this, &Query](const AActor& Left, const AActor& Right)
+	{
+		return GetQuerySortKey(Query, Left.GetActorLocation()) < GetQuerySortKey(Query, Right.GetActorLocation());
+	});
 	return Targets;
 }
 
@@ -193,14 +235,17 @@ bool UASCombatTargetSubsystem::FindBestTarget(
 		return false;
 	}
 
-	float BestPreferredDistanceSquared = TNumericLimits<float>::Max();
+	const FVector& SortOrigin = Query.SortPolicy == EASCombatTargetSortPolicy::NearestToPriorityLocation
+		? Query.PriorityLocation
+		: Query.SearchOrigin;
+	float BestSortDistanceSquared = TNumericLimits<float>::Max();
 	float BestOriginDistanceSquared = TNumericLimits<float>::Max();
-	auto IsBetterCandidate = [&Query, &BestPreferredDistanceSquared, &BestOriginDistanceSquared](const FVector& Location)
+	auto IsBetterCandidate = [&Query, &SortOrigin, &BestSortDistanceSquared, &BestOriginDistanceSquared](const FVector& Location)
 	{
-		const float PreferredDistanceSquared = FVector::DistSquared2D(Location, Query.PreferredLocation);
+		const float SortDistanceSquared = FVector::DistSquared2D(Location, SortOrigin);
 		const float OriginDistanceSquared = FVector::DistSquared2D(Location, Query.SearchOrigin);
-		return PreferredDistanceSquared < BestPreferredDistanceSquared
-			|| (FMath::IsNearlyEqual(PreferredDistanceSquared, BestPreferredDistanceSquared)
+		return SortDistanceSquared < BestSortDistanceSquared
+			|| (FMath::IsNearlyEqual(SortDistanceSquared, BestSortDistanceSquared)
 				&& OriginDistanceSquared < BestOriginDistanceSquared);
 	};
 
@@ -230,7 +275,7 @@ bool UASCombatTargetSubsystem::FindBestTarget(
 			OutTarget.Reset();
 			OutTarget.Actor = Actor;
 			OutTarget.Location = Location;
-			BestPreferredDistanceSquared = FVector::DistSquared2D(Location, Query.PreferredLocation);
+			BestSortDistanceSquared = FVector::DistSquared2D(Location, SortOrigin);
 			BestOriginDistanceSquared = FVector::DistSquared2D(Location, Query.SearchOrigin);
 		}
 	}
@@ -242,7 +287,7 @@ bool UASCombatTargetSubsystem::FindBestTarget(
 		FVector MassLocation;
 		float MassHitRadius = 0.0f;
 		if (MassMonsters && MassMonsters->FindBestAliveMonsterTarget(
-			Query.SearchOrigin, Query.SearchRadius, Query.PreferredLocation,
+			Query.SearchOrigin, Query.SearchRadius, SortOrigin,
 			MassTargetId, MassLocation, MassHitRadius)
 			&& IsBetterCandidate(MassLocation))
 		{
@@ -315,17 +360,12 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsInRadius(
 	AActor* Instigator,
 	const bool bCanHitPlayers)
 {
-	FASCombatApplyResult Result;
-	Result.ActorTargets = FindActorTargetsInRadius(Center, Radius, Instigator, bCanHitPlayers);
-	ApplyEffectSpecsToActors(EffectSpecs, Result.ActorTargets);
-
-	// 현재 bCanHitPlayers는 몬스터가 플레이어를 공격하는 경로다. 이 경우 적군인 Mass 몬스터는 제외한다.
-	if (!bCanHitPlayers)
-	{
-		Result.NonActorHitCount = ApplyEffectSpecsToNonActorTargetsInRadius(
-			Center, Radius, EffectSpecs, Instigator);
-	}
-	return Result;
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = Center;
+	Query.SearchRadius = Radius;
+	Query.Instigator = Instigator;
+	Query.bCanHitPlayers = bCanHitPlayers;
+	return ResolveAndApply(Query, EffectSpecs);
 }
 
 int32 UASCombatTargetSubsystem::ApplyEffectSpecsToNonActorTargetsInRadius(
@@ -335,11 +375,13 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecsToNonActorTargetsInRadius(
 	AActor* Instigator,
 	const int32 MaxTargets)
 {
-	const float Damage = CalculateDamageMagnitude(EffectSpecs);
-	UASMassMonsterSubsystem* MassMonsters = GetWorld() ? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>() : nullptr;
-	return MassMonsters && Damage > 0.0f
-		? MassMonsters->ApplyDamageInRadius(Center, Radius, Damage, Instigator, MaxTargets)
-		: 0;
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = Center;
+	Query.SearchRadius = Radius;
+	Query.Instigator = Instigator;
+	Query.Domain = EASCombatTargetDomain::MassOnly;
+	Query.MaxTargets = MaxTargets;
+	return ResolveAndApply(Query, EffectSpecs).NonActorHitCount;
 }
 
 int32 UASCombatTargetSubsystem::ApplyEffectSpecsToNonActorTargetsInCone(
@@ -351,11 +393,16 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecsToNonActorTargetsInCone(
 	AActor* Instigator,
 	const int32 MaxTargets)
 {
-	const float Damage = CalculateDamageMagnitude(EffectSpecs);
-	UASMassMonsterSubsystem* MassMonsters = GetWorld() ? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>() : nullptr;
-	return MassMonsters && Damage > 0.0f
-		? MassMonsters->ApplyDamageInCone(Center, AimDirection, Radius, AngleDegrees, Damage, Instigator, MaxTargets)
-		: 0;
+	FASCombatTargetQuery Query;
+	Query.Shape = EASCombatTargetShape::Cone;
+	Query.SearchOrigin = Center;
+	Query.Direction = AimDirection;
+	Query.SearchRadius = Radius;
+	Query.AngleDegrees = AngleDegrees;
+	Query.Instigator = Instigator;
+	Query.Domain = EASCombatTargetDomain::MassOnly;
+	Query.MaxTargets = MaxTargets;
+	return ResolveAndApply(Query, EffectSpecs).NonActorHitCount;
 }
 
 int32 UASCombatTargetSubsystem::ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(
@@ -367,12 +414,162 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecsToNonActorTargetsAlongSegmentUni
 	FASCombatTargetHitSet& InOutHitTargets,
 	const int32 MaxTargets)
 {
+	FASCombatTargetQuery Query;
+	Query.Shape = EASCombatTargetShape::Segment;
+	Query.SearchOrigin = Start;
+	Query.EndLocation = End;
+	Query.SearchRadius = SweepRadius;
+	Query.Instigator = Instigator;
+	Query.Domain = EASCombatTargetDomain::MassOnly;
+	Query.MaxTargets = MaxTargets;
+	return ResolveAndApply(Query, EffectSpecs, &InOutHitTargets).NonActorHitCount;
+}
+
+FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
+	const FASCombatTargetQuery& Query,
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+	FASCombatTargetHitSet* InOutHitTargets)
+{
+	FASCombatApplyResult Result;
+	if (Query.SearchRadius < 0.0f)
+	{
+		return Result;
+	}
+
+	if (Query.Domain != EASCombatTargetDomain::MassOnly)
+	{
+		for (AActor* Actor : FindActorTargets(Query))
+		{
+			if (InOutHitTargets && InOutHitTargets->ContainsActor(Actor))
+			{
+				continue;
+			}
+			if (Query.MaxTargets > 0 && Result.GetTotalHitCount() >= Query.MaxTargets)
+			{
+				break;
+			}
+
+			ApplyEffectSpecsToActor(EffectSpecs, Actor);
+			Result.ActorTargets.Add(Actor);
+			if (InOutHitTargets)
+			{
+				InOutHitTargets->AddActor(Actor);
+			}
+		}
+	}
+
+	// 현재 Mass 몬스터는 플레이어의 적이다. 플레이어를 공격하는 경로에는 포함하지 않는다.
+	if (Query.Domain == EASCombatTargetDomain::ActorOnly || Query.ExplicitActor || Query.bCanHitPlayers)
+	{
+		return Result;
+	}
+
 	const float Damage = CalculateDamageMagnitude(EffectSpecs);
 	UASMassMonsterSubsystem* MassMonsters = GetWorld() ? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>() : nullptr;
-	return MassMonsters && Damage > 0.0f
-		? MassMonsters->ApplyDamageAlongSegmentUnique(Start, End, SweepRadius, Damage, Instigator,
-			InOutHitTargets.NonActorTargetIds, MaxTargets)
+	if (!MassMonsters || Damage <= 0.0f)
+	{
+		return Result;
+	}
+
+	const int32 RemainingTargets = Query.MaxTargets > 0
+		? FMath::Max(0, Query.MaxTargets - Result.ActorTargets.Num())
 		: 0;
+	if (Query.MaxTargets > 0 && RemainingTargets <= 0)
+	{
+		return Result;
+	}
+
+	switch (Query.Shape)
+	{
+	case EASCombatTargetShape::Radius:
+		Result.NonActorHitCount = MassMonsters->ApplyDamageInRadius(
+			Query.SearchOrigin, Query.SearchRadius, Damage, const_cast<AActor*>(Query.Instigator), RemainingTargets);
+		break;
+	case EASCombatTargetShape::Cone:
+		Result.NonActorHitCount = MassMonsters->ApplyDamageInCone(
+			Query.SearchOrigin, Query.Direction, Query.SearchRadius, Query.AngleDegrees,
+			Damage, const_cast<AActor*>(Query.Instigator), RemainingTargets);
+		break;
+	case EASCombatTargetShape::Segment:
+		if (InOutHitTargets)
+		{
+			Result.NonActorHitCount = MassMonsters->ApplyDamageAlongSegmentUnique(
+				Query.SearchOrigin, Query.EndLocation, Query.SearchRadius, Damage,
+				const_cast<AActor*>(Query.Instigator), InOutHitTargets->NonActorTargetIds, RemainingTargets);
+		}
+		else
+		{
+			Result.NonActorHitCount = MassMonsters->ApplyDamageAlongSegment(
+				Query.SearchOrigin, Query.EndLocation, Query.SearchRadius, Damage,
+				const_cast<AActor*>(Query.Instigator), RemainingTargets);
+		}
+		break;
+	default:
+		break;
+	}
+
+	return Result;
+}
+
+bool UASCombatTargetSubsystem::MatchesQueryShape(
+	const FASCombatTargetQuery& Query,
+	const FVector& Location,
+	const float HitRadius) const
+{
+	const float SafeRadius = FMath::Max(0.0f, Query.SearchRadius) + FMath::Max(0.0f, HitRadius);
+	switch (Query.Shape)
+	{
+	case EASCombatTargetShape::Radius:
+		return FVector::DistSquared2D(Query.SearchOrigin, Location) <= FMath::Square(SafeRadius);
+	case EASCombatTargetShape::Cone:
+	{
+		const FVector Offset = Location - Query.SearchOrigin;
+		if (Offset.SizeSquared2D() > FMath::Square(SafeRadius))
+		{
+			return false;
+		}
+		const float SafeAngle = FMath::Clamp(Query.AngleDegrees, 1.0f, 360.0f);
+		const FVector SafeDirection = Query.Direction.GetSafeNormal2D();
+		if (SafeAngle >= 360.0f || SafeDirection.IsNearlyZero())
+		{
+			return true;
+		}
+		const FVector ToTarget = Offset.GetSafeNormal2D();
+		return ToTarget.IsNearlyZero()
+			|| FVector::DotProduct(SafeDirection, ToTarget) >= FMath::Cos(FMath::DegreesToRadians(SafeAngle * 0.5f));
+	}
+	case EASCombatTargetShape::Segment:
+	{
+		const FVector Start2D(Query.SearchOrigin.X, Query.SearchOrigin.Y, 0.0f);
+		const FVector End2D(Query.EndLocation.X, Query.EndLocation.Y, 0.0f);
+		const FVector Location2D(Location.X, Location.Y, 0.0f);
+		return FMath::PointDistToSegmentSquared(Location2D, Start2D, End2D) <= FMath::Square(SafeRadius);
+	}
+	default:
+		return false;
+	}
+}
+
+float UASCombatTargetSubsystem::GetQuerySortKey(
+	const FASCombatTargetQuery& Query,
+	const FVector& Location) const
+{
+	if (Query.Shape == EASCombatTargetShape::Segment)
+	{
+		const FVector Start2D(Query.SearchOrigin.X, Query.SearchOrigin.Y, 0.0f);
+		const FVector End2D(Query.EndLocation.X, Query.EndLocation.Y, 0.0f);
+		const FVector Location2D(Location.X, Location.Y, 0.0f);
+		const FVector Segment = End2D - Start2D;
+		const float SegmentLengthSquared = Segment.SizeSquared();
+		return SegmentLengthSquared > SMALL_NUMBER
+			? FMath::Clamp(FVector::DotProduct(Location2D - Start2D, Segment) / SegmentLengthSquared, 0.0f, 1.0f)
+			: 0.0f;
+	}
+
+	const FVector& SortOrigin = Query.SortPolicy == EASCombatTargetSortPolicy::NearestToPriorityLocation
+		? Query.PriorityLocation
+		: Query.SearchOrigin;
+	return FVector::DistSquared2D(Location, SortOrigin);
 }
 
 float UASCombatTargetSubsystem::CalculateDamageMagnitude(

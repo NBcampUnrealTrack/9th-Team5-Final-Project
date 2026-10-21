@@ -15,14 +15,45 @@ enum class EASCombatTargetDomain : uint8
 	All
 };
 
+/** 여러 후보 중 최종 타겟을 고르는 거리 기준. */
+enum class EASCombatTargetSortPolicy : uint8
+{
+	/** SearchOrigin(일반적으로 공격자)에서 가장 가까운 대상을 고른다. */
+	NearestToSearchOrigin,
+	/** PriorityLocation(예: 사거리 안 클릭 지점)에서 가장 가까운 대상을 고른다. */
+	NearestToPriorityLocation
+};
+
+/** 범위 공격의 공간 판정 형태. */
+enum class EASCombatTargetShape : uint8
+{
+	Radius,
+	Cone,
+	Segment
+};
+
 /** 타겟 검색 규칙. 호출부는 백엔드가 아닌 검색 의도만 지정한다. */
 struct APOCALYPSESURVIVAL_API FASCombatTargetQuery
 {
+	/** Radius/Cone의 중심, Segment의 시작 위치. */
 	FVector SearchOrigin = FVector::ZeroVector;
-	FVector PreferredLocation = FVector::ZeroVector;
+	/** Cone의 방향. */
+	FVector Direction = FVector::ForwardVector;
+	/** Segment의 끝 위치. */
+	FVector EndLocation = FVector::ZeroVector;
+	FVector PriorityLocation = FVector::ZeroVector;
+	/** Radius/Cone의 반경, Segment의 Sweep 반경. */
 	float SearchRadius = 0.0f;
+	/** Cone의 전체 각도. 360이면 원형과 같다. */
+	float AngleDegrees = 360.0f;
 	const AActor* Instigator = nullptr;
+	/** 지정 공격에서만 사용하는 Actor 고정 대상. 설정 시 Mass는 검색하지 않는다. */
+	const AActor* ExplicitActor = nullptr;
 	EASCombatTargetDomain Domain = EASCombatTargetDomain::All;
+	EASCombatTargetSortPolicy SortPolicy = EASCombatTargetSortPolicy::NearestToSearchOrigin;
+	EASCombatTargetShape Shape = EASCombatTargetShape::Radius;
+	/** 0이면 제한 없음. */
+	int32 MaxTargets = 0;
 	bool bCanHitPlayers = false;
 	bool bRequireAlive = true;
 	bool bRequireVisibleToLocalTeam = false;
@@ -87,6 +118,18 @@ public:
 	static int32 ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Target);
 	static int32 ApplyEffectSpecToActor(const FGameplayEffectSpecHandle& EffectSpec, AActor* Target);
 
+	/** Query의 공간·생존·진영 규칙으로 Actor 후보만 찾는다. */
+	TArray<AActor*> FindActorTargets(const FASCombatTargetQuery& Query) const;
+
+	/**
+	 * Query로 Actor/Mass를 함께 판정하고 EffectSpec을 적용한다.
+	 * 투사체·돌진처럼 여러 프레임에 걸쳐 같은 대상을 한 번만 맞혀야 하면 InOutHitTargets를 전달한다.
+	 */
+	FASCombatApplyResult ResolveAndApply(const FASCombatTargetQuery& Query,
+		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+		FASCombatTargetHitSet* InOutHitTargets = nullptr);
+
+	UE_DEPRECATED(5.8, "Use FindActorTargets with FASCombatTargetQuery instead.")
 	TArray<AActor*> FindActorTargetsInRadius(const FVector& Center, float Radius,
 		const AActor* Instigator, bool bCanHitPlayers) const;
 
@@ -99,20 +142,26 @@ public:
 	int32 ApplyEffectSpecsToActors(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 		TConstArrayView<AActor*> Targets) const;
 
+	UE_DEPRECATED(5.8, "Use ResolveAndApply with FASCombatTargetQuery instead.")
 	FASCombatApplyResult ApplyEffectSpecsInRadius(const FVector& Center, float Radius,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator, bool bCanHitPlayers);
 
+	UE_DEPRECATED(5.8, "Use ResolveAndApply with FASCombatTargetQuery instead.")
 	int32 ApplyEffectSpecsToNonActorTargetsInRadius(const FVector& Center, float Radius,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator, int32 MaxTargets = 0);
 
+	UE_DEPRECATED(5.8, "Use ResolveAndApply with FASCombatTargetQuery instead.")
 	int32 ApplyEffectSpecsToNonActorTargetsInCone(const FVector& Center, const FVector& AimDirection,
 		float Radius, float AngleDegrees, TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 		AActor* Instigator, int32 MaxTargets = 0);
 
+	UE_DEPRECATED(5.8, "Use ResolveAndApply with FASCombatTargetQuery instead.")
 	int32 ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(const FVector& Start, const FVector& End,
 		float SweepRadius, TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator,
 		FASCombatTargetHitSet& InOutHitTargets, int32 MaxTargets = 1);
 
 private:
+	bool MatchesQueryShape(const FASCombatTargetQuery& Query, const FVector& Location, float HitRadius) const;
+	float GetQuerySortKey(const FASCombatTargetQuery& Query, const FVector& Location) const;
 	static float CalculateDamageMagnitude(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs);
 };

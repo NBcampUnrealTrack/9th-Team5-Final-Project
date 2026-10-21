@@ -38,7 +38,11 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0", ClampMax = "8"))
 	int32 FogEdgeBlurTexels = 2;
 
-	/** 표시 안개가 새 시야 상태에 도달하는 시간. 0이면 즉시 적용한다. */
+	/** 로컬 플레이어 시야를 마스크에 이만큼 넓게 그린다. 갱신 사이 이동 거리와 경계 흐림을 덮어야 한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
+	float LocalVisionMargin = 200.0f;
+
+	/** 새 마스크로 넘어가는 보간 시간. 갱신 간격(1/UpdateHz)과 같으면 경계가 일정한 속도로 움직인다. 0이면 즉시 적용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0", ClampMax = "2", Units = "s"))
 	float FogFadeSeconds = 0.15f;
 

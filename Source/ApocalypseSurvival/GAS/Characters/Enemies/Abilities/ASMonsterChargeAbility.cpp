@@ -74,7 +74,7 @@ void UASMonsterChargeAbility::ActivateAbility(const FGameplayAbilitySpecHandle H
 	Character->SetActorRotation(ChargeDirection.Rotation());
 	Character->GetCharacterMovement()->StopMovementImmediately();
 	ChargeElapsedTime = 0.0f;
-	HitActors.Reset();
+	HitTargets.Reset();
 
 	if (WindupDuration > 0.0f)
 	{
@@ -99,7 +99,7 @@ void UASMonsterChargeAbility::EndAbility(const FGameplayAbilitySpecHandle Handle
 
 	DestroyChargeIndicator();
 	EndChargePawnCollisionIgnore();
-	HitActors.Reset();
+	HitTargets.Reset();
 	ChargeElapsedTime = 0.0f;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
@@ -190,18 +190,21 @@ void UASMonsterChargeAbility::FinishCharge(bool bWasCancelled)
 void UASMonsterChargeAbility::ApplyChargeHitDamage()
 {
 	ACharacter* Character = GetOwnerCharacter();
-	if (!IsValid(Character))
+	UWorld* World = Character ? Character->GetWorld() : nullptr;
+	if (!IsValid(Character) || !World)
 	{
 		return;
 	}
 
-	for (AActor* Target : FindTargetsInRadius(Character->GetActorLocation(), FMath::Max(1.0f, HitRadius)))
+	if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
 	{
-		if (!HitActors.Contains(Target))
-		{
-			HitActors.Add(Target);
-			ApplySkillDamage(Target);
-		}
+		FASCombatTargetQuery Query;
+		Query.SearchOrigin = Character->GetActorLocation();
+		Query.SearchRadius = FMath::Max(1.0f, HitRadius);
+		Query.Instigator = Character;
+		Query.bCanHitPlayers = bCanHitPlayers;
+		const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+		CombatTargets->ResolveAndApply(Query, MakeArrayView(&DamageSpec, 1), &HitTargets);
 	}
 }
 

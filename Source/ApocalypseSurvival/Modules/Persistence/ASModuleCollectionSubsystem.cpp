@@ -69,16 +69,26 @@ bool UASModuleCollectionSubsystem::LoadProfile(FString& OutError)
 	TArray<FName> LoadedUnlocked;
 	TArray<FASModuleInstanceData> LoadedOwned;
 	TArray<FGuid> LoadedEquipped;
+	FASQuestSaveData LoadedQuests;
 	LoadedEquipped.SetNum(Settings->GetSlotCount());
 	const FString SaveSlotName = GetSaveSlotName();
 	if (UGameplayStatics::DoesSaveGameExist(SaveSlotName, 0))
 	{
 		const UASModuleSaveGame* Save = Cast<UASModuleSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
-		if (!Save || Save->DataVersion != 2)
+		if (!Save || (Save->DataVersion != UASModuleSaveGame::LegacyModuleVersion && Save->DataVersion != UASModuleSaveGame::CurrentVersion))
 		{
 			OutError = TEXT("Module save is unreadable or has an unsupported version. Existing data was preserved.");
 			bProfileLoaded = false;
 			return false;
+		}
+		if (Save->DataVersion == UASModuleSaveGame::CurrentVersion)
+		{
+			if (!Save->QuestProgress.Validate(OutError))
+			{
+				bProfileLoaded = false;
+				return false;
+			}
+			LoadedQuests = Save->QuestProgress;
 		}
 		for (FName Id : Save->UnlockedModuleIds) if (!Id.IsNone()) LoadedUnlocked.AddUnique(Id);
 		TSet<FGuid> SeenInstances;
@@ -104,6 +114,7 @@ bool UASModuleCollectionSubsystem::LoadProfile(FString& OutError)
 	UnlockedModuleIds = MoveTemp(LoadedUnlocked);
 	OwnedModules = MoveTemp(LoadedOwned);
 	EquippedModuleInstanceIds = MoveTemp(LoadedEquipped);
+	QuestProgress = MoveTemp(LoadedQuests);
 	bProfileLoaded = true;
 	OnCollectionChanged.Broadcast();
 	return true;
@@ -111,18 +122,34 @@ bool UASModuleCollectionSubsystem::LoadProfile(FString& OutError)
 
 bool UASModuleCollectionSubsystem::CommitProfile(const TArray<FName>& NewUnlocked, const TArray<FASModuleInstanceData>& NewOwned, const TArray<FGuid>& NewEquipped, FString& OutError)
 {
+	return CommitPlayerProfile(NewUnlocked, NewOwned, NewEquipped, QuestProgress, OutError);
+}
+
+bool UASModuleCollectionSubsystem::SaveQuestProgress(const FASQuestSaveData& Progress, FString& OutError)
+{
+	return CommitPlayerProfile(UnlockedModuleIds, OwnedModules, EquippedModuleInstanceIds, Progress, OutError);
+}
+
+bool UASModuleCollectionSubsystem::CommitPlayerProfile(const TArray<FName>& NewUnlocked,
+	const TArray<FASModuleInstanceData>& NewOwned, const TArray<FGuid>& NewEquipped,
+	const FASQuestSaveData& NewQuests, FString& OutError)
+{
 	OutError.Reset();
 	if (!bProfileLoaded) { OutError = TEXT("Load a valid module profile before modifying progression."); return false; }
+	if (!NewQuests.Validate(OutError)) return false;
 	UASModuleSaveGame* Save = Cast<UASModuleSaveGame>(UGameplayStatics::CreateSaveGameObject(UASModuleSaveGame::StaticClass()));
 	if (!Save) { OutError = TEXT("Could not create module save data."); return false; }
 	Save->UnlockedModuleIds = NewUnlocked;
 	Save->OwnedModules = NewOwned;
 	Save->EquippedModuleInstanceIds = NewEquipped;
+	Save->QuestProgress = NewQuests;
 	if (!UGameplayStatics::SaveGameToSlot(Save, GetSaveSlotName(), 0)) { OutError = TEXT("Could not save module progression. No in-memory changes were committed."); return false; }
+	const bool bModulesChanged = UnlockedModuleIds != NewUnlocked || OwnedModules != NewOwned || EquippedModuleInstanceIds != NewEquipped;
 	UnlockedModuleIds = NewUnlocked;
 	OwnedModules = NewOwned;
 	EquippedModuleInstanceIds = NewEquipped;
-	OnCollectionChanged.Broadcast();
+	QuestProgress = NewQuests;
+	if (bModulesChanged) OnCollectionChanged.Broadcast();
 	return true;
 }
 
@@ -143,8 +170,8 @@ bool UASModuleCollectionSubsystem::GrantModuleInstance(const FASModuleInstanceDa
 	if (!bProfileLoaded) { OutError = TEXT("The module profile is not loaded."); return false; }
 	const UASModuleSettings* Settings = GetDefault<UASModuleSettings>();
 	if (Instance.IsEmpty()) { OutError = TEXT("An empty module cannot be granted."); return false; }
-	if (!Settings->ResolveInstanceLoadout({Instance}, OutError)) return false;
 	const FASModuleInstanceData Reward = ResolveSavedStats(Instance);
+	if (!Settings->ResolveInstanceLoadout({Reward}, OutError)) return false;
 	if (const FASModuleInstanceData* Existing = OwnedModules.FindByPredicate([&Reward](const FASModuleInstanceData& Entry) { return Entry.InstanceId == Reward.InstanceId; }))
 	{
 		if (ResolveSavedStats(*Existing) == Reward) return true;

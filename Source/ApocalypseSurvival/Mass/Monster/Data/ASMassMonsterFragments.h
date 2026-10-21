@@ -6,6 +6,8 @@
 #include "ASMassMonsterFragments.generated.h"
 
 class AASMassMonsterProjectile;
+class AASMonsterAttackIndicatorActor;
+class UMassEntityConfigAsset;
 
 /** Entity마다 독립적으로 보유하는 현재 체력. 최대 체력은 종류별 공유 설정에 둔다. */
 USTRUCT()
@@ -61,7 +63,27 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterCombatFragment : public FMassFragmen
 	GENERATED_BODY()
 
 	double NextAttackTimeSeconds = 0.0;
+	double PhaseEndTimeSeconds = 0.0;
 	EASMassMonsterAttackState AttackState = EASMassMonsterAttackState::Ready;
+	FVector LockedTargetLocation = FVector::ZeroVector;
+	FVector LockedDirection = FVector::ForwardVector;
+	int32 LockedTargetId = INDEX_NONE;
+	float ChargeDistanceTraveled = 0.0f;
+	uint8 PatternActivationCount = 0;
+	bool bPrimaryEffectApplied = false;
+	bool bUseFallbackMelee = false;
+};
+
+/** 일시적인 일반 몬스터 강화 상태. 종류별 기본 수치는 Shared Config에 유지한다. */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterModifierFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	float MoveSpeedMultiplier = 1.0f;
+	double HasteEndTimeSeconds = 0.0;
+	FVector BaseVisualScale = FVector::OneVector;
+	bool bBaseVisualScaleInitialized = false;
 };
 
 /** 낮 귀환의 기준이 되는 개체별 홈 위치와 추격 제한. */
@@ -121,6 +143,16 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	EASMassMonsterAttackPattern AttackPattern = EASMassMonsterAttackPattern::Melee;
 
+	/** 소환 횟수를 모두 쓴 사이렌이 사용할 약한 근접 공격 설정. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Fallback", meta = (ClampMin = "0.0", Units = "cm"))
+	float FallbackMeleeAttackRange = 180.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Fallback", meta = (ClampMin = "0.0"))
+	float FallbackMeleeAttackPower = 5.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Fallback", meta = (ClampMin = "0.01", Units = "s"))
+	float FallbackMeleeAttackCooldown = 1.2f;
+
 	UPROPERTY(EditAnywhere, Category = "Combat|Ranged", meta = (ClampMin = "1.0", Units = "cm/s"))
 	float RangedProjectileSpeed = 1200.0f;
 
@@ -133,6 +165,66 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 	/** 비어 있으면 네이티브 기본 투사체를 사용한다. 메시/VFX가 필요하면 Blueprint 자식을 지정한다. */
 	UPROPERTY(EditAnywhere, Category = "Combat|Ranged")
 	TSubclassOf<AASMassMonsterProjectile> RangedProjectileClass;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Charge", meta = (ClampMin = "0.0", Units = "s"))
+	float ChargeWindupDuration = 0.75f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Charge", meta = (ClampMin = "1.0", Units = "cm"))
+	float ChargeDistance = 750.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Charge", meta = (ClampMin = "0.01", Units = "s"))
+	float ChargeDuration = 0.55f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Charge", meta = (ClampMin = "1.0", Units = "cm"))
+	float ChargeHitRadius = 110.0f;
+
+	/** 선딜 동안 돌진 경로를 표시한다. 보통 BP_Indicator_Charge를 지정한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Charge")
+	TSubclassOf<AASMonsterAttackIndicatorActor> ChargeIndicatorClass;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Suicide", meta = (ClampMin = "0.0", Units = "s"))
+	float SuicideWindupDuration = 1.1f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Suicide", meta = (ClampMin = "1.0", Units = "cm"))
+	float SuicideRadius = 320.0f;
+
+	/** 선딜 동안 폭발 범위를 표시한다. 보통 BP_Indicator_Radial을 지정한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Suicide")
+	TSubclassOf<AASMonsterAttackIndicatorActor> SuicideIndicatorClass;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Summon")
+	TObjectPtr<UMassEntityConfigAsset> SummonedEntityConfig;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Summon", meta = (ClampMin = "1"))
+	int32 SummonCount = 2;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Summon", meta = (ClampMin = "1"))
+	int32 MaxSummonActivations = 2;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Summon", meta = (ClampMin = "0.0", Units = "cm"))
+	float SummonMinRadius = 250.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Summon", meta = (ClampMin = "1.0", Units = "cm"))
+	float SummonMaxRadius = 450.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Summon", meta = (ClampMin = "0.0", Units = "s"))
+	float SummonWindupDuration = 1.4f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Haste", meta = (ClampMin = "1.0", Units = "cm"))
+	float HasteRadius = 650.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Haste", meta = (ClampMin = "1.0"))
+	float HasteMoveSpeedMultiplier = 1.35f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Haste", meta = (ClampMin = "0.0", Units = "s"))
+	float HasteDuration = 4.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Combat|Haste", meta = (ClampMin = "0.0", Units = "s"))
+	float HasteWindupDuration = 0.6f;
+
+	/** 선딜 동안 이속 강화 범위를 표시한다. 버프 전용 색상의 원형 Indicator를 지정한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Haste")
+	TSubclassOf<AASMonsterAttackIndicatorActor> HasteIndicatorClass;
 
 	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0", Units = "cm"))
 	float DetectionRadius = 1500.0f;

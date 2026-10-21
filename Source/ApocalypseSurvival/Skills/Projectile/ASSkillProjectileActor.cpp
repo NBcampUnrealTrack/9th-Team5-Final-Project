@@ -61,7 +61,7 @@ void AASSkillProjectileActor::InitProjectile(
 	InstigatorAvatar = InInstigatorAvatar;
 	PierceCount = InPierceCount;
 	bCanHitPlayers = bInCanHitPlayers;
-	SetActorTickEnabled(!bCanHitPlayers);
+	SetActorTickEnabled(true);
 	ConfigureProjectileCollision();
 
 	Speed = FMath::Max(1.0f, Speed);
@@ -126,17 +126,17 @@ void AASSkillProjectileActor::BeginPlay()
 void AASSkillProjectileActor::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!HasAuthority() || bEnded || bCanHitPlayers)
+	if (!HasAuthority() || bEnded)
 	{
 		return;
 	}
 
-	ApplyNonActorDamageAlongSegment(GetActorLocation());
+	ResolveHitsAlongSegment(GetActorLocation());
 }
 
-void AASSkillProjectileActor::ApplyNonActorDamageAlongSegment(const FVector& CurrentLocation)
+void AASSkillProjectileActor::ResolveHitsAlongSegment(const FVector& CurrentLocation)
 {
-	if (bEnded || bCanHitPlayers)
+	if (bEnded)
 	{
 		return;
 	}
@@ -152,10 +152,15 @@ void AASSkillProjectileActor::ApplyNonActorDamageAlongSegment(const FVector& Cur
 
 	if (UASCombatTargetSubsystem* CombatTargets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
 	{
-		const float SweepRadius = CollisionComponent ? CollisionComponent->GetScaledSphereRadius() : 20.0f;
-		CombatTargets->ApplyEffectSpecsToNonActorTargetsAlongSegmentUnique(
-			PreviousLocation, CurrentLocation, SweepRadius, DamageSpecs, InstigatorAvatar.Get(),
-			HitTargets, PierceCount >= 0 ? RemainingHits : 0);
+		FASCombatTargetQuery Query;
+		Query.Shape = EASCombatTargetShape::Segment;
+		Query.SearchOrigin = PreviousLocation;
+		Query.EndLocation = CurrentLocation;
+		Query.SearchRadius = CollisionComponent ? CollisionComponent->GetScaledSphereRadius() : 20.0f;
+		Query.Instigator = InstigatorAvatar.Get();
+		Query.bCanHitPlayers = bCanHitPlayers;
+		Query.MaxTargets = PierceCount >= 0 ? RemainingHits : 0;
+		CombatTargets->ResolveAndApply(Query, DamageSpecs, &HitTargets);
 	}
 
 	PreviousLocation = CurrentLocation;
@@ -173,20 +178,11 @@ void AASSkillProjectileActor::HandleOverlap(UPrimitiveComponent* OverlappedCompo
 		return;
 	}
 
-	ApplyNonActorDamageAlongSegment(GetActorLocation());
+	ResolveHitsAlongSegment(GetActorLocation());
 	if (bEnded)
 	{
 		return;
 	}
-
-	if (!UASCombatTargetSubsystem::IsValidActorTarget(OtherActor, InstigatorAvatar.Get(), bCanHitPlayers)
-		|| HitTargets.ContainsActor(OtherActor))
-	{
-		return;
-	}
-
-	HitTargets.AddActor(OtherActor);
-	OnHitTarget(OtherActor);
 
 	if (PierceCount >= 0 && HitTargets.Num() > PierceCount)
 	{
@@ -198,7 +194,7 @@ void AASSkillProjectileActor::HandleStop(const FHitResult& ImpactResult)
 {
 	if (HasAuthority())
 	{
-		ApplyNonActorDamageAlongSegment(ImpactResult.ImpactPoint);
+		ResolveHitsAlongSegment(ImpactResult.ImpactPoint);
 		EndProjectile();
 	}
 }

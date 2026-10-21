@@ -63,31 +63,16 @@ bool AASMapZone::ContainsLocation(const FVector& Location) const
 	return ASMapShapeUtils::AnyShapeContainsLocation(CachedAreaShapes, Location, bIgnoreHeight);
 }
 
-void AASMapZone::GetAreaOutlines(TArray<TArray<FVector2D>>& OutOutlines) const
+const TArray<TArray<FVector2D>>& AASMapZone::GetAreaOutlines() const
 {
 	RefreshAreaShapes();
-	ASMapShapeUtils::GetAreaOutlines(CachedAreaShapes, OutOutlines);
+	return CachedOutlines;
 }
 
 FVector AASMapZone::GetZoneCenter() const
 {
-	TArray<TArray<FVector2D>> Outlines;
-	GetAreaOutlines(Outlines);
-	FBox2D Combined(ForceInit);
-	for (const TArray<FVector2D>& Outline : Outlines)
-	{
-		for (const FVector2D& Point : Outline)
-		{
-			Combined += Point;
-		}
-	}
-	if (!Combined.bIsValid)
-	{
-		return GetActorLocation();
-	}
-
-	const FVector2D Center = Combined.GetCenter();
-	return FVector(Center.X, Center.Y, GetActorLocation().Z);
+	RefreshAreaShapes();
+	return CachedCenter;
 }
 
 bool AASMapZone::ValidateArea(TArray<FString>& OutErrors) const
@@ -192,8 +177,7 @@ void AASMapZone::BuildBoundary()
 	BoundaryComponent = CreateBoundaryComponent(TEXT("BoundaryComponent"), BoundaryPlaneMesh);
 	BoundaryJointComponent = CreateBoundaryComponent(TEXT("BoundaryJointComponent"), BoundaryCylinderMesh);
 
-	TArray<TArray<FVector2D>> Outlines;
-	GetAreaOutlines(Outlines);
+	const TArray<TArray<FVector2D>>& Outlines = GetAreaOutlines();
 	const double BoundaryZ = GetActorLocation().Z + BoundaryHeight;
 	const double HalfWidth = BoundaryWidth * 0.5;
 	const FVector JointScale(BoundaryWidth / 100.0, BoundaryWidth / 100.0, 0.002);
@@ -343,6 +327,21 @@ void AASMapZone::RefreshAreaShapes() const
 	}
 
 	ASMapShapeUtils::GatherAreaComponents(this, CachedAreaShapes);
+	ASMapShapeUtils::GetAreaOutlines(CachedAreaShapes, CachedOutlines);
+	FBox2D OutlineBounds(ForceInit);
+	for (const TArray<FVector2D>& Outline : CachedOutlines)
+	{
+		for (const FVector2D& Point : Outline)
+		{
+			OutlineBounds += Point;
+		}
+	}
+	CachedCenter = GetActorLocation();
+	if (OutlineBounds.bIsValid)
+	{
+		const FVector2D Center = OutlineBounds.GetCenter();
+		CachedCenter = FVector(Center.X, Center.Y, CachedCenter.Z);
+	}
 
 	// 플레이 시작 후에만 캐시한다. 에디터 인스턴스는 아직 컴포넌트를 추가 중일 수 있다.
 	bAreaShapesCached = HasActorBegunPlay();

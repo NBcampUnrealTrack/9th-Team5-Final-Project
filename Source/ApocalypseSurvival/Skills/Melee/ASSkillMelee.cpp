@@ -27,39 +27,30 @@ void UASSkillMelee::OnSkillEffect_Implementation()
 
 	const FVector Center = Avatar->GetActorLocation() + Aim * ForwardOffset;
 	const bool bIsCone = Angle < 360.0f;
-
-	TArray<AActor*> Targets = FindSkillTargets(World, Center, Radius, Avatar, bCanHitPlayers);
-
-	if (bIsCone)
+	TArray<FGameplayEffectSpecHandle> EffectSpecs;
+	const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+	if (DamageSpec.IsValid())
 	{
-		const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(Angle * 0.5f));
-
-		Targets.RemoveAll([&](const AActor* Target)
-		{
-			const FVector ToTarget = (Target->GetActorLocation() - Center).GetSafeNormal2D();
-			return !ToTarget.IsNearlyZero() && FVector::DotProduct(Aim, ToTarget) < CosHalfAngle;
-		});
+		EffectSpecs.Add(DamageSpec);
 	}
 
-	int32 NonActorHitCount = 0;
-	if (!bCanHitPlayers)
+	FASCombatApplyResult ApplyResult;
+	if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
 	{
-		if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
-		{
-			TArray<FGameplayEffectSpecHandle> EffectSpecs;
-			const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
-			if (DamageSpec.IsValid())
-			{
-				EffectSpecs.Add(DamageSpec);
-			}
-			NonActorHitCount = CombatTargets->ApplyEffectSpecsToNonActorTargetsInCone(
-				Center, Aim, Radius, Angle, EffectSpecs, const_cast<AActor*>(Avatar));
-		}
+		FASCombatTargetQuery Query;
+		Query.Shape = EASCombatTargetShape::Cone;
+		Query.SearchOrigin = Center;
+		Query.Direction = Aim;
+		Query.SearchRadius = Radius;
+		Query.AngleDegrees = Angle;
+		Query.Instigator = Avatar;
+		Query.bCanHitPlayers = bCanHitPlayers;
+		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs);
 	}
 
 	if (bDrawDebug)
 	{
-		const FColor Color = Targets.Num() > 0 || NonActorHitCount > 0 ? FColor::Red : FColor::Green;
+		const FColor Color = ApplyResult.HasAnyHit() ? FColor::Red : FColor::Green;
 
 		if (bIsCone)
 		{
@@ -72,17 +63,13 @@ void UASSkillMelee::OnSkillEffect_Implementation()
 		}
 	}
 
-	if (Targets.Num() > 0)
-	{
-		OnTargetsHit(Targets);
-	}
 }
 
 void UASSkillMelee::OnTargetsHit_Implementation(const TArray<AActor*>& Targets)
 {
 	for (AActor* Target : Targets)
 	{
-		ApplySkillDamage(Target);
+		UASCombatTargetSubsystem::ApplyEffectSpecToActor(MakeDamageSpec(), Target);
 	}
 }
 
