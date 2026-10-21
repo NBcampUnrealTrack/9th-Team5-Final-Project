@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Mass/EntityHandle.h"
+#include "MassEntityTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "ASMassMonsterFunctionalTestActor.generated.h"
 
@@ -17,11 +19,30 @@ class APOCALYPSESURVIVAL_API AASMassMonsterFunctionalTestActor : public AActor
 public:
 	AASMassMonsterFunctionalTestActor();
 
+	virtual void Tick(float DeltaSeconds) override;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	/** 시야 Stress 중 Entity별 로컬 안개 표시 상태 변화를 추적한다. */
+	struct FVisibilityStressTrack
+	{
+		bool bHasState = false;
+		bool bVisible = false;
+		double LastToggleTime = -1.0;
+		int32 ToggleCount = 0;
+		uint8 VisitedStateMask = 0;
+	};
+
+	void StartVisibilityStress();
+	void HoldMonstersInPlace();
+	void SampleVisibilityStress();
+	void ReportVisibilityStress();
+	void ToggleStressDayNight();
+	void FinishVisibilityStress();
+
 	void TryStartTest();
 	void SpawnNextBatch();
 	void HandleSpawnComplete();
@@ -85,8 +106,43 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Mass Benchmark", meta = (ClampMin = "0.0", Units = "s"))
 	float BetweenCaptureDelay = 1.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Mass Benchmark")
-	bool bTakeScreenshot = true;
+	/**
+	 * 낮/밤 시야 반경 변화로 고정된 몬스터 위를 시야 경계가 반복 통과하게 하고,
+	 * 밝은 시야/숨긴 Buffer/컬링 상태 Counter와 깜빡임(짧은 시간 내 표시 상태 왕복)을 기록한다.
+	 * 빠른 낮/밤 주기는 FunctionalTest 전용 GameMode에서만 설정한다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mass Functional Test|Visibility Stress")
+	bool bEnableVisibilityStress = false;
+
+	/** 스폰된 몬스터의 탐지 반경을 0으로 바꿔 플레이어를 쫓지 않고 제자리에 머물게 한다. */
+	UPROPERTY(EditAnywhere, Category = "Mass Functional Test|Visibility Stress")
+	bool bHoldMonstersInPlace = true;
+
+	UPROPERTY(EditAnywhere, Category = "Mass Functional Test|Visibility Stress", meta = (ClampMin = "1.0", Units = "s"))
+	float VisibilityStressDuration = 32.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Mass Functional Test|Visibility Stress", meta = (ClampMin = "0.05", Units = "s"))
+	float VisibilityReportInterval = 0.5f;
+
+	/** 이 시간 안에 표시 상태가 되돌아가면 깜빡임으로 집계한다. */
+	UPROPERTY(EditAnywhere, Category = "Mass Functional Test|Visibility Stress", meta = (ClampMin = "0.0", Units = "s"))
+	float FlickerWindowSeconds = 0.5f;
+
+	/**
+	 * 테스트 맵 전용 낮/밤 주기. GameMode의 실제 낮/밤 시간은 바꾸지 않고, 안개 관리자의 밤 상태만
+	 * 이 간격으로 번갈아 바꿔 시야 반경(낮/밤)과 경계를 빠르게 반복 이동시킨다. 0이면 사용하지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mass Functional Test|Visibility Stress", meta = (ClampMin = "0.0", Units = "s"))
+	float StressDayNightHalfCycleSeconds = 0.0f;
+
+	TMap<FMassEntityHandle, FVisibilityStressTrack> VisibilityStressTracks;
+	FTimerHandle VisibilityReportTimer;
+	FTimerHandle VisibilityStressEndTimer;
+	FTimerHandle StressDayNightTimer;
+	bool bStressNight = false;
+	int32 StressDayNightToggleCount = 0;
+	double VisibilityStressStartTime = 0.0;
+	int32 VisibilityFlickerEvents = 0;
 
 	TArray<FTransform> PendingSpawnTransforms;
 	TArray<TWeakObjectPtr<UAbilitySystemComponent>> ModifiedAbilitySystems;

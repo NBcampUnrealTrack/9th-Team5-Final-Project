@@ -47,6 +47,8 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
 	BuildContext.AddFragment<FASMassMonsterModifierFragment>();
 	BuildContext.AddFragment<FASMassMonsterNavigationFragment>();
+	// 로컬 전장의 안개 표현 상태이며 Mass Replication 대상에 포함하지 않는다.
+	BuildContext.AddFragment<FASMassMonsterFogVisibilityFragment>();
 
 	FASMassMonsterHomeFragment& Home = BuildContext.AddFragment_GetRef<FASMassMonsterHomeFragment>();
 	Home.LeashRadius = FMath::Max(0.0f, DefaultLeashRadius);

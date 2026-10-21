@@ -83,6 +83,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	bool IsLocationVisibleLocally(const FVector& Location) const;
 
+	/** 보이던 Mass 적을 계속 표시할 수 있는, 밝은 시야 경계보다 안쪽 영역인지 반환한다. */
+	bool IsLocationInLocalVisionExitRegion(const FVector& Location) const;
+
+	/** 숨겨진 Mass 적의 재표시를 허용하는, 밝은 시야 경계보다 안쪽 영역인지 반환한다. */
+	bool IsLocationInLocalVisionReentryRegion(const FVector& Location) const;
+
+	/** 현재 로컬 팀 시야 주변의 Mass ISM 유지 Buffer에 위치하는지 반환한다. */
+	bool IsLocationInLocalVisionBuffer(const FVector& Location) const;
+
+	/** 로컬 팀의 현재 시야 마스크가 준비됐는지 반환한다. 로컬 표시 전용 시스템에서 사용한다. */
+	bool HasLocalVisionMask() const;
+
 	/** 이 머신의 탐색 데이터를 지운다. */
 	UFUNCTION(BlueprintCallable, Category = "AS|Vision")
 	void ResetExplored();
