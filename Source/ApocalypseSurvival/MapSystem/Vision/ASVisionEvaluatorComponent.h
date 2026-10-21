@@ -23,6 +23,8 @@ public:
 	bool CanSourceSeeTarget(
 		const UASVisionSourceComponent* Source,
 		const UASVisibilityComponent* Target,
+		FName SourceBush,
+		TOptional<FName>& TargetBush,
 		double ServerTime,
 		bool bWallOcclusion,
 		float NightAlpha) const;

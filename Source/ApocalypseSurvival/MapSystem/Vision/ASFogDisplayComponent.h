@@ -6,6 +6,9 @@
 
 class APostProcessVolume;
 class UASVisionDefinition;
+class UASVisionEvaluatorComponent;
+class UASVisionSourceComponent;
+class UASVisionWorldSubsystem;
 class UMaterialInstanceDynamic;
 class UTexture2D;
 
@@ -32,15 +35,40 @@ public:
 	void RemoveWorldFog();
 
 private:
+	struct FLocalMaskContext
+	{
+		bool bWallOcclusion;
+		float NightAlpha;
+		int32 LocalTeam;
+		FVector2D WorldSize;
+		int32 BlurRadius;
+		const UASVisionSourceComponent* LocalSource;
+	};
+	void AdvancePendingFade();
+	void ClearPreviousVisibleCells();
+	void TraceSource(const UASVisionEvaluatorComponent& Evaluator, const UASVisionSourceComponent* Source,
+		const FVector& Origin, float Radius, float DisplayRadius, const UASVisionSourceComponent* LocalSource);
+	FIntRect RasterizeTeamSources(const UASVisionWorldSubsystem& Subsystem,
+		const UASVisionEvaluatorComponent& Evaluator, const FLocalMaskContext& Context);
+	bool RebuildRawAlpha(const FIntRect& PreviousLocalRegion, bool bLocalRegionChanged);
+	void CopyLocalAlphaOutsideRegion(TArray<uint8>& Display, TArray<uint8>& Others,
+		const TArray<uint8>& Alpha, const FIntRect& Region, const FIntRect& Excluded);
+	void BlurLocalAlpha(const FIntRect& Region, int32 BlurRadius);
+	void BlurChangedRegions(bool bFullRecompute, bool bLocalRegionChanged, int32 BlurRadius);
+	void StartLocalFade(float FadeSeconds);
+
 	FVector2D WorldToGrid(const FVector& Location) const;
 	int32 GridIndexAt(const FVector& Location) const;
-	void RasterizeEllipse(const FVector2D& Center, const FVector2D& Radii);
-	void RasterizeTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C);
+	void RasterizeEllipse(TArray<uint8>& Cells, const FVector2D& Center, const FVector2D& Radii);
+	void RasterizeTriangle(TArray<uint8>& Cells, const FVector2D& A, const FVector2D& B, const FVector2D& C);
 	bool HasLocalPlayer() const;
-	void StepShownAlpha(int32 MaxStep);
+	const UASVisionSourceComponent* GetLocalVisionSource() const;
+	void UpdateLocalVisionParameters();
+	void UpdateShownAlpha(float Fraction);
 	void UploadTexture(const TArray<FIntRect>& DirtyRegions);
 	FIntRect TileRegion(int32 TileIndex) const;
 	void MarkVisibleTiles(int32 MinX, int32 MinY, int32 MaxX, int32 MaxY);
+	void MarkPendingTiles(const FIntRect& Region);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "255"))
 	int32 ExploredAlpha = 150;
@@ -65,13 +93,24 @@ private:
 	TObjectPtr<APostProcessVolume> WorldFogVolume;
 
 	TArray<uint8> VisibleCells;
-	TArray<uint8> PreviousVisibleCells;
+	TArray<uint8> DisplayCells;
+	TArray<uint8> OthersCells;
 	TArray<uint8> ExploredCells;
 	TArray<uint8> RawAlpha;
 	TArray<uint8> TargetAlpha;
 	TArray<uint8> ShownAlpha;
+	TArray<uint8> FadeFromAlpha;
+	TArray<uint8> DisplayRawAlpha;
+	TArray<uint8> DisplayTargetAlpha;
+	TArray<uint8> DisplayShownAlpha;
+	TArray<uint8> DisplayFadeFromAlpha;
+	TArray<uint8> OthersRawAlpha;
+	TArray<uint8> OthersTargetAlpha;
+	TArray<uint8> OthersShownAlpha;
+	TArray<uint8> OthersFadeFromAlpha;
 	TArray<uint8> BlurScratch;
 	TArray<FVector2D> OcclusionPoints;
+	TArray<FVector2D> ExtendedOcclusionPoints;
 	/** 래스터 경계를 기록하고 변경과 페이드를 16셀 단위로 추적한다. */
 	static constexpr int32 TileSize = 16;
 	int32 TilesX = 0;
@@ -79,8 +118,13 @@ private:
 	TArray<uint8> PreviousVisibleTiles;
 	TArray<uint8> CurrentVisibleTiles;
 	TArray<uint8> PendingFadeTiles;
+	/** G/R이 A와 달라지는 로컬 영역이다. */
+	FIntRect LocalRegion = FIntRect(0, 0, 0, 0);
+	float FadeStartTime = 0.0f;
+	bool bHasPendingFade = false;
 	/** 타일 안에서 원본 알파가 실제로 바뀐 셀의 최소 사각형을 패스마다 재사용한다. */
 	TArray<FIntRect> RawChangedRegions;
+	TArray<FIntRect> ShownChangedRegions;
 	/** U는 월드 Y를, V는 월드 X를 따른다. */
 	int32 ResolutionX = 0;
 	int32 ResolutionY = 0;

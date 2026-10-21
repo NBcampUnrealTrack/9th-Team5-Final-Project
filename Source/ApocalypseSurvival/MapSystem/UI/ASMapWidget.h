@@ -111,14 +111,18 @@ private:
 		}
 	};
 
-	/** 외곽선이 바뀔 때만 월드 공간 삼각형을 다시 계산한다. */
+	/** 구역마다 월드 공간 삼각형을 한 번만 계산한다. */
 	struct FZoneAreaCache
 	{
-		TArray<TArray<FVector2D>> Outlines;
 		TArray<TArray<FVector2D>> WorldTriangles;
+		int32 DangerLevel = INDEX_NONE;
+		FText DisplayName;
+		FText Label;
+		FSlateFontInfo Font;
+		FVector2D LabelSize = FVector2D(120.0, 16.0);
 	};
 
-	const FZoneAreaCache& GetCachedZoneArea(const AASMapZone* Zone) const;
+	FZoneAreaCache& GetCachedZoneArea(const AASMapZone* Zone) const;
 	mutable TMap<TWeakObjectPtr<const AASMapZone>, FZoneAreaCache> ZoneAreaCache;
 
 	bool ComputeView(const FVector2D& LocalSize, const UASMapDefinition* Definition, FMapView& OutView) const;

@@ -21,6 +21,7 @@ void UASMapWorldSubsystem::RegisterZone(AASMapZone* Zone)
 		return;
 	}
 
+	bSortedZonesDirty = true;
 	Zones.RemoveAll([](const TWeakObjectPtr<AASMapZone>& Item) { return !Item.IsValid(); });
 	if (!Zones.Contains(Zone))
 	{
@@ -31,20 +32,25 @@ void UASMapWorldSubsystem::RegisterZone(AASMapZone* Zone)
 
 void UASMapWorldSubsystem::UnregisterZone(AASMapZone* Zone)
 {
+	bSortedZonesDirty = true;
 	if (Zones.Remove(Zone) > 0)
 	{
 		OnZoneUnregistered.Broadcast(Zone);
 	}
 }
 
-TArray<AASMapZone*> UASMapWorldSubsystem::GetZones() const
+const TArray<AASMapZone*>& UASMapWorldSubsystem::GetZones() const
 {
-	TArray<AASMapZone*> Result = ResolveWeak(Zones);
-	Result.Sort([](const AASMapZone& A, const AASMapZone& B)
+	if (bSortedZonesDirty)
 	{
-		return A.GetZoneId().LexicalLess(B.GetZoneId());
-	});
-	return Result;
+		SortedZones = ResolveWeak(Zones);
+		SortedZones.Sort([](const AASMapZone& A, const AASMapZone& B)
+		{
+			return A.GetZoneId().LexicalLess(B.GetZoneId());
+		});
+		bSortedZonesDirty = false;
+	}
+	return SortedZones;
 }
 
 AASMapZone* UASMapWorldSubsystem::FindZone(FName ZoneId) const
