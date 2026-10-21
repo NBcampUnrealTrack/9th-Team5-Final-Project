@@ -157,6 +157,10 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 
 		const int32 CellCount = ResolutionX * ResolutionY;
 		VisibleCells.Init(0, CellCount);
+		MassVisibilityExitCells.Init(0, CellCount);
+		MassVisibilityReentryCells.Init(0, CellCount);
+		MassVisibilityBufferCells.Init(0, CellCount);
+		MassVisibilityDistanceScratch.Reset();
 		DisplayCells.Init(0, CellCount);
 		OthersCells.Init(0, CellCount);
 		ExploredCells.Init(0, CellCount);
@@ -186,6 +190,7 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 		OcclusionPoints.Reserve(512);
 		ExtendedOcclusionPoints.Reserve(512);
 		bMaskDirty = true;
+		bHasLocalVisionMask = false;
 		bInitializeShownAlpha = true;
 		bHasPendingFade = false;
 
@@ -293,6 +298,9 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	AdvancePendingFade();
 	ClearPreviousVisibleCells();
 	const FIntRect PreviousLocalRegion = RasterizeTeamSources(*Subsystem, *Evaluator, Context);
+	// VisibleCells는 여기부터 현재 로컬 팀 시야를 나타낸다. 초기 빈 배열을 표현 컬링에 쓰지 않는다.
+	bHasLocalVisionMask = true;
+	RebuildMassVisibilityBuffer();
 	const bool bLocalRegionChanged = LocalRegion != PreviousLocalRegion;
 	const bool bFullRecompute = RebuildRawAlpha(PreviousLocalRegion, bLocalRegionChanged);
 	if (!bFullRecompute && RawChangedRegions.IsEmpty() && !bLocalRegionChanged)
@@ -738,6 +746,163 @@ bool UASFogDisplayComponent::IsLocationVisibleLocally(const FVector& Location) c
 {
 	const int32 Index = GridIndexAt(Location);
 	return VisibleCells.IsValidIndex(Index) && VisibleCells[Index] != 0;
+}
+
+bool UASFogDisplayComponent::IsLocationInLocalVisionExitRegion(const FVector& Location) const
+{
+	const int32 Index = GridIndexAt(Location);
+	return MassVisibilityExitCells.IsValidIndex(Index) && MassVisibilityExitCells[Index] != 0;
+}
+
+bool UASFogDisplayComponent::IsLocationInLocalVisionReentryRegion(const FVector& Location) const
+{
+	const int32 Index = GridIndexAt(Location);
+	return MassVisibilityReentryCells.IsValidIndex(Index) && MassVisibilityReentryCells[Index] != 0;
+}
+
+bool UASFogDisplayComponent::IsLocationInLocalVisionBuffer(const FVector& Location) const
+{
+	const int32 Index = GridIndexAt(Location);
+	return MassVisibilityBufferCells.IsValidIndex(Index) && MassVisibilityBufferCells[Index] != 0;
+}
+
+void UASFogDisplayComponent::RebuildMassVisibilityBuffer()
+{
+	if (MassVisibilityExitCells.Num() != VisibleCells.Num())
+	{
+		MassVisibilityExitCells.Init(0, VisibleCells.Num());
+	}
+	else
+	{
+		FMemory::Memzero(MassVisibilityExitCells.GetData(), MassVisibilityExitCells.Num());
+	}
+
+	if (MassVisibilityReentryCells.Num() != VisibleCells.Num())
+	{
+		MassVisibilityReentryCells.Init(0, VisibleCells.Num());
+	}
+	else
+	{
+		FMemory::Memzero(MassVisibilityReentryCells.GetData(), MassVisibilityReentryCells.Num());
+	}
+
+	if (MassVisibilityBufferCells.Num() != VisibleCells.Num())
+	{
+		MassVisibilityBufferCells.Init(0, VisibleCells.Num());
+	}
+	else
+	{
+		FMemory::Memzero(MassVisibilityBufferCells.GetData(), MassVisibilityBufferCells.Num());
+	}
+
+	if (!VisionDefinition || ResolutionX <= 0 || ResolutionY <= 0)
+	{
+		return;
+	}
+
+	const FVector2D WorldSize = VisionDefinition->GetFogWorldSize();
+	const float CellSize = FMath::Max(1.0f, FMath::Max(WorldSize.Y / ResolutionX, WorldSize.X / ResolutionY));
+	const int32 BufferRadiusCells = FMath::CeilToInt(
+		FMath::Max(0.0f, VisionDefinition->Settings.MassVisibilityBufferDistance) / CellSize);
+	const int32 ExitInsetCells = FMath::CeilToInt(
+		FMath::Max(0.0f, VisionDefinition->Settings.MassVisibilityExitInsetDistance) / CellSize);
+	const int32 ReentryInsetCells = FMath::CeilToInt(
+		FMath::Max(VisionDefinition->Settings.MassVisibilityExitInsetDistance,
+			VisionDefinition->Settings.MassVisibilityReentryInsetDistance) / CellSize);
+
+	// 각 seed에서 반경만큼 원형을 반복 기록하지 않고 3-4 chamfer distance transform으로
+	// 바깥쪽 유지 Buffer와 안쪽 재진입 영역을 각각 O(전체 Grid)에 계산한다.
+	constexpr int32 InfiniteDistance = MAX_int32 / 8;
+	auto BuildChamferDistance = [this, InfiniteDistance](const bool bDistanceFromVisible, const bool bTreatGridEdgeAsSeed)
+	{
+		MassVisibilityDistanceScratch.SetNumUninitialized(VisibleCells.Num());
+		for (int32 Y = 0; Y < ResolutionY; ++Y)
+		{
+			for (int32 X = 0; X < ResolutionX; ++X)
+			{
+				const int32 Index = Y * ResolutionX + X;
+				const bool bVisible = VisibleCells[Index] != 0;
+				const bool bGridEdge = X == 0 || Y == 0 || X + 1 == ResolutionX || Y + 1 == ResolutionY;
+				const bool bSeed = bDistanceFromVisible ? bVisible : !bVisible || (bTreatGridEdgeAsSeed && bGridEdge);
+				MassVisibilityDistanceScratch[Index] = bSeed ? 0 : InfiniteDistance;
+			}
+		}
+
+		auto RelaxDistance = [this](const int32 Index, const int32 NeighborIndex, const int32 Cost)
+		{
+			MassVisibilityDistanceScratch[Index] = FMath::Min(
+				MassVisibilityDistanceScratch[Index],
+				MassVisibilityDistanceScratch[NeighborIndex] + Cost);
+		};
+
+		for (int32 Y = 0; Y < ResolutionY; ++Y)
+		{
+			for (int32 X = 0; X < ResolutionX; ++X)
+			{
+				const int32 Index = Y * ResolutionX + X;
+				if (X > 0)
+				{
+					RelaxDistance(Index, Index - 1, 3);
+				}
+				if (Y > 0)
+				{
+					RelaxDistance(Index, Index - ResolutionX, 3);
+					if (X > 0)
+					{
+						RelaxDistance(Index, Index - ResolutionX - 1, 4);
+					}
+					if (X + 1 < ResolutionX)
+					{
+						RelaxDistance(Index, Index - ResolutionX + 1, 4);
+					}
+				}
+			}
+		}
+
+		for (int32 Y = ResolutionY - 1; Y >= 0; --Y)
+		{
+			for (int32 X = ResolutionX - 1; X >= 0; --X)
+			{
+				const int32 Index = Y * ResolutionX + X;
+				if (X + 1 < ResolutionX)
+				{
+					RelaxDistance(Index, Index + 1, 3);
+				}
+				if (Y + 1 < ResolutionY)
+				{
+					RelaxDistance(Index, Index + ResolutionX, 3);
+					if (X > 0)
+					{
+						RelaxDistance(Index, Index + ResolutionX - 1, 4);
+					}
+					if (X + 1 < ResolutionX)
+					{
+						RelaxDistance(Index, Index + ResolutionX + 1, 4);
+					}
+				}
+			}
+		}
+	};
+
+	BuildChamferDistance(true, false);
+	const int32 BufferDistanceThreshold = BufferRadiusCells * 3;
+	for (int32 Index = 0; Index < MassVisibilityBufferCells.Num(); ++Index)
+	{
+		MassVisibilityBufferCells[Index] = MassVisibilityDistanceScratch[Index] <= BufferDistanceThreshold ? 1 : 0;
+	}
+
+	BuildChamferDistance(false, true);
+	const int32 ExitDistanceThreshold = ExitInsetCells * 3;
+	const int32 ReentryDistanceThreshold = ReentryInsetCells * 3;
+	for (int32 Index = 0; Index < MassVisibilityReentryCells.Num(); ++Index)
+	{
+		MassVisibilityExitCells[Index] = ExitInsetCells <= 0
+			? VisibleCells[Index]
+			: (VisibleCells[Index] != 0 && MassVisibilityDistanceScratch[Index] > ExitDistanceThreshold ? 1 : 0);
+		MassVisibilityReentryCells[Index] = ReentryInsetCells <= 0
+			? VisibleCells[Index]
+			: (VisibleCells[Index] != 0 && MassVisibilityDistanceScratch[Index] > ReentryDistanceThreshold ? 1 : 0);
+	}
 }
 
 FIntRect UASFogDisplayComponent::TileRegion(int32 TileIndex) const

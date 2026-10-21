@@ -6,17 +6,45 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GAS/ASAbilityTags.h"
+#include "Engine/Engine.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "MapSystem/Vision/ASFogOfWarManager.h"
+#include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "MassEntityConfigAsset.h"
+#include "MassEntityQuery.h"
+#include "MassEntitySubsystem.h"
+#include "MassExecutionContext.h"
+#include "MassRepresentationFragments.h"
+#include "Mass/Monster/Data/ASMassMonsterFragments.h"
+#include "Mass/Monster/Data/ASMassMonsterTags.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterFunctionalTestActor)
 
+namespace ASMassMonsterVisibilityStress
+{
+	constexpr uint8 BrightStateBit = 1 << 0;
+	constexpr uint8 BufferStateBit = 1 << 1;
+	constexpr uint8 CulledStateBit = 1 << 2;
+	constexpr uint8 AllStateBits = BrightStateBit | BufferStateBit | CulledStateBit;
+	constexpr int32 OnScreenMessageKey = 0x4D565331;
+}
+
 AASMassMonsterFunctionalTestActor::AASMassMonsterFunctionalTestActor()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Visibility Stress가 켜졌을 때만 매 프레임 표시 상태를 샘플링한다.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	// Mass Processing Phase가 모두 끝난 뒤의 표시 상태를 읽는다.
+	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
+}
+
+void AASMassMonsterFunctionalTestActor::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	SampleVisibilityStress();
 }
 
 void AASMassMonsterFunctionalTestActor::BeginPlay()
@@ -41,6 +69,9 @@ void AASMassMonsterFunctionalTestActor::EndPlay(const EEndPlayReason::Type EndPl
 	GetWorldTimerManager().ClearTimer(CsvCaptureTimer);
 	GetWorldTimerManager().ClearTimer(BetweenCaptureTimer);
 	GetWorldTimerManager().ClearTimer(TraceCaptureTimer);
+	GetWorldTimerManager().ClearTimer(VisibilityReportTimer);
+	GetWorldTimerManager().ClearTimer(VisibilityStressEndTimer);
+	GetWorldTimerManager().ClearTimer(StressDayNightTimer);
 	if (bCsvCaptureActive)
 	{
 		ExecuteBenchmarkCommand(TEXT("csvprofile stop"));
@@ -140,6 +171,11 @@ void AASMassMonsterFunctionalTestActor::HandleSpawnComplete()
 	GetWorldTimerManager().SetTimer(StateReportTimer, this,
 		&AASMassMonsterFunctionalTestActor::ReportStateCounts, FMath::Max(0.01f, StateReportDelay), false);
 
+	if (bEnableVisibilityStress)
+	{
+		StartVisibilityStress();
+	}
+
 	if (bEnableBenchmarkCapture)
 	{
 		UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] Settle start N=%d Duration=%.2fs"),
@@ -211,13 +247,208 @@ void AASMassMonsterFunctionalTestActor::StopTraceCapture()
 
 void AASMassMonsterFunctionalTestActor::FinishBenchmark()
 {
-	if (bTakeScreenshot)
-	{
-		ExecuteBenchmarkCommand(TEXT("HighResShot 1"));
-	}
-
 	ReportStateCounts();
 	UE_LOG(LogTemp, Display, TEXT("[MassBenchmark] Done N=%d"), MonsterCount);
+}
+
+void AASMassMonsterFunctionalTestActor::StartVisibilityStress()
+{
+	if (bHoldMonstersInPlace)
+	{
+		HoldMonstersInPlace();
+	}
+
+	VisibilityStressTracks.Reset();
+	VisibilityFlickerEvents = 0;
+	VisibilityStressStartTime = GetWorld()->GetTimeSeconds();
+	SetActorTickEnabled(true);
+
+	FTimerManager& TimerManager = GetWorldTimerManager();
+	TimerManager.SetTimer(VisibilityReportTimer, this,
+		&AASMassMonsterFunctionalTestActor::ReportVisibilityStress, FMath::Max(0.05f, VisibilityReportInterval), true);
+	TimerManager.SetTimer(VisibilityStressEndTimer, this,
+		&AASMassMonsterFunctionalTestActor::FinishVisibilityStress, FMath::Max(1.0f, VisibilityStressDuration), false);
+	if (StressDayNightHalfCycleSeconds > 0.0f)
+	{
+		// 낮에서 시작해 반주기마다 밤/낮을 바꾼다. 실제 GameMode 시간표는 건드리지 않는다.
+		bStressNight = true;
+		StressDayNightToggleCount = 0;
+		ToggleStressDayNight();
+		TimerManager.SetTimer(StressDayNightTimer, this,
+			&AASMassMonsterFunctionalTestActor::ToggleStressDayNight, StressDayNightHalfCycleSeconds, true);
+	}
+	UE_LOG(LogTemp, Display, TEXT("[MassVisibilityStress] Start Monsters=%d Duration=%.1fs"),
+		NextSpawnIndex, VisibilityStressDuration);
+}
+
+void AASMassMonsterFunctionalTestActor::HoldMonstersInPlace()
+{
+	UMassEntitySubsystem* EntitySubsystem = GetWorld()->GetSubsystem<UMassEntitySubsystem>();
+	if (!EntitySubsystem)
+	{
+		return;
+	}
+
+	FMassEntityManager& EntityManager = EntitySubsystem->GetMutableEntityManager();
+	FMassEntityQuery Query(EntityManager.AsShared());
+	Query.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
+	Query.AddRequirement<FASMassMonsterHomeFragment>(EMassFragmentAccess::ReadWrite);
+	FMassExecutionContext Context(EntityManager, 0.0f, false);
+	Query.ForEachEntityChunk(Context, [](FMassExecutionContext& ChunkContext)
+	{
+		// 테스트 전용: 플레이어를 감지하지 않아 시야 경계에 놓인 위치를 유지한다.
+		for (FASMassMonsterHomeFragment& Home : ChunkContext.GetMutableFragmentView<FASMassMonsterHomeFragment>())
+		{
+			Home.DetectionRadius = 0.0f;
+		}
+	});
+}
+
+void AASMassMonsterFunctionalTestActor::SampleVisibilityStress()
+{
+	UMassEntitySubsystem* EntitySubsystem = GetWorld()->GetSubsystem<UMassEntitySubsystem>();
+	if (!EntitySubsystem)
+	{
+		return;
+	}
+
+	using namespace ASMassMonsterVisibilityStress;
+	const double Now = GetWorld()->GetTimeSeconds();
+	FMassEntityManager& EntityManager = EntitySubsystem->GetMutableEntityManager();
+	FMassEntityQuery Query(EntityManager.AsShared());
+	Query.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
+	Query.AddRequirement<FASMassMonsterFogVisibilityFragment>(EMassFragmentAccess::ReadOnly);
+	FMassExecutionContext Context(EntityManager, 0.0f, false);
+	Query.ForEachEntityChunk(Context, [this, Now](FMassExecutionContext& ChunkContext)
+	{
+		const TConstArrayView<FASMassMonsterFogVisibilityFragment> FogVisibility =
+			ChunkContext.GetFragmentView<FASMassMonsterFogVisibilityFragment>();
+		for (FMassExecutionContext::FEntityIterator EntityIt = ChunkContext.CreateEntityIterator(); EntityIt; ++EntityIt)
+		{
+			const FASMassMonsterFogVisibilityFragment& FogState = FogVisibility[EntityIt];
+			if (!FogState.bInitialized)
+			{
+				continue;
+			}
+
+			FVisibilityStressTrack& Track = VisibilityStressTracks.FindOrAdd(ChunkContext.GetEntity(EntityIt));
+			Track.VisitedStateMask |= FogState.bVisibleToLocalTeam ? BrightStateBit
+				: (FogState.bRetainedInFogBuffer ? BufferStateBit : CulledStateBit);
+			if (Track.bHasState && Track.bVisible != FogState.bVisibleToLocalTeam)
+			{
+				// 직전 전환 직후 다시 되돌아가면 사용자가 보게 되는 깜빡임이다.
+				if (Track.LastToggleTime >= 0.0 && Now - Track.LastToggleTime <= FlickerWindowSeconds)
+				{
+					++VisibilityFlickerEvents;
+				}
+				Track.LastToggleTime = Now;
+				++Track.ToggleCount;
+			}
+			Track.bHasState = true;
+			Track.bVisible = FogState.bVisibleToLocalTeam;
+		}
+	});
+}
+
+void AASMassMonsterFunctionalTestActor::ReportVisibilityStress()
+{
+	UMassEntitySubsystem* EntitySubsystem = GetWorld()->GetSubsystem<UMassEntitySubsystem>();
+	if (!EntitySubsystem)
+	{
+		return;
+	}
+
+	int32 BrightCount = 0;
+	int32 BufferHiddenCount = 0;
+	int32 CulledCount = 0;
+	int32 ISMCount = 0;
+	FMassEntityManager& EntityManager = EntitySubsystem->GetMutableEntityManager();
+	FMassEntityQuery Query(EntityManager.AsShared());
+	Query.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
+	Query.AddRequirement<FASMassMonsterFogVisibilityFragment>(EMassFragmentAccess::ReadOnly);
+	Query.AddRequirement<FMassRepresentationFragment>(EMassFragmentAccess::ReadOnly);
+	FMassExecutionContext Context(EntityManager, 0.0f, false);
+	Query.ForEachEntityChunk(Context, [&](FMassExecutionContext& ChunkContext)
+	{
+		const TConstArrayView<FASMassMonsterFogVisibilityFragment> FogVisibility =
+			ChunkContext.GetFragmentView<FASMassMonsterFogVisibilityFragment>();
+		const TConstArrayView<FMassRepresentationFragment> Representations =
+			ChunkContext.GetFragmentView<FMassRepresentationFragment>();
+		for (FMassExecutionContext::FEntityIterator EntityIt = ChunkContext.CreateEntityIterator(); EntityIt; ++EntityIt)
+		{
+			const FASMassMonsterFogVisibilityFragment& FogState = FogVisibility[EntityIt];
+			if (FogState.bVisibleToLocalTeam)
+			{
+				++BrightCount;
+			}
+			else if (FogState.bRetainedInFogBuffer)
+			{
+				++BufferHiddenCount;
+			}
+			else
+			{
+				++CulledCount;
+			}
+			ISMCount += Representations[EntityIt].CurrentRepresentation == EMassRepresentationType::StaticMeshInstance ? 1 : 0;
+		}
+	});
+
+	const UASVisionWorldSubsystem* VisionSubsystem = UASVisionWorldSubsystem::Get(GetWorld());
+	const AASFogOfWarManager* FogManager = VisionSubsystem ? VisionSubsystem->GetFogOfWarManager() : nullptr;
+	const float NightAlpha = FogManager ? FogManager->GetNightAlpha() : 0.0f;
+	const FString Message = FString::Printf(
+		TEXT("[MassVisibilityStress] t=%.2f Night=%.2f Bright=%d BufferHidden=%d Culled=%d ISM=%d Flicker=%d"),
+		GetWorld()->GetTimeSeconds() - VisibilityStressStartTime, NightAlpha,
+		BrightCount, BufferHiddenCount, CulledCount, ISMCount, VisibilityFlickerEvents);
+	UE_LOG(LogTemp, Display, TEXT("%s"), *Message);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(ASMassMonsterVisibilityStress::OnScreenMessageKey,
+			VisibilityReportInterval + 0.1f, VisibilityFlickerEvents > 0 ? FColor::Red : FColor::Green, Message);
+	}
+}
+
+void AASMassMonsterFunctionalTestActor::ToggleStressDayNight()
+{
+	const UASVisionWorldSubsystem* VisionSubsystem = UASVisionWorldSubsystem::Get(GetWorld());
+	AASFogOfWarManager* FogManager = VisionSubsystem ? VisionSubsystem->GetFogOfWarManager() : nullptr;
+	if (!FogManager)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[MassVisibilityStress] FogOfWarManager is missing; day/night cycle disabled."));
+		GetWorldTimerManager().ClearTimer(StressDayNightTimer);
+		return;
+	}
+
+	bStressNight = !bStressNight;
+	++StressDayNightToggleCount;
+	FogManager->SetNight(bStressNight);
+	UE_LOG(LogTemp, Display, TEXT("[MassVisibilityStress] t=%.2f %s"),
+		GetWorld()->GetTimeSeconds() - VisibilityStressStartTime, bStressNight ? TEXT("Night") : TEXT("Day"));
+}
+
+void AASMassMonsterFunctionalTestActor::FinishVisibilityStress()
+{
+	using namespace ASMassMonsterVisibilityStress;
+	SampleVisibilityStress();
+	ReportVisibilityStress();
+	SetActorTickEnabled(false);
+	GetWorldTimerManager().ClearTimer(VisibilityReportTimer);
+	GetWorldTimerManager().ClearTimer(StressDayNightTimer);
+
+	int32 AllStatesVisited = 0;
+	int32 MaxToggles = 0;
+	for (const TPair<FMassEntityHandle, FVisibilityStressTrack>& Pair : VisibilityStressTracks)
+	{
+		AllStatesVisited += Pair.Value.VisitedStateMask == AllStateBits ? 1 : 0;
+		MaxToggles = FMath::Max(MaxToggles, Pair.Value.ToggleCount);
+	}
+
+	// 경계가 실제로 몬스터 위를 지나가지 않았다면 깜빡임 0은 의미가 없으므로 실패로 본다.
+	const bool bPassed = VisibilityFlickerEvents == 0 && AllStatesVisited > 0;
+	UE_LOG(LogTemp, Display,
+		TEXT("[MassVisibilityStress] Done DayNightToggles=%d Tracked=%d AllStatesVisited=%d MaxToggles=%d Flicker=%d Result=%s"),
+		StressDayNightToggleCount, VisibilityStressTracks.Num(), AllStatesVisited, MaxToggles, VisibilityFlickerEvents,
+		bPassed ? TEXT("PASS") : TEXT("FAIL"));
 }
 
 void AASMassMonsterFunctionalTestActor::ExecuteBenchmarkCommand(const FString& Command)
