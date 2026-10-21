@@ -11,7 +11,9 @@
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualFragment.h"
 #include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Core/Framework/ASGameMode.h"
 #include "StructUtils/StructView.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterSubsystem)
 
@@ -39,8 +41,39 @@ void UASMassMonsterSubsystem::Deinitialize()
 	// UMassSpawnerSubsystem의 Entity Manager가 먼저 Deinitialize될 수 있다.
 	// 월드 종료 시에는 Mass가 전체 Entity 저장소를 정리하므로 Handle만 폐기한다.
 	ManagedEntities.Reset();
+	QueuedMonsterSpawnRequests.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(QueuedMonsterSpawnFlushTimerHandle);
+	}
+	bQueuedMonsterSpawnFlushScheduled = false;
 	SpawnerSubsystem = nullptr;
 	Super::Deinitialize();
+}
+
+bool UASMassMonsterSubsystem::QueueMonsterSpawns(UMassEntityConfigAsset* EntityConfig,
+	const TConstArrayView<FTransform> SpawnTransforms,
+	const EASMassMonsterWorldBehavior WorldBehavior,
+	const int32 InitialTargetId,
+	const FVector& InitialTargetLocation,
+	const bool bCountTowardWave)
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_Client || !IsValid(EntityConfig) || SpawnTransforms.IsEmpty()
+		|| SpawnTransforms.Num() > MaxMassMonsterSpawnBatchSize)
+	{
+		return false;
+	}
+
+	FQueuedMonsterSpawnRequest& Request = QueuedMonsterSpawnRequests.AddDefaulted_GetRef();
+	Request.EntityConfig = EntityConfig;
+	Request.SpawnTransforms.Append(SpawnTransforms);
+	Request.WorldBehavior = WorldBehavior;
+	Request.InitialTargetId = InitialTargetId;
+	Request.InitialTargetLocation = InitialTargetLocation;
+	Request.bCountTowardWave = bCountTowardWave;
+	ScheduleQueuedMonsterSpawnFlush();
+	return true;
 }
 
 FASMassMonsterSpawnResult UASMassMonsterSubsystem::SpawnMonstersAtTransforms(
@@ -170,6 +203,94 @@ FASMassMonsterSpawnResult UASMassMonsterSubsystem::SpawnMonsters(
 	Result.SpawnedCount = SpawnedEntities.Num();
 	CreationContext.Reset();
 	return Result;
+}
+
+void UASMassMonsterSubsystem::ScheduleQueuedMonsterSpawnFlush()
+{
+	if (bQueuedMonsterSpawnFlushScheduled)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	bQueuedMonsterSpawnFlushScheduled = true;
+	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(
+		this, &UASMassMonsterSubsystem::FlushQueuedMonsterSpawns));
+}
+
+void UASMassMonsterSubsystem::FlushQueuedMonsterSpawns()
+{
+	bQueuedMonsterSpawnFlushScheduled = false;
+	if (QueuedMonsterSpawnRequests.IsEmpty())
+	{
+		return;
+	}
+
+	FString MutationError;
+	if (!CanMutateEntities(MutationError) || bMutationInProgress)
+	{
+		// 현재 프레임의 Mass 처리와 겹친 경우만 다음 프레임으로 미룬다.
+		ScheduleQueuedMonsterSpawnFlush();
+		return;
+	}
+
+	TArray<FQueuedMonsterSpawnRequest> Requests = MoveTemp(QueuedMonsterSpawnRequests);
+	QueuedMonsterSpawnRequests.Reset();
+	for (FQueuedMonsterSpawnRequest& Request : Requests)
+	{
+		UMassEntityConfigAsset* EntityConfig = Request.EntityConfig.Get();
+		if (!IsValid(EntityConfig) || Request.SpawnTransforms.IsEmpty())
+		{
+			continue;
+		}
+
+		TArray<FMassEntityHandle> SpawnedEntities;
+		const FASMassMonsterSpawnResult Result = SpawnMonsters(*EntityConfig, Request.SpawnTransforms,
+			Request.WorldBehavior, SpawnedEntities);
+		if (!Result.IsSuccess() || Result.SpawnedCount <= 0)
+		{
+			continue;
+		}
+
+		ConfigureInitialTargets(SpawnedEntities, Request.InitialTargetId, Request.InitialTargetLocation);
+		if (Request.bCountTowardWave)
+		{
+			if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+			{
+				GameMode->ReportWaveSpawned(Result.SpawnedCount);
+			}
+		}
+	}
+}
+
+void UASMassMonsterSubsystem::ConfigureInitialTargets(const TConstArrayView<FMassEntityHandle> Entities,
+	const int32 TargetId, const FVector& TargetLocation)
+{
+	if (!SpawnerSubsystem || TargetId == INDEX_NONE)
+	{
+		return;
+	}
+
+	FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	for (const FMassEntityHandle Entity : Entities)
+	{
+		if (!EntityManager.IsEntityValid(Entity))
+		{
+			continue;
+		}
+
+		if (FASMassMonsterTargetFragment* Target = EntityManager.GetFragmentDataPtr<FASMassMonsterTargetFragment>(Entity))
+		{
+			Target->TargetId = TargetId;
+			Target->CachedTargetLocation = TargetLocation;
+			Target->RefreshTimeRemaining = 0.0f;
+		}
+	}
 }
 
 int32 UASMassMonsterSubsystem::ConfigureMonsterHomes(
