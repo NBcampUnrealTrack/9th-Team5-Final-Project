@@ -1,13 +1,20 @@
-#include "GAS/Attributes/ASHealthAttributeSet.h"
+﻿#include "GAS/Attributes/ASHealthAttributeSet.h"
 
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
+
+namespace
+{
+	//피해 감소율 상한 (완전 무적 방지)
+	constexpr float MaxDamageReduction = 0.9f;
+}
 
 UASHealthAttributeSet::UASHealthAttributeSet()
 {
 	// 캐릭터별 데이터가 생기기 전까지 쓰는 임시 기본값이다.
 	InitHealth(100.0f);
 	InitMaxHealth(100.0f);
+	InitDamageReduction(0.0f);
 }
 
 void UASHealthAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -18,6 +25,7 @@ void UASHealthAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	// 값이 같아도 알림을 받아야 예측이 빗나갔을 때 되돌릴 수 있다.
 	DOREPLIFETIME_CONDITION_NOTIFY(UASHealthAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UASHealthAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UASHealthAttributeSet, DamageReduction, COND_None, REPNOTIFY_Always);
 }
 
 void UASHealthAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -28,6 +36,27 @@ void UASHealthAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribu
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
 	}
+	else if (Attribute == GetDamageReductionAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.0f, MaxDamageReduction);
+	}
+}
+
+bool UASHealthAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData& Data)
+{
+	if (!Super::PreGameplayEffectExecute(Data))
+	{
+		return false;
+	}
+
+	//피해(Health 감소)일 때 DamageReduction만큼 줄임 (데드 앵글 등)
+	if (Data.EvaluatedData.Attribute == GetHealthAttribute() && Data.EvaluatedData.Magnitude < 0.0f)
+	{
+		const float Reduction = FMath::Clamp(GetDamageReduction(), 0.0f, MaxDamageReduction);
+		Data.EvaluatedData.Magnitude *= (1.0f - Reduction);
+	}
+
+	return true;
 }
 
 void UASHealthAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
@@ -50,4 +79,9 @@ void UASHealthAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
 void UASHealthAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UASHealthAttributeSet, MaxHealth, OldValue);
+}
+
+void UASHealthAttributeSet::OnRep_DamageReduction(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UASHealthAttributeSet, DamageReduction, OldValue);
 }
