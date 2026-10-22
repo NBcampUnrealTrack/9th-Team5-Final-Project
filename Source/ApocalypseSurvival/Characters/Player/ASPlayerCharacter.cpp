@@ -415,6 +415,10 @@ void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		{
 			EnhancedInput->BindAction(ReviveAction, ETriggerEvent::Started, this, &AASPlayerCharacter::OnRevivePressed);
 		}
+		if (SpectateNextAction)
+		{
+			EnhancedInput->BindAction(SpectateNextAction, ETriggerEvent::Started, this, &AASPlayerCharacter::OnSpectateNextPressed);
+		}
 	}
 }
 
@@ -595,6 +599,57 @@ void AASPlayerCharacter::Revive()
 void AASPlayerCharacter::OnRep_BeingRevived()
 {
 	OnBeingRevivedChanged(bBeingRevived);
+}
+
+void AASPlayerCharacter::OnSpectateNextPressed()
+{
+	// 살아 있을 때 좌클릭은 공격이다. 사망(관전) 중일 때만 처리한다.
+	if (!IsDead())
+	{
+		return;
+	}
+	
+	ServerRequestSpectateNext();
+}
+
+void AASPlayerCharacter::MulticastHideCorpse_Implementation()
+{
+	// 붙어 있는 액터(무기 등)도 같이 숨기고 끈다.
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors, true, true);
+	for (AActor* Attached : AttachedActors)
+	{
+		if (IsValid(Attached))
+		{
+			Attached->SetActorHiddenInGame(true);
+			Attached->SetActorEnableCollision(false);
+			Attached->SetActorTickEnabled(false);
+		}
+	}
+
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+	SetActorTickEnabled(false);
+
+	// 메시 애니메이션, 이동 컴포넌트 같은 컴포넌트 틱도 끈다.
+	TInlineComponentArray<UActorComponent*> Components(this);
+	for (UActorComponent* Component : Components)
+	{
+		Component->SetComponentTickEnabled(false);
+	}
+}
+
+void AASPlayerCharacter::ServerRequestSpectateNext_Implementation()
+{
+	if (!IsDead())
+	{
+		return;
+	}
+	
+	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+	{
+		GameMode->SpectateNext(Cast<APlayerController>(GetController()));
+	}
 }
 
 void AASPlayerCharacter::HandleDeadTagChanged(const FGameplayTag Tag, int32 NewCount)

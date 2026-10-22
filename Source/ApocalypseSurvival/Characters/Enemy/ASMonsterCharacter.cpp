@@ -4,6 +4,8 @@
 #include "Characters/Enemy/Components/ASMonsterCombatComponent.h"
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
+#include "Characters/Enemy/Data/ASMonsterStatDefinition.h"
+#include "Core/Framework/ASGameState.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Characters/Enemy/UI/ASMonsterHealthBarWidget.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
@@ -483,11 +485,30 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
 	}
 
 	const FASMonsterInitialAttributes& InitialAttributes = MonsterDefinition->InitialAttributes;
-	OwnedHealthAttributeSet->InitMaxHealth(InitialAttributes.MaxHealth);
-	OwnedHealthAttributeSet->InitHealth(InitialAttributes.MaxHealth);
-	OwnedCombatAttributeSet->InitMoveSpeed(InitialAttributes.MoveSpeed);
-	OwnedCombatAttributeSet->InitAttackPower(InitialAttributes.AttackPower);
-	GetCharacterMovement()->MaxWalkSpeed = InitialAttributes.MoveSpeed;
+	float MaxHealth = InitialAttributes.MaxHealth;
+	float MoveSpeed = InitialAttributes.MoveSpeed;
+	float AttackPower = InitialAttributes.AttackPower;
+	if (const UASMonsterStatDefinition* StatDefinition = MonsterDefinition->StatDefinition)
+	{
+		// 낮 시작에서 CurrentDay가 먼저 갱신되므로 낮과 이어지는 밤의 Actor 몬스터는 같은 라운드 값을 받는다.
+		FASMonsterStatResolveContext StatContext;
+		if (const AASGameState* GameState = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr)
+		{
+			StatContext.Round = FMath::Max(1, GameState->GetCurrentDay());
+			StatContext.Difficulty = GameState->GetMonsterStatDifficulty();
+		}
+
+		const FASResolvedMonsterStats ResolvedStats = FASMonsterStatResolver::Resolve(*StatDefinition, StatContext);
+		MaxHealth = ResolvedStats.GetValue(ASMonsterStatTags::MaxHealth, MaxHealth);
+		MoveSpeed = ResolvedStats.GetValue(ASMonsterStatTags::MoveSpeed, MoveSpeed);
+		AttackPower = ResolvedStats.GetValue(ASMonsterStatTags::AttackPower, AttackPower);
+	}
+
+	OwnedHealthAttributeSet->InitMaxHealth(MaxHealth);
+	OwnedHealthAttributeSet->InitHealth(MaxHealth);
+	OwnedCombatAttributeSet->InitMoveSpeed(MoveSpeed);
+	OwnedCombatAttributeSet->InitAttackPower(AttackPower);
+	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 
 	CombatComponent->Configure(MonsterDefinition->AttackRange, MonsterDefinition->AttackAbilityTag);
 	TargetingComponent->Configure(MonsterDefinition->DetectionRadius, MonsterDefinition->LoseTargetRadius,

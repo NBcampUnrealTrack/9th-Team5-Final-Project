@@ -29,6 +29,7 @@ void UASMassMonsterRangedAttackProcessor::ConfigureQueries(const TSharedRef<FMas
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterDeadTag>(EMassFragmentPresence::None);
 }
@@ -54,6 +55,7 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TArrayView<FASMassMonsterCombatFragment> Combats = Context.GetMutableFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
 		if (Config.AttackPattern != EASMassMonsterAttackPattern::RangedProjectile)
@@ -108,7 +110,7 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 				continue;
 			}
 
-			Projectile->InitializeProjectile(Config.AttackPower, EntityLocation, Direction,
+			Projectile->InitializeProjectile(RuntimeStats[EntityIt].AttackPower, EntityLocation, Direction,
 				Config.RangedProjectileSpeed, Config.RangedProjectileMaxRange);
 			Projectile->FinishSpawning(SpawnTransform);
 			Combat.NextAttackTimeSeconds = CurrentTime + Config.AttackCooldown;
