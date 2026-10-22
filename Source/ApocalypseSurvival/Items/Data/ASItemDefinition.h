@@ -93,7 +93,7 @@ public:
 		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	TArray<TSoftClassPtr<UGameplayEffect>> UseEffects;
 
-	/** SetByCaller values and numeric use parameters. Throwables read Data.Item.ThrowRange and Data.Item.ExplosionRadius in cm. */
+	/** SetByCaller values and numeric use parameters, including throw/placement range, blast radius and barricade health/lifetime. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
 		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides, Categories = "Data"))
 	TMap<FGameplayTag, float> EffectMagnitudes;

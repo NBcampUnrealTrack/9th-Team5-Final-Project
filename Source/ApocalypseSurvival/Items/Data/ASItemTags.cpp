@@ -11,4 +11,7 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Data_Item_Stamina, "Data.Item.Stamina");
 	UE_DEFINE_GAMEPLAY_TAG(Data_Item_ThrowRange, "Data.Item.ThrowRange");
 	UE_DEFINE_GAMEPLAY_TAG(Data_Item_ExplosionRadius, "Data.Item.ExplosionRadius");
+	UE_DEFINE_GAMEPLAY_TAG(Data_Item_PlacementRange, "Data.Item.PlacementRange");
+	UE_DEFINE_GAMEPLAY_TAG(Data_Item_BarricadeHealth, "Data.Item.BarricadeHealth");
+	UE_DEFINE_GAMEPLAY_TAG(Data_Item_BarricadeLifetime, "Data.Item.BarricadeLifetime");
 }
