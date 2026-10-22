@@ -34,9 +34,7 @@ public:
 	bool TraceVisionWall(FHitResult& Hit, const FVector& From, const FVector& To, const AActor* IgnoreActor) const;
 
 private:
-	/** 시야 벽이 차단하는 트레이스 채널 (Project Settings > Collision > ASVisionWall). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true"))
-	TEnumAsByte<ECollisionChannel> VisionWallChannel = ECC_GameTraceChannel1;
+	ECollisionChannel GetVisionWallChannel() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASVisionDefinition> VisionDefinition;

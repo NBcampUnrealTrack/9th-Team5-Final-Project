@@ -18,7 +18,7 @@ class APOCALYPSESURVIVAL_API UASVisionDefinition : public UPrimaryDataAsset
 public:
 	UASVisionDefinition();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vision")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vision", meta = (ShowOnlyInnerProperties))
 	FASVisionSettings Settings;
 
 	/** 서버가 이 클래스와 자식 액터에 없는 시야 소스를 추가한다. 비우면 자동 추가를 끈다. */
@@ -38,12 +38,20 @@ public:
 	FGameplayTagContainer AttackRevealAbilityTags;
 
 	/**
-	 * 팀 시야 밖의 게임 화면을 어둡게 하는 선택적 포스트 프로세스 머티리얼.
+	 * 팀 시야 밖의 게임 화면을 어둡게 하는 선택적 포스트 프로세스 머티리얼. 비우면 월드 안개를 끄며 미니맵 안개는 유지한다.
 	 * 텍스처 "FogTexture"를 받는다 (알파: 보이는 곳은 0, 나머지는 탐색/미탐색 어둡기).
 	 * 벡터 "MapWorldMin" / "MapWorldSize" (XY, cm)는 맵 정의의 영역(UASMapDefinition::MapWorldMin..Max)에서 가져와 월드 위치를 안개 UV에 대응시킨다.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vision|Fog")
 	TObjectPtr<UMaterialInterface> WorldFogMaterial;
+
+	/** 탐색한 셀의 알파. 0은 투명, 255는 불투명한 검정이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vision|Fog")
+	uint8 ExploredAlpha = 150;
+
+	/** 미탐색 셀의 알파. 0은 투명, 255는 불투명한 검정이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vision|Fog")
+	uint8 UnexploredAlpha = 235;
 
 	/** 시야 설정의 값 범위를 검사한다. 오류가 없으면 true. */
 	bool ValidateDefinition(TArray<FString>& OutErrors) const;

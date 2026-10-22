@@ -51,7 +51,10 @@ class APOCALYPSESURVIVAL_API UASZoneEffectDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	/** 기본 효과와 구역별 추가 효과 테이블. 비어 있으면 아무 효과도 적용하지 않는다. */
+	/**
+	 * 행 이름 대신 (ZoneId, TeamId)로 조회하며, 기본(None) 행과 현재 구역 행을 현재 구역 위험도로 각각 함께 적용한다.
+	 * 각 조회는 정확한 팀을 우선하고 없으면 팀 255를 사용한다. 테이블이 비어 있으면 효과를 적용하지 않는다.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (RequiredAssetDataTags = "RowStructure=/Script/ApocalypseSurvival.ASZoneEffectRow"))
 	TObjectPtr<UDataTable> ZoneEffectTable;
 

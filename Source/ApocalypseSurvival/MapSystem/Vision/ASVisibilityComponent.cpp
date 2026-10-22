@@ -148,7 +148,7 @@ void UASVisibilityComponent::NotifyAttackStarted(float RevealSeconds)
 		const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
 		const AASFogOfWarManager* Manager = Subsystem ? Subsystem->GetFogOfWarManager() : nullptr;
 		const UASVisionDefinition* Definition = Manager ? Manager->GetVisionDefinition() : nullptr;
-		RevealSeconds = Definition ? Definition->Settings.AttackRevealSeconds : 3.0f;
+		RevealSeconds = Definition ? Definition->Settings.AttackRevealSeconds : FASVisionSettings().AttackRevealSeconds;
 	}
 
 	const double Now = UASVisionFunctionLibrary::GetServerTimeSeconds(this);

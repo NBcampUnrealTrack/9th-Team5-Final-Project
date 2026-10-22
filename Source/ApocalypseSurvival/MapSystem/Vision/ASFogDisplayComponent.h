@@ -80,21 +80,11 @@ private:
 	void MarkVisibleTiles(int32 MinX, int32 MinY, int32 MaxX, int32 MaxY);
 	void MarkPendingTiles(const FIntRect& Region);
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "255"))
-	int32 ExploredAlpha = 150;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "255"))
-	int32 UnexploredAlpha = 235;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> FogTexture;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASVisionDefinition> VisionDefinition;
-
-	/** 팀 시야 밖의 게임 화면을 어둡게 한다 (UASVisionDefinition::WorldFogMaterial 필요). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (AllowPrivateAccess = "true"))
-	bool bApplyWorldFog = true;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> WorldFogMaterial;

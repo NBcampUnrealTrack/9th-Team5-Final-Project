@@ -214,7 +214,7 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition, const FV
 void UASFogDisplayComponent::UpdateWorldFog()
 {
 	UMaterialInterface* FogMaterial = VisionDefinition ? VisionDefinition->WorldFogMaterial.Get() : nullptr;
-	if (!bApplyWorldFog || !FogMaterial || !FogTexture)
+	if (!FogMaterial || !FogTexture)
 	{
 		RemoveWorldFog();
 		return;
@@ -480,8 +480,8 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion, bool bLocalRegionChanged)
 {
 	RawChangedRegions.Reset();
-	const uint8 Explored = static_cast<uint8>(FMath::Clamp(ExploredAlpha, 0, 255));
-	const uint8 Unexplored = static_cast<uint8>(FMath::Clamp(UnexploredAlpha, 0, 255));
+	const uint8 Explored = VisionDefinition->ExploredAlpha;
+	const uint8 Unexplored = VisionDefinition->UnexploredAlpha;
 	for (int32 TileIndex = 0; TileIndex < PreviousVisibleTiles.Num(); ++TileIndex)
 	{
 		const FIntRect Region = TileRegion(TileIndex);
