@@ -20,6 +20,8 @@ public:
 	// 서버 전용 (GameMode가 호출)
 	void SetPhase(EGamePhase NewPhase, float Duration);
 	void SetCurrentDay(int32 NewDay);
+	/** 서버가 확정한 스테이지 난이도 배율 입력값. 몬스터 스탯 Resolver가 모든 스폰에 공통 사용한다. */
+	void SetMonsterStatDifficulty(float NewDifficulty);
 	void ResetWaveCounts();
 	void AddWaveSpawned(int32 Count);
 	void AddWaveKilled();
@@ -30,6 +32,9 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "GameFlow")
 	int32 GetCurrentDay() const {return CurrentDay;}
+
+	UFUNCTION(BlueprintPure, Category = "GameFlow|Monster Stats")
+	float GetMonsterStatDifficulty() const { return MonsterStatDifficulty; }
 	
 	UFUNCTION(BlueprintPure, Category = "GameFlow")
 	float GetPhaseRemainingTime() const;
@@ -49,6 +54,10 @@ protected:
 	
 	UPROPERTY(Replicated)
 	int32 CurrentDay = 0;
+
+	/** 1.0이 기본 난이도다. Curve 기반 성장에서 X 값으로 사용한다. */
+	UPROPERTY(Replicated)
+	float MonsterStatDifficulty = 1.0f;
 	
 	// 현재 단계가 끝나는 서버 시간 (0이면 시간 제한 없음)
 	UPROPERTY(Replicated)

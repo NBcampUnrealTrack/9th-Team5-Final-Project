@@ -82,6 +82,8 @@ void AASGameMode::HandleMatchHasStarted()
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
 	
+	// Ready 이후 생성되는 Actor와 Mass가 같은 난이도 입력을 읽도록 GameState에 먼저 복제한다.
+	GS->SetMonsterStatDifficulty(MonsterStatDifficulty);
 	GS->SetPhase(EGamePhase::Ready, ReadyDuration);
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] Ready (%.0f초)"), ReadyDuration);
 	

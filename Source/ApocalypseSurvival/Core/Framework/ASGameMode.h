@@ -111,6 +111,13 @@ protected:
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Time")
 	float NightDuration = 110.f;
+
+	/**
+	 * 모든 몬스터 스탯 Curve에 전달하는 스테이지 난이도 입력값이다.
+	 * 현재는 스테이지 고정값이며, 추후 난이도 선택 화면이 생기면 GameState의 Setter만 호출하면 된다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Monster Stats", meta = (ClampMin = "0.0"))
+	float MonsterStatDifficulty = 1.0f;
 	
 	// 보스 등장일
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Boss")

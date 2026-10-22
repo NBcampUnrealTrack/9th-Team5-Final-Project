@@ -164,6 +164,7 @@ void UASMassMonsterNavigationProcessor::ConfigureQueries(const TSharedRef<FMassE
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterModifierFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterHomeFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterNavigationFragment>(EMassFragmentAccess::ReadWrite);
@@ -194,6 +195,7 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterCombatFragment> Combats = Context.GetFragmentView<FASMassMonsterCombatFragment>();
 		const TConstArrayView<FASMassMonsterModifierFragment> Modifiers = Context.GetFragmentView<FASMassMonsterModifierFragment>();
+		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TConstArrayView<FASMassMonsterHomeFragment> Homes = Context.GetFragmentView<FASMassMonsterHomeFragment>();
 
@@ -257,7 +259,8 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 			}
 
 			// 버프 지속 중에는 이미 잡힌 경로를 다시 요청하지 않아도 속도를 즉시 반영한다.
-			const float EffectiveMoveSpeed = Config.MoveSpeed * FMath::Max(1.0f, Modifiers[EntityIt].MoveSpeedMultiplier);
+			// 라운드 성장으로 확정한 기본 속도에 일시 버프 배율만 추가한다.
+			const float EffectiveMoveSpeed = RuntimeStats[EntityIt].MoveSpeed * FMath::Max(1.0f, Modifiers[EntityIt].MoveSpeedMultiplier);
 			MoveTarget.DesiredSpeed.Set(FMath::Min3(
 				EffectiveMoveSpeed,
 				DesiredMovements[EntityIt].DesiredMaxSpeedOverride,
