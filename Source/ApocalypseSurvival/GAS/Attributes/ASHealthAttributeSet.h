@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
@@ -35,6 +35,9 @@ public:
 	/** 값이 실제로 바뀌기 직전에 불린다. 여기서 범위를 강제한다. */
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
+	//GameplayEffect 실행 직전(서버 전용). 받는 피해에 DamageReduction을 적용한다.
+	virtual bool PreGameplayEffectExecute(FGameplayEffectModCallbackData& Data) override;
+
 	/** GameplayEffect 실행 직후(서버 전용). 즉발 효과가 바꾼 기본값의 범위를 강제한다. */
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 
@@ -48,6 +51,11 @@ public:
 	FGameplayAttributeData MaxHealth;
 	ATTRIBUTE_ACCESSORS_BASIC(UASHealthAttributeSet, MaxHealth)
 
+	//받는 피해 감소율 (0 = 감소 없음, 0.2 = 20% 감소, 최대 0.9). GE에서 Add로 올리면 합산
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReduction, Category = "Attributes|Defense")
+	FGameplayAttributeData DamageReduction;
+	ATTRIBUTE_ACCESSORS_BASIC(UASHealthAttributeSet, DamageReduction)
+
 protected:
 	// OnRep 은 GAMEPLAYATTRIBUTE_REPNOTIFY 를 불러야 예측 보정이 올바르게 동작한다.
 
@@ -56,4 +64,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_MaxHealth(const FGameplayAttributeData& OldValue);
+
+	UFUNCTION()
+	void OnRep_DamageReduction(const FGameplayAttributeData& OldValue);
 };
