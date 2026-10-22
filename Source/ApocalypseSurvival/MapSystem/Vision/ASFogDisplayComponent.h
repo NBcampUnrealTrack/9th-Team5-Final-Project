@@ -23,7 +23,7 @@ public:
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	void Configure(UASVisionDefinition* Definition);
+	void Configure(UASVisionDefinition* Definition, const FVector2D& WorldMin, const FVector2D& WorldMax);
 	UTexture2D* GetFogTexture() const { return FogTexture; }
 	/** 로컬 팀 시야 마스크가 적어도 한 번 갱신됐는지 반환한다. */
 	bool HasLocalVisionMask() const { return bHasLocalVisionMask; }
@@ -65,6 +65,7 @@ private:
 	void BlurChangedRegions(bool bFullRecompute, bool bLocalRegionChanged, int32 BlurRadius);
 	void StartLocalFade(float FadeSeconds);
 
+	FVector2D GetFogWorldSize() const { return (FogWorldMax - FogWorldMin).ComponentMax(FVector2D(1.0, 1.0)); }
 	FVector2D WorldToGrid(const FVector& Location) const;
 	int32 GridIndexAt(const FVector& Location) const;
 	void RasterizeEllipse(TArray<uint8>& Cells, const FVector2D& Center, const FVector2D& Radii);
@@ -145,8 +146,8 @@ private:
 	/** U는 월드 Y를, V는 월드 X를 따른다. */
 	int32 ResolutionX = 0;
 	int32 ResolutionY = 0;
-	FVector2D ConfiguredFogWorldMin = FVector2D::ZeroVector;
-	FVector2D ConfiguredFogWorldMax = FVector2D::ZeroVector;
+	FVector2D FogWorldMin = FVector2D::ZeroVector;
+	FVector2D FogWorldMax = FVector2D::ZeroVector;
 	bool bMaskDirty = true;
 	/** 첫 RasterizeTeamSources 전에는 VisibleCells가 모두 0이므로 표현 컬링에 사용하면 안 된다. */
 	bool bHasLocalVisionMask = false;

@@ -72,7 +72,7 @@ public:
 
 	/**
 	 * 로컬 팀이 현재 보는 곳은 투명, 탐색한 곳은 ExploredAlpha,
-	 * 그 외는 UnexploredAlpha이다. RGB는 검정이다. 시야 정의의 FogWorldMin..Max를 덮는다.
+	 * 그 외는 UnexploredAlpha이다. RGB는 검정이다. 맵 정의의 MapWorldMin..Max를 덮는다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	UTexture2D* GetFogTexture() const;

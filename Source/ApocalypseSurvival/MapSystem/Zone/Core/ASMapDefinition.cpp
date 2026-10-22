@@ -95,9 +95,11 @@ bool UASMapDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		}
 	}
 
-	if (MapWorldMax.X <= MapWorldMin.X || MapWorldMax.Y <= MapWorldMin.Y)
+	if (!FMath::IsFinite(MapWorldMin.X) || !FMath::IsFinite(MapWorldMin.Y)
+		|| !FMath::IsFinite(MapWorldMax.X) || !FMath::IsFinite(MapWorldMax.Y)
+		|| MapWorldMax.X <= MapWorldMin.X || MapWorldMax.Y <= MapWorldMin.Y)
 	{
-		OutErrors.Add(FString::Printf(TEXT("%s: MapWorldMax must be greater than MapWorldMin."), *AssetName));
+		OutErrors.Add(FString::Printf(TEXT("%s: MapWorldMax must be finite and greater than MapWorldMin."), *AssetName));
 	}
 
 	if (DangerColors.Num() != ASMap::MaxDangerLevel)

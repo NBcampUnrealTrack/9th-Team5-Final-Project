@@ -36,7 +36,7 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 
 	/** 안개 경계의 흐림 반경 (텍셀). 0이면 흐림을 적용하지 않는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0", ClampMax = "8"))
-	int32 FogEdgeBlurTexels = 2;
+	int32 FogEdgeBlurTexels = 3;
 
 	/** 로컬 플레이어 시야를 마스크에 이만큼 넓게 그린다. 갱신 사이 이동 거리와 경계 흐림을 덮어야 한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
@@ -44,7 +44,7 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 
 	/** 새 마스크로 넘어가는 보간 시간. 갱신 간격(1/UpdateHz)과 같으면 경계가 일정한 속도로 움직인다. 0이면 즉시 적용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0", ClampMax = "2", Units = "s"))
-	float FogFadeSeconds = 0.15f;
+	float FogFadeSeconds = 0.1f;
 
 	/** Mass 표현을 유지하는 시야 경계 바깥쪽 Buffer 폭. Buffer 안의 적은 숨기되 ISM은 유지한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision", meta = (ClampMin = "0.0", Units = "cm"))
