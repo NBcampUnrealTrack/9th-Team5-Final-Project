@@ -581,9 +581,29 @@ int32 UASMassMonsterSubsystem::ApplyDamageInRadius(
 {
 	const float SafeRadius = FMath::Max(0.0f, Radius);
 	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets,
-		[Center, SafeRadius](const FVector& Location, const FASMassMonsterConfigFragment& Config)
+		[Center, SafeRadius](FMassEntityHandle, const FVector& Location,
+			const FASMassMonsterConfigFragment& Config)
 		{
 			return FVector::DistSquared2D(Center, Location) <= FMath::Square(SafeRadius + Config.HitRadius);
+		});
+}
+
+int32 UASMassMonsterSubsystem::ApplyDamageToTarget(
+	const uint64 TargetId,
+	const float Damage,
+	AActor* DamageInstigator)
+{
+	if (TargetId == 0)
+	{
+		return 0;
+	}
+
+	const FMassEntityHandle RequestedEntity = FMassEntityHandle::FromNumber(TargetId);
+	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, 1,
+		[RequestedEntity](const FMassEntityHandle Entity, const FVector&,
+			const FASMassMonsterConfigFragment&)
+		{
+			return Entity == RequestedEntity;
 		});
 }
 
@@ -601,7 +621,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageInCone(
 	const FVector SafeAim = AimDirection.GetSafeNormal2D();
 	const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(SafeAngle * 0.5f));
 	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets,
-		[Center, SafeRadius, SafeAngle, SafeAim, CosHalfAngle](
+		[Center, SafeRadius, SafeAngle, SafeAim, CosHalfAngle](FMassEntityHandle,
 			const FVector& Location, const FASMassMonsterConfigFragment& Config)
 		{
 			const FVector Offset = Location - Center;
@@ -630,7 +650,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegment(
 	const FVector End2D(End.X, End.Y, 0.0f);
 	const float SafeSweepRadius = FMath::Max(0.0f, SweepRadius);
 	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets,
-		[Start2D, End2D, SafeSweepRadius](const FVector& Location, const FASMassMonsterConfigFragment& Config)
+		[Start2D, End2D, SafeSweepRadius](FMassEntityHandle, const FVector& Location,
+			const FASMassMonsterConfigFragment& Config)
 		{
 			const FVector Location2D(Location.X, Location.Y, 0.0f);
 			return FMath::PointDistToSegmentSquared(Location2D, Start2D, End2D)
@@ -755,7 +776,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 	const float Damage,
 	AActor* DamageInstigator,
 	const int32 MaxTargets,
-	TFunctionRef<bool(const FVector&, const FASMassMonsterConfigFragment&)> Predicate)
+	TFunctionRef<bool(FMassEntityHandle, const FVector&, const FASMassMonsterConfigFragment&)> Predicate)
 {
 	FString MutationError;
 	if (!CanMutateEntities(MutationError) || bMutationInProgress || Damage <= 0.0f)
@@ -784,7 +805,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 		const FASMassMonsterConfigFragment* Config =
 			EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
 		if (!Health || Health->CurrentHealth <= 0.0f || !Transform || !Config
-			|| !Predicate(Transform->GetTransform().GetLocation(), *Config))
+			|| !Predicate(Entity, Transform->GetTransform().GetLocation(), *Config))
 		{
 			continue;
 		}
