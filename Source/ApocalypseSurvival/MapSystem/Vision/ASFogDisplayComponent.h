@@ -25,8 +25,16 @@ public:
 
 	void Configure(UASVisionDefinition* Definition);
 	UTexture2D* GetFogTexture() const { return FogTexture; }
+	/** 로컬 팀 시야 마스크가 적어도 한 번 갱신됐는지 반환한다. */
+	bool HasLocalVisionMask() const { return bHasLocalVisionMask; }
 	bool IsLocationExplored(const FVector& Location) const;
 	bool IsLocationVisibleLocally(const FVector& Location) const;
+	/** 보이던 Mass 적을 계속 표시할 수 있는, 밝은 시야 경계보다 안쪽으로 침식된 영역인지 반환한다. */
+	bool IsLocationInLocalVisionExitRegion(const FVector& Location) const;
+	/** 숨겨진 Mass 적의 재표시를 허용하는, 밝은 시야 경계보다 안쪽으로 침식된 영역인지 반환한다. */
+	bool IsLocationInLocalVisionReentryRegion(const FVector& Location) const;
+	/** 현재 로컬 팀 시야 주변의 Mass ISM 유지 Buffer에 위치하는지 반환한다. */
+	bool IsLocationInLocalVisionBuffer(const FVector& Location) const;
 	void ResetExplored();
 	void UpdateLocalMask();
 
@@ -65,6 +73,7 @@ private:
 	const UASVisionSourceComponent* GetLocalVisionSource() const;
 	void UpdateLocalVisionParameters();
 	void UpdateShownAlpha(float Fraction);
+	void RebuildMassVisibilityBuffer();
 	void UploadTexture(const TArray<FIntRect>& DirtyRegions);
 	FIntRect TileRegion(int32 TileIndex) const;
 	void MarkVisibleTiles(int32 MinX, int32 MinY, int32 MaxX, int32 MaxY);
@@ -93,6 +102,14 @@ private:
 	TObjectPtr<APostProcessVolume> WorldFogVolume;
 
 	TArray<uint8> VisibleCells;
+	/** VisibleCells를 MassVisibilityExitInsetDistance만큼 침식한 표시 유지 영역. */
+	TArray<uint8> MassVisibilityExitCells;
+	/** VisibleCells를 MassVisibilityReentryInsetDistance만큼 침식한 재진입 허용 영역. */
+	TArray<uint8> MassVisibilityReentryCells;
+	/** VisibleCells를 MassVisibilityBufferDistance만큼 확장한 로컬 표현 유지 영역. */
+	TArray<uint8> MassVisibilityBufferCells;
+	/** Mass Visibility Buffer를 선형 시간에 확장하기 위한 3-4 chamfer 거리 필드. */
+	TArray<int32> MassVisibilityDistanceScratch;
 	TArray<uint8> DisplayCells;
 	TArray<uint8> OthersCells;
 	TArray<uint8> ExploredCells;
@@ -131,6 +148,8 @@ private:
 	FVector2D ConfiguredFogWorldMin = FVector2D::ZeroVector;
 	FVector2D ConfiguredFogWorldMax = FVector2D::ZeroVector;
 	bool bMaskDirty = true;
+	/** 첫 RasterizeTeamSources 전에는 VisibleCells가 모두 0이므로 표현 컬링에 사용하면 안 된다. */
+	bool bHasLocalVisionMask = false;
 	/** 첫 표시와 텍스처 재생성은 페이드 없이 현재 목표 전체를 업로드한다. */
 	bool bInitializeShownAlpha = true;
 };

@@ -11,6 +11,8 @@
 namespace ASMassMonsterTemporaryVisual
 {
 	constexpr TCHAR ColorParameterName[] = TEXT("Color");
+	constexpr TCHAR FogVisibilityMaterialPath[] =
+		TEXT("/Game/ApocalypseSurvival/Characters/Enemy/Materials/M_MassMonsterFogVisibility.M_MassMonsterFogVisibility");
 
 	FMassStaticMeshInstanceVisualizationMeshDesc MakeMeshDesc(
 		UStaticMesh& Mesh,
@@ -64,8 +66,14 @@ bool UASMassMonsterTemporaryVisualSubsystem::EnsureVisualDescriptors()
 		? World->GetSubsystem<UMassRepresentationSubsystem>()
 		: nullptr;
 	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	// Per Instance Custom Data 0번으로 안개 숨김을 처리하는 재질. 기본 재질로 대체하면 안개 속 몬스터가 노출된다.
 	UMaterialInterface* BaseMaterial = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+		nullptr, ASMassMonsterTemporaryVisual::FogVisibilityMaterialPath);
+	if (!BaseMaterial)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[MassMonsterVisual] Fog visibility material is missing: %s"),
+			ASMassMonsterTemporaryVisual::FogVisibilityMaterialPath);
+	}
 	if (!RepresentationSubsystem || !CubeMesh || !BaseMaterial)
 	{
 		return false;

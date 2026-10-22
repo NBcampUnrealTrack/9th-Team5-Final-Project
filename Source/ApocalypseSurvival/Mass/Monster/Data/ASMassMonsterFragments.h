@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "MassEntityTypes.h"
+#include "MassLODTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "ASMassMonsterFragments.generated.h"
 
@@ -110,6 +111,27 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterNavigationFragment : public FMassFra
 	FVector LastRequestedGoal = FVector::ZeroVector;
 	float PathRefreshTimeRemaining = 0.0f;
 	bool bHasRequestedGoal = false;
+};
+
+/**
+ * 각 머신의 전장의 안개 표시 상태. 네트워크 게임 상태가 아니라 로컬 Representation 전용 데이터다.
+ * 밝은 시야 안쪽의 표시 영역에서는 표시하고, 숨김선 바깥과 시야 경계 Buffer에서는 ISM을 유지한 채 숨긴다.
+ * Buffer 바깥에 일정 시간 머문 뒤에만 ISM을 제거해 경계에서의 재등록을 줄인다.
+ * 숨김과 재표시 Fade는 Transform이 아니라 ISM Per Instance Custom Data 0번(0..1 표시 알파)으로 전달한다.
+ */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterFogVisibilityFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	bool bInitialized = false;
+	bool bVisibleToLocalTeam = false;
+	bool bRetainedInFogBuffer = false;
+	/** Material의 Per Instance Custom Data 0번으로 전달되는 현재 표시 알파. */
+	float RenderVisibilityAlpha = 0.0f;
+	float SecondsOutsideFogBuffer = 0.0f;
+	bool bTemporarilyForcedOff = false;
+	TEnumAsByte<EMassLOD::Type> SavedLOD = EMassLOD::Off;
 };
 
 /** 같은 종류의 일반 몬스터가 공유하는 읽기 전용 설정. */
