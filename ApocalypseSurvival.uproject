@@ -18,7 +18,9 @@
 		{
 			"Name": "SheetAssetImporter",
 			"Enabled": true,
-			"TargetAllowList": [ "Editor" ]
+			"TargetAllowList": [
+				"Editor"
+			]
 		},
 		{
 			"Name": "ModelingToolsEditorMode",
@@ -45,6 +47,14 @@
 		},
 		{
 			"Name": "MassAI",
+			"Enabled": true
+		},
+		{
+			"Name": "OnlineSubsystemNull",
+			"Enabled": true
+		},
+		{
+			"Name": "NavCorridor",
 			"Enabled": true
 		},
 		{

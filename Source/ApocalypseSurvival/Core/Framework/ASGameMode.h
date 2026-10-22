@@ -13,6 +13,7 @@ class UASVisionSetupComponent;
 class UASZoneEffectComponent;
 class UDataTable;
 class UGameplayEffect;
+class AASPlayerCharacter;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -73,6 +74,9 @@ bool IsMultiplayerRules() const;
 	
 	// 플레이어가 쓰러졌을 때 캐릭터가 호출 (서버 전용). 전멸이면 패배
 	void OnPlayerDowned(AController* DownedController);
+	
+	// 관전 중인 플레이어가 좌클릭으로 다음 파티원 화면으로 넘길 때 캐릭터가 호출 (서버 전용)
+	void SpectateNext(APlayerController* Spectator);
 		
 	// 맵에 배치된 리스폰 포인트 목록
 	TArray<AASRespawnPoint*> GetAvailableRespawnPoints() const;
@@ -190,6 +194,18 @@ protected:
 private:
 	// 서 있는 플레이어(살아 있고 쓰러지지 않음)가 한 명도 없으면 패배
 	void CheckPartyWipe();
+	
+	// 관전 시작 (또는 대상 다시 고르기): 지금 보는 곳에서 가장 가까운 파티원 화면으로
+	void StartSpectating(APlayerController* Spectator);
+	
+	// 관젅할 수 있는 파티원 (사망하지 않은 플레이어 캐릭터, 쓰러진 사람 포함). 관전자 자신은 제외
+	TArray<AASPlayerCharacter*> GetSpectateCandidates(const APlayerController* Spectator) const;
+	
+	// 보고 있던 파티원이 사망하면, 그 파티원을 보던 관전자들을 다른 파티원으로 옮긴다
+	void ReassignSpectatorsWatching(const AActor* LostTarget);
+	
+	// 관전 중인 플레이어 (멀티에서 사망한 플레이어)
+	TArray<TWeakObjectPtr<APlayerController>> Spectators;
 	
 	// 맵 시스템(구역·시야·구역 효과). 구역 액터가 없는 레벨에서는 동작하지 않는다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))

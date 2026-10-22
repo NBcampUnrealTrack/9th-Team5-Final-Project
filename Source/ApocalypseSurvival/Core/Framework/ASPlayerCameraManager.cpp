@@ -6,9 +6,17 @@ AASPlayerCameraManager::AASPlayerCameraManager()
 	DefaultFOV = 40.0f;
 }
 
+bool AASPlayerCameraManager::IsSpectating() const
+{
+	// 빙의 전(폰 없음)에는 뷰 타깃이 컨트롤러 자신이라 관전으로 보지 않는다.
+	const APawn* OwnPawn = PCOwner ? PCOwner->GetPawn() : nullptr;
+	const AActor* CurrentTarget = GetViewTarget();
+	return OwnPawn && CurrentTarget && CurrentTarget != OwnPawn;
+}
+
 void AASPlayerCameraManager::AddPanInput(const FVector2D& Direction, const float DeltaTime)
 {
-	if (IsFollowingPawn() || Direction.IsNearlyZero())
+	if (IsFollowingPawn() || IsSpectating() || Direction.IsNearlyZero())
 	{
 		return;
 	}
@@ -62,7 +70,7 @@ void AASPlayerCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, const
 	if (IsValid(Target))
 	{
 		const FVector TargetLocation = Target->GetActorLocation();
-		if (IsFollowingPawn() || bTargetChanged)
+		if (IsFollowingPawn() || IsSpectating() || bTargetChanged)
 		{
 			FocusLocation = TargetLocation;
 		}
@@ -78,7 +86,7 @@ void AASPlayerCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, const
 	// 부드럽게 따라가는 것은 자유 이동뿐이다. 출발과 정지가 급하지 않게 하려는 것이다.
 	// 폰을 따라가는 중(고정, 복귀)과 뷰 타깃이 바뀐 순간(첫 생성, 리스폰)은
 	// 곧바로 그 위치를 비춘다.
-	if (bTargetChanged || IsFollowingPawn() || FocusInterpSpeed <= 0.0f)
+	if (bTargetChanged || IsFollowingPawn() || IsSpectating() || FocusInterpSpeed <= 0.0f)
 	{
 		ViewFocusLocation = FocusLocation;
 	}

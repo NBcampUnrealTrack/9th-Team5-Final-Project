@@ -45,7 +45,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UASItemInstance* GetItemAtSlot(int32 SlotIndex) const;
 
-	/** Swap positions only. Reject requests whose displayed items have since changed. */
+	/** Merge matching stackable items into ToSlot; otherwise swap positions. Reject stale item identities. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool SwapSlots(int32 FromSlot, int32 ToSlot, FGuid ExpectedFromItem, FGuid ExpectedToItem);
 
