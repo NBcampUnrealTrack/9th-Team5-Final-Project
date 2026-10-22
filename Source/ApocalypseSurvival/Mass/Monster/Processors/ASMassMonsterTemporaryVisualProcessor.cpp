@@ -18,7 +18,11 @@ UASMassMonsterTemporaryVisualProcessor::UASMassMonsterTemporaryVisualProcessor()
 {
 	bAutoRegisterWithProcessingPhases = true;
 	bRequiresGameThreadExecution = true;
-	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Client | EProcessorExecutionFlags::Standalone);
+	// 리슨 서버 호스트도 화면에 Representation을 생성하므로 시각화 상태를 적용해야 한다.
+	// Dedicated Server는 Representation Fragment가 없어 EntityQuery가 비어 실행 비용이 없다.
+	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Client
+		| EProcessorExecutionFlags::Server
+		| EProcessorExecutionFlags::Standalone);
 	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterVisualizationProcessor::StaticClass()->GetFName());
 	ExecutionOrder.ExecuteBefore.Add(UASMassMonsterUpdateISMProcessor::StaticClass()->GetFName());
 }
