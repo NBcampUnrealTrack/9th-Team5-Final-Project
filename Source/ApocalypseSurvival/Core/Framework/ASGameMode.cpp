@@ -467,8 +467,28 @@ void AASGameMode::OnPlayerDied(AController* DeadController)
 	// 멀티: 쓰러진 뒤 부활 못 받고 죽으면 그 판은 리스폰 없음 (관전)
 	if (IsMultiplayerRules())
 	{
-		UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 사망 (멀티: 리스폰 없음)"), *GetNameSafe(DeadController));
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 사망 (멀티: 리스폰 없음, 관전)"), *GetNameSafe(DeadController));
+		
+		APawn* DeadPawn = DeadController->GetPawn();
+		
+		// 이 플레이어를 보고 있던 관전자들은 다른 파티원으로 옮긴다.
+		ReassignSpectatorsWatching(DeadPawn);
+		
 		CheckPartyWipe();
+		
+		// 전멸이 아니면 죽은 플레이어도 관전 시작
+		if (APlayerController* DeadPlayer = Cast<APlayerController>(DeadController); DeadPlayer && !IsGameEnded())
+		{
+			StartSpectating(DeadPlayer);
+		}
+		
+		// 시체는 바로 숨긴다 (시야가 사라진 뒤 몸만 남으면 어색하다).
+		// 파괴하지 않는 이유: 빙의는 유지해야 관전 입력(좌클릭)을 캐릭터가 받을 수 있다.
+		// 시체 파밍이 결정되면 "파밍 후 숨김"으로 바꾼다.
+		if (AASPlayerCharacter* Corpse = Cast<AASPlayerCharacter>(DeadPawn))
+		{
+			Corpse->MulticastHideCorpse();
+		}
 		return;
 	}
 	
@@ -516,6 +536,104 @@ void AASGameMode::CheckPartyWipe()
 	
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] 파티 전멸"));
 	EndGame(false);
+}
+
+TArray<AASPlayerCharacter*> AASGameMode::GetSpectateCandidates(const APlayerController* Spectator) const
+{
+	TArray<AASPlayerCharacter*> Candidates;
+	
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PlayerController = It->Get();
+		if (!PlayerController || PlayerController == Spectator)
+		{
+			continue;
+		}
+		
+		AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(PlayerController->GetPawn());
+		if (Character && !Character->IsDead())
+		{
+			Candidates.Add(Character);
+		}
+	}
+	
+	return Candidates;
+}
+
+void AASGameMode::StartSpectating(APlayerController* Spectator)
+{
+	if (!Spectator)
+	{
+		return;
+	}
+	
+	const TArray<AASPlayerCharacter*> Candidates = GetSpectateCandidates(Spectator);
+	if (Candidates.Num() == 0)
+	{
+		return;
+	}
+	
+	// 지금 보고 있는 곳(처음엔 자기 시체)에서 가장 가까운 파티원
+	const AActor* CurrentView = Spectator->GetViewTarget();
+	const FVector From = CurrentView ? CurrentView->GetActorLocation() : FVector::ZeroVector;
+	
+	AASPlayerCharacter* Nearest = nullptr;
+	float NearestDistanceSq = TNumericLimits<float>::Max();
+	for (AASPlayerCharacter* Candidate : Candidates)
+	{
+		const float DistanceSq = FVector::DistSquared(From, Candidate->GetActorLocation());
+		if (DistanceSq < NearestDistanceSq)
+		{
+			NearestDistanceSq = DistanceSq;
+			Nearest = Candidate;
+		}
+	}
+	
+	Spectators.AddUnique(Spectator);
+	
+	// 서버에서 바꾸면 해당 클라이언트의 카메라에도 전달된다.
+	Spectator->SetViewTargetWithBlend(Nearest, 0.5f);
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 관전: %s"), *GetNameSafe(Spectator), *GetNameSafe(Nearest));
+}
+
+void AASGameMode::ReassignSpectatorsWatching(const AActor* LostTarget)
+{
+	if (!LostTarget)
+	{
+		return;
+	}
+	
+	// StartSpectating 이 목록을 건드릴 수 있어서 복사본으로 돈다.
+	const TArray<TWeakObjectPtr<APlayerController>> SpectatorsCopy = Spectators;
+	for (const TWeakObjectPtr<APlayerController>& WeakSpectator : SpectatorsCopy)
+	{
+		APlayerController* Spectator = WeakSpectator.Get();
+		if (Spectator && Spectator->GetViewTarget() == LostTarget)
+		{
+			StartSpectating(Spectator);
+		}
+	}
+}
+
+void AASGameMode::SpectateNext(APlayerController* Spectator)
+{
+	if (!Spectator || !Spectators.Contains(Spectator) || IsGameEnded())
+	{
+		return;
+	}
+	
+	const TArray<AASPlayerCharacter*> Candidates = GetSpectateCandidates(Spectator);
+	if (Candidates.Num() == 0)
+	{
+		return;
+	}
+	
+	// 지금 보는 파티원의 다음 순서. 목록에 없으면(이미 죽었으면) 첫 번째
+	const int32 CurrentIndex = Candidates.IndexOfByKey(Spectator->GetViewTarget());
+	const int32 NextIndex = (CurrentIndex == INDEX_NONE) ? 0 : (CurrentIndex + 1) % Candidates.Num();
+	
+	Spectator->SetViewTargetWithBlend(Candidates[NextIndex], 0.3f);
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 관전 전환: %s"), *GetNameSafe(Spectator), *GetNameSafe(Candidates[NextIndex]));
 }
 
 void AASGameMode::RespawnPlayer(AController* Controller)
