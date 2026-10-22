@@ -13,6 +13,7 @@ float UASItemDefinition::GetEffectMagnitude(const FGameplayTag Tag, const float 
 #include "Items/Combat/ASWeaponAttackProfile.h"
 #include "Items/GAS/ASItemUseAbility.h"
 #include "Items/GAS/ASGrenadeUseAbility.h"
+#include "Items/GAS/ASBarricadeUseAbility.h"
 #include "Items/Data/ASItemTags.h"
 
 EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Context) const
@@ -145,6 +146,18 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 				Error(TEXT("EffectMagnitudes: Data.Item.ThrowRange must be positive and finite (cm)."));
 			if (!FMath::IsFinite(ExplosionRadius) || ExplosionRadius <= 0.0f)
 				Error(TEXT("EffectMagnitudes: Data.Item.ExplosionRadius must be positive and finite (cm)."));
+		}
+		if (AbilityDefaults && AbilityDefaults->IsA<UASBarricadeUseAbility>())
+		{
+			const float Range = GetEffectMagnitude(ASGameplayTags::Data_Item_PlacementRange, ASItemMagnitudeDefaults::PlacementRange);
+			const float Health = GetEffectMagnitude(ASGameplayTags::Data_Item_BarricadeHealth, ASItemMagnitudeDefaults::BarricadeHealth);
+			const float Lifetime = GetEffectMagnitude(ASGameplayTags::Data_Item_BarricadeLifetime, ASItemMagnitudeDefaults::BarricadeLifetime);
+			if (!FMath::IsFinite(Range) || Range <= 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.PlacementRange must be positive and finite (cm)."));
+			if (!FMath::IsFinite(Health) || Health <= 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.BarricadeHealth must be positive and finite."));
+			if (!FMath::IsFinite(Lifetime) || Lifetime < 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.BarricadeLifetime must be zero or positive (seconds)."));
 		}
 		for (const auto& Effect : UseEffects)
 		{
