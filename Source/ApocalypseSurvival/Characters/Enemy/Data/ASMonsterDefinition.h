@@ -9,6 +9,7 @@
 class UGameplayAbility;
 class UGameplayEffect;
 class UASMonsterHealthBarWidget;
+class UASMonsterStatDefinition;
 class UStateTree;
 
 /** 몬스터가 상황에 따라 선택해서 실행하는 공격 패턴 하나. */
@@ -80,6 +81,13 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster")
 	FASMonsterInitialAttributes InitialAttributes;
+
+	/**
+	 * Actor와 Mass가 공유하는 스탯 원본. 비어 있으면 InitialAttributes를 사용해 기존 에셋을 호환한다.
+	 * 새 몬스터는 이 자산을 지정해 라운드 성장과 공통 계산 규칙을 사용한다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster|Stats")
+	TObjectPtr<UASMonsterStatDefinition> StatDefinition;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0", Units = "cm"))
 	float AttackRange = 180.0f;

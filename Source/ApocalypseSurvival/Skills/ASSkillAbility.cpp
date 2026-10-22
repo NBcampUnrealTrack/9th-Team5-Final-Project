@@ -992,20 +992,38 @@ bool UASSkillAbility::CheckCost(
 	FGameplayTagContainer* OptionalRelevantTags) const
 {
 	const FASSkillStatsRow* Stats = FindSkillStats();
-	if (!Stats || Stats->ManaCost <= 0.0f)
+	if (!Stats)
 	{
-		//SkillData 없음 또는 ManaCost 0: 코스트 GE에 적힌 값으로 확인
+		//SkillData 없음 (몬스터 등): 코스트 GE에 적힌 값으로 확인
 		return Super::CheckCost(Handle, ActorInfo, OptionalRelevantTags);
 	}
 
-	//SetByCaller 값은 기본 확인 로직이 몰라서 현재 마나와 직접 비교
-	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	bool bFound = false;
-	const float CurrentMana = ASC
-		? ASC->GetGameplayAttributeValue(UASPlayerAttributeSet::GetManaAttribute(), bFound)
-		: 0.0f;
+	//DT 코스트가 둘 다 0이면 소모 없음 (공용 GE를 SetByCaller 없이 확인하면 에러 로그가 나므로 기본 확인 생략)
+	if (Stats->ManaCost <= 0.0f && Stats->StaminaCost <= 0.0f)
+	{
+		return true;
+	}
 
-	if (!bFound || CurrentMana < Stats->ManaCost)
+	//SetByCaller 값은 기본 확인 로직이 몰라서 현재 마나·스태미나와 직접 비교
+	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+
+	//코스트가 0이면 확인 생략
+	auto HasEnough = [ASC](const FGameplayAttribute& Attribute, float Cost)
+	{
+		if (Cost <= 0.0f)
+		{
+			return true;
+		}
+
+		bool bFound = false;
+		const float Current = ASC ? ASC->GetGameplayAttributeValue(Attribute, bFound) : 0.0f;
+		return bFound && Current >= Cost;
+	};
+
+	const bool bEnoughMana = HasEnough(UASPlayerAttributeSet::GetManaAttribute(), Stats->ManaCost);
+	const bool bEnoughStamina = HasEnough(UASPlayerAttributeSet::GetStaminaAttribute(), Stats->StaminaCost);
+
+	if (!bEnoughMana || !bEnoughStamina)
 	{
 		const FGameplayTag& CostFailTag = UAbilitySystemGlobals::Get().ActivateFailCostTag;
 		if (OptionalRelevantTags && CostFailTag.IsValid())
@@ -1025,9 +1043,16 @@ void UASSkillAbility::ApplyCost(
 {
 	const UGameplayEffect* CostGE = GetCostGameplayEffect();
 	const FASSkillStatsRow* Stats = FindSkillStats();
-	if (!CostGE || !Stats || Stats->ManaCost <= 0.0f)
+	if (!Stats)
 	{
+		//SkillData 없음 (몬스터 등): 코스트 GE 그대로
 		Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
+		return;
+	}
+
+	//DT 코스트가 둘 다 0이거나 코스트 GE가 없으면 소모 없음
+	if (!CostGE || (Stats->ManaCost <= 0.0f && Stats->StaminaCost <= 0.0f))
+	{
 		return;
 	}
 
@@ -1035,8 +1060,10 @@ void UASSkillAbility::ApplyCost(
 		Handle, ActorInfo, ActivationInfo, CostGE->GetClass(), GetAbilityLevel(Handle, ActorInfo));
 	if (SpecHandle.IsValid())
 	{
-		//GE_SkillCost는 Mana Add라서 음수로 넣음
-		SpecHandle.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_ManaCost, -Stats->ManaCost);
+		//GE_SkillCost는 Mana·Stamina Add라서 음수로 넣음
+		//안 쓰는 쪽도 0을 넣어야 SetByCaller 값 없음 에러가 안 남
+		SpecHandle.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_ManaCost, -FMath::Max(0.0f, Stats->ManaCost));
+		SpecHandle.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_StaminaCost, -FMath::Max(0.0f, Stats->StaminaCost));
 		ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
 	}
 }

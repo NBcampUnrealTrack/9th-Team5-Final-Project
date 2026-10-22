@@ -13,6 +13,7 @@ void AASGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	
 	DOREPLIFETIME(AASGameState, CurrentPhase);
 	DOREPLIFETIME(AASGameState, CurrentDay);
+	DOREPLIFETIME(AASGameState, MonsterStatDifficulty);
 	DOREPLIFETIME(AASGameState, PhaseEndServerTime);
 	DOREPLIFETIME(AASGameState, WaveSpawnedCount);
 	DOREPLIFETIME(AASGameState, WaveKilledCount);
@@ -33,6 +34,12 @@ void AASGameState::SetCurrentDay(int32 NewDay)
 {
 	if (!HasAuthority()) return;
 	CurrentDay = NewDay;
+}
+
+void AASGameState::SetMonsterStatDifficulty(const float NewDifficulty)
+{
+	if (!HasAuthority()) return;
+	MonsterStatDifficulty = FMath::Max(0.0f, NewDifficulty);
 }
 
 void AASGameState::ResetWaveCounts()

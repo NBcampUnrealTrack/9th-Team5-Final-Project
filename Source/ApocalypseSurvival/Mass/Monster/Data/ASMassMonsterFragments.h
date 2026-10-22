@@ -10,6 +10,7 @@
 class AASMassMonsterProjectile;
 class AASMonsterAttackIndicatorActor;
 class UMassEntityConfigAsset;
+class UASMonsterStatDefinition;
 
 /** Entity마다 독립적으로 보유하는 현재 체력. 최대 체력은 종류별 공유 설정에 둔다. */
 USTRUCT()
@@ -90,6 +91,22 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterModifierFragment : public FMassFragm
 	bool bBaseVisualScaleInitialized = false;
 };
 
+/**
+ * 스폰 시점에 Resolver가 확정한 개체별 전투 수치다.
+ * Const Shared Config는 EntityConfig 템플릿과 함께 캐시되므로 라운드 성장값을 여기에 보관해야 한다.
+ */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterRuntimeStatsFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	float MaxHealth = 100.0f;
+	float MoveSpeed = 300.0f;
+	float AttackPower = 10.0f;
+	int32 AppliedRound = 0;
+	bool bInitialized = false;
+};
+
 /** 낮 귀환의 기준이 되는 개체별 홈 위치와 추격 제한. */
 USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterHomeFragment : public FMassFragment
@@ -145,6 +162,10 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FName MonsterTypeId = NAME_None;
+
+	/** 새 스탯 시스템의 단일 원본. 비어 있으면 아래 legacy Attributes를 그대로 사용한다. */
+	UPROPERTY(EditAnywhere, Category = "Stats")
+	TObjectPtr<UASMonsterStatDefinition> StatDefinition;
 
 	/** 플레이어가 이 Mass 몬스터를 처치했을 때 지급할 기본 경험치. */
 	UPROPERTY(EditAnywhere, Category = "Rewards", meta = (ClampMin = "0"))

@@ -29,6 +29,7 @@ void UASMassMonsterMeleeAttackProcessor::ConfigureQueries(const TSharedRef<FMass
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterDeadTag>(EMassFragmentPresence::None);
 }
@@ -52,6 +53,7 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TArrayView<FASMassMonsterCombatFragment> Combats = Context.GetMutableFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
@@ -84,7 +86,7 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 				: Config.AttackRange;
 			const float EffectiveAttackPower = Combat.bUseFallbackMelee
 				? Config.FallbackMeleeAttackPower
-				: Config.AttackPower;
+				: RuntimeStats[EntityIt].AttackPower;
 			const float EffectiveCooldown = Combat.bUseFallbackMelee
 				? Config.FallbackMeleeAttackCooldown
 				: Config.AttackCooldown;
