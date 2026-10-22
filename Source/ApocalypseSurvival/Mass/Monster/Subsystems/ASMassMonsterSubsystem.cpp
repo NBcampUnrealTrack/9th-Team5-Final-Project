@@ -726,6 +726,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 		}
 
 		Health->CurrentHealth = FMath::Max(0.0f, Health->CurrentHealth - Damage);
+		Health->LastDamageInstigatorTargetId = InstigatorSnapshot && InstigatorSnapshot->bAlive
+			? InstigatorSnapshot->TargetId : INDEX_NONE;
 		if (FASMassMonsterTemporaryVisualFragment* TemporaryVisual =
 			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Candidate.Entity))
 		{
@@ -788,6 +790,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 		}
 
 		Health->CurrentHealth = FMath::Max(0.0f, Health->CurrentHealth - Damage);
+		Health->LastDamageInstigatorTargetId = InstigatorSnapshot && InstigatorSnapshot->bAlive
+			? InstigatorSnapshot->TargetId : INDEX_NONE;
 		if (FASMassMonsterTemporaryVisualFragment* TemporaryVisual =
 			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Entity))
 		{

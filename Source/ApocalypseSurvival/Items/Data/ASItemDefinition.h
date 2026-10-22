@@ -24,6 +24,10 @@ class APOCALYPSESURVIVAL_API UASItemDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	/** Missing tags use DefaultValue. Explicit values are returned unchanged so callers can reject invalid parameters. */
+	UFUNCTION(BlueprintPure, Category = "Item|Consumable|GAS")
+	float GetEffectMagnitude(FGameplayTag Tag, float DefaultValue = 0.0f) const;
+
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
@@ -39,6 +43,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	EASItemType ItemType = EASItemType::Weapon;
+
+	/** Authored per definition; independent of the chest that drops this item. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	EASLootRarity Rarity = EASLootRarity::Uncommon;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "1", UIMin = "1"))
 	int32 MaxStackSize = 1;
@@ -80,12 +88,12 @@ public:
 		meta = (ClampMin = "1", EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	int32 UseQuantity = 1;
 
-	/** Self effects used by the default consumable ability. At least one effect is required. */
+	/** Self effects used by the default consumable ability. May be empty for a custom UseAbility that does not require them. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
 		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides))
 	TArray<TSoftClassPtr<UGameplayEffect>> UseEffects;
 
-	/** SetByCaller values shared by all UseEffects. */
+	/** SetByCaller values and numeric use parameters, including throw/placement range, blast radius and barricade health/lifetime. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
 		meta = (EditCondition = "ItemType == EASItemType::Consumable", EditConditionHides, Categories = "Data"))
 	TMap<FGameplayTag, float> EffectMagnitudes;

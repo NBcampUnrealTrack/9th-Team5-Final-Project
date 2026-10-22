@@ -1,0 +1,36 @@
+newmtl BlackPolymer
+Kd 0.15 0.16 0.17
+
+newmtl Blade
+Kd 0.15 0.16 0.17
+
+newmtl DarkSteel
+Kd 0.15 0.16 0.17
+
+newmtl Gunmetal
+Kd 0.15 0.16 0.17
+
+newmtl OlivePaint
+Kd 0.095 0.105 0.049
+
+newmtl OliveSeam
+Kd 0.068 0.075 0.036
+
+newmtl Rubber
+Kd 0.15 0.16 0.17
+
+newmtl ScopeLens
+Kd 0.01 0.017 0.024
+
+newmtl Seam
+Kd 0.15 0.16 0.17
+
+newmtl Steel
+Kd 0.15 0.16 0.17
+
+newmtl Wood
+Kd 0.19 0.082 0.027
+
+newmtl WoodGroove
+Kd 0.1 0.038 0.012
+

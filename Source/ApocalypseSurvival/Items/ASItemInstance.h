@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "Items/Data/ASItemTypes.h"
 #include "ASItemInstance.generated.h"
 
 class UASItemDefinition;
@@ -34,6 +35,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASItemDefinition* GetItemDefinition() const { return ItemDefinition; }
+
+	/** Reads the shared definition's rarity on both server and clients. */
+	UFUNCTION(BlueprintPure, Category = "Item")
+	EASLootRarity GetRarity() const;
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	int32 GetQuantity() const { return Quantity; }

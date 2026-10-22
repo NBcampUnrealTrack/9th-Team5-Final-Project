@@ -71,6 +71,9 @@ public:
 
 	UASSkillData* GetSkillData() const { return SkillData; }
 
+	/** Allows other cursor-targeted abilities to share this character's configured indicator visuals. */
+	TSubclassOf<AASSkillRangeIndicatorActor> GetRangeIndicatorClass() const { return RangeIndicatorClass; }
+
 	//SkillData의 DT 행 (없으면 nullptr, 몬스터 등은 BP 값 사용)
 	const FASSkillStatsRow* FindSkillStats() const;
 

@@ -1,11 +1,20 @@
 #include "Items/Data/ASItemDefinition.h"
 
+float UASItemDefinition::GetEffectMagnitude(const FGameplayTag Tag, const float DefaultValue) const
+{
+	const float* Value = EffectMagnitudes.Find(Tag);
+	return Value ? *Value : DefaultValue;
+}
+
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #include "GameplayEffect.h"
 #include "Items/Combat/ASWeaponAttackExecution.h"
 #include "Items/Combat/ASWeaponAttackProfile.h"
 #include "Items/GAS/ASItemUseAbility.h"
+#include "Items/GAS/ASGrenadeUseAbility.h"
+#include "Items/GAS/ASBarricadeUseAbility.h"
+#include "Items/Data/ASItemTags.h"
 
 EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Context) const
 {
@@ -17,6 +26,7 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 		bValid = false;
 	};
 	if (ItemId.IsNone()) Error(TEXT("ItemId must be set."));
+	if (!IsValidLootRarity(Rarity)) Error(TEXT("Rarity must be Uncommon, Rare, Epic, or Legendary."));
 	if (MaxStackSize < 1) Error(TEXT("MaxStackSize must be positive."));
 	if (ItemType == EASItemType::Weapon)
 	{
@@ -111,13 +121,44 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 			if (!Magnitude.Key.IsValid()) Error(TEXT("EffectMagnitudes requires valid gameplay tags."));
 			if (!FMath::IsFinite(Magnitude.Value)) Error(TEXT("EffectMagnitudes values must be finite."));
 		}
+		const UASItemUseAbility* AbilityDefaults = GetDefault<UASItemUseAbility>();
 		if (!UseAbility.IsNull())
 		{
 			UClass* AbilityClass = UseAbility.LoadSynchronous();
-			if (!AbilityClass || !AbilityClass->IsChildOf(UASItemUseAbility::StaticClass())) Error(TEXT("UseAbility must derive from ASItemUseAbility."));
+			if (!AbilityClass || !AbilityClass->IsChildOf(UASItemUseAbility::StaticClass())
+				|| AbilityClass->HasAnyClassFlags(CLASS_Abstract))
+			{
+				Error(TEXT("UseAbility must be a non-abstract subclass of ASItemUseAbility."));
+				AbilityDefaults = nullptr;
+			}
+			else
+			{
+				AbilityDefaults = AbilityClass->GetDefaultObject<UASItemUseAbility>();
+			}
 		}
-		else if (UseEffects.IsEmpty())
-			Error(TEXT("Default consumables require at least one UseEffect."));
+		if (AbilityDefaults && AbilityDefaults->RequiresUseEffects() && UseEffects.IsEmpty())
+			Error(TEXT("The selected UseAbility requires at least one UseEffect. Custom actions must override RequiresUseEffects to return false."));
+		if (AbilityDefaults && AbilityDefaults->IsA<UASGrenadeUseAbility>())
+		{
+			const float ThrowRange = GetEffectMagnitude(ASGameplayTags::Data_Item_ThrowRange, ASItemMagnitudeDefaults::ThrowRange);
+			const float ExplosionRadius = GetEffectMagnitude(ASGameplayTags::Data_Item_ExplosionRadius, ASItemMagnitudeDefaults::ExplosionRadius);
+			if (!FMath::IsFinite(ThrowRange) || ThrowRange <= 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.ThrowRange must be positive and finite (cm)."));
+			if (!FMath::IsFinite(ExplosionRadius) || ExplosionRadius <= 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.ExplosionRadius must be positive and finite (cm)."));
+		}
+		if (AbilityDefaults && AbilityDefaults->IsA<UASBarricadeUseAbility>())
+		{
+			const float Range = GetEffectMagnitude(ASGameplayTags::Data_Item_PlacementRange, ASItemMagnitudeDefaults::PlacementRange);
+			const float Health = GetEffectMagnitude(ASGameplayTags::Data_Item_BarricadeHealth, ASItemMagnitudeDefaults::BarricadeHealth);
+			const float Lifetime = GetEffectMagnitude(ASGameplayTags::Data_Item_BarricadeLifetime, ASItemMagnitudeDefaults::BarricadeLifetime);
+			if (!FMath::IsFinite(Range) || Range <= 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.PlacementRange must be positive and finite (cm)."));
+			if (!FMath::IsFinite(Health) || Health <= 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.BarricadeHealth must be positive and finite."));
+			if (!FMath::IsFinite(Lifetime) || Lifetime < 0.0f)
+				Error(TEXT("EffectMagnitudes: Data.Item.BarricadeLifetime must be zero or positive (seconds)."));
+		}
 		for (const auto& Effect : UseEffects)
 		{
 			if (!Effect.LoadSynchronous()) Error(TEXT("UseEffects contains an empty or missing class."));

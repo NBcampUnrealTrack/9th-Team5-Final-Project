@@ -12,24 +12,13 @@ class UASItemDefinition;
 class UMaterialInterface;
 class UStaticMesh;
 
-/** Visual quality tier shared by loot presets and spawned chests. */
-UENUM(BlueprintType)
-enum class EASLootRarity : uint8
-{
-	Common,
-	Uncommon,
-	Rare,
-	Epic,
-	Legendary
-};
-
 /** Shared visual settings resolved by rarity from the configured appearance DataTable. */
 USTRUCT(BlueprintType)
 struct APOCALYPSESURVIVAL_API FASLootRarityAppearanceRow : public FTableRowBase
 {
 	GENERATED_BODY()
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
-	EASLootRarity Rarity = EASLootRarity::Common;
+	EASLootRarity Rarity = EASLootRarity::Uncommon;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
 	TObjectPtr<UStaticMesh> ChestMesh = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
@@ -89,7 +78,7 @@ struct APOCALYPSESURVIVAL_API FASLootChestPresetRow : public FTableRowBase
 {
 	GENERATED_BODY()
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Appearance")
-	EASLootRarity Rarity = EASLootRarity::Common;
+	EASLootRarity Rarity = EASLootRarity::Uncommon;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot")
 	TSubclassOf<AASLootChest> ChestClass;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Fixed")
