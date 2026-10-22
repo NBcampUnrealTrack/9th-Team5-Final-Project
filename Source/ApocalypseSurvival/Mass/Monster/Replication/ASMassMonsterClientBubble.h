@@ -26,6 +26,23 @@ public:
 #if UE_REPLICATION_COMPILE_SERVER_CODE
 	const FTransformHandler& GetTransformHandler() const { return TransformHandler; }
 	FTransformHandler& GetTransformHandlerMutable() { return TransformHandler; }
+
+	/** 표현 데이터가 달라진 경우에만 Fast Array 항목을 dirty 처리한다. */
+	bool SetVisualData(const FMassReplicatedAgentHandle Handle,
+		const FASReplicatedMonsterVisualData& NewVisualData)
+	{
+		FASMassMonsterFastArrayItem& Item = GetAgentItem(Handle);
+		FASReplicatedMonsterVisualData& CurrentVisualData = Item.Agent.GetVisualDataMutable();
+		if (CurrentVisualData.HealthRatio == NewVisualData.HealthRatio
+			&& CurrentVisualData.WorldBehavior == NewVisualData.WorldBehavior)
+		{
+			return false;
+		}
+
+		CurrentVisualData = NewVisualData;
+		MarkItemDirty(Item);
+		return true;
+	}
 #endif
 
 protected:
