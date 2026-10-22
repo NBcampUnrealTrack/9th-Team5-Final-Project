@@ -194,9 +194,15 @@ void AASGrenadeActor::UpdateFlightFeedback()
 
 void AASGrenadeActor::MulticastThrowFeedback_Implementation(const FVector_NetQuantize Location)
 {
-	if (GetNetMode() != NM_DedicatedServer && PinPullSound)
+	if (GetNetMode() == NM_DedicatedServer) return;
+	if (PinPullSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, PinPullSound, Location,
+			1.0f, 1.0f, 0.0f, SoundAttenuation);
+	}
+	if (ThrowSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, ThrowSound, Location,
 			1.0f, 1.0f, 0.0f, SoundAttenuation);
 	}
 }

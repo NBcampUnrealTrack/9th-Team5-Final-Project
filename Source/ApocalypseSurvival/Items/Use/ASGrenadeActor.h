@@ -64,6 +64,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
 	TObjectPtr<USoundBase> PinPullSound;
 
+	/** Cloth/air movement at release, layered independently from the pin sound. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
+	TObjectPtr<USoundBase> ThrowSound;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
 	TObjectPtr<USoundBase> BounceSound;
 
