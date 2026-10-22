@@ -59,9 +59,13 @@ bool AASGameMode::IsFinalBossDay(int32 Day) const
 
 bool AASGameMode::IsDeathCountEnabled() const
 {
-	// 프로토 타입용 항상 사용
-	// TODO : 멀티 생기면 선택값으로 판단
-	return true;
+	// 싱글은 사망 횟수 제한, 멀티는 쓰러짐/부활 규칙이라 사용하지 않는다.
+	return !IsMultiplayerRules();
+}
+
+bool AASGameMode::IsMultiplayerRules() const
+{
+	return GetNetMode() != NM_Standalone;
 }
 
 AASGameState* AASGameMode::GetASGameState() const
@@ -369,6 +373,56 @@ void AASGameMode::PostLogin(APlayerController* NewPlayer)
 	
 	// 접속한 플레이어에게 기록 컴포넌트 미리 붙이기
 	GetOrCreateRecord(NewPlayer);
+	
+	// 원격 클라이언트: 캐릭터 선택이 끝내 오지 않으면 기본 캐릭터로 진행
+	if (NewPlayer && !NewPlayer->IsLocalController())
+	{
+		TWeakObjectPtr<APlayerController> WeakPlayer = NewPlayer;
+		FTimerHandle SelectTimeoutHandle;
+		FTimerDelegate SelectTimeoutDelegate = FTimerDelegate::CreateWeakLambda(this, [this, WeakPlayer]()
+		{
+			APlayerController* PlayerController = WeakPlayer.Get();
+			AASPlayerState* PlayerState = PlayerController ? PlayerController->GetPlayerState<AASPlayerState>() : nullptr;
+			if (!PlayerState || PlayerState->HasReceivedCharacterSelection())
+			{
+				return;
+			}
+			
+			UE_LOG(LogTemp, Warning, TEXT("[CharacterSelect] %s 선택이 오지 않아 기본 캐릭터로 스폰"), *GetNameSafe(PlayerController));
+			PlayerState->MarkCharacterSelectionReceived();
+			NotifyCharacterSelectionReceived(PlayerController);
+		});
+		GetWorldTimerManager().SetTimer(SelectTimeoutHandle, SelectTimeoutDelegate, CharacterSelectTimeout, false);
+	}
+}
+
+bool AASGameMode::PlayerCanRestart_Implementation(APlayerController* Player)
+{
+	// 원격 클라이언트는 캐릭터 선택을 받기 전까지 스폰 보류
+	if (Player && !Player->IsLocalController())
+	{
+		const AASPlayerState* PlayerState = Player->GetPlayerState<AASPlayerState>();
+		if (PlayerState && !PlayerState->HasReceivedCharacterSelection())
+		{
+			return false;
+		}
+	}
+	
+	return Super::PlayerCanRestart_Implementation(Player);
+}
+
+void AASGameMode::NotifyCharacterSelectionReceived(APlayerController* PlayerController)
+{
+	if (!PlayerController || PlayerController->GetPawn() || IsGameEnded())
+	{
+		return;
+	}
+	
+	// 매치 시작 전이면 HandleMatchHasStarted가 스폰한다.
+	if (PlayerCanRestart(PlayerController))
+	{
+		RestartPlayer(PlayerController);
+	}
 }
 
 UASPlayerRecordComponent* AASGameMode::GetOrCreateRecord(AController* Controller) const
@@ -410,6 +464,14 @@ void AASGameMode::OnPlayerDied(AController* DeadController)
 		}
 	}
 	
+	// 멀티: 쓰러진 뒤 부활 못 받고 죽으면 그 판은 리스폰 없음 (관전)
+	if (IsMultiplayerRules())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 사망 (멀티: 리스폰 없음)"), *GetNameSafe(DeadController));
+		CheckPartyWipe();
+		return;
+	}
+	
 	// 대기 시간 후 리스폰
 	// 대기 중 컨트롤러가 사라질 수 있으므로(접속 종료 등) 약한 참조로 잡아 둔다.
 	TWeakObjectPtr<AController> WeakController = DeadController;
@@ -422,6 +484,38 @@ void AASGameMode::OnPlayerDied(AController* DeadController)
 		}
 	});
 	GetWorldTimerManager().SetTimer(RespawnHandle, RespawnDelegate, RespawnDelay, false);
+}
+
+void AASGameMode::OnPlayerDowned(AController* DownedController)
+{
+	if (!DownedController || IsGameEnded()) return;
+	
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 쓰러짐"), *GetNameSafe(DownedController));
+	CheckPartyWipe();
+}
+
+void AASGameMode::CheckPartyWipe()
+{
+	if (IsGameEnded()) return;
+	
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PlayerController = It->Get();
+		if (!PlayerController)
+		{
+			continue;
+		}
+		
+		// 아직 스폰 전(캐릭터 선택 대기)이면 살아 있는 것으로 본다.
+		const AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(PlayerController->GetPawn());
+		if (!Character || (!Character->IsDead() && !Character->IsDowned()))
+		{
+			return;
+		}
+	}
+	
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] 파티 전멸"));
+	EndGame(false);
 }
 
 void AASGameMode::RespawnPlayer(AController* Controller)

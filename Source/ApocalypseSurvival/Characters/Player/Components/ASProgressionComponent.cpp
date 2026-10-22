@@ -183,3 +183,9 @@ bool UASProgressionComponent::GetSkillUpgradeTier(int32 TierIndex, FASSkillUpgra
 	OutTier = Data->SkillUpgradeTiers[TierIndex];
 	return true;
 }
+
+void UASProgressionComponent::NotifyProgressionDataChanged()
+{
+	// 레벨 이벤트는 레벨업 연출이 붙어 있어서 보내지 않는다. 필요 경험치만 다시 알린다.
+	OnExpChanged.Broadcast(CurrentExp, GetExpToNextLevel());
+}

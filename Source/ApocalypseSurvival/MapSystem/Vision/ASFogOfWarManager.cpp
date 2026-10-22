@@ -282,6 +282,26 @@ bool AASFogOfWarManager::IsLocationVisibleLocally(const FVector& Location) const
 	return FogDisplayComponent->IsLocationVisibleLocally(Location);
 }
 
+bool AASFogOfWarManager::IsLocationInLocalVisionExitRegion(const FVector& Location) const
+{
+	return FogDisplayComponent->IsLocationInLocalVisionExitRegion(Location);
+}
+
+bool AASFogOfWarManager::IsLocationInLocalVisionReentryRegion(const FVector& Location) const
+{
+	return FogDisplayComponent->IsLocationInLocalVisionReentryRegion(Location);
+}
+
+bool AASFogOfWarManager::IsLocationInLocalVisionBuffer(const FVector& Location) const
+{
+	return FogDisplayComponent->IsLocationInLocalVisionBuffer(Location);
+}
+
+bool AASFogOfWarManager::HasLocalVisionMask() const
+{
+	return FogDisplayComponent->HasLocalVisionMask();
+}
+
 void AASFogOfWarManager::ResetExplored()
 {
 	FogDisplayComponent->ResetExplored();

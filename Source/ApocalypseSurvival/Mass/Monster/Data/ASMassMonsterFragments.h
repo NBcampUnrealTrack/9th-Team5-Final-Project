@@ -1,7 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataTable.h"
 #include "MassEntityTypes.h"
+#include "MassLODTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "ASMassMonsterFragments.generated.h"
 
@@ -18,6 +20,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterHealthFragment : public FMassFragmen
 	float CurrentHealth = 100.0f;
 	float DeathTimeRemaining = 0.0f;
 	bool bDeathTimerStarted = false;
+	/** 가장 최근에 피해를 준 플레이어의 Mass TargetId. 경험치 수령자 판정에만 쓴다. */
+	int32 LastDamageInstigatorTargetId = INDEX_NONE;
 };
 
 /** 낮/밤 행동 모드와 현재 상위 행동 상태. */
@@ -112,6 +116,27 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterNavigationFragment : public FMassFra
 	bool bHasRequestedGoal = false;
 };
 
+/**
+ * 각 머신의 전장의 안개 표시 상태. 네트워크 게임 상태가 아니라 로컬 Representation 전용 데이터다.
+ * 밝은 시야 안쪽의 표시 영역에서는 표시하고, 숨김선 바깥과 시야 경계 Buffer에서는 ISM을 유지한 채 숨긴다.
+ * Buffer 바깥에 일정 시간 머문 뒤에만 ISM을 제거해 경계에서의 재등록을 줄인다.
+ * 숨김과 재표시 Fade는 Transform이 아니라 ISM Per Instance Custom Data 0번(0..1 표시 알파)으로 전달한다.
+ */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterFogVisibilityFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	bool bInitialized = false;
+	bool bVisibleToLocalTeam = false;
+	bool bRetainedInFogBuffer = false;
+	/** Material의 Per Instance Custom Data 0번으로 전달되는 현재 표시 알파. */
+	float RenderVisibilityAlpha = 0.0f;
+	float SecondsOutsideFogBuffer = 0.0f;
+	bool bTemporarilyForcedOff = false;
+	TEnumAsByte<EMassLOD::Type> SavedLOD = EMassLOD::Off;
+};
+
 /** 같은 종류의 일반 몬스터가 공유하는 읽기 전용 설정. */
 USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSharedFragment
@@ -120,6 +145,14 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FName MonsterTypeId = NAME_None;
+
+	/** 플레이어가 이 Mass 몬스터를 처치했을 때 지급할 기본 경험치. */
+	UPROPERTY(EditAnywhere, Category = "Rewards", meta = (ClampMin = "0"))
+	int32 ExperienceReward = 10;
+
+	/** Actor 몬스터와 공유하는 몬스터 드랍 그룹. 비어 있으면 아이템을 드랍하지 않는다. */
+	UPROPERTY(EditAnywhere, Category = "Rewards", meta = (RowType = "/Script/ApocalypseSurvival.ASMonsterDropGroupRow"))
+	FDataTableRowHandle DropGroup;
 
 	UPROPERTY(EditAnywhere, Category = "Attributes", meta = (ClampMin = "1.0"))
 	float MaxHealth = 100.0f;

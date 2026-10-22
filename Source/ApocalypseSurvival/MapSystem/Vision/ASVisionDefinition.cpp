@@ -57,6 +57,38 @@ bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		OutErrors.Add(FString::Printf(TEXT("%s: FogFadeSeconds must be finite and in 0..2."), *AssetName));
 	}
 
+	if (!FMath::IsFinite(Settings.MassVisibilityBufferDistance) || Settings.MassVisibilityBufferDistance < 0.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: MassVisibilityBufferDistance must be finite and non-negative."), *AssetName));
+	}
+
+	if (!FMath::IsFinite(Settings.MassVisibilityExitInsetDistance) || Settings.MassVisibilityExitInsetDistance < 0.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: MassVisibilityExitInsetDistance must be finite and non-negative."), *AssetName));
+	}
+
+	if (!FMath::IsFinite(Settings.MassVisibilityReentryInsetDistance) || Settings.MassVisibilityReentryInsetDistance < 0.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: MassVisibilityReentryInsetDistance must be finite and non-negative."), *AssetName));
+	}
+	else if (FMath::IsFinite(Settings.MassVisibilityExitInsetDistance)
+		&& Settings.MassVisibilityReentryInsetDistance < Settings.MassVisibilityExitInsetDistance)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: MassVisibilityReentryInsetDistance must be greater than or equal to MassVisibilityExitInsetDistance."), *AssetName));
+	}
+
+	if (!FMath::IsFinite(Settings.MassVisibilityFadeInSeconds) || Settings.MassVisibilityFadeInSeconds < 0.0f
+		|| Settings.MassVisibilityFadeInSeconds > 1.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: MassVisibilityFadeInSeconds must be finite and in 0..1."), *AssetName));
+	}
+
+	if (!FMath::IsFinite(Settings.MassVisibilityCullDelaySeconds) || Settings.MassVisibilityCullDelaySeconds < 0.0f
+		|| Settings.MassVisibilityCullDelaySeconds > 2.0f)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: MassVisibilityCullDelaySeconds must be finite and in 0..2."), *AssetName));
+	}
+
 	if (!FMath::IsFinite(FogWorldMin.X) || !FMath::IsFinite(FogWorldMin.Y)
 		|| !FMath::IsFinite(FogWorldMax.X) || !FMath::IsFinite(FogWorldMax.Y)
 		|| FogWorldMax.X <= FogWorldMin.X || FogWorldMax.Y <= FogWorldMin.Y)

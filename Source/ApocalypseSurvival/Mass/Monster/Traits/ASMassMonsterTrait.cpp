@@ -17,6 +17,12 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 		Config.MaxHealth = MonsterDefinition->InitialAttributes.MaxHealth;
 		Config.MoveSpeed = MonsterDefinition->InitialAttributes.MoveSpeed;
 		Config.AttackPower = MonsterDefinition->InitialAttributes.AttackPower;
+		Config.ExperienceReward = MonsterDefinition->ExperienceReward;
+		// Definition에 드랍 그룹이 설정된 경우에만 우선한다. 비어 있으면 Mass 전용 Parameters 값을 보존한다.
+		if (MonsterDefinition->DropGroup.DataTable && !MonsterDefinition->DropGroup.RowName.IsNone())
+		{
+			Config.DropGroup = MonsterDefinition->DropGroup;
+		}
 		Config.AttackRange = MonsterDefinition->AttackRange;
 		Config.DetectionRadius = MonsterDefinition->DetectionRadius;
 		Config.LoseTargetRadius = MonsterDefinition->LoseTargetRadius;
@@ -47,6 +53,8 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
 	BuildContext.AddFragment<FASMassMonsterModifierFragment>();
 	BuildContext.AddFragment<FASMassMonsterNavigationFragment>();
+	// 로컬 전장의 안개 표현 상태이며 Mass Replication 대상에 포함하지 않는다.
+	BuildContext.AddFragment<FASMassMonsterFogVisibilityFragment>();
 
 	FASMassMonsterHomeFragment& Home = BuildContext.AddFragment_GetRef<FASMassMonsterHomeFragment>();
 	Home.LeashRadius = FMath::Max(0.0f, DefaultLeashRadius);
