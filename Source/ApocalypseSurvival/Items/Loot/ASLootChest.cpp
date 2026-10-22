@@ -53,7 +53,7 @@ void AASLootChest::SetLootRarityAppearance(const EASLootRarity Rarity, UStaticMe
 	UMaterialInterface* MaterialOverride, const int32 MaterialIndex, const FLinearColor ColorParameterValue,
 	const FName ColorParameter)
 {
-	if (!HasAuthority()) return;
+	if (!HasAuthority() || !IsValidLootRarity(Rarity)) return;
 	LootRarity = Rarity;
 	LootMeshOverride = MeshOverride;
 	LootMaterialOverride = MaterialOverride;

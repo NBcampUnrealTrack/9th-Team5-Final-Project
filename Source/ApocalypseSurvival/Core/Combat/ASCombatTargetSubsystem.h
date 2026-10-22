@@ -55,6 +55,8 @@ struct APOCALYPSESURVIVAL_API FASCombatTargetQuery
 	/** 0이면 제한 없음. */
 	int32 MaxTargets = 0;
 	bool bCanHitPlayers = false;
+	/** Include the instigator, players, friendly/neutral actors and Mass monsters together. Overrides affiliation filters only. */
+	bool bHitAllTeams = false;
 	bool bRequireAlive = true;
 	bool bRequireVisibleToLocalTeam = false;
 };

@@ -17,6 +17,16 @@
 
 namespace
 {
+	bool IsActorTargetAllowed(const AActor* Target, const FASCombatTargetQuery& Query)
+	{
+		if (Query.bHitAllTeams)
+		{
+			return IsValid(Target)
+				&& UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Target));
+		}
+		return UASCombatTargetSubsystem::IsValidActorTarget(Target, Query.Instigator, Query.bCanHitPlayers);
+	}
+
 	bool IsAliveActorTarget(const AActor* Target)
 	{
 		const UAbilitySystemComponent* TargetASC =
@@ -178,7 +188,8 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTarget
 		return Targets;
 	}
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASCombatFindTargets), false, Query.Instigator);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASCombatFindTargets), false,
+		Query.bHitAllTeams ? nullptr : Query.Instigator);
 	const FCollisionObjectQueryParams ObjectParams(ECC_Pawn);
 	if (Query.Shape == EASCombatTargetShape::Segment && !Query.SearchOrigin.Equals(Query.EndLocation))
 	{
@@ -189,7 +200,7 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTarget
 		{
 			AActor* Actor = Hit.GetActor();
 			if ((!Query.ExplicitActor || Actor == Query.ExplicitActor)
-				&& IsValidActorTarget(Actor, Query.Instigator, Query.bCanHitPlayers)
+				&& IsActorTargetAllowed(Actor, Query)
 				&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
 				&& (!Query.bRequireVisibleToLocalTeam || UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor))
 				&& MatchesQueryShape(Query, Actor->GetActorLocation(), 0.0f))
@@ -207,7 +218,7 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTarget
 		{
 			AActor* Actor = Overlap.GetActor();
 			if ((!Query.ExplicitActor || Actor == Query.ExplicitActor)
-				&& IsValidActorTarget(Actor, Query.Instigator, Query.bCanHitPlayers)
+				&& IsActorTargetAllowed(Actor, Query)
 				&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
 				&& (!Query.bRequireVisibleToLocalTeam || UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor))
 				&& MatchesQueryShape(Query, Actor->GetActorLocation(), 0.0f))
@@ -251,8 +262,9 @@ bool UASCombatTargetSubsystem::FindBestTarget(
 
 	if (Query.Domain != EASCombatTargetDomain::MassOnly)
 	{
-		const TArray<AActor*> ActorTargets = FindActorTargetsInRadius(
-			Query.SearchOrigin, Query.SearchRadius, Query.Instigator, Query.bCanHitPlayers);
+		FASCombatTargetQuery ActorQuery = Query;
+		ActorQuery.Shape = EASCombatTargetShape::Radius;
+		const TArray<AActor*> ActorTargets = FindActorTargets(ActorQuery);
 		for (AActor* Actor : ActorTargets)
 		{
 			if (Query.bRequireAlive && !IsAliveActorTarget(Actor))
@@ -316,7 +328,7 @@ bool UASCombatTargetSubsystem::RefreshTarget(
 	{
 		AActor* Actor = InOutTarget.GetActor();
 		if (Query.Domain != EASCombatTargetDomain::MassOnly
-			&& IsValidActorTarget(Actor, Query.Instigator, Query.bCanHitPlayers)
+			&& IsActorTargetAllowed(Actor, Query)
 			&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
 			&& (!Query.bRequireVisibleToLocalTeam
 				|| UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor)))
@@ -458,8 +470,9 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
 		}
 	}
 
-	// 현재 Mass 몬스터는 플레이어의 적이다. 플레이어를 공격하는 경로에는 포함하지 않는다.
-	if (Query.Domain == EASCombatTargetDomain::ActorOnly || Query.ExplicitActor || Query.bCanHitPlayers)
+	// 현재 Mass 몬스터는 플레이어의 적이다. 무차별 공격을 제외하면 기존 플레이어 공격 경로에는 포함하지 않는다.
+	if (Query.Domain == EASCombatTargetDomain::ActorOnly || Query.ExplicitActor
+		|| (Query.bCanHitPlayers && !Query.bHitAllTeams))
 	{
 		return Result;
 	}

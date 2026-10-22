@@ -4,7 +4,7 @@
 #include "Items/GAS/ASItemGameplayAbility.h"
 #include "ASItemUseAbility.generated.h"
 
-/** Server-only consumable. Blueprint subclasses must call CommitAbility before applying their effect. */
+/** Server-only consumable. Custom use actions must call CommitAbility before applying their effect. */
 UCLASS(Blueprintable)
 class APOCALYPSESURVIVAL_API UASItemUseAbility : public UASItemGameplayAbility
 {
@@ -12,6 +12,9 @@ class APOCALYPSESURVIVAL_API UASItemUseAbility : public UASItemGameplayAbility
 
 public:
 	UASItemUseAbility();
+	/** Native custom actions override this to false and implement ActivateItemUse instead of ActivateAbility. */
+	virtual bool RequiresUseEffects() const;
+
 	virtual bool CommitAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo, FGameplayTagContainer* OptionalRelevantTags = nullptr) override;
 	virtual bool CheckCost(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -22,6 +25,10 @@ public:
 protected:
 	virtual void ActivateAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+
+	/** Called after per-use cost state and source item are initialized. Custom actions must commit and end the ability. */
+	virtual void ActivateItemUse(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData);
 
 private:
 	mutable bool bItemCostPaid = false;

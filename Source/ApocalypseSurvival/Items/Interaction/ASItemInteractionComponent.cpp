@@ -15,6 +15,9 @@
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
 #include "Characters/Player/ASPlayerCharacter.h"
+#include "AbilitySystemComponent.h"
+#include "Items/GAS/ASItemAbilityLibrary.h"
+#include "Skills/ASSkillTags.h"
 
 namespace
 {
@@ -101,6 +104,11 @@ void UASItemInteractionComponent::HandleWorldRightClick()
 	AASPlayerController* PC = GetASController();
 	if (!PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())
 		|| IsCursorOverInventory()) return;
+	if (UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(GetPlayerInventory(), PC->GetPawn());
+		ASC && ASC->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+	{
+		ASC->LocalInputCancel();
+	}
 	FHitResult Hit;
 	if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit))
 	{

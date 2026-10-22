@@ -9,6 +9,11 @@ bool FASLootValidation::ValidateItem(const UASItemDefinition* Item, FString& Out
 		OutError = TEXT("Loot requires a valid item definition, nonempty ItemId, and positive MaxStackSize.");
 		return false;
 	}
+	if (!IsValidLootRarity(Item->Rarity))
+	{
+		OutError = TEXT("Item rarity must be Uncommon, Rare, Epic, or Legendary.");
+		return false;
+	}
 	return true;
 }
 

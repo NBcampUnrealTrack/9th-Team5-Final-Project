@@ -47,6 +47,11 @@ bool UASItemInstance::IsValidItemInstance() const
 	return IsValid(ItemDefinition) && Quantity > 0 && InstanceId.IsValid();
 }
 
+EASLootRarity UASItemInstance::GetRarity() const
+{
+	return IsValid(ItemDefinition) ? ItemDefinition->Rarity : EASLootRarity::Uncommon;
+}
+
 int32 UASItemInstance::GetRemainingStackSpace() const
 {
 	if (!IsValid(ItemDefinition))

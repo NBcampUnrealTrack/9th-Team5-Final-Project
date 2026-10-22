@@ -36,6 +36,11 @@ UASItemUseAbility::UASItemUseAbility()
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 }
 
+bool UASItemUseAbility::RequiresUseEffects() const
+{
+	return !bHasBlueprintActivate;
+}
+
 bool UASItemUseAbility::CommitAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
 	FGameplayTagContainer* OptionalRelevantTags)
@@ -60,7 +65,7 @@ bool UASItemUseAbility::CheckCost(const FGameplayAbilitySpecHandle Handle,
 		|| Item->GetQuantity() < Item->GetItemDefinition()->UseQuantity) return false;
 	const UASItemDefinition& Definition = *Item->GetItemDefinition();
 	TArray<EASItemRecoveryResource> Resources = Definition.RecoveryResources;
-	if (!bHasBlueprintActivate && Definition.UseEffects.IsEmpty()) return false;
+	if (RequiresUseEffects() && Definition.UseEffects.IsEmpty()) return false;
 	return Resources.IsEmpty() || Resources.ContainsByPredicate(
 		[ASC](const EASItemRecoveryResource Resource) { return HasMissingResource(*ASC, Resource); });
 }
@@ -89,6 +94,13 @@ void UASItemUseAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 		return;
 	}
+	ActivateItemUse(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+}
+
+void UASItemUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+	const FGameplayEventData* TriggerEventData)
+{
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	const UASItemDefinition* Definition = GetSourceItemDefinition();
 	if (!ASC || !Definition || Definition->UseEffects.IsEmpty())

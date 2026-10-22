@@ -3,6 +3,21 @@
 #include "CoreMinimal.h"
 #include "ASItemTypes.generated.h"
 
+/** Shared quality tiers for item definitions and loot chests. */
+UENUM(BlueprintType)
+enum class EASLootRarity : uint8
+{
+	Uncommon,
+	Rare,
+	Epic,
+	Legendary
+};
+
+constexpr bool IsValidLootRarity(const EASLootRarity Rarity)
+{
+	return Rarity >= EASLootRarity::Uncommon && Rarity <= EASLootRarity::Legendary;
+}
+
 /** High-level category used to decide how an item is stored and used. */
 UENUM(BlueprintType)
 enum class EASItemType : uint8

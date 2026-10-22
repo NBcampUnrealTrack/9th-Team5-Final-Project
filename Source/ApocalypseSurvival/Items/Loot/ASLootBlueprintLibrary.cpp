@@ -65,6 +65,11 @@ namespace
 		const FString RowName = StaticEnum<EASLootRarity>()->GetNameStringByValue(static_cast<int64>(Rarity));
 		const FASLootRarityAppearanceRow* Row = Table->FindRow<FASLootRarityAppearanceRow>(FName(*RowName),
 			TEXT("ResolveLootRarityAppearance"), false);
+		// Enum redirects migrate the value, while existing DataTable row names remain unchanged.
+		if (!Row && Rarity == EASLootRarity::Uncommon)
+		{
+			Row = Table->FindRow<FASLootRarityAppearanceRow>(TEXT("Common"), TEXT("ResolveLootRarityAppearance"), false);
+		}
 		return Row && Row->Rarity == Rarity ? Row : nullptr;
 	}
 }

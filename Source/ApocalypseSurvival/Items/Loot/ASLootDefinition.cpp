@@ -5,9 +5,25 @@
 #include "Items/Loot/ASLootValidation.h"
 #include "Materials/MaterialInterface.h"
 #include "Engine/StaticMesh.h"
+#include "Misc/DelayedAutoRegister.h"
+#include "UObject/CoreRedirects.h"
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
+
+namespace
+{
+	// Keep existing assets readable without retaining Common as a selectable tier.
+	FDelayedAutoRegisterHelper RegisterLootRarityRedirect(EDelayedRegisterRunPhase::ObjectSystemReady, []
+	{
+		const FString EnumPath = TEXT("/Script/ApocalypseSurvival.EASLootRarity");
+		FCoreRedirect Redirect(ECoreRedirectFlags::Type_Enum, EnumPath, EnumPath);
+		Redirect.ValueChanges.Add(TEXT("Common"), TEXT("Uncommon"));
+		Redirect.ValueChanges.Add(TEXT("EASLootRarity::Common"), TEXT("EASLootRarity::Uncommon"));
+		const TArray<FCoreRedirect> Redirects = { Redirect };
+		FCoreRedirects::AddRedirectList(Redirects, TEXT("ASItemRarity"));
+	});
+}
 
 bool FASLootPoolEntry::Validate(FString& OutError) const
 {
@@ -72,14 +88,18 @@ FLinearColor FASLootRarityAppearanceRow::GetResolvedColor() const
 	case EASLootRarity::Rare: return FLinearColor(0.12f, 0.45f, 1.0f, 1.0f);
 	case EASLootRarity::Epic: return FLinearColor(0.68f, 0.22f, 1.0f, 1.0f);
 	case EASLootRarity::Legendary: return FLinearColor(1.0f, 0.48f, 0.08f, 1.0f);
-	case EASLootRarity::Common:
-	default: return FLinearColor(0.8f, 0.8f, 0.8f, 1.0f);
+	default: return FLinearColor(0.15f, 0.85f, 0.25f, 1.0f);
 	}
 }
 
 bool FASLootRarityAppearanceRow::Validate(FString& OutError) const
 {
 	OutError.Reset();
+	if (!IsValidLootRarity(Rarity))
+	{
+		OutError = TEXT("Appearance rarity must be Uncommon, Rare, Epic, or Legendary.");
+		return false;
+	}
 	const bool bColorFinite = FMath::IsFinite(ColorOverride.R) && FMath::IsFinite(ColorOverride.G)
 		&& FMath::IsFinite(ColorOverride.B) && FMath::IsFinite(ColorOverride.A);
 	if (MaterialIndex < 0 || (bOverrideColor && !bColorFinite))
@@ -102,6 +122,11 @@ EDataValidationResult FASLootRarityAppearanceRow::IsDataValid(FDataValidationCon
 bool FASLootChestPresetRow::Validate(FString& OutError) const
 {
 	OutError.Reset();
+	if (!IsValidLootRarity(Rarity))
+	{
+		OutError = TEXT("Chest rarity must be Uncommon, Rare, Epic, or Legendary.");
+		return false;
+	}
 	if (!ChestClass || ChestClass->HasAnyClassFlags(CLASS_Abstract))
 	{
 		OutError = TEXT("Preset requires a concrete ChestClass.");
