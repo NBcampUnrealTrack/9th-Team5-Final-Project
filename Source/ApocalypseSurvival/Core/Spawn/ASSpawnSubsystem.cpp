@@ -45,7 +45,8 @@ void UASSpawnSubsystem::HandleDayStarted(int32 Day, UDataTable* DaySpawnDataTabl
 	SpawnDayUnits(Day, DaySpawnDataTable, MonsterSpawnGroupDataTable);
 }
 
-void UASSpawnSubsystem::HandleNightStarted(int32 Day, UDataTable* WaveDataTable)
+void UASSpawnSubsystem::HandleNightStarted(int32 Day, UDataTable* WaveDataTable,
+	UDataTable* MonsterSpawnGroupDataTable)
 {
 	int32 ExistingMonsterCount = CountAliveManagedActorMonsters();
 	if (UASMassMonsterSubsystem* MassMonsterSubsystem = GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
@@ -63,16 +64,14 @@ void UASSpawnSubsystem::HandleNightStarted(int32 Day, UDataTable* WaveDataTable)
 		}
 	}
 
-	StartWave(Day, WaveDataTable);
+	StartWave(Day, WaveDataTable, MonsterSpawnGroupDataTable);
 }
 
 void UASSpawnSubsystem::HandleNightEnded()
 {
 	StopWave();
-	if (UASMassMonsterSubsystem* MassMonsterSubsystem = GetWorld()->GetSubsystem<UASMassMonsterSubsystem>())
-	{
-		MassMonsterSubsystem->SetManagedMonsterWorldBehavior(EASMassMonsterWorldBehavior::DayTerritory);
-	}
+	// 밤에 NightAssault로 전환된 Mass 몬스터는 사망할 때까지 추격을 유지한다.
+	// 여기서 DayTerritory로 되돌리면 낮 스폰 몬스터도 밤 종료 직후 홈으로 복귀하게 된다.
 }
 
 void UASSpawnSubsystem::StopAllSpawning()
@@ -230,7 +229,8 @@ int32 UASSpawnSubsystem::SpawnDayGroup(const FASDayMonsterGroupSelectionEntry& G
 	return SpawnedCount;
 }
 
-void UASSpawnSubsystem::StartWave(int32 Day, UDataTable* WaveDataTable)
+void UASSpawnSubsystem::StartWave(int32 Day, UDataTable* WaveDataTable,
+	UDataTable* MonsterSpawnGroupDataTable)
 {
 	StopWave();
 
@@ -250,37 +250,70 @@ void UASSpawnSubsystem::StartWave(int32 Day, UDataTable* WaveDataTable)
 
 	ActiveWaveSpawnBatchSize = FMath::Max(1, WaveData->SpawnBatchSize);
 	ActiveWaveSpawnInterval = FMath::Max(0.01f, WaveData->SpawnInterval);
-	for (const FASWaveUnitEntry& Unit : WaveData->Units)
+
+	if (!WaveData->MonsterGroups.IsEmpty())
 	{
-		if (Unit.Count <= 0)
+		if (!MonsterSpawnGroupDataTable)
 		{
-			continue;
+			UE_LOG(LogTemp, Error, TEXT("[SpawnSubsystem] %s가 MonsterGroups를 사용하지만 MonsterSpawnGroupDataTable이 설정되지 않음"),
+				*RowName.ToString());
+			return;
 		}
 
-		FASPendingWaveMonsterSpawn PendingSpawn;
-		PendingSpawn.SpawnBackend = Unit.SpawnBackend;
-		if (Unit.SpawnBackend == EASMonsterSpawnBackend::Mass)
+		for (const FASWaveSpawnGroupEntry& GroupEntry : WaveData->MonsterGroups)
 		{
-			PendingSpawn.MassEntityConfig = Unit.MassEntityConfig.LoadSynchronous();
-			if (!PendingSpawn.MassEntityConfig)
+			if (GroupEntry.RepeatCount <= 0)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 Mass Entity Config가 비어 있어 제외함"), *RowName.ToString());
 				continue;
 			}
-		}
-		else
-		{
-			PendingSpawn.MonsterClass = Unit.MonsterClass.LoadSynchronous();
-			if (!PendingSpawn.MonsterClass)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 몬스터 클래스가 비어 있어 제외함"), *RowName.ToString());
-				continue;
-			}
-		}
 
-		for (int32 Index = 0; Index < Unit.Count; ++Index)
+			const FASMonsterSpawnGroupDataRow* MonsterGroupData = FindMonsterGroupData(
+				MonsterSpawnGroupDataTable, GroupEntry.MonsterGroupIndex);
+			if (!MonsterGroupData)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 MonsterGroupIndex %d 행이 없음"),
+					*RowName.ToString(), GroupEntry.MonsterGroupIndex);
+				continue;
+			}
+
+			AppendWaveGroup(*MonsterGroupData, GroupEntry.RepeatCount, RowName.ToString());
+		}
+	}
+	else
+	{
+		// 기존 DT_WaveData 에셋이 즉시 깨지지 않도록 직접 Units를 한시적으로 지원한다.
+		for (const FASWaveUnitEntry& Unit : WaveData->Units)
 		{
-			PendingWaveMonsters.Add(PendingSpawn);
+			if (Unit.Count <= 0)
+			{
+				continue;
+			}
+
+			FASPendingWaveMonsterSpawn PendingSpawn;
+			PendingSpawn.SpawnBackend = Unit.SpawnBackend;
+			if (Unit.SpawnBackend == EASMonsterSpawnBackend::Mass)
+			{
+				PendingSpawn.MassEntityConfig = Unit.MassEntityConfig.LoadSynchronous();
+				if (!PendingSpawn.MassEntityConfig)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 Mass Entity Config가 비어 있어 제외함"), *RowName.ToString());
+					continue;
+				}
+			}
+			else
+			{
+				PendingSpawn.MonsterClass = Unit.MonsterClass.LoadSynchronous();
+				if (!PendingSpawn.MonsterClass)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 몬스터 클래스가 비어 있어 제외함"), *RowName.ToString());
+					continue;
+				}
+			}
+
+			for (int32 Index = 0; Index < Unit.Count; ++Index)
+			{
+				PendingWaveMonsters.Add(PendingSpawn);
+			}
 		}
 	}
 
@@ -305,6 +338,51 @@ void UASSpawnSubsystem::StartWave(int32 Day, UDataTable* WaveDataTable)
 		GetWorld()->GetTimerManager().SetTimer(WaveSpawnTimerHandle, this, &UASSpawnSubsystem::SpawnWaveTick,
 			ActiveWaveSpawnInterval, true);
 	}
+}
+
+bool UASSpawnSubsystem::AppendWaveGroup(const FASMonsterSpawnGroupDataRow& MonsterGroupData,
+	const int32 RepeatCount, const FString& SourceName)
+{
+	bool bAddedAny = false;
+	for (const FASMonsterSpawnGroupUnitEntry& Unit : MonsterGroupData.Units)
+	{
+		if (Unit.Count <= 0)
+		{
+			continue;
+		}
+
+		FASPendingWaveMonsterSpawn PendingSpawn;
+		PendingSpawn.SpawnBackend = Unit.SpawnBackend;
+		if (Unit.SpawnBackend == EASMonsterSpawnBackend::Mass)
+		{
+			PendingSpawn.MassEntityConfig = Unit.MassEntityConfig.LoadSynchronous();
+			if (!PendingSpawn.MassEntityConfig)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 그룹 %d에 Mass Entity Config가 비어 있어 제외함"),
+					*SourceName, MonsterGroupData.GroupIndex);
+				continue;
+			}
+		}
+		else
+		{
+			PendingSpawn.MonsterClass = Unit.MonsterClass.LoadSynchronous();
+			if (!PendingSpawn.MonsterClass)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SpawnSubsystem] %s의 그룹 %d에 몬스터 클래스가 비어 있어 제외함"),
+					*SourceName, MonsterGroupData.GroupIndex);
+				continue;
+			}
+		}
+
+		const int32 SpawnCount = Unit.Count * RepeatCount;
+		for (int32 Index = 0; Index < SpawnCount; ++Index)
+		{
+			PendingWaveMonsters.Add(PendingSpawn);
+		}
+		bAddedAny = true;
+	}
+
+	return bAddedAny;
 }
 
 void UASSpawnSubsystem::StopWave()

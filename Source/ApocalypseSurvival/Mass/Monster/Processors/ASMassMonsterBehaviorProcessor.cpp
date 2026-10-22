@@ -54,9 +54,13 @@ namespace ASMassMonsterBehavior
 		FASMassMonsterBehaviorFragment& Behavior)
 	{
 		const float DistanceSquared = FVector::DistSquared2D(EntityLocation, Target.CachedTargetLocation);
+		// HitRadius는 근접 유닛의 중심점-대상 거리 보정용이다.
+		// 원거리/돌진 유닛에 더하면 사거리보다 멀리서 Attack 상태가 되어 이동을 멈출 수 있다.
 		const float EffectiveAttackRange = Combat.bUseFallbackMelee
 			? Config.FallbackMeleeAttackRange
-			: Config.AttackRange;
+			: Config.AttackPattern == EASMassMonsterAttackPattern::Melee
+				? Config.AttackRange + Config.HitRadius
+				: Config.AttackRange;
 		Behavior.State = DistanceSquared <= FMath::Square(EffectiveAttackRange)
 			? EASMassMonsterState::Attack
 			: EASMassMonsterState::Chase;
@@ -66,6 +70,8 @@ namespace ASMassMonsterBehavior
 UASMassMonsterBehaviorProcessor::UASMassMonsterBehaviorProcessor()
 	: EntityQuery(*this)
 {
+	// 본맵과 기능 테스트 맵이 같은 행동 전환 경로를 쓰도록 자동 등록을 명시한다.
+	bAutoRegisterWithProcessingPhases = true;
 	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Server);
 	ExecutionOrder.ExecuteInGroup = UE::Mass::ProcessorGroupNames::Behavior;
 	bRequiresGameThreadExecution = true;

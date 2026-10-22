@@ -1,6 +1,5 @@
 #include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualSubsystem.h"
 
-#include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "MassRepresentationSubsystem.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -11,108 +10,99 @@
 namespace ASMassMonsterTemporaryVisual
 {
 	constexpr TCHAR ColorParameterName[] = TEXT("Color");
-	constexpr TCHAR FogVisibilityMaterialPath[] =
-		TEXT("/Game/ApocalypseSurvival/Characters/Enemy/Materials/M_MassMonsterFogVisibility.M_MassMonsterFogVisibility");
+}
 
-	FMassStaticMeshInstanceVisualizationMeshDesc MakeMeshDesc(
-		UStaticMesh& Mesh,
-		UMaterialInterface& Material)
+void UASMassMonsterTemporaryVisualSubsystem::RegisterStateVisuals(
+	const FStaticMeshInstanceVisualizationDesc& BaseDesc,
+	const FStaticMeshInstanceVisualizationDescHandle BaseHandle)
+{
+	if (!BaseHandle.IsValid())
 	{
-		FMassStaticMeshInstanceVisualizationMeshDesc MeshDesc;
-		MeshDesc.Mesh = &Mesh;
-		MeshDesc.MaterialOverrides.Add(&Material);
-		MeshDesc.LocalTransform = FTransform::Identity;
-		MeshDesc.SetSignificanceRange(EMassLOD::High, EMassLOD::Max);
-		MeshDesc.bCastShadows = false;
-		MeshDesc.Mobility = EComponentMobility::Movable;
-		return MeshDesc;
+		return;
+	}
+
+	FStateVisualHandles& Handles = StateVisualHandlesByBaseHandle.FindOrAdd(BaseHandle.ToIndex());
+	if (!Handles.Hit.IsValid())
+	{
+		Handles.Hit = CreateStateVisual(BaseDesc, FLinearColor(1.0f, 0.03f, 0.03f, 1.0f));
+	}
+	if (!Handles.Dead.IsValid())
+	{
+		Handles.Dead = CreateStateVisual(BaseDesc, FLinearColor::Black);
 	}
 }
 
-bool UASMassMonsterTemporaryVisualSubsystem::InitializeVisualDescriptors()
-{
-	return EnsureVisualDescriptors();
-}
-
 FStaticMeshInstanceVisualizationDescHandle UASMassMonsterTemporaryVisualSubsystem::GetVisualHandle(
-	const EASMassMonsterTemporaryVisualState State)
+	const EASMassMonsterTemporaryVisualState State,
+	const FStaticMeshInstanceVisualizationDescHandle BaseHandle)
 {
-	if (!DaySpawnHandle.IsValid() || !NightSpawnHandle.IsValid()
-		|| !HitHandle.IsValid() || !DeadHandle.IsValid())
+	// 낮/밤은 행동 상태일 뿐, Entity Config에 설정된 기본 외형은 바꾸지 않는다.
+	if (State == EASMassMonsterTemporaryVisualState::DaySpawn
+		|| State == EASMassMonsterTemporaryVisualState::NightSpawn)
+	{
+		return BaseHandle;
+	}
+
+	if (!BaseHandle.IsValid())
 	{
 		return FStaticMeshInstanceVisualizationDescHandle();
 	}
 
-	switch (State)
+	const FStateVisualHandles* Handles = StateVisualHandlesByBaseHandle.Find(BaseHandle.ToIndex());
+	if (!Handles)
 	{
-	case EASMassMonsterTemporaryVisualState::NightSpawn: return NightSpawnHandle;
-	case EASMassMonsterTemporaryVisualState::Hit: return HitHandle;
-	case EASMassMonsterTemporaryVisualState::Dead: return DeadHandle;
-	case EASMassMonsterTemporaryVisualState::DaySpawn:
-	default: return DaySpawnHandle;
+		return FStaticMeshInstanceVisualizationDescHandle();
 	}
+
+	return State == EASMassMonsterTemporaryVisualState::Hit ? Handles->Hit : Handles->Dead;
 }
 
-bool UASMassMonsterTemporaryVisualSubsystem::EnsureVisualDescriptors()
+FStaticMeshInstanceVisualizationDescHandle UASMassMonsterTemporaryVisualSubsystem::CreateStateVisual(
+	const FStaticMeshInstanceVisualizationDesc& BaseDesc,
+	const FLinearColor& Color)
 {
-	if (DaySpawnHandle.IsValid() && NightSpawnHandle.IsValid()
-		&& HitHandle.IsValid() && DeadHandle.IsValid())
-	{
-		return true;
-	}
-
-	UWorld* World = GetWorld();
-	UMassRepresentationSubsystem* RepresentationSubsystem = World
-		? World->GetSubsystem<UMassRepresentationSubsystem>()
+	UMassRepresentationSubsystem* RepresentationSubsystem = GetWorld()
+		? GetWorld()->GetSubsystem<UMassRepresentationSubsystem>()
 		: nullptr;
-	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	// Per Instance Custom Data 0번으로 안개 숨김을 처리하는 재질. 기본 재질로 대체하면 안개 속 몬스터가 노출된다.
-	UMaterialInterface* BaseMaterial = LoadObject<UMaterialInterface>(
-		nullptr, ASMassMonsterTemporaryVisual::FogVisibilityMaterialPath);
-	if (!BaseMaterial)
+	if (!RepresentationSubsystem)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[MassMonsterVisual] Fog visibility material is missing: %s"),
-			ASMassMonsterTemporaryVisual::FogVisibilityMaterialPath);
-	}
-	if (!RepresentationSubsystem || !CubeMesh || !BaseMaterial)
-	{
-		return false;
+		return FStaticMeshInstanceVisualizationDescHandle();
 	}
 
-	auto CreateColorMaterial = [this, BaseMaterial](const FLinearColor Color)
+	// Descriptor를 복사하므로 다중 메시, 상대 위치, 회전, 스케일, LOD 범위를 그대로 보존한다.
+	FStaticMeshInstanceVisualizationDesc StateDesc = BaseDesc;
+	for (FMassStaticMeshInstanceVisualizationMeshDesc& MeshDesc : StateDesc.Meshes)
 	{
-		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(BaseMaterial, this);
-		if (Material)
+		if (!MeshDesc.Mesh)
 		{
-			Material->SetVectorParameterValue(ASMassMonsterTemporaryVisual::ColorParameterName, Color);
-		}
-		return Material;
-	};
-
-	if (!DaySpawnMaterial)
-	{
-		DaySpawnMaterial = CreateColorMaterial(FLinearColor(1.0f, 0.8f, 0.0f, 1.0f));
-		NightSpawnMaterial = CreateColorMaterial(FLinearColor(0.05f, 0.2f, 1.0f, 1.0f));
-		HitMaterial = CreateColorMaterial(FLinearColor(1.0f, 0.03f, 0.03f, 1.0f));
-		DeadMaterial = CreateColorMaterial(FLinearColor::Black);
-	}
-
-	auto Register = [RepresentationSubsystem, CubeMesh](UMaterialInstanceDynamic* Material)
-	{
-		if (!Material)
-		{
-			return FStaticMeshInstanceVisualizationDescHandle();
+			continue;
 		}
 
-		FStaticMeshInstanceVisualizationDesc Desc;
-		Desc.Meshes.Add(ASMassMonsterTemporaryVisual::MakeMeshDesc(*CubeMesh, *Material));
-		return RepresentationSubsystem->FindOrAddStaticMeshDesc(Desc);
-	};
+		const int32 MaterialSlotCount = MeshDesc.Mesh->GetStaticMaterials().Num();
+		const int32 OverrideCount = FMath::Max(MaterialSlotCount, MeshDesc.MaterialOverrides.Num());
+		MeshDesc.MaterialOverrides.SetNum(OverrideCount);
 
-	DaySpawnHandle = Register(DaySpawnMaterial);
-	NightSpawnHandle = Register(NightSpawnMaterial);
-	HitHandle = Register(HitMaterial);
-	DeadHandle = Register(DeadMaterial);
-	return DaySpawnHandle.IsValid() && NightSpawnHandle.IsValid()
-		&& HitHandle.IsValid() && DeadHandle.IsValid();
+		for (int32 MaterialIndex = 0; MaterialIndex < OverrideCount; ++MaterialIndex)
+		{
+			UMaterialInterface* BaseMaterial = MeshDesc.MaterialOverrides[MaterialIndex];
+			if (!BaseMaterial && MaterialIndex < MaterialSlotCount)
+			{
+				BaseMaterial = MeshDesc.Mesh->GetMaterial(MaterialIndex);
+			}
+			if (!BaseMaterial)
+			{
+				continue;
+			}
+
+			UMaterialInstanceDynamic* StateMaterial = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+			if (StateMaterial)
+			{
+				StateMaterial->SetVectorParameterValue(ASMassMonsterTemporaryVisual::ColorParameterName, Color);
+				StateMaterials.Add(StateMaterial);
+				MeshDesc.MaterialOverrides[MaterialIndex] = StateMaterial;
+			}
+		}
+	}
+
+	return RepresentationSubsystem->FindOrAddStaticMeshDesc(StateDesc);
 }

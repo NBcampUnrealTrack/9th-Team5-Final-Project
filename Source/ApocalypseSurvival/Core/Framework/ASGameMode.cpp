@@ -144,7 +144,7 @@ void AASGameMode::StartNight()
 	// 스폰 위치 선정, 기존 몬스터 집계, 웨이브 생성은 SpawnSubsystem이 전담한다.
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
-		SpawnSubsystem->HandleNightStarted(Day, WaveDataTable);
+		SpawnSubsystem->HandleNightStarted(Day, WaveDataTable, MonsterSpawnGroupDataTable);
 	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnNightTimeUp, Duration, false);

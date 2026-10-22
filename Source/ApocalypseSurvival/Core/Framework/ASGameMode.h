@@ -151,8 +151,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn")
 	TObjectPtr<UDataTable> DaySpawnDataTable;
 
-	// 행 이름 MonsterGroup_00, MonsterGroup_01 ... 에 따라 그룹별 몬스터 구성과 가중치를 정의한 DataTable.
-	UPROPERTY(EditDefaultsOnly, Category = "Rule|Day Spawn")
+	// 행 이름 MonsterGroup_00, MonsterGroup_01 ... 에 따라 낮 스폰과 밤 웨이브가 공통으로 쓰는 몬스터 구성을 정의한 DataTable.
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Monster Spawn")
 	TObjectPtr<UDataTable> MonsterSpawnGroupDataTable;
 
 	// DayNumber and SecondsAfterDayStart rows that schedule server-side loot chest spawns.
