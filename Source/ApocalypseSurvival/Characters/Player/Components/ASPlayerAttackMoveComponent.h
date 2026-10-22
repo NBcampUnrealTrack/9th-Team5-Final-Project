@@ -66,7 +66,7 @@ protected:
 private:
 	bool UsesAttackMoveTargeting() const;
 	float GetAttackRange() const;
-	bool FindBestTarget(EASCombatTargetSortPolicy SortPolicy);
+	bool FindBestTarget(EASCombatTargetSortPolicy SortPolicy, float SearchRadius);
 	bool RefreshCurrentTarget(FVector& OutLocation, float& OutHitRadius);
 	bool IsTargetInAttackRange(const FVector& TargetLocation, float TargetHitRadius) const;
 	void RequestAttack(AActor* Target, const FVector& TargetLocation);
