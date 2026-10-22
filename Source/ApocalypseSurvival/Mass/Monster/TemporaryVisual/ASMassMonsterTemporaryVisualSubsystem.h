@@ -18,29 +18,34 @@ class APOCALYPSESURVIVAL_API UASMassMonsterTemporaryVisualSubsystem : public UWo
 	GENERATED_BODY()
 
 public:
-	/** Mass 시각화 데이터에 접근하기 전에 호출해, 상태별 Descriptor를 모두 등록한다. */
-	bool InitializeVisualDescriptors();
+	/**
+	 * Entity Config Template 구성 시 호출한다. Processor가 ISM 배열에 접근하기 전에
+	 * 원본 Descriptor의 Hit/Dead 변형을 등록해 접근 충돌을 방지한다.
+	 */
+	void RegisterStateVisuals(
+		const FStaticMeshInstanceVisualizationDesc& BaseDesc,
+		FStaticMeshInstanceVisualizationDescHandle BaseHandle);
 
-	/** InitializeVisualDescriptors() 성공 뒤에는 상태별 Handle만 반환하며 시각화 저장소를 변경하지 않는다. */
-	FStaticMeshInstanceVisualizationDescHandle GetVisualHandle(EASMassMonsterTemporaryVisualState State);
+	/** Template 단계에 미리 등록한 상태 Descriptor를 반환한다. */
+	FStaticMeshInstanceVisualizationDescHandle GetVisualHandle(
+		EASMassMonsterTemporaryVisualState State,
+		FStaticMeshInstanceVisualizationDescHandle BaseHandle);
 
 private:
-	bool EnsureVisualDescriptors();
+	struct FStateVisualHandles
+	{
+		FStaticMeshInstanceVisualizationDescHandle Hit;
+		FStaticMeshInstanceVisualizationDescHandle Dead;
+	};
 
+	FStaticMeshInstanceVisualizationDescHandle CreateStateVisual(
+		const FStaticMeshInstanceVisualizationDesc& BaseDesc,
+		const FLinearColor& Color);
+
+	/** 원본 Descriptor별 Hit/Dead Descriptor 캐시. */
+	TMap<int32, FStateVisualHandles> StateVisualHandlesByBaseHandle;
+
+	/** 런타임 MID가 GC되지 않도록 월드 Subsystem이 소유한다. */
 	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> DaySpawnMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> NightSpawnMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> HitMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> DeadMaterial;
-
-	FStaticMeshInstanceVisualizationDescHandle DaySpawnHandle;
-	FStaticMeshInstanceVisualizationDescHandle NightSpawnHandle;
-	FStaticMeshInstanceVisualizationDescHandle HitHandle;
-	FStaticMeshInstanceVisualizationDescHandle DeadHandle;
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> StateMaterials;
 };

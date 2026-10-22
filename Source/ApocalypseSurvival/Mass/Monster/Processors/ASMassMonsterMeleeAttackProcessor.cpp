@@ -18,6 +18,8 @@
 UASMassMonsterMeleeAttackProcessor::UASMassMonsterMeleeAttackProcessor()
 	: EntityQuery(*this)
 {
+	// DefaultMass.ini 또는 맵별 Processor 설정에 의존하지 않고 모든 게임 월드에서 근접 공격을 등록한다.
+	bAutoRegisterWithProcessingPhases = true;
 	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Server);
 	ExecutionOrder.ExecuteInGroup = UE::Mass::ProcessorGroupNames::Tasks;
 	bRequiresGameThreadExecution = true;
@@ -83,7 +85,7 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 			const FVector SourceLocation = Transforms[EntityIt].GetTransform().GetLocation();
 			const float EffectiveAttackRange = Combat.bUseFallbackMelee
 				? Config.FallbackMeleeAttackRange
-				: Config.AttackRange;
+				: Config.AttackRange + Config.HitRadius;
 			const float EffectiveAttackPower = Combat.bUseFallbackMelee
 				? Config.FallbackMeleeAttackPower
 				: RuntimeStats[EntityIt].AttackPower;
