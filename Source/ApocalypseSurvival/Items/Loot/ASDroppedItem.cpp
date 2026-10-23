@@ -81,6 +81,8 @@ AASDroppedItem::AASDroppedItem()
 	InteractionCollision->SetGenerateOverlapEvents(false);
 	ItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ItemMesh"));
 	ItemMesh->SetupAttachment(InteractionCollision);
+	// The fixed top-down camera looks along X; place the mesh's long X axis across the screen.
+	ItemMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	ItemMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")));
 	ItemMesh->SetRelativeScale3D(FVector(0.2f));
 	ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -165,7 +167,8 @@ void AASDroppedItem::HandleInventoryChanged()
 		ItemMesh->SetStaticMesh(WorldMesh);
 		ItemMesh->SetRelativeScale3D(FVector::OneVector);
 		// Include the actual item's mesh bounds in the cursor hit area.
-		InteractionCollision->SetBoxExtent(WorldMesh->GetBounds().BoxExtent.ComponentMax(FVector(30)));
+		const FBox RotatedBounds = WorldMesh->GetBoundingBox().TransformBy(ItemMesh->GetRelativeTransform());
+		InteractionCollision->SetBoxExtent(RotatedBounds.GetExtent().ComponentMax(FVector(30)));
 	}
 	if (UASDroppedItemNameWidget* Label = Cast<UASDroppedItemNameWidget>(NameLabel->GetUserWidgetObject()))
 		Label->SetItem(this);
