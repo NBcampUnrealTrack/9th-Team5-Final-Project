@@ -122,6 +122,10 @@ void FASMassMonsterConfigFragment::Validate()
 	TargetRefreshInterval = FMath::Max(0.01f, TargetRefreshInterval);
 	PathRefreshInterval = FMath::Max(0.01f, PathRefreshInterval);
 	TargetMoveRepathDistance = FMath::Max(0.0f, TargetMoveRepathDistance);
+	BlockingTargetSearchRadius = FMath::Max(0.0f, BlockingTargetSearchRadius);
+	BlockingTargetMinForwardDot = FMath::Clamp(BlockingTargetMinForwardDot, -1.0f, 1.0f);
+	BlockingTargetStuckSeconds = FMath::Max(0.0f, BlockingTargetStuckSeconds);
+	BlockingTargetMinProgressDistance = FMath::Max(1.0f, BlockingTargetMinProgressDistance);
 	DeathDespawnDelay = FMath::Max(0.0f, DeathDespawnDelay);
 }
 

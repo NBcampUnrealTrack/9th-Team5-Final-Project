@@ -92,6 +92,17 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 	TArray<FASTargetSnapshot> TargetSnapshots;
 	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
 		EASMonsterTargetCapability::PrimaryTarget, TargetSnapshots);
+	TArray<FASTargetSnapshot> BlockingSnapshots;
+	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
+		EASMonsterTargetCapability::BlockingTarget, BlockingSnapshots);
+	for (const FASTargetSnapshot& Snapshot : BlockingSnapshots)
+	{
+		if (!TargetSnapshots.ContainsByPredicate([&Snapshot](const FASTargetSnapshot& Existing)
+			{ return Existing.Handle == Snapshot.Handle; }))
+		{
+			TargetSnapshots.Add(Snapshot);
+		}
+	}
 	EntityQuery.ForEachEntityChunk(Context, [this, World, TargetSubsystem, CurrentTime, DeltaTime, TargetSnapshots](FMassExecutionContext& Context)
 	{
 		const TArrayView<FTransformFragment> Transforms = Context.GetMutableFragmentView<FTransformFragment>();
@@ -127,10 +138,10 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 					break;
 				}
 				// Behavior의 Target 갱신 주기보다 최신인 Registry Snapshot을 사용한다.
-				// Windup 직전에 오래된 CachedTargetLocation을 다시 바라보면 텔레그래프와 실제 돌진 방향이 어긋난다.
-				FVector ChargeTargetLocation = Targets[EntityIt].CachedTargetLocation;
+				// Windup 직전에 오래된 ActiveTarget 위치를 다시 바라보면 텔레그래프와 실제 돌진 방향이 어긋난다.
+				FVector ChargeTargetLocation = Targets[EntityIt].GetActiveTargetLocation();
 				FASTargetSnapshot LatestSnapshot;
-				if (TargetSubsystem->ResolveTarget(Targets[EntityIt].PrimaryTarget, LatestSnapshot)
+				if (TargetSubsystem->ResolveTarget(Targets[EntityIt].GetActiveTarget(), LatestSnapshot)
 					&& LatestSnapshot.bAlive && LatestSnapshot.Actor.IsValid())
 				{
 					ChargeTargetLocation = LatestSnapshot.Location;
@@ -151,7 +162,7 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				Combat.LockedDirection = Direction;
 				// Windup 시작 순간의 최신 위치를 고정한다. 이후에는 경고 표시와 실제 돌진이 같은 방향을 유지한다.
 				Combat.LockedTargetLocation = ChargeTargetLocation;
-				Combat.LockedTarget = Targets[EntityIt].PrimaryTarget;
+				Combat.LockedTarget = Targets[EntityIt].GetActiveTarget();
 				Combat.ChargeDistanceTraveled = 0.0f;
 				Combat.bPrimaryEffectApplied = false;
 				Combat.PhaseEndTimeSeconds = CurrentTime + Config.ChargeWindupDuration;
@@ -189,7 +200,8 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 						continue;
 					}
 
-					ASMassMonsterDamage::ApplyToActor(Snapshot.Actor.Get(), RuntimeStats[EntityIt].AttackPower, Start);
+					ASMassMonsterDamage::ApplyToActor(Snapshot.Actor.Get(), RuntimeStats[EntityIt].AttackPower,
+						Start, Snapshot.Location);
 					HitTargets.Add(Snapshot.Handle);
 					Combat.bPrimaryEffectApplied = true;
 				}

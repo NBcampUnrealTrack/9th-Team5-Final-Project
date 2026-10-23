@@ -44,20 +44,49 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTargetFragment : public FMassFragmen
 	GENERATED_BODY()
 
 	FASTargetHandle PrimaryTarget;
-	FVector CachedTargetLocation = FVector::ZeroVector;
+	FASTargetHandle BlockingTarget;
+	FVector CachedPrimaryTargetLocation = FVector::ZeroVector;
+	FVector CachedBlockingTargetLocation = FVector::ZeroVector;
 	float RefreshTimeRemaining = 0.0f;
 	float TargetLockTimeRemaining = 0.0f;
 	bool bRefreshScheduleInitialized = false;
 
-	bool HasTarget() const
+	bool HasPrimaryTarget() const
 	{
 		return PrimaryTarget.IsValid();
+	}
+
+	bool HasBlockingTarget() const
+	{
+		return BlockingTarget.IsValid();
+	}
+
+	bool HasTarget() const
+	{
+		return HasBlockingTarget() || HasPrimaryTarget();
+	}
+
+	FASTargetHandle GetActiveTarget() const
+	{
+		return HasBlockingTarget() ? BlockingTarget : PrimaryTarget;
+	}
+
+	const FVector& GetActiveTargetLocation() const
+	{
+		return HasBlockingTarget() ? CachedBlockingTargetLocation : CachedPrimaryTargetLocation;
+	}
+
+	void ClearBlockingTarget()
+	{
+		BlockingTarget = FASTargetHandle();
+		CachedBlockingTargetLocation = FVector::ZeroVector;
 	}
 
 	void Reset()
 	{
 		PrimaryTarget = FASTargetHandle();
-		CachedTargetLocation = FVector::ZeroVector;
+		CachedPrimaryTargetLocation = FVector::ZeroVector;
+		ClearBlockingTarget();
 		RefreshTimeRemaining = 0.0f;
 		TargetLockTimeRemaining = 0.0f;
 	}
@@ -157,8 +186,11 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterNavigationFragment : public FMassFra
 	GENERATED_BODY()
 
 	FVector LastRequestedGoal = FVector::ZeroVector;
+	FVector LastProgressLocation = FVector::ZeroVector;
 	float PathRefreshTimeRemaining = 0.0f;
+	float StuckTimeSeconds = 0.0f;
 	bool bHasRequestedGoal = false;
+	bool bHasProgressSample = false;
 };
 
 /**
@@ -347,6 +379,22 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
 	float TargetMoveRepathDistance = 150.0f;
+
+	/** PrimaryTarget 경로 실패 또는 이동 정체 시 차단 후보를 탐색할 전방 반경이다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "cm"))
+	float BlockingTargetSearchRadius = 600.0f;
+
+	/** 차단 후보가 PrimaryTarget 방향과 이루어야 하는 최소 2D 내적이다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float BlockingTargetMinForwardDot = 0.25f;
+
+	/** 정상적인 이동 요청 중 이 시간만큼 진행하지 못하면 BlockingTarget 탐색을 시작한다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "s"))
+	float BlockingTargetStuckSeconds = 0.75f;
+
+	/** 정체 판정에서 실제 진행으로 인정할 최소 2D 이동 거리다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "1.0", Units = "cm"))
+	float BlockingTargetMinProgressDistance = 20.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
 	float DeathDespawnDelay = 1.5f;

@@ -88,7 +88,7 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 
 			FASTargetSnapshot TargetSnapshot;
 			const FVector EntityLocation = Transforms[EntityIt].GetTransform().GetLocation();
-			if (!TargetSubsystem->ResolveTarget(Targets[EntityIt].PrimaryTarget, TargetSnapshot)
+			if (!TargetSubsystem->ResolveTarget(Targets[EntityIt].GetActiveTarget(), TargetSnapshot)
 				|| !TargetSnapshot.bAlive || !TargetSnapshot.bAttackable || !TargetSnapshot.Actor.IsValid()
 				|| FVector::DistSquared2D(EntityLocation, TargetSnapshot.Location) > FMath::Square(Config.AttackRange))
 			{

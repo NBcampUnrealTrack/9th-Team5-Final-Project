@@ -1,5 +1,6 @@
 #include "Mass/Monster/Targeting/ASMonsterTargetableComponent.h"
 
+#include "Mass/Monster/Combat/ASMonsterDamageable.h"
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Mass/Monster/Targeting/ASMonsterTargetable.h"
 #include "Engine/World.h"
@@ -63,7 +64,16 @@ bool UASMonsterTargetableComponent::IsTargetable() const
 
 	if (Owner->GetClass()->ImplementsInterface(UASMonsterTargetable::StaticClass()))
 	{
-		return IASMonsterTargetable::Execute_IsMonsterTargetable(const_cast<AActor*>(Owner));
+		if (!IASMonsterTargetable::Execute_IsMonsterTargetable(const_cast<AActor*>(Owner)))
+		{
+			return false;
+		}
+	}
+
+	if (Owner->GetClass()->ImplementsInterface(UASMonsterDamageable::StaticClass())
+		&& !IASMonsterDamageable::Execute_IsAliveForMonsterTargeting(const_cast<AActor*>(Owner)))
+	{
+		return false;
 	}
 
 	return true;

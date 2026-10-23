@@ -100,13 +100,14 @@ namespace ASMassMonsterBehavior
 	{
 		const FASTargetHandle PreviousTarget = Target.PrimaryTarget;
 		Target.PrimaryTarget = Candidate.Snapshot.Handle;
-		Target.CachedTargetLocation = Candidate.Snapshot.Location;
+		Target.CachedPrimaryTargetLocation = Candidate.Snapshot.Location;
 		if (PreviousTarget == Target.PrimaryTarget)
 		{
 			return;
 		}
 
 		Target.TargetLockTimeRemaining = Config.MinTargetLockSeconds;
+		Target.ClearBlockingTarget();
 #if !UE_BUILD_SHIPPING
 		UE_LOG(LogApocalypseSurvival, Log,
 			TEXT("[MassMonsterTarget] Entity=%d Old=%d:%d New=%d:%d Actor=%s Reason=%s NetMode=%d Score=%.2f Threat=%.2f"),
@@ -137,7 +138,7 @@ namespace ASMassMonsterBehavior
 		}
 
 		FASTargetSnapshot CurrentSnapshot;
-		if (Target.HasTarget() && TargetSubsystem.ResolveTarget(Target.PrimaryTarget, CurrentSnapshot)
+		if (Target.HasPrimaryTarget() && TargetSubsystem.ResolveTarget(Target.PrimaryTarget, CurrentSnapshot)
 			&& IsUsablePrimaryTarget(CurrentSnapshot))
 		{
 			const bool bCurrentHasThreat = Threats.GetEffectiveThreat(
@@ -229,13 +230,39 @@ namespace ASMassMonsterBehavior
 			return;
 		}
 
-		Target.CachedTargetLocation = CurrentCandidate.Snapshot.Location;
+		Target.CachedPrimaryTargetLocation = CurrentCandidate.Snapshot.Location;
 		const bool bHasBetterCandidate = BestCandidate.Snapshot.Handle != Target.PrimaryTarget
 			&& BestCandidate.Score >= CurrentCandidate.Score + Config.TargetSwitchScoreMargin;
 		if (bHasBetterCandidate && Target.TargetLockTimeRemaining <= 0.0f && !IsTargetSwitchDeferred(Combat))
 		{
 			SetTarget(World, Entity, Target, BestCandidate, Config);
 		}
+	}
+
+	static void RefreshBlockingTarget(const UASMonsterTargetSubsystem& TargetSubsystem,
+		FASMassMonsterTargetFragment& Target)
+	{
+		if (!Target.HasPrimaryTarget())
+		{
+			Target.ClearBlockingTarget();
+			return;
+		}
+
+		if (!Target.HasBlockingTarget())
+		{
+			return;
+		}
+
+		FASTargetSnapshot BlockingSnapshot;
+		if (!TargetSubsystem.ResolveTarget(Target.BlockingTarget, BlockingSnapshot)
+			|| !BlockingSnapshot.bAlive || !BlockingSnapshot.bAttackable || !BlockingSnapshot.Actor.IsValid()
+			|| !ASHasAllTargetCapabilities(BlockingSnapshot.Capabilities, EASMonsterTargetCapability::BlockingTarget))
+		{
+			Target.ClearBlockingTarget();
+			return;
+		}
+
+		Target.CachedBlockingTargetLocation = BlockingSnapshot.Location;
 	}
 
 	static void SetCombatApproachState(
@@ -245,7 +272,7 @@ namespace ASMassMonsterBehavior
 		const FASMassMonsterTargetFragment& Target,
 		FASMassMonsterBehaviorFragment& Behavior)
 	{
-		const float DistanceSquared = FVector::DistSquared2D(EntityLocation, Target.CachedTargetLocation);
+		const float DistanceSquared = FVector::DistSquared2D(EntityLocation, Target.GetActiveTargetLocation());
 		// HitRadius는 근접 유닛의 중심점-대상 거리 보정용이다.
 		// 원거리/돌진 유닛에 더하면 사거리보다 멀리서 Attack 상태가 되어 이동을 멈출 수 있다.
 		const float EffectiveAttackRange = Combat.bUseFallbackMelee
@@ -324,6 +351,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 			}
 
 			Target.TargetLockTimeRemaining = FMath::Max(0.0f, Target.TargetLockTimeRemaining - DeltaTime);
+			ASMassMonsterBehavior::RefreshBlockingTarget(*TargetSubsystem, Target);
 			Target.RefreshTimeRemaining = FMath::Max(0.0f, Target.RefreshTimeRemaining - DeltaTime);
 			if (!Target.bRefreshScheduleInitialized)
 			{
@@ -346,7 +374,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 						EntityLocation, Target, Threat, Combats[EntityIt], Home, Config, true, CurrentTime);
 				}
 
-				if (!Target.HasTarget())
+				if (!Target.HasPrimaryTarget())
 				{
 					Behavior.State = EASMassMonsterState::Idle;
 					continue;
@@ -393,7 +421,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 					EntityLocation, Target, Threat, Combats[EntityIt], Home, Config, false, CurrentTime);
 			}
 
-			if (!Target.HasTarget())
+			if (!Target.HasPrimaryTarget())
 			{
 				Behavior.State = bAtHome ? EASMassMonsterState::Idle : EASMassMonsterState::ReturnHome;
 				continue;

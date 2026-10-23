@@ -130,6 +130,22 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", Units = "s"))
 	float MinTargetLockSeconds = 0.75f;
 
+	/** PrimaryTarget 경로 실패 또는 이동 정체 시 차단 후보를 탐색할 전방 반경이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "cm"))
+	float BlockingTargetSearchRadius = 600.0f;
+
+	/** 차단 후보가 PrimaryTarget 방향과 이루어야 하는 최소 2D 내적이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float BlockingTargetMinForwardDot = 0.25f;
+
+	/** 정상적인 이동 요청 중 이 시간만큼 진행하지 못하면 BlockingTarget 탐색을 시작한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "s"))
+	float BlockingTargetStuckSeconds = 0.75f;
+
+	/** 정체 판정에서 실제 진행으로 인정할 최소 2D 이동 거리다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "1.0", Units = "cm"))
+	float BlockingTargetMinProgressDistance = 20.0f;
+
 	/** CombatComponent가 활성화할 Ability의 태그. 예: Ability.Monster.Attack.Ranged */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (Categories = "Ability.Monster"))
 	FGameplayTag AttackAbilityTag;

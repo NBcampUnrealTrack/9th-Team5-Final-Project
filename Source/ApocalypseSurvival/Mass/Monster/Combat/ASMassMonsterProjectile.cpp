@@ -1,9 +1,10 @@
 #include "Mass/Monster/Combat/ASMassMonsterProjectile.h"
 
 #include "Components/SphereComponent.h"
-#include "GameFramework/Pawn.h"
+#include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Mass/Monster/Combat/ASMassMonsterDamageBridge.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterProjectile)
@@ -20,7 +21,8 @@ AASMassMonsterProjectile::AASMassMonsterProjectile()
 	CollisionComponent->SetCollisionObjectType(ECC_WorldDynamic);
 	CollisionComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
 	CollisionComponent->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
-	CollisionComponent->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	CollisionComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+	CollisionComponent->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
 	CollisionComponent->SetGenerateOverlapEvents(true);
 	CollisionComponent->SetCanEverAffectNavigation(false);
 	CollisionComponent->OnComponentBeginOverlap.AddDynamic(this, &AASMassMonsterProjectile::HandleOverlap);
@@ -75,14 +77,17 @@ void AASMassMonsterProjectile::HandleOverlap(
 		return;
 	}
 
-	const APawn* Pawn = Cast<APawn>(OtherActor);
-	if (!Pawn || !Pawn->IsPlayerControlled())
+	UASMonsterTargetSubsystem* TargetSubsystem = GetWorld()
+		? GetWorld()->GetSubsystem<UASMonsterTargetSubsystem>()
+		: nullptr;
+	if (!TargetSubsystem || !TargetSubsystem->FindTargetForActor(OtherActor).IsValid())
 	{
 		return;
 	}
 
 	const ASMassMonsterDamage::EApplyResult Result =
-		ASMassMonsterDamage::ApplyToActor(OtherActor, Damage, SourceLocation);
+		ASMassMonsterDamage::ApplyToActor(OtherActor, Damage, SourceLocation,
+			SweepResult.ImpactPoint, this);
 	if (Result != ASMassMonsterDamage::EApplyResult::InvalidTarget)
 	{
 		EndProjectile();

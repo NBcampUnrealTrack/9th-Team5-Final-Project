@@ -91,14 +91,15 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 			const float EffectiveCooldown = Combat.bUseFallbackMelee
 				? Config.FallbackMeleeAttackCooldown
 				: Config.AttackCooldown;
-			if (!TargetSubsystem->ResolveTarget(Targets[EntityIt].PrimaryTarget, TargetSnapshot)
+			if (!TargetSubsystem->ResolveTarget(Targets[EntityIt].GetActiveTarget(), TargetSnapshot)
 				|| !TargetSnapshot.bAlive || !TargetSnapshot.bAttackable || !TargetSnapshot.Actor.IsValid()
 				|| FVector::DistSquared2D(SourceLocation, TargetSnapshot.Location) > FMath::Square(EffectiveAttackRange))
 			{
 				continue;
 			}
 
-			ASMassMonsterDamage::ApplyToActor(TargetSnapshot.Actor.Get(), EffectiveAttackPower, SourceLocation);
+			ASMassMonsterDamage::ApplyToActor(TargetSnapshot.Actor.Get(), EffectiveAttackPower,
+				SourceLocation, TargetSnapshot.Location);
 			Combat.NextAttackTimeSeconds = CurrentTime + EffectiveCooldown;
 			Combat.AttackState = EASMassMonsterAttackState::Recovering;
 		}

@@ -39,6 +39,10 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 		Config.ProximityHalfScoreDistance = MonsterDefinition->ProximityHalfScoreDistance;
 		Config.TargetSwitchScoreMargin = MonsterDefinition->TargetSwitchScoreMargin;
 		Config.MinTargetLockSeconds = MonsterDefinition->MinTargetLockSeconds;
+		Config.BlockingTargetSearchRadius = MonsterDefinition->BlockingTargetSearchRadius;
+		Config.BlockingTargetMinForwardDot = MonsterDefinition->BlockingTargetMinForwardDot;
+		Config.BlockingTargetStuckSeconds = MonsterDefinition->BlockingTargetStuckSeconds;
+		Config.BlockingTargetMinProgressDistance = MonsterDefinition->BlockingTargetMinProgressDistance;
 		Config.DeathDespawnDelay = MonsterDefinition->DeathDespawnDelay;
 	}
 	Config.Validate();

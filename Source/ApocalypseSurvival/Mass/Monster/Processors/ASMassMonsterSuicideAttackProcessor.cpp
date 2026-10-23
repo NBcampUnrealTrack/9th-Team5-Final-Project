@@ -80,6 +80,17 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 	TArray<FASTargetSnapshot> TargetSnapshots;
 	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
 		EASMonsterTargetCapability::PrimaryTarget, TargetSnapshots);
+	TArray<FASTargetSnapshot> BlockingSnapshots;
+	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
+		EASMonsterTargetCapability::BlockingTarget, BlockingSnapshots);
+	for (const FASTargetSnapshot& Snapshot : BlockingSnapshots)
+	{
+		if (!TargetSnapshots.ContainsByPredicate([&Snapshot](const FASTargetSnapshot& Existing)
+			{ return Existing.Handle == Snapshot.Handle; }))
+		{
+			TargetSnapshots.Add(Snapshot);
+		}
+	}
 	EntityQuery.ForEachEntityChunk(Context, [World, CurrentTime, TargetSnapshots](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
@@ -133,7 +144,8 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 					continue;
 				}
 
-				ASMassMonsterDamage::ApplyToActor(Snapshot.Actor.Get(), RuntimeStats[EntityIt].AttackPower, ExplosionOrigin);
+				ASMassMonsterDamage::ApplyToActor(Snapshot.Actor.Get(), RuntimeStats[EntityIt].AttackPower,
+					ExplosionOrigin, Snapshot.Location);
 			}
 
 			Combat.bPrimaryEffectApplied = true;

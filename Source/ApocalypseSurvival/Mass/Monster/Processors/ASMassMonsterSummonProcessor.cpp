@@ -129,7 +129,7 @@ void UASMassMonsterSummonProcessor::Execute(FMassEntityManager& EntityManager, F
 				}
 
 				Combat.LockedTarget = Targets[EntityIt].PrimaryTarget;
-				Combat.LockedTargetLocation = Targets[EntityIt].CachedTargetLocation;
+				Combat.LockedTargetLocation = Targets[EntityIt].CachedPrimaryTargetLocation;
 				Combat.PhaseEndTimeSeconds = CurrentTime + Config.SummonWindupDuration;
 				Combat.AttackState = EASMassMonsterAttackState::Windup;
 				continue;

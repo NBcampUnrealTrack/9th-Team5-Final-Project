@@ -306,7 +306,7 @@ void UASMassMonsterSubsystem::ConfigureInitialTargets(const TConstArrayView<FMas
 		if (FASMassMonsterTargetFragment* Target = EntityManager.GetFragmentDataPtr<FASMassMonsterTargetFragment>(Entity))
 		{
 			Target->PrimaryTarget = PrimaryTarget;
-			Target->CachedTargetLocation = TargetLocation;
+			Target->CachedPrimaryTargetLocation = TargetLocation;
 			if (const FASMassMonsterConfigFragment* Config =
 				EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity))
 			{
@@ -383,17 +383,12 @@ int32 UASMassMonsterSubsystem::SetManagedMonsterWorldBehavior(
 
 		FASMassMonsterHealthFragment* Health = EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
 		FASMassMonsterBehaviorFragment* Behavior = EntityManager.GetFragmentDataPtr<FASMassMonsterBehaviorFragment>(Entity);
-		FASMassMonsterTargetFragment* Target = EntityManager.GetFragmentDataPtr<FASMassMonsterTargetFragment>(Entity);
-		FASMassMonsterThreatFragment* Threats = EntityManager.GetFragmentDataPtr<FASMassMonsterThreatFragment>(Entity);
-		if (!Health || Health->CurrentHealth <= 0.0f || !Behavior || !Target || !Threats)
+		if (!Health || Health->CurrentHealth <= 0.0f || !Behavior)
 		{
 			continue;
 		}
 
 		Behavior->WorldBehavior = WorldBehavior;
-		Behavior->State = EASMassMonsterState::Idle;
-		Target->Reset();
-		Threats->Reset();
 		++UpdatedCount;
 	}
 	return UpdatedCount;
