@@ -46,6 +46,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Loot|Appearance")
 	EASLootRarity GetLootRarity() const { return LootRarity; }
+	
+	/** 루팅 창 제목. 비어 있으면 희귀도 기본 문구를 쓴다. (예: 시체 상자 "OOO의 시체") */
+	UFUNCTION(BlueprintPure, Category = "Loot")
+	FText GetLootDisplayName() const { return LootDisplayName; }
+
+	/** 서버 전용. 스폰 직후(FinishSpawning 전)에 넣으면 첫 복제부터 같이 간다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
+	void SetLootDisplayName(const FText& InDisplayName);
 
 	/** Applied once after construction. Also used by BeginPlay; returns the cached result on repeat calls.
 	 * Failed additions are rolled back. Spawn callers destroy the rejected chest.
@@ -125,10 +133,13 @@ private:
 	int32 LootAppearanceMaterialIndex = 0;
 	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
 		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
-	FLinearColor LootRarityColor = FLinearColor(0.15f, 0.85f, 0.25f, 1.0f);
+	FLinearColor LootRarityColor = FLinearColor::White;
 	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
 		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
 	FName LootRarityColorParameter = NAME_None;
+	
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Loot", meta = (AllowPrivateAccess = "true"))
+	FText LootDisplayName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
 	float InteractionRange = 250.0f;

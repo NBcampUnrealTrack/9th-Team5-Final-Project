@@ -229,6 +229,11 @@ void UASLootWidget::RefreshLootHeader()
 				case EASLootRarity::Legendary: Title = FText::FromString(TEXT("전설 보급 상자")); Accent = FLinearColor(0.96f, 0.60f, 0.28f, 1.0f); break;
 				default: break;
 				}
+				// 표시 이름이 있으면 희귀도 문구 대신 사용 (시체 상자 등)
+				if (!Chest->GetLootDisplayName().IsEmpty())
+				{
+					Title = Chest->GetLootDisplayName();
+				}
 			}
 		}
 		LootTitleText->SetText(Title);

@@ -26,9 +26,11 @@ AASLootChest::AASLootChest()
 
 	ChestMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ChestMesh"));
 	ChestMesh->SetupAttachment(SceneRoot);
+	ChestMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 
 	InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
 	InteractionCollision->SetupAttachment(SceneRoot);
+	InteractionCollision->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	InteractionCollision->InitBoxExtent(FVector(75.0f, 75.0f, 75.0f));
 	InteractionCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	InteractionCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -47,6 +49,7 @@ void AASLootChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(AASLootChest, LootAppearanceMaterialIndex);
 	DOREPLIFETIME(AASLootChest, LootRarityColor);
 	DOREPLIFETIME(AASLootChest, LootRarityColorParameter);
+	DOREPLIFETIME(AASLootChest, LootDisplayName);
 }
 
 void AASLootChest::SetLootRarityAppearance(const EASLootRarity Rarity, UStaticMesh* MeshOverride,
@@ -97,6 +100,14 @@ void AASLootChest::ApplyLootRarityAppearance()
 	if (!IsValid(DynamicMaterial)) return;
 	DynamicMaterial->SetVectorParameterValue(LootRarityColorParameter, LootRarityColor);
 	ChestMesh->SetMaterial(LootAppearanceMaterialIndex, DynamicMaterial);
+}
+
+void AASLootChest::SetLootDisplayName(const FText& InDisplayName)
+{
+	if (HasAuthority())
+	{
+		LootDisplayName = InDisplayName;
+	}
 }
 
 bool AASLootChest::SetInitialLoot(const TArray<FASItemGrant>& Items)
