@@ -258,14 +258,8 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 		return;
 	}
 
-	if (!bNightAggressive && bContinueTrackingNightTarget)
-	{
-		// 밤에 잡은 타깃은 낮 탐지·해제 반경을 적용하지 않고, 타깃 자체가 무효해질 때까지 유지한다.
-		bContinueTrackingNightTarget = Targeting->ValidateTarget(true);
-	}
-
 	// 낮에는 필드 스폰 몬스터만 일반 탐지 거리에서 반응한다.
-	// 단, 밤에 이미 추격하던 몬스터는 현재 타깃을 계속 추격한다.
+	// 단, 밤에 한 번이라도 추격했던 몬스터는 사망 전까지 전장에 남는다.
 	if (!bNightAggressive && !bContinueTrackingNightTarget && !Monster->CanAggroDuringDay())
 	{
 		Targeting->ClearTarget();
@@ -317,7 +311,8 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 	}
 	else if (bContinueTrackingNightTarget)
 	{
-		bHasTarget = Targeting->ValidateTarget(true);
+		// 기존 타깃이 죽거나 Pawn이 교체되어도 홈으로 돌아가지 않고, 다른 살아 있는 플레이어를 계속 찾는다.
+		bHasTarget = Targeting->ValidateTarget(true) || Targeting->AcquireTargetAnywhere();
 	}
 	else
 	{
@@ -328,9 +323,8 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 	if (!IsValid(Target))
 	{
 		StateTreeTarget.Reset();
-		bContinueTrackingNightTarget = false;
 		// 플레이어가 추적 해제 거리 밖으로 먼저 빠진 경우에도 전투를 끝내고 홈으로 복귀한다.
-		if (!bNightAggressive && bHasEngagedDayTarget && Monster->HasSpawnHome()
+		if (!bNightAggressive && !bContinueTrackingNightTarget && bHasEngagedDayTarget && Monster->HasSpawnHome()
 			&& FVector::Dist2D(Monster->GetActorLocation(), Monster->GetSpawnHomeLocation()) > Monster->GetReturnAcceptanceRadius())
 		{
 			UpdateReturnToSpawn(*Monster, *Targeting);
@@ -344,7 +338,12 @@ void AASMonsterAIController::UpdateAggroAndMovement()
 		return;
 	}
 
-	if (!bNightAggressive)
+	if (bNightAggressive)
+	{
+		// 밤에 실제 플레이어를 한 번이라도 찾은 순간부터 이 몬스터의 홈 복귀는 영구적으로 비활성화한다.
+		bContinueTrackingNightTarget = true;
+	}
+	else if (!bContinueTrackingNightTarget)
 	{
 		bHasEngagedDayTarget = true;
 	}
@@ -374,7 +373,6 @@ void AASMonsterAIController::HandleNightStarted(int32 Day, bool bBossNight)
 {
 	RestoreMoveSpeed();
 	bNightAggressive = true;
-	bContinueTrackingNightTarget = false;
 	bReturningToSpawn = false;
 	bHasEngagedDayTarget = false;
 	UpdateAggroAndMovement();
@@ -385,14 +383,14 @@ void AASMonsterAIController::HandleNightEnded(int32 Day)
 	RestoreMoveSpeed();
 	bNightAggressive = false;
 	bReturningToSpawn = false;
-	bContinueTrackingNightTarget = false;
 
 	if (AASMonsterCharacter* Monster = ControlledMonster.Get())
 	{
 		if (UASMonsterTargetingComponent* Targeting = Monster->GetTargetingComponent())
 		{
-			bContinueTrackingNightTarget = Targeting->ValidateTarget(true);
-			bHasEngagedDayTarget = bContinueTrackingNightTarget;
+			// 밤에 이미 추격했거나, 종료 직전에 타깃을 잡고 있으면 이후 낮에도 홈 복귀 없이 추적한다.
+			bContinueTrackingNightTarget = bContinueTrackingNightTarget || Targeting->ValidateTarget(true);
+			bHasEngagedDayTarget = false;
 			if (bContinueTrackingNightTarget)
 			{
 				UpdateAggroAndMovement();

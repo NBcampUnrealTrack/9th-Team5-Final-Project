@@ -5,6 +5,7 @@
 #include "Mass/Monster/Combat/ASMassMonsterProjectile.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
 #include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
@@ -18,8 +19,11 @@
 UASMassMonsterRangedAttackProcessor::UASMassMonsterRangedAttackProcessor()
 	: EntityQuery(*this)
 {
+	// Entity Config에 Processor를 개별 등록하지 않아도 본맵/테스트맵에서 동일하게 실행한다.
+	bAutoRegisterWithProcessingPhases = true;
 	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Standalone | EProcessorExecutionFlags::Server);
 	ExecutionOrder.ExecuteInGroup = UE::Mass::ProcessorGroupNames::Tasks;
+	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterBehaviorProcessor::StaticClass()->GetFName());
 	bRequiresGameThreadExecution = true;
 }
 

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "MassEntityTypes.h"
+#include "MassRepresentationTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "ASMassMonsterTemporaryVisualFragment.generated.h"
 
@@ -28,4 +29,7 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTemporaryVisualFragment : public FMa
 	float HitFlashTimeRemaining = 0.0f;
 	EASMassMonsterTemporaryVisualState AppliedState = EASMassMonsterTemporaryVisualState::DaySpawn;
 	bool bHasAppliedState = false;
+
+	/** Entity Config의 원본 Descriptor. 상태 표현 종료 후 이 외형으로 돌아간다. */
+	FStaticMeshInstanceVisualizationDescHandle BaseVisualHandle;
 };
