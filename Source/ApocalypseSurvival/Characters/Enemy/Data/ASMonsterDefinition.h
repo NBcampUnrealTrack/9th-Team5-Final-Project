@@ -114,6 +114,22 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
 	float AggroDecayPerSecond = 25.0f;
 
+	/** 바로 인접한 일반 타깃이 받는 최대 거리 점수. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float ProximityScoreMax = 30.0f;
+
+	/** 이 거리에서 거리 점수가 최대치의 절반이 된다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "1.0", Units = "cm"))
+	float ProximityHalfScoreDistance = 600.0f;
+
+	/** 새 후보가 현재 타깃보다 이 점수만큼 높아야 일반 전환한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float TargetSwitchScoreMargin = 5.0f;
+
+	/** 타깃 변경 뒤 일반 전환을 막는 시간이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", Units = "s"))
+	float MinTargetLockSeconds = 0.75f;
+
 	/** CombatComponent가 활성화할 Ability의 태그. 예: Ability.Monster.Attack.Ranged */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (Categories = "Ability.Monster"))
 	FGameplayTag AttackAbilityTag;

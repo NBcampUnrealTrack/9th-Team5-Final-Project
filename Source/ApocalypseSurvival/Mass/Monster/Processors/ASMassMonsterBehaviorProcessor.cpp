@@ -1,5 +1,6 @@
 #include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
 
+#include "ApocalypseSurvival.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Engine/World.h"
@@ -14,6 +15,13 @@
 
 namespace ASMassMonsterBehavior
 {
+	struct FTargetCandidate
+	{
+		FASTargetSnapshot Snapshot;
+		float Score = -TNumericLimits<float>::Max();
+		float EffectiveThreat = 0.0f;
+	};
+
 	static float MakeRefreshInterval(const float BaseInterval, const FMassEntityHandle Entity)
 	{
 		const uint32 Bucket = GetTypeHash(Entity.Index) % 31u;
@@ -34,17 +42,200 @@ namespace ASMassMonsterBehavior
 		Target.RefreshTimeRemaining = FMath::Max(0.01f, NextRefreshDelay);
 	}
 
-	static bool CopySnapshotToTarget(const FASTargetSnapshot* Snapshot, FASMassMonsterTargetFragment& Target)
+	static bool IsUsablePrimaryTarget(const FASTargetSnapshot& Snapshot)
 	{
-		if (!Snapshot || !Snapshot->bAlive || !Snapshot->Actor.IsValid()
-			|| !ASHasAllTargetCapabilities(Snapshot->Capabilities, EASMonsterTargetCapability::PrimaryTarget))
+		return Snapshot.Handle.IsValid()
+			&& Snapshot.bAlive
+			&& Snapshot.bAttackable
+			&& Snapshot.Actor.IsValid()
+			&& ASHasAllTargetCapabilities(Snapshot.Capabilities, EASMonsterTargetCapability::PrimaryTarget);
+	}
+
+	static void AddCandidate(TArray<FASTargetSnapshot>& Candidates,
+		const FASTargetSnapshot& Snapshot)
+	{
+		if (!IsUsablePrimaryTarget(Snapshot))
 		{
-			return false;
+			return;
 		}
 
-		Target.PrimaryTarget = Snapshot->Handle;
-		Target.CachedTargetLocation = Snapshot->Location;
-		return true;
+		for (FASTargetSnapshot& Existing : Candidates)
+		{
+			if (Existing.Handle == Snapshot.Handle)
+			{
+				Existing = Snapshot;
+				return;
+			}
+		}
+
+		Candidates.Add(Snapshot);
+	}
+
+	static float CalculateProximityScore(const FVector& EntityLocation, const FVector& TargetLocation,
+		const FASMassMonsterConfigFragment& Config)
+	{
+		if (Config.ProximityScoreMax <= 0.0f)
+		{
+			return 0.0f;
+		}
+
+		const float Distance = FVector::Dist2D(EntityLocation, TargetLocation);
+		return Config.ProximityScoreMax / (1.0f + Distance / Config.ProximityHalfScoreDistance);
+	}
+
+	static bool IsTargetSwitchDeferred(const FASMassMonsterCombatFragment& Combat)
+	{
+		return Combat.AttackState == EASMassMonsterAttackState::Windup
+			|| Combat.AttackState == EASMassMonsterAttackState::Executing;
+	}
+
+	static const TCHAR* GetSelectionReason(const FTargetCandidate& Candidate)
+	{
+		return Candidate.EffectiveThreat > 0.0f ? TEXT("ThreatScore") : TEXT("ProximityScore");
+	}
+
+	static void SetTarget(const UWorld& World, const FMassEntityHandle Entity,
+		FASMassMonsterTargetFragment& Target, const FTargetCandidate& Candidate,
+		const FASMassMonsterConfigFragment& Config)
+	{
+		const FASTargetHandle PreviousTarget = Target.PrimaryTarget;
+		Target.PrimaryTarget = Candidate.Snapshot.Handle;
+		Target.CachedTargetLocation = Candidate.Snapshot.Location;
+		if (PreviousTarget == Target.PrimaryTarget)
+		{
+			return;
+		}
+
+		Target.TargetLockTimeRemaining = Config.MinTargetLockSeconds;
+#if !UE_BUILD_SHIPPING
+		UE_LOG(LogApocalypseSurvival, Log,
+			TEXT("[MassMonsterTarget] Entity=%d Old=%d:%d New=%d:%d Actor=%s Reason=%s NetMode=%d Score=%.2f Threat=%.2f"),
+			Entity.Index, PreviousTarget.Id, PreviousTarget.Generation,
+			Target.PrimaryTarget.Id, Target.PrimaryTarget.Generation, *GetNameSafe(Candidate.Snapshot.Actor.Get()), GetSelectionReason(Candidate),
+			static_cast<int32>(World.GetNetMode()), Candidate.Score, Candidate.EffectiveThreat);
+#endif
+	}
+
+	static void GatherCandidates(const UASMonsterTargetSubsystem& TargetSubsystem,
+		const FVector& EntityLocation, const FASMassMonsterTargetFragment& Target,
+		FASMassMonsterThreatFragment& Threats, const FASMassMonsterHomeFragment& Home,
+		const FASMassMonsterConfigFragment& Config, const bool bNightAssault,
+		const double CurrentTime, TArray<FASTargetSnapshot>& OutCandidates)
+	{
+		OutCandidates.Reset();
+		const float CandidateSearchRadius = bNightAssault ? Config.DetectionRadius : Home.DetectionRadius;
+		TargetSubsystem.FindTargetsInRange(EntityLocation, CandidateSearchRadius,
+			EASMonsterTargetCapability::PrimaryTarget, OutCandidates);
+		if (bNightAssault)
+		{
+			TArray<FASTargetSnapshot> GlobalCandidates;
+			TargetSubsystem.GetGlobalCandidateTargets(GlobalCandidates);
+			for (const FASTargetSnapshot& Snapshot : GlobalCandidates)
+			{
+				AddCandidate(OutCandidates, Snapshot);
+			}
+		}
+
+		FASTargetSnapshot CurrentSnapshot;
+		if (Target.HasTarget() && TargetSubsystem.ResolveTarget(Target.PrimaryTarget, CurrentSnapshot)
+			&& IsUsablePrimaryTarget(CurrentSnapshot))
+		{
+			const bool bCurrentHasThreat = Threats.GetEffectiveThreat(
+				Target.PrimaryTarget, CurrentTime, Config.AggroDecayPerSecond) > 0.0f;
+			const bool bCurrentInRange = bNightAssault
+				|| FVector::DistSquared2D(EntityLocation, CurrentSnapshot.Location) <= FMath::Square(Home.LoseTargetRadius);
+			if (bCurrentInRange || bCurrentHasThreat)
+			{
+				AddCandidate(OutCandidates, CurrentSnapshot);
+			}
+		}
+
+		for (FASMassMonsterThreatEntry& Entry : Threats.Entries)
+		{
+			if (!Entry.Target.IsValid())
+			{
+				continue;
+			}
+
+			const float EffectiveThreat = Threats.GetEffectiveThreat(
+				Entry.Target, CurrentTime, Config.AggroDecayPerSecond);
+			if (EffectiveThreat <= 0.0f)
+			{
+				Entry = FASMassMonsterThreatEntry();
+				continue;
+			}
+
+			FASTargetSnapshot ThreatSnapshot;
+			if (!TargetSubsystem.ResolveTarget(Entry.Target, ThreatSnapshot)
+				|| !IsUsablePrimaryTarget(ThreatSnapshot))
+			{
+				Entry = FASMassMonsterThreatEntry();
+				continue;
+			}
+
+			AddCandidate(OutCandidates, ThreatSnapshot);
+		}
+	}
+
+	static void RefreshPrimaryTarget(const UWorld& World, const FMassEntityHandle Entity,
+		const UASMonsterTargetSubsystem& TargetSubsystem, const FVector& EntityLocation,
+		FASMassMonsterTargetFragment& Target, FASMassMonsterThreatFragment& Threats,
+		const FASMassMonsterCombatFragment& Combat, const FASMassMonsterHomeFragment& Home,
+		const FASMassMonsterConfigFragment& Config, const bool bNightAssault, const double CurrentTime)
+	{
+		TArray<FASTargetSnapshot> Candidates;
+		GatherCandidates(TargetSubsystem, EntityLocation, Target, Threats, Home, Config, bNightAssault,
+			CurrentTime, Candidates);
+
+		FTargetCandidate BestCandidate;
+		FTargetCandidate CurrentCandidate;
+		bool bHasBestCandidate = false;
+		bool bHasCurrentCandidate = false;
+		for (const FASTargetSnapshot& Snapshot : Candidates)
+		{
+			FTargetCandidate Candidate;
+			Candidate.Snapshot = Snapshot;
+			Candidate.EffectiveThreat = Threats.GetEffectiveThreat(
+				Snapshot.Handle, CurrentTime, Config.AggroDecayPerSecond);
+			Candidate.Score = Snapshot.BaseScore
+				+ CalculateProximityScore(EntityLocation, Snapshot.Location, Config)
+				+ Candidate.EffectiveThreat;
+
+			const bool bHigherScore = !bHasBestCandidate || Candidate.Score > BestCandidate.Score;
+			const bool bBreaksTie = bHasBestCandidate && FMath::IsNearlyEqual(Candidate.Score, BestCandidate.Score)
+				&& Candidate.Snapshot.Handle.Id < BestCandidate.Snapshot.Handle.Id;
+			if (bHigherScore || bBreaksTie)
+			{
+				BestCandidate = Candidate;
+				bHasBestCandidate = true;
+			}
+
+			if (Snapshot.Handle == Target.PrimaryTarget)
+			{
+				CurrentCandidate = Candidate;
+				bHasCurrentCandidate = true;
+			}
+		}
+
+		if (!bHasBestCandidate)
+		{
+			ClearTarget(Target, Config.TargetRefreshInterval);
+			return;
+		}
+
+		if (!bHasCurrentCandidate)
+		{
+			SetTarget(World, Entity, Target, BestCandidate, Config);
+			return;
+		}
+
+		Target.CachedTargetLocation = CurrentCandidate.Snapshot.Location;
+		const bool bHasBetterCandidate = BestCandidate.Snapshot.Handle != Target.PrimaryTarget
+			&& BestCandidate.Score >= CurrentCandidate.Score + Config.TargetSwitchScoreMargin;
+		if (bHasBetterCandidate && Target.TargetLockTimeRemaining <= 0.0f && !IsTargetSwitchDeferred(Combat))
+		{
+			SetTarget(World, Entity, Target, BestCandidate, Config);
+		}
 	}
 
 	static void SetCombatApproachState(
@@ -86,6 +277,7 @@ void UASMassMonsterBehaviorProcessor::ConfigureQueries(const TSharedRef<FMassEnt
 	EntityQuery.AddRequirement<FASMassMonsterHomeFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterThreatFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 }
 
@@ -102,7 +294,8 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 	}
 
 	const float DeltaTime = Context.GetDeltaTimeSeconds();
-	EntityQuery.ForEachEntityChunk(Context, [TargetSubsystem, DeltaTime](FMassExecutionContext& Context)
+	const double CurrentTime = World->GetTimeSeconds();
+	EntityQuery.ForEachEntityChunk(Context, [World, TargetSubsystem, DeltaTime, CurrentTime](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
@@ -110,12 +303,14 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 		const TConstArrayView<FASMassMonsterHomeFragment> Homes = Context.GetFragmentView<FASMassMonsterHomeFragment>();
 		const TArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetMutableFragmentView<FASMassMonsterBehaviorFragment>();
 		const TArrayView<FASMassMonsterTargetFragment> Targets = Context.GetMutableFragmentView<FASMassMonsterTargetFragment>();
+		const TArrayView<FASMassMonsterThreatFragment> Threats = Context.GetMutableFragmentView<FASMassMonsterThreatFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
 			FASMassMonsterBehaviorFragment& Behavior = Behaviors[EntityIt];
 			FASMassMonsterTargetFragment& Target = Targets[EntityIt];
+			FASMassMonsterThreatFragment& Threat = Threats[EntityIt];
 			const FASMassMonsterHomeFragment& Home = Homes[EntityIt];
 			const FVector EntityLocation = Transforms[EntityIt].GetTransform().GetLocation();
 			const FMassEntityHandle Entity = Context.GetEntity(EntityIt);
@@ -124,10 +319,11 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 			{
 				Behavior.State = EASMassMonsterState::Dead;
 				Target.Reset();
+				Threat.Reset();
 				continue;
 			}
 
-			Target.Aggro = FMath::Max(0.0f, Target.Aggro - Config.AggroDecayPerSecond * DeltaTime);
+			Target.TargetLockTimeRemaining = FMath::Max(0.0f, Target.TargetLockTimeRemaining - DeltaTime);
 			Target.RefreshTimeRemaining = FMath::Max(0.0f, Target.RefreshTimeRemaining - DeltaTime);
 			if (!Target.bRefreshScheduleInitialized)
 			{
@@ -146,21 +342,8 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 			{
 				if (bRefreshTarget)
 				{
-					FASTargetSnapshot Snapshot;
-					const bool bHasCurrentSnapshot = Target.HasTarget()
-						&& TargetSubsystem->ResolveTarget(Target.PrimaryTarget, Snapshot);
-
-					if (!ASMassMonsterBehavior::CopySnapshotToTarget(
-						bHasCurrentSnapshot ? &Snapshot : nullptr, Target))
-					{
-						const bool bFoundClosest = TargetSubsystem->FindClosestTargetInRange(
-							EntityLocation, TNumericLimits<float>::Max(),
-							EASMonsterTargetCapability::PrimaryTarget, Snapshot);
-						if (!ASMassMonsterBehavior::CopySnapshotToTarget(bFoundClosest ? &Snapshot : nullptr, Target))
-						{
-							ASMassMonsterBehavior::ClearTarget(Target, RefreshInterval);
-						}
-					}
+					ASMassMonsterBehavior::RefreshPrimaryTarget(*World, Entity, *TargetSubsystem,
+						EntityLocation, Target, Threat, Combats[EntityIt], Home, Config, true, CurrentTime);
 				}
 
 				if (!Target.HasTarget())
@@ -191,6 +374,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 					Behavior.State = EASMassMonsterState::Idle;
 				}
 				Target.Reset();
+				Threat.Reset();
 				Target.bRefreshScheduleInitialized = true;
 				continue;
 			}
@@ -199,28 +383,14 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 			{
 				Behavior.State = EASMassMonsterState::ReturnHome;
 				ASMassMonsterBehavior::ClearTarget(Target, RefreshInterval);
+				Threat.Reset();
 				continue;
 			}
 
 			if (bRefreshTarget)
 			{
-				const bool bHadTarget = Target.HasTarget();
-				FASTargetSnapshot Snapshot;
-				const bool bHasSnapshot = bHadTarget
-					? TargetSubsystem->ResolveTarget(Target.PrimaryTarget, Snapshot)
-					: TargetSubsystem->FindClosestTargetInRange(EntityLocation, Home.DetectionRadius,
-						EASMonsterTargetCapability::PrimaryTarget, Snapshot);
-				const float ValidDistance = bHadTarget ? Home.LoseTargetRadius : Home.DetectionRadius;
-
-				const bool bValidCurrentTarget = ASMassMonsterBehavior::CopySnapshotToTarget(
-					bHasSnapshot ? &Snapshot : nullptr, Target)
-					&& FVector::DistSquared2D(EntityLocation, Target.CachedTargetLocation)
-						<= FMath::Square(ValidDistance);
-
-				if (!bValidCurrentTarget)
-				{
-					ASMassMonsterBehavior::ClearTarget(Target, RefreshInterval);
-				}
+				ASMassMonsterBehavior::RefreshPrimaryTarget(*World, Entity, *TargetSubsystem,
+					EntityLocation, Target, Threat, Combats[EntityIt], Home, Config, false, CurrentTime);
 			}
 
 			if (!Target.HasTarget())

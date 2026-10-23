@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/StaticArray.h"
 #include "Engine/DataTable.h"
 #include "MassEntityTypes.h"
 #include "MassLODTypes.h"
@@ -44,8 +45,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTargetFragment : public FMassFragmen
 
 	FASTargetHandle PrimaryTarget;
 	FVector CachedTargetLocation = FVector::ZeroVector;
-	float Aggro = 0.0f;
 	float RefreshTimeRemaining = 0.0f;
+	float TargetLockTimeRemaining = 0.0f;
 	bool bRefreshScheduleInitialized = false;
 
 	bool HasTarget() const
@@ -57,9 +58,35 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTargetFragment : public FMassFragmen
 	{
 		PrimaryTarget = FASTargetHandle();
 		CachedTargetLocation = FVector::ZeroVector;
-		Aggro = 0.0f;
 		RefreshTimeRemaining = 0.0f;
+		TargetLockTimeRemaining = 0.0f;
 	}
+};
+
+/** 최근 피해·도발처럼 이 몬스터와 직접 상호작용한 대상의 제한된 위협 기억 슬롯이다. */
+struct FASMassMonsterThreatEntry
+{
+	FASTargetHandle Target;
+	float StoredThreat = 0.0f;
+	double LastUpdateTimeSeconds = 0.0;
+};
+
+/**
+ * 월드의 전체 후보 수와 무관하게 몬스터 하나가 짧게 기억하는 위협 대상이다.
+ * 감쇠는 매 프레임 값을 변경하지 않고 조회 시점의 Timestamp 차이로 계산한다.
+ */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterThreatFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	static constexpr int32 MaxRememberedThreats = 8;
+
+	TStaticArray<FASMassMonsterThreatEntry, MaxRememberedThreats> Entries;
+
+	float GetEffectiveThreat(FASTargetHandle Target, double CurrentTimeSeconds, float DecayPerSecond) const;
+	void AddThreat(FASTargetHandle Target, float ThreatAmount, double CurrentTimeSeconds, float DecayPerSecond);
+	void Reset();
 };
 
 /** 공격 쿨다운과 준비/회복 단계를 저장한다. */
@@ -295,6 +322,22 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0"))
 	float AggroDecayPerSecond = 25.0f;
+
+	/** 바로 인접한 일반 타깃이 받는 최대 거리 점수. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float ProximityScoreMax = 30.0f;
+
+	/** 이 거리에서 거리 점수가 최대치의 절반이 된다. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "1.0", Units = "cm"))
+	float ProximityHalfScoreDistance = 600.0f;
+
+	/** 새 후보가 현재 타깃보다 이 점수만큼 높아야 일반 전환을 허용한다. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float TargetSwitchScoreMargin = 5.0f;
+
+	/** 타깃 변경 직후 일반 재평가 전환을 막는 최소 시간이다. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0", Units = "s"))
+	float MinTargetLockSeconds = 0.75f;
 
 	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.01", Units = "s"))
 	float TargetRefreshInterval = 0.25f;

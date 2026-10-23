@@ -35,6 +35,10 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 		Config.AssistAggroRadius = MonsterDefinition->AssistAggroRadius;
 		Config.DirectHitAggro = MonsterDefinition->DirectHitAggro;
 		Config.AggroDecayPerSecond = MonsterDefinition->AggroDecayPerSecond;
+		Config.ProximityScoreMax = MonsterDefinition->ProximityScoreMax;
+		Config.ProximityHalfScoreDistance = MonsterDefinition->ProximityHalfScoreDistance;
+		Config.TargetSwitchScoreMargin = MonsterDefinition->TargetSwitchScoreMargin;
+		Config.MinTargetLockSeconds = MonsterDefinition->MinTargetLockSeconds;
 		Config.DeathDespawnDelay = MonsterDefinition->DeathDespawnDelay;
 	}
 	Config.Validate();
@@ -56,6 +60,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 		BuildContext.AddFragment<FASMassMonsterTemporaryVisualFragment>();
 	}
 	BuildContext.AddFragment<FASMassMonsterTargetFragment>();
+	BuildContext.AddFragment<FASMassMonsterThreatFragment>();
 	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
 	BuildContext.AddFragment<FASMassMonsterModifierFragment>();
 	BuildContext.AddFragment<FASMassMonsterRuntimeStatsFragment>();
