@@ -727,6 +727,10 @@ void AASGameMode::SpawnCorpseLoot(AASPlayerCharacter* Corpse, AController* DeadC
 	}
 	
 	Loot->SetInitialLoot(Grants);
+	// 루팅 창 제목: "닉네임의 시체"
+	const APlayerState* DeadPlayerState = DeadController ? DeadController->GetPlayerState<APlayerState>() : nullptr;
+	const FString DeadName = DeadPlayerState ? DeadPlayerState->GetPlayerName() : TEXT("플레이어");
+	Loot->SetLootDisplayName(FText::FromString(FString::Printf(TEXT("%s의 시체"), *DeadName)));
 	Loot->FinishSpawning(SpawnTransform);
 	
 	// 내용물 생성에 실패하면 상자는 스스로 사라진다. 그때는 아이템을 지우지 않는다.
