@@ -18,6 +18,18 @@ constexpr bool IsValidLootRarity(const EASLootRarity Rarity)
 	return Rarity >= EASLootRarity::Uncommon && Rarity <= EASLootRarity::Legendary;
 }
 
+/** Shared visual accent: 90% sRGB base color and 10% white, converted to linear. */
+inline FLinearColor GetLootRarityColor(const EASLootRarity Rarity)
+{
+	switch (Rarity)
+	{
+	case EASLootRarity::Rare: return FLinearColor(FColor(26, 26, 255));
+	case EASLootRarity::Epic: return FLinearColor(FColor(141, 26, 255));
+	case EASLootRarity::Legendary: return FLinearColor(FColor(255, 26, 26));
+	default: return FLinearColor::White;
+	}
+}
+
 /** High-level category used to decide how an item is stored and used. */
 UENUM(BlueprintType)
 enum class EASItemType : uint8

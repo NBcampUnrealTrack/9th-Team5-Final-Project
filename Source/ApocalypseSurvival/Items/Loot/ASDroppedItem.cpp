@@ -18,6 +18,7 @@
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/Inventory/ASInventoryComponent.h"
+#include "UObject/ConstructorHelpers.h"
 
 TSharedRef<SWidget> UASDroppedItemNameWidget::RebuildWidget()
 {
@@ -83,6 +84,16 @@ AASDroppedItem::AASDroppedItem()
 	ItemMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")));
 	ItemMesh->SetRelativeScale3D(FVector(0.2f));
 	ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	LegendaryBeam = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LegendaryBeam"));
+	LegendaryBeam->SetupAttachment(InteractionCollision);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> BeamMesh(
+		TEXT("/Game/Resources/Items/Effects/SM_LegendaryItemBeam.SM_LegendaryItemBeam"));
+	if (BeamMesh.Succeeded()) LegendaryBeam->SetStaticMesh(BeamMesh.Object);
+	LegendaryBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	LegendaryBeam->SetGenerateOverlapEvents(false);
+	LegendaryBeam->SetCanEverAffectNavigation(false);
+	LegendaryBeam->SetCastShadow(false);
+	LegendaryBeam->SetVisibility(false);
 	NameLabel = CreateDefaultSubobject<UWidgetComponent>(TEXT("NameLabel"));
 	NameLabel->SetupAttachment(InteractionCollision);
 	NameLabel->SetRelativeLocation(FVector(0, 0, 55));
@@ -141,6 +152,9 @@ int32 AASDroppedItem::Pickup(APawn* Interactor, UASInventoryComponent* TargetInv
 void AASDroppedItem::HandleInventoryChanged()
 {
 	UASItemInstance* Item = GetDroppedItem();
+	// Derived from the replicated inventory, so initial replication, stack updates and pickup all refresh it.
+	LegendaryBeam->SetVisibility(Item && GetNetMode() != NM_DedicatedServer
+		&& Item->GetItemDefinition()->Rarity == EASLootRarity::Legendary);
 	if (!Item)
 	{
 		if (HasAuthority()) Destroy();

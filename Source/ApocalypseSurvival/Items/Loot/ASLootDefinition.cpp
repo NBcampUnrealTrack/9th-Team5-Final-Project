@@ -82,15 +82,7 @@ bool FASLootChestPresetRow::ResolveRandomEntries(TArray<FASLootPoolEntry>& OutEn
 FLinearColor FASLootRarityAppearanceRow::GetResolvedColor() const
 {
 	if (bOverrideColor) return ColorOverride;
-	switch (Rarity)
-	{
-	// Mix 90% of each sRGB base color with 10% white, then convert for the material.
-	case EASLootRarity::Uncommon: return FLinearColor::White;
-	case EASLootRarity::Rare: return FLinearColor(FColor(26, 26, 255));
-	case EASLootRarity::Epic: return FLinearColor(FColor(141, 26, 255));
-	case EASLootRarity::Legendary: return FLinearColor(FColor(255, 26, 26));
-	default: return FLinearColor::White;
-	}
+	return GetLootRarityColor(Rarity);
 }
 
 bool FASLootRarityAppearanceRow::Validate(FString& OutError) const
