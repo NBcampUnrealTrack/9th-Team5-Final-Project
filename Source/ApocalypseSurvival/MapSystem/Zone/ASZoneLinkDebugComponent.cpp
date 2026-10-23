@@ -10,6 +10,10 @@
 #if WITH_EDITOR
 namespace ASZoneLinkDebugPrivate
 {
+	constexpr float PointRadius = 40.0f;
+	constexpr float PointArrowLength = 120.0f;
+	constexpr float PointArrowHeadSize = 20.0f;
+
 	TArray<const AASMapZone*> GetLinkedZones(const AASMapZone* Zone)
 	{
 		TArray<const AASMapZone*> Result;
@@ -47,6 +51,19 @@ namespace ASZoneLinkDebugPrivate
 					Lines.Emplace(Center, AdjacentZone->GetZoneCenter(), FColor::Cyan, 2.0f);
 				}
 			}
+
+			const auto AddPoints = [this](const TArray<FTransform>& Points, const FColor& Color)
+			{
+				for (const FTransform& Point : Points)
+				{
+					const FVector Location = Point.GetLocation();
+					Spheres.Emplace(PointRadius, Location, FLinearColor(Color), WireMesh);
+					ArrowLines.Emplace(Location, Location + Point.GetRotation().GetForwardVector() * PointArrowLength,
+						Color, PointArrowHeadSize);
+				}
+			};
+			AddPoints(Zone->GetSpawnTransforms(), FColor::Green);
+			AddPoints(Zone->GetRespawnTransforms(), FColor::Blue);
 		}
 
 		virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
@@ -80,7 +97,7 @@ FBoxSphereBounds UASZoneLinkDebugComponent::CalcBounds(const FTransform& LocalTo
 #if WITH_EDITOR
 	if (const AASMapZone* Zone = Cast<AASMapZone>(GetOwner()))
 	{
-		// 끝점 전체를 포함해야 소유 구역이 화면 밖에 있어도 연결선이 보인다.
+		// 연결선 끝점과 지점의 구·화살표 전체를 포함해 화면 밖 구역에서도 표시한다.
 		FBox LinkBounds(ForceInit);
 		LinkBounds += Zone->GetZoneCenter();
 		for (const AASMapZone* AdjacentZone : ASZoneLinkDebugPrivate::GetLinkedZones(Zone))
@@ -90,6 +107,20 @@ FBoxSphereBounds UASZoneLinkDebugComponent::CalcBounds(const FTransform& LocalTo
 				LinkBounds += AdjacentZone->GetZoneCenter();
 			}
 		}
+		const auto AddPointBounds = [&LinkBounds](const TArray<FTransform>& Points)
+		{
+			for (const FTransform& Point : Points)
+			{
+				const FVector Location = Point.GetLocation();
+				const FVector ArrowEnd = Location + Point.GetRotation().GetForwardVector() * ASZoneLinkDebugPrivate::PointArrowLength;
+				const FVector SphereExtent(ASZoneLinkDebugPrivate::PointRadius);
+				const FVector ArrowExtent(ASZoneLinkDebugPrivate::PointArrowHeadSize);
+				LinkBounds += FBox(Location - SphereExtent, Location + SphereExtent);
+				LinkBounds += FBox(ArrowEnd - ArrowExtent, ArrowEnd + ArrowExtent);
+			}
+		};
+		AddPointBounds(Zone->GetSpawnTransforms());
+		AddPointBounds(Zone->GetRespawnTransforms());
 		return FBoxSphereBounds(LinkBounds.ExpandBy(2.0));
 	}
 #endif

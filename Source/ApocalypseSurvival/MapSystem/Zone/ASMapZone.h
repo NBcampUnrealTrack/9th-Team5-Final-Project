@@ -117,11 +117,17 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone", meta = (AllowPrivateAccess = "true"))
 	bool bIgnoreHeight = true;
 
-	/** 액터 기준 상대 위치. 적과 상자의 스폰 시스템에서 사용한다. */
+	/**
+	 * 뷰포트 위젯으로 편집하는 액터 기준 상대 스폰 지점.
+	 * UASMapFunctionLibrary::GetZoneSpawnPoints가 구역 정보와 함께 스폰 시스템에 반환한다.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone", meta = (AllowPrivateAccess = "true", MakeEditWidget))
 	TArray<FTransform> SpawnPoints;
 
-	/** 액터 기준 상대 위치. GameMode가 플레이어 리스폰에 사용한다. */
+	/**
+	 * 뷰포트 위젯으로 편집하는 액터 기준 상대 리스폰 지점.
+	 * UASMapFunctionLibrary::GetZoneRespawnPoints가 구역 정보와 함께 스폰 시스템에 반환한다.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone", meta = (AllowPrivateAccess = "true", MakeEditWidget))
 	TArray<FTransform> RespawnPoints;
 
@@ -146,7 +152,7 @@ private:
 	TObjectPtr<UInstancedStaticMeshComponent> BoundaryJointComponent;
 
 #if WITH_EDITORONLY_DATA
-	/** 레벨 편집 중 인접 구역 연결선을 표시한다. */
+	/** 레벨 편집 중 인접 구역 연결선과 스폰·리스폰 지점을 표시한다. */
 	UPROPERTY()
 	TObjectPtr<UASZoneLinkDebugComponent> LinkDebugComponent;
 #endif
