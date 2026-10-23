@@ -17,6 +17,7 @@ void AASGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(AASGameState, PhaseEndServerTime);
 	DOREPLIFETIME(AASGameState, WaveSpawnedCount);
 	DOREPLIFETIME(AASGameState, WaveKilledCount);
+	DOREPLIFETIME(AASGameState, TeamRevivesRemaining);
 }
 
 void AASGameState::SetPhase(EGamePhase NewPhase, float Duration)
@@ -59,6 +60,28 @@ void AASGameState::AddWaveKilled()
 {
 	if (!HasAuthority()) return;
 	++WaveKilledCount;
+}
+
+void AASGameState::SetTeamRevivesRemaining(int32 NewCount)
+{
+	if (!HasAuthority()) return;
+	TeamRevivesRemaining = FMath::Max(0, NewCount);
+	OnRep_TeamRevivesRemaining();
+}
+
+bool AASGameState::ConsumeTeamRevive()
+{
+	if (!HasAuthority() || TeamRevivesRemaining <= 0) return false;
+	
+	--TeamRevivesRemaining;
+	UE_LOG(LogTemp, Log, TEXT("[Revive] 팀 부활 사용, 남은 횟수 %d"), TeamRevivesRemaining);
+	OnRep_TeamRevivesRemaining();
+	return true;
+}
+
+void AASGameState::OnRep_TeamRevivesRemaining()
+{
+	OnTeamRevivesChanged.Broadcast(TeamRevivesRemaining);
 }
 
 float AASGameState::GetPhaseRemainingTime() const

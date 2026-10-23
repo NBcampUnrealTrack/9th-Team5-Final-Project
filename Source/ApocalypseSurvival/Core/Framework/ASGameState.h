@@ -6,6 +6,7 @@
 #include "ASGameState.generated.h"
 
 class UASMapStateComponent;
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTeamRevivesChanged, int32, RemainingRevives);
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameState : public AGameState
@@ -26,6 +27,12 @@ public:
 	void AddWaveSpawned(int32 Count);
 	void AddWaveKilled();
 	
+	// 멀티 팀 공용 부활 횟수 (서버 전용)
+	void SetTeamRevivesRemaining(int32 NewCount);
+	
+	// 1회 사용한다. 남은 횟수가 없으면 false (서버 전용)
+	bool ConsumeTeamRevive();
+	
 	// 조회 (UI 등에서 사용)
 	UFUNCTION(BlueprintPure, Category = "GameFlow")
 	EGamePhase GetCurrentPhase() const {return CurrentPhase;}
@@ -44,6 +51,13 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "GameFlow")
 	int32 GetWaveKilledCount() const {return WaveKilledCount;}
+	
+	UFUNCTION(BlueprintPure, Category = "GameFlow|Revive")
+	int32 GetTeamRevivesRemaining() const { return TeamRevivesRemaining; }
+	
+	// 남은 부활 횟수가 바뀔 때 (HUD 표시용, 서버·클라이언트 모두)
+	UPROPERTY(BlueprintAssignable, Category = "GameFlow|Revive")
+	FOnTeamRevivesChanged OnTeamRevivesChanged;
 	
 	UPROPERTY(BlueprintAssignable, Category = "GameFlow")
 	FOnPhaseChanged OnPhaseChanged;
@@ -68,6 +82,12 @@ protected:
 	
 	UPROPERTY(Replicated)
 	int32 WaveKilledCount = 0;
+	
+	UPROPERTY(ReplicatedUsing = OnRep_TeamRevivesRemaining)
+	int32 TeamRevivesRemaining = 0;
+	
+	UFUNCTION()
+	void OnRep_TeamRevivesRemaining();
 	
 	UFUNCTION()
 	void OnRep_CurrentPhase();
