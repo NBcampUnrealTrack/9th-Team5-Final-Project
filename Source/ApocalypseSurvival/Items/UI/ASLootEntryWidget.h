@@ -8,6 +8,7 @@ class UASItemInstance;
 class UButton;
 class UImage;
 class UTextBlock;
+class UASItemRarityBackground;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASLootItemClickedSignature, UASItemInstance*, ItemInstance);
 
@@ -46,6 +47,9 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> ItemIcon;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UASItemRarityBackground> RarityBackground;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ItemNameText;

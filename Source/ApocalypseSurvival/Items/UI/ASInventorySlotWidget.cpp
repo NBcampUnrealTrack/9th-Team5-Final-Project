@@ -12,6 +12,7 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/UI/ASInventoryBarWidget.h"
+#include "Items/UI/ASItemRarityBackground.h"
 
 void UASInventorySlotDragDrop::Drop_Implementation(const FPointerEvent& PointerEvent)
 {
@@ -33,14 +34,17 @@ TSharedRef<SWidget> UASInventorySlotWidget::RebuildWidget()
 		Size->SetWidthOverride(72.0f);
 		Size->SetHeightOverride(76.0f);
 		SlotBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotBorder"));
-		SlotBorder->SetPadding(FMargin(4.0f));
+		SlotBorder->SetPadding(FMargin(1.0f));
 		UOverlay* Overlay = WidgetTree->ConstructWidget<UOverlay>();
 		Overlay->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
+		RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Overlay->AddChildToOverlay(RarityBackground);
 		ItemIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ItemIcon"));
-		ItemIcon->SetDesiredSizeOverride(FVector2D(44.0f));
+		ItemIcon->SetDesiredSizeOverride(FVector2D(70.0f));
 		UOverlaySlot* IconSlot = Overlay->AddChildToOverlay(ItemIcon);
-		IconSlot->SetHorizontalAlignment(HAlign_Center);
-		IconSlot->SetVerticalAlignment(VAlign_Center);
+		IconSlot->SetHorizontalAlignment(HAlign_Fill);
+		IconSlot->SetVerticalAlignment(VAlign_Fill);
 		auto AddText = [&](const TCHAR* Name, EHorizontalAlignment Horizontal, EVerticalAlignment Vertical)
 		{
 			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), FName(Name));
@@ -60,6 +64,25 @@ TSharedRef<SWidget> UASInventorySlotWidget::RebuildWidget()
 		SlotBorder->SetContent(Overlay);
 		Size->SetContent(SlotBorder);
 		WidgetTree->RootWidget = Size;
+	}
+	// Support authored slot layouts that already contain an icon overlay.
+	if (WidgetTree && !RarityBackground && ItemIcon)
+	{
+		if (UOverlay* Overlay = Cast<UOverlay>(ItemIcon->GetParent()))
+		{
+			RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
+			RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
+			Overlay->InsertChildAt(0, RarityBackground);
+		}
+	}
+	for (UWidget* Layer : { static_cast<UWidget*>(RarityBackground.Get()), static_cast<UWidget*>(ItemIcon.Get()) })
+	{
+		if (UOverlaySlot* LayerSlot = Layer ? Cast<UOverlaySlot>(Layer->Slot) : nullptr)
+		{
+			LayerSlot->SetPadding(FMargin(0.0f));
+			LayerSlot->SetHorizontalAlignment(HAlign_Fill);
+			LayerSlot->SetVerticalAlignment(VAlign_Fill);
+		}
 	}
 	return Super::RebuildWidget();
 }
@@ -91,10 +114,16 @@ void UASInventorySlotWidget::RefreshSlot()
 	UTexture2D* Icon = Definition ? Definition->Icon.LoadSynchronous() : nullptr;
 	const bool bWeaponSlot = SlotIndex == UASInventoryComponent::WeaponSlotIndex;
 	const bool bEquipped = Item && bWeaponSlot;
+	if (RarityBackground)
+	{
+		if (Definition) RarityBackground->SetRarity(Definition->Rarity);
+		RarityBackground->SetVisibility(Definition ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 	if (KeyText) KeyText->SetText(bWeaponSlot ? NSLOCTEXT("Items", "WeaponSlot", "Weapon") : FText::AsNumber((SlotIndex + 1) % 10));
 	if (ItemIcon)
 	{
 		ItemIcon->SetBrushFromTexture(Icon);
+		ItemIcon->SetDesiredSizeOverride(FVector2D(70.0f));
 		ItemIcon->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	if (ItemNameText) ItemNameText->SetText(Definition && !Icon ? Definition->DisplayName : FText::GetEmpty());
@@ -146,9 +175,23 @@ void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, con
 	UImage* Visual = NewObject<UImage>(Drag);
 	UTexture2D* Icon = Item->GetItemDefinition()->Icon.LoadSynchronous();
 	Visual->SetBrushFromTexture(Icon);
-	Visual->SetDesiredSizeOverride(FVector2D(44.0f));
+	Visual->SetDesiredSizeOverride(FVector2D(56.0f));
 	Visual->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	Drag->DefaultDragVisual = Visual;
+	USizeBox* DragSize = NewObject<USizeBox>(Drag);
+	DragSize->SetWidthOverride(56.0f);
+	DragSize->SetHeightOverride(56.0f);
+	DragSize->SetVisibility(ESlateVisibility::HitTestInvisible);
+	UOverlay* DragOverlay = NewObject<UOverlay>(Drag);
+	UASItemRarityBackground* DragBackground = NewObject<UASItemRarityBackground>(Drag);
+	DragBackground->SetRarity(Item->GetItemDefinition()->Rarity);
+	UOverlaySlot* DragBackgroundSlot = DragOverlay->AddChildToOverlay(DragBackground);
+	DragBackgroundSlot->SetHorizontalAlignment(HAlign_Fill);
+	DragBackgroundSlot->SetVerticalAlignment(VAlign_Fill);
+	UOverlaySlot* DragIconSlot = DragOverlay->AddChildToOverlay(Visual);
+	DragIconSlot->SetHorizontalAlignment(HAlign_Fill);
+	DragIconSlot->SetVerticalAlignment(VAlign_Fill);
+	DragSize->SetContent(DragOverlay);
+	Drag->DefaultDragVisual = DragSize;
 	Drag->Pivot = EDragPivot::CenterCenter;
 	Bar->BeginItemDrag();
 	Operation = Drag;

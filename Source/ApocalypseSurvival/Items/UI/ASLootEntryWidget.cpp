@@ -2,6 +2,7 @@
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
@@ -12,10 +13,44 @@
 #include "Components/Border.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
+#include "Items/UI/ASItemRarityBackground.h"
 
 TSharedRef<SWidget> UASLootEntryWidget::RebuildWidget()
 {
 	BuildDefaultWidgetTree();
+	// Insert before rebuilding Slate so existing BP overlays also get the background.
+	if (WidgetTree && !RarityBackground && ItemIcon)
+	{
+		if (UOverlay* Overlay = Cast<UOverlay>(ItemIcon->GetParent()))
+		{
+			RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
+			RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
+			Overlay->InsertChildAt(0, RarityBackground);
+		}
+	}
+	// Button padding and Overlay's default left/top alignment leave uncolored margins.
+	if (ItemButton && ItemButton->GetContent())
+	{
+		FButtonStyle Style = ItemButton->GetStyle();
+		Style.NormalPadding = FMargin(0.0f);
+		Style.PressedPadding = FMargin(0.0f);
+		ItemButton->SetStyle(Style);
+		if (UButtonSlot* ContentSlot = Cast<UButtonSlot>(ItemButton->GetContent()->Slot))
+		{
+			ContentSlot->SetPadding(FMargin(0.0f));
+			ContentSlot->SetHorizontalAlignment(HAlign_Fill);
+			ContentSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+	}
+	for (UWidget* Layer : { static_cast<UWidget*>(RarityBackground.Get()), static_cast<UWidget*>(ItemIcon.Get()) })
+	{
+		if (UOverlaySlot* LayerSlot = Layer ? Cast<UOverlaySlot>(Layer->Slot) : nullptr)
+		{
+			LayerSlot->SetPadding(FMargin(0.0f));
+			LayerSlot->SetHorizontalAlignment(HAlign_Fill);
+			LayerSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+	}
 	return Super::RebuildWidget();
 }
 
@@ -33,8 +68,11 @@ void UASLootEntryWidget::BuildDefaultWidgetTree()
 	ItemButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ItemButton"));
 	ItemButton->SetBackgroundColor(FLinearColor(0.045f, 0.055f, 0.065f, 1.0f));
 	UOverlay* EntryOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("EntryOverlay"));
+	RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
+	RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
+	EntryOverlay->AddChildToOverlay(RarityBackground);
 	ItemIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ItemIcon"));
-	ItemIcon->SetDesiredSizeOverride(FVector2D(72.0f, 72.0f));
+	ItemIcon->SetDesiredSizeOverride(FVector2D(80.0f, 80.0f));
 	ItemIcon->SetColorAndOpacity(FLinearColor::White);
 	ItemNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ItemNameText"));
 	QuantityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuantityText"));
@@ -91,6 +129,13 @@ void UASLootEntryWidget::SetItemInstance(UASItemInstance* InItemInstance)
 
 void UASLootEntryWidget::RefreshEntry()
 {
+	const UASItemDefinition* Definition = IsValid(ItemInstance) && ItemInstance->IsValidItemInstance()
+		? ItemInstance->GetItemDefinition() : nullptr;
+	if (RarityBackground)
+	{
+		if (Definition) RarityBackground->SetRarity(Definition->Rarity);
+		RarityBackground->SetVisibility(Definition ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 	const int32 Quantity = IsValid(ItemInstance) && IsValid(ItemInstance->GetItemDefinition())
 		? ItemInstance->GetQuantity() : 0;
 	const ESlateVisibility QuantityVisibility = Quantity > 1
@@ -114,12 +159,15 @@ void UASLootEntryWidget::RefreshEntry()
 	}
 	if (IsValid(ItemIcon))
 	{
-		ItemIcon->SetDesiredSizeOverride(FVector2D(72.0f, 72.0f));
+		ItemIcon->SetDesiredSizeOverride(FVector2D(80.0f, 80.0f));
 		ItemIcon->SetColorAndOpacity(FLinearColor::White);
 	}
 
 	if (!IsValid(ItemInstance) || !IsValid(ItemInstance->GetItemDefinition()))
 	{
+		if (ItemIcon) ItemIcon->SetBrushFromTexture(nullptr);
+		if (ItemNameText) ItemNameText->SetText(FText::GetEmpty());
+		if (ItemButton) ItemButton->SetToolTipText(FText::GetEmpty());
 		return;
 	}
 
