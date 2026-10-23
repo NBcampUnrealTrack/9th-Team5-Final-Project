@@ -109,6 +109,38 @@ void AASPlayerCharacter::MulticastDrawWeaponAttackDebug_Implementation(
 	}
 }
 
+void AASPlayerCharacter::MulticastDrawMeleeConeDebug_Implementation(
+	const FVector Origin,
+	const FVector Direction,
+	const float Radius,
+	const float AngleDegrees,
+	const bool bHit)
+{
+	const UWorld* World = GetWorld();
+	if (!World || Direction.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FColor Color = bHit ? FColor::Red : FColor::Green;
+	const float HalfAngle = AngleDegrees * 0.5f;
+
+	// 부채꼴 테두리: 양쪽 직선 + 호를 선분으로 이어 그린다.
+	constexpr int32 ArcSegments = 12;
+	FVector PreviousPoint = Origin + Direction.RotateAngleAxis(-HalfAngle, FVector::UpVector) * Radius;
+	DrawDebugLine(World, Origin, PreviousPoint, Color, false, 1.0f, 0, 2.0f);
+
+	for (int32 Index = 1; Index <= ArcSegments; ++Index)
+	{
+		const float Angle = -HalfAngle + AngleDegrees * (static_cast<float>(Index) / ArcSegments);
+		const FVector Point = Origin + Direction.RotateAngleAxis(Angle, FVector::UpVector) * Radius;
+		DrawDebugLine(World, PreviousPoint, Point, Color, false, 1.0f, 0, 2.0f);
+		PreviousPoint = Point;
+	}
+
+	DrawDebugLine(World, Origin, PreviousPoint, Color, false, 1.0f, 0, 2.0f);
+}
+
 void AASPlayerCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
