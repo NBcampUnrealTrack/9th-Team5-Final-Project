@@ -125,7 +125,7 @@ private:
 	int32 LootAppearanceMaterialIndex = 0;
 	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
 		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
-	FLinearColor LootRarityColor = FLinearColor(0.15f, 0.85f, 0.25f, 1.0f);
+	FLinearColor LootRarityColor = FLinearColor::White;
 	UPROPERTY(ReplicatedUsing = OnRep_LootRarityAppearance, VisibleInstanceOnly, BlueprintReadOnly,
 		Category = "Loot|Appearance", meta = (AllowPrivateAccess = "true"))
 	FName LootRarityColorParameter = NAME_None;

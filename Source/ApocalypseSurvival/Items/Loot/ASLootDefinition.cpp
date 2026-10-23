@@ -84,11 +84,12 @@ FLinearColor FASLootRarityAppearanceRow::GetResolvedColor() const
 	if (bOverrideColor) return ColorOverride;
 	switch (Rarity)
 	{
-	case EASLootRarity::Uncommon: return FLinearColor(0.15f, 0.85f, 0.25f, 1.0f);
-	case EASLootRarity::Rare: return FLinearColor(0.12f, 0.45f, 1.0f, 1.0f);
-	case EASLootRarity::Epic: return FLinearColor(0.68f, 0.22f, 1.0f, 1.0f);
-	case EASLootRarity::Legendary: return FLinearColor(1.0f, 0.48f, 0.08f, 1.0f);
-	default: return FLinearColor(0.15f, 0.85f, 0.25f, 1.0f);
+	// Mix 90% of each sRGB base color with 10% white, then convert for the material.
+	case EASLootRarity::Uncommon: return FLinearColor::White;
+	case EASLootRarity::Rare: return FLinearColor(FColor(26, 26, 255));
+	case EASLootRarity::Epic: return FLinearColor(FColor(141, 26, 255));
+	case EASLootRarity::Legendary: return FLinearColor(FColor(255, 26, 26));
+	default: return FLinearColor::White;
 	}
 }
 
