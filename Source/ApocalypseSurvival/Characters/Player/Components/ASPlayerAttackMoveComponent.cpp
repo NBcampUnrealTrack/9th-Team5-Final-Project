@@ -82,9 +82,10 @@ bool UASPlayerAttackMoveComponent::ConfirmAttackMove(const FVector& Destination)
 		&& IsTargetInAttackRange(TargetLocation, TargetHitRadius))
 	{
 		State = EASAttackMoveState::Idle;
-		// 공격 실행 단계가 동일한 클릭 기준을 다시 검증할 수 있도록
-		// 선택된 대상 위치가 아니라 원래 클릭 위치를 전달한다.
-		RequestAttack(CurrentTarget.GetActor(), CommandDestination);
+		// Actor 대상은 실행 단계가 동일한 클릭 기준을 다시 검증할 수 있도록 원래 클릭 위치를 전달한다.
+		// Mass 대상은 Actor가 없어 어빌리티가 위치로 방향을 정하므로, 대상 위치를 전달해야 대상 쪽을 본다.
+		AActor* TargetActor = CurrentTarget.GetActor();
+		RequestAttack(TargetActor, TargetActor ? CommandDestination : TargetLocation);
 		return true;
 	}
 
@@ -286,7 +287,9 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 	{
 		Controller->StopMovement();
 		State = EASAttackMoveState::Attacking;
-		RequestAttack(CurrentTarget.GetActor(), CommandDestination);
+		// Mass 대상은 Actor가 없으므로 대상 위치를 넘겨 어빌리티가 대상 쪽으로 몸을 돌리게 한다.
+		AActor* TargetActor = CurrentTarget.GetActor();
+		RequestAttack(TargetActor, TargetActor ? CommandDestination : TargetLocation);
 		return;
 	}
 
