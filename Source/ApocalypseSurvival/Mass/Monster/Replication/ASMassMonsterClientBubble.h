@@ -52,6 +52,10 @@ protected:
 
 	void ApplyVisualData(const FMassEntityView& EntityView,
 		const FASReplicatedMonsterVisualData& VisualData, bool bIsInitialState) const;
+	void InitializeInterpolation(const FMassEntityView& EntityView,
+		const FASMassMonsterReplicatedAgent& Agent) const;
+	void QueueInterpolationSnapshot(const FMassEntityView& EntityView,
+		const FASMassMonsterReplicatedAgent& Agent) const;
 #endif
 
 private:

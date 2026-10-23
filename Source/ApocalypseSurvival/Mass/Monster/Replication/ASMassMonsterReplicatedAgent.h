@@ -58,12 +58,26 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterReplicatedAgent : public FReplicated
 		return Visual;
 	}
 
+	float GetServerTimeSeconds() const
+	{
+		return ServerTimeSeconds;
+	}
+
+	float& GetServerTimeSecondsMutable()
+	{
+		return ServerTimeSeconds;
+	}
+
 private:
 	UPROPERTY(Transient)
 	FReplicatedAgentPositionYawData PositionYaw;
 
 	UPROPERTY(Transient)
 	FASReplicatedMonsterVisualData Visual;
+
+	/** PositionYaw가 만들어진 서버 시간. 클라이언트 보간 구간을 결정하는 데 사용한다. */
+	UPROPERTY(Transient)
+	float ServerTimeSeconds = 0.0f;
 };
 
 /** Fast Array serializer에 들어가는 몬스터 단위 항목이다. */

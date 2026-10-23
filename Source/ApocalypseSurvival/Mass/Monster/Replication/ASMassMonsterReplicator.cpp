@@ -1,5 +1,7 @@
 #include "Mass/Monster/Replication/ASMassMonsterReplicator.h"
 
+#include "ApocalypseSurvival.h"
+#include "Engine/World.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Replication/ASMassMonsterClientBubble.h"
 #include "Mass/Monster/Replication/ASMassMonsterReplicatedAgent.h"
@@ -21,6 +23,10 @@ namespace
 
 void UASMassMonsterReplicator::AddRequirements(FMassEntityQuery& EntityQuery)
 {
+	UE_LOG(LogApocalypseSurvival, Log,
+		TEXT("[MassMonsterReplication] Replicator AddRequirements: Query=%p Replicator=%s"),
+		&EntityQuery, *GetName());
+
 	FMassReplicationProcessorPositionYawHandler::AddRequirements(EntityQuery);
 	EntityQuery.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
@@ -32,6 +38,14 @@ void UASMassMonsterReplicator::ProcessClientReplication(FMassExecutionContext& C
 	FMassReplicationContext& ReplicationContext)
 {
 #if UE_REPLICATION_COMPILE_SERVER_CODE
+	if (!bLoggedProcessEntry)
+	{
+		bLoggedProcessEntry = true;
+		UE_LOG(LogApocalypseSurvival, Log,
+			TEXT("[MassMonsterReplication] Replicator ProcessClientReplication entered: Replicator=%s World=%s"),
+			*GetName(), *GetNameSafe(&ReplicationContext.World));
+	}
+
 	FMassReplicationProcessorPositionYawHandler PositionYawHandler;
 	FMassReplicationSharedFragment* ReplicationSharedFragment = nullptr;
 	const FMassReplicationParameters* ReplicationParameters = nullptr;
@@ -80,6 +94,7 @@ void UASMassMonsterReplicator::ProcessClientReplication(FMassExecutionContext& C
 		FASMassMonsterClientBubbleSerializer& Serializer = BubbleInfo.GetMonsterSerializer();
 
 		PositionYawHandler.AddEntity(EntityIndex, ReplicatedAgent.GetReplicatedPositionYawDataMutable());
+		ReplicatedAgent.GetServerTimeSecondsMutable() = static_cast<float>(ExecutionContext.GetWorld()->GetTimeSeconds());
 		ReplicatedAgent.GetVisualDataMutable() = BuildVisualData(EntityIndex);
 		return Serializer.GetBubble().AddAgent(ExecutionContext.GetEntity(EntityIndex), ReplicatedAgent);
 	};
@@ -99,7 +114,18 @@ void UASMassMonsterReplicator::ProcessClientReplication(FMassExecutionContext& C
 		AASMassMonsterClientBubbleInfo& BubbleInfo =
 			ReplicationSharedFragment->GetTypedClientBubbleInfoChecked<AASMassMonsterClientBubbleInfo>(ClientHandle);
 		FASMassMonsterClientBubbleHandler& Bubble = BubbleInfo.GetMonsterSerializer().GetBubble();
+		const FReplicatedAgentPositionYawData PreviousPositionYaw =
+			Bubble.GetAgentChecked(Handle).GetReplicatedPositionYawData();
 		PositionYawHandler.ModifyEntity(Handle, EntityIndex, Bubble.GetTransformHandlerMutable());
+		const FReplicatedAgentPositionYawData& CurrentPositionYaw =
+			Bubble.GetAgentChecked(Handle).GetReplicatedPositionYawData();
+		if (!CurrentPositionYaw.GetPosition().Equals(PreviousPositionYaw.GetPosition(),
+			UE::Mass::Replication::PositionReplicateTolerance)
+			|| FMath::Abs(FMath::FindDeltaAngleRadians(CurrentPositionYaw.GetYaw(),
+				PreviousPositionYaw.GetYaw())) > UE::Mass::Replication::YawReplicateTolerance)
+		{
+			Bubble.GetAgentItem(Handle).Agent.GetServerTimeSecondsMutable() = static_cast<float>(Time);
+		}
 		Bubble.SetVisualData(Handle, BuildVisualData(EntityIndex));
 		AgentData.LastUpdateTime = Time;
 	};

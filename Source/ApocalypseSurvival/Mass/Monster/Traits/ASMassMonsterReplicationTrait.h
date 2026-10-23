@@ -15,4 +15,7 @@ class APOCALYPSESURVIVAL_API UASMassMonsterReplicationTrait : public UMassReplic
 
 public:
 	UASMassMonsterReplicationTrait();
+
+	virtual void BuildTemplate(FMassEntityTemplateBuildContext& BuildContext,
+		const UWorld& World) const override;
 };

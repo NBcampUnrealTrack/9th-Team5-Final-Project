@@ -14,4 +14,8 @@ public:
 	virtual void AddRequirements(FMassEntityQuery& EntityQuery) override;
 	virtual void ProcessClientReplication(FMassExecutionContext& Context,
 		FMassReplicationContext& ReplicationContext) override;
+
+private:
+	/** 동적 복제 Query가 실제 callback까지 도달했는지 한 번만 기록한다. */
+	bool bLoggedProcessEntry = false;
 };

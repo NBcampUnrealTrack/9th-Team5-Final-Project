@@ -1,6 +1,7 @@
 #include "Mass/Monster/Replication/ASMassMonsterClientBubble.h"
 
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
+#include "Mass/Monster/Replication/ASMassMonsterClientInterpolationFragment.h"
 #include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualFragment.h"
 #include "MassEntityQuery.h"
 #include "MassEntityView.h"
@@ -12,10 +13,21 @@
 namespace
 {
 	constexpr float ClientHitFlashDuration = 0.12f;
+	constexpr float PositionSnapshotTolerance = 1.0f;
+	constexpr float YawSnapshotToleranceRadians = 0.00436332313f;
+	constexpr float MinimumInterpolationDuration = 0.05f;
+	constexpr float MaximumInterpolationDuration = 0.5f;
+	constexpr float DefaultInterpolationDuration = 0.1f;
+	constexpr float TeleportSnapDistance = 1000.0f;
 
 	float DequantizeHealthRatio(const uint16 HealthRatio)
 	{
 		return static_cast<float>(HealthRatio) / static_cast<float>(MAX_uint16);
+	}
+
+	float GetTransformYawRadians(const FTransform& Transform)
+	{
+		return FMath::DegreesToRadians(Transform.Rotator().Yaw);
 	}
 }
 
@@ -26,6 +38,7 @@ void FASMassMonsterClientBubbleHandler::PostReplicatedAdd(
 	auto AddRequirementsForSpawnQuery = [this](FMassEntityQuery& EntityQuery)
 	{
 		TransformHandler.AddRequirementsForSpawnQuery(EntityQuery);
+		EntityQuery.AddRequirement<FASMassMonsterClientInterpolationFragment>(EMassFragmentAccess::ReadWrite);
 	};
 
 	auto CacheFragmentViewsForSpawnQuery = [this](FMassExecutionContext& ExecutionContext)
@@ -37,13 +50,14 @@ void FASMassMonsterClientBubbleHandler::PostReplicatedAdd(
 		const FASMassMonsterReplicatedAgent& Agent, const int32 EntityIndex)
 	{
 		TransformHandler.SetSpawnedEntityData(EntityIndex, Agent.GetReplicatedPositionYawData());
+		InitializeInterpolation(EntityView, Agent);
 		ApplyVisualData(EntityView, Agent.GetVisualData(), true);
 	};
 
 	auto SetModifiedEntityData = [this](const FMassEntityView& EntityView,
 		const FASMassMonsterReplicatedAgent& Agent)
 	{
-		TransformHandler.SetModifiedEntityData(EntityView, Agent.GetReplicatedPositionYawData());
+		QueueInterpolationSnapshot(EntityView, Agent);
 		ApplyVisualData(EntityView, Agent.GetVisualData(), false);
 	};
 
@@ -58,11 +72,70 @@ void FASMassMonsterClientBubbleHandler::PostReplicatedChange(
 	auto SetModifiedEntityData = [this](const FMassEntityView& EntityView,
 		const FASMassMonsterReplicatedAgent& Agent)
 	{
-		TransformHandler.SetModifiedEntityData(EntityView, Agent.GetReplicatedPositionYawData());
+		QueueInterpolationSnapshot(EntityView, Agent);
 		ApplyVisualData(EntityView, Agent.GetVisualData(), false);
 	};
 
 	PostReplicatedChangeHelper(ChangedIndices, SetModifiedEntityData);
+}
+
+void FASMassMonsterClientBubbleHandler::InitializeInterpolation(const FMassEntityView& EntityView,
+	const FASMassMonsterReplicatedAgent& Agent) const
+{
+	const FReplicatedAgentPositionYawData& PositionYaw = Agent.GetReplicatedPositionYawData();
+	FASMassMonsterClientInterpolationFragment& Interpolation =
+		EntityView.GetFragmentData<FASMassMonsterClientInterpolationFragment>();
+	Interpolation.StartLocation = PositionYaw.GetPosition();
+	Interpolation.TargetLocation = PositionYaw.GetPosition();
+	Interpolation.StartYawRadians = PositionYaw.GetYaw();
+	Interpolation.TargetYawRadians = PositionYaw.GetYaw();
+	Interpolation.ElapsedSeconds = 0.0f;
+	Interpolation.DurationSeconds = 0.0f;
+	Interpolation.LastServerTimeSeconds = Agent.GetServerTimeSeconds();
+	Interpolation.bInitialized = true;
+}
+
+void FASMassMonsterClientBubbleHandler::QueueInterpolationSnapshot(const FMassEntityView& EntityView,
+	const FASMassMonsterReplicatedAgent& Agent) const
+{
+	FASMassMonsterClientInterpolationFragment* Interpolation =
+		EntityView.GetFragmentDataPtr<FASMassMonsterClientInterpolationFragment>();
+	FTransformFragment* TransformFragment = EntityView.GetFragmentDataPtr<FTransformFragment>();
+	if (!Interpolation || !TransformFragment)
+	{
+		return;
+	}
+
+	const FReplicatedAgentPositionYawData& PositionYaw = Agent.GetReplicatedPositionYawData();
+	const bool bPositionChanged = !PositionYaw.GetPosition().Equals(
+		Interpolation->TargetLocation, PositionSnapshotTolerance);
+	const bool bYawChanged = FMath::Abs(FMath::FindDeltaAngleRadians(
+		Interpolation->TargetYawRadians, PositionYaw.GetYaw())) > YawSnapshotToleranceRadians;
+	if (!bPositionChanged && !bYawChanged)
+	{
+		return;
+	}
+
+	FTransform& CurrentTransform = TransformFragment->GetMutableTransform();
+	const float CorrectionDistance = FVector::Dist(CurrentTransform.GetLocation(), PositionYaw.GetPosition());
+	if (!Interpolation->bInitialized || CorrectionDistance >= TeleportSnapDistance)
+	{
+		CurrentTransform.SetLocation(PositionYaw.GetPosition());
+		CurrentTransform.SetRotation(FQuat(FVector::UpVector, PositionYaw.GetYaw()));
+		InitializeInterpolation(EntityView, Agent);
+		return;
+	}
+
+	const float ServerInterval = Agent.GetServerTimeSeconds() - Interpolation->LastServerTimeSeconds;
+	Interpolation->StartLocation = CurrentTransform.GetLocation();
+	Interpolation->TargetLocation = PositionYaw.GetPosition();
+	Interpolation->StartYawRadians = GetTransformYawRadians(CurrentTransform);
+	Interpolation->TargetYawRadians = PositionYaw.GetYaw();
+	Interpolation->ElapsedSeconds = 0.0f;
+	Interpolation->DurationSeconds = ServerInterval > UE_SMALL_NUMBER
+		? FMath::Clamp(ServerInterval, MinimumInterpolationDuration, MaximumInterpolationDuration)
+		: DefaultInterpolationDuration;
+	Interpolation->LastServerTimeSeconds = Agent.GetServerTimeSeconds();
 }
 
 void FASMassMonsterClientBubbleHandler::ApplyVisualData(const FMassEntityView& EntityView,
