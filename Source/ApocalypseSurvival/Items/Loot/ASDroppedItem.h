@@ -56,6 +56,9 @@ private:
 	TObjectPtr<UBoxComponent> InteractionCollision;
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> ItemMesh;
+	/** Cosmetic only; enabled on clients while a Legendary item remains in this drop. */
+	UPROPERTY(VisibleAnywhere, Category = "Item|Appearance")
+	TObjectPtr<UStaticMeshComponent> LegendaryBeam;
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UWidgetComponent> NameLabel;
 	UPROPERTY(VisibleAnywhere)

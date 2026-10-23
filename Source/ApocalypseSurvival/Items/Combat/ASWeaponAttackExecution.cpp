@@ -158,10 +158,11 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 	if (Profile->TargetMode == EASAttackTargetMode::Single)
 	{
 		AActor* RequestedTarget = Context.RequestedTarget.Get();
+		const float AllowedRange = AttackRange + 15.0f;
 		const bool bRequestedTargetInRange = IsValid(RequestedTarget)
 			&& UASCombatTargetSubsystem::IsValidActorTarget(RequestedTarget, Context.Avatar, false)
 			&& FVector::DistSquared2D(Context.Avatar->GetActorLocation(), RequestedTarget->GetActorLocation())
-			<= FMath::Square(AttackRange + 15.0f);
+			<= FMath::Square(AllowedRange);
 		if (bRequestedTargetInRange)
 		{
 			Query.Domain = EASCombatTargetDomain::ActorOnly;
@@ -169,9 +170,26 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 			Query.SearchOrigin = RequestedTarget->GetActorLocation();
 			Query.SearchRadius = 1.0f;
 		}
+		else
+		{
+			// Mass 단일 공격은 넓은 피격 범위에서 첫 Entity를 꺼내지 않는다.
+			// 클릭이 사거리 안이면 클릭점 기준, 밖이면 공격자 기준으로 하나를 고른 뒤
+			// ResolveAndApplyBestTarget이 그 Entity ID에만 피해를 적용한다.
+			const bool bClickIsInAttackRange = FVector::DistSquared2D(Start, Context.TargetLocation)
+				<= FMath::Square(AllowedRange);
+			Query.SearchOrigin = Start;
+			Query.SearchRadius = AllowedRange;
+			Query.Domain = EASCombatTargetDomain::MassOnly;
+			Query.SortPolicy = bClickIsInAttackRange
+				? EASCombatTargetSortPolicy::NearestToPriorityLocation
+				: EASCombatTargetSortPolicy::NearestToSearchOrigin;
+			Query.PriorityLocation = Context.TargetLocation;
+		}
 		Query.MaxTargets = 1;
 	}
-	const FASCombatApplyResult ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
+	const FASCombatApplyResult ApplyResult = Profile->TargetMode == EASAttackTargetMode::Single
+		? CombatTargets->ResolveAndApplyBestTarget(Query, DamageSpecs)
+		: CombatTargets->ResolveAndApply(Query, DamageSpecs);
 
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
@@ -211,6 +229,11 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		return;
 	}
 	const TArray<FGameplayEffectSpecHandle> DamageSpecs = ASWeaponAttackExecutionPrivate::MakeDamageSpecs(Context);
+	UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
+	if (!CombatTargets)
+	{
+		return;
+	}
 
 	if (Profile->TargetMode == EASAttackTargetMode::Single)
 	{
@@ -220,17 +243,14 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			if (UASCombatTargetSubsystem::IsValidActorTarget(RequestedTarget, Context.Avatar, false)
 				&& FVector::DistSquared2D(Context.Avatar->GetActorLocation(), RequestedTarget->GetActorLocation()) <= FMath::Square(AllowedRange))
 			{
-				if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
-				{
-					FASCombatTargetQuery Query;
-					Query.SearchOrigin = RequestedTarget->GetActorLocation();
-					Query.SearchRadius = 1.0f;
-					Query.Instigator = Context.Avatar;
-					Query.Domain = EASCombatTargetDomain::ActorOnly;
-					Query.ExplicitActor = RequestedTarget;
-					Query.MaxTargets = 1;
-					CombatTargets->ResolveAndApply(Query, DamageSpecs);
-				}
+				FASCombatTargetQuery Query;
+				Query.SearchOrigin = RequestedTarget->GetActorLocation();
+				Query.SearchRadius = 1.0f;
+				Query.Instigator = Context.Avatar;
+				Query.Domain = EASCombatTargetDomain::ActorOnly;
+				Query.ExplicitActor = RequestedTarget;
+				Query.MaxTargets = 1;
+				CombatTargets->ResolveAndApplyBestTarget(Query, DamageSpecs);
 				if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 				{
 					Character->MulticastDrawWeaponAttackDebug(Start, RequestedTarget->GetActorLocation(), TraceRadius, false, true);
@@ -238,6 +258,30 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 				return;
 			}
 		}
+
+		// 공격 이동이 선택한 Mass 타깃은 Actor 포인터를 가질 수 없다.
+		// 클릭이 사거리 안이면 클릭점 기준, 밖이면 공격자 기준으로 하나를 고른 뒤
+		// ResolveAndApplyBestTarget이 그 Entity ID에만 피해를 적용한다.
+		const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f;
+		const bool bClickIsInAttackRange = FVector::DistSquared2D(Start, Context.TargetLocation)
+			<= FMath::Square(AllowedRange);
+		FASCombatTargetQuery Query;
+		Query.SearchOrigin = Start;
+		Query.SearchRadius = AllowedRange;
+		Query.PriorityLocation = Context.TargetLocation;
+		Query.Instigator = Context.Avatar;
+		Query.Domain = EASCombatTargetDomain::MassOnly;
+		Query.SortPolicy = bClickIsInAttackRange
+			? EASCombatTargetSortPolicy::NearestToPriorityLocation
+			: EASCombatTargetSortPolicy::NearestToSearchOrigin;
+		Query.MaxTargets = 1;
+		const FASCombatApplyResult ApplyResult = CombatTargets->ResolveAndApplyBestTarget(Query, DamageSpecs);
+		if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
+		{
+			Character->MulticastDrawWeaponAttackDebug(Start, Context.TargetLocation, TraceRadius, false,
+				ApplyResult.HasAnyHit());
+		}
+		return;
 	}
 
 	const FVector End = Start + Context.AimDirection * FMath::Max(1.0f, Context.Definition->AttackRange);
@@ -262,12 +306,6 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	FASCombatApplyResult ApplyResult;
 	if (FirstTarget)
 	{
-		UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
-		if (!CombatTargets)
-		{
-			return;
-		}
-
 		FASCombatTargetQuery Query;
 		Query.Instigator = Context.Avatar;
 		if (Profile->TargetMode == EASAttackTargetMode::Area)
@@ -298,7 +336,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
 		}
 	}
-	else if (UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>())
+	else
 	{
 		FASCombatTargetHitSet HitTargets;
 		FASCombatTargetQuery Query;

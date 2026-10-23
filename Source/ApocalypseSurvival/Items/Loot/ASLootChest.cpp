@@ -26,9 +26,11 @@ AASLootChest::AASLootChest()
 
 	ChestMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ChestMesh"));
 	ChestMesh->SetupAttachment(SceneRoot);
+	ChestMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 
 	InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
 	InteractionCollision->SetupAttachment(SceneRoot);
+	InteractionCollision->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	InteractionCollision->InitBoxExtent(FVector(75.0f, 75.0f, 75.0f));
 	InteractionCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	InteractionCollision->SetCollisionResponseToAllChannels(ECR_Ignore);

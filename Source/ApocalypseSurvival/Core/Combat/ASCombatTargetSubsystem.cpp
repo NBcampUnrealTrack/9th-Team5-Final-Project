@@ -353,6 +353,36 @@ bool UASCombatTargetSubsystem::RefreshTarget(
 	return false;
 }
 
+FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
+	const FASCombatTargetQuery& Query,
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs)
+{
+	FASCombatApplyResult Result;
+	FASCombatTargetRef BestTarget;
+	if (!FindBestTarget(Query, BestTarget))
+	{
+		return Result;
+	}
+
+	if (AActor* Actor = BestTarget.GetActor())
+	{
+		ApplyEffectSpecsToActor(EffectSpecs, Actor);
+		Result.ActorTargets.Add(Actor);
+		return Result;
+	}
+
+	const float Damage = CalculateDamageMagnitude(EffectSpecs);
+	UASMassMonsterSubsystem* MassMonsters = GetWorld()
+		? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>()
+		: nullptr;
+	if (MassMonsters && Damage > 0.0f)
+	{
+		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
+			BestTarget.GetMassTargetId(), Damage, const_cast<AActor*>(Query.Instigator));
+	}
+	return Result;
+}
+
 int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActors(
 	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 	const TConstArrayView<AActor*> Targets) const
