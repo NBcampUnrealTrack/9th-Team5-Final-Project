@@ -7,6 +7,8 @@
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Loot/ASLootValidation.h"
+#include "Items/Loot/ASLootDefinition.h"
+#include "Items/Loot/ASLootSettings.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
@@ -57,6 +59,8 @@ void AASLootChest::SetLootRarityAppearance(const EASLootRarity Rarity, UStaticMe
 	const FName ColorParameter)
 {
 	if (!HasAuthority() || !IsValidLootRarity(Rarity)) return;
+	// An explicit custom appearance supersedes any pending settings lookup.
+	if (!bApplyingRaritySettings) AppearanceAssetRequest.Reset();
 	LootRarity = Rarity;
 	LootMeshOverride = MeshOverride;
 	LootMaterialOverride = MaterialOverride;
@@ -65,6 +69,32 @@ void AASLootChest::SetLootRarityAppearance(const EASLootRarity Rarity, UStaticMe
 	LootRarityColorParameter = ColorParameter;
 	ApplyLootRarityAppearance();
 	ForceNetUpdate();
+}
+
+void AASLootChest::SetLootRarityFromSettings(const EASLootRarity Rarity)
+{
+	if (!HasAuthority() || !IsValidLootRarity(Rarity) || IsActorBeingDestroyed()) return;
+	TGuardValue<bool> Guard(bApplyingRaritySettings, true);
+	const UASLootSettings* Settings = GetDefault<UASLootSettings>();
+	AppearanceAssetRequest.Request(Settings->RarityAppearanceTable.ToSoftObjectPath(),
+		FStreamableDelegate::CreateWeakLambda(this, [this]
+		{
+			if (!IsActorBeingDestroyed() && GetWorld() && !GetWorld()->bIsTearingDown)
+				SetLootRarityFromSettings(LootRarity);
+		}));
+	UDataTable* Table = Settings->RarityAppearanceTable.Get();
+	const FASLootRarityAppearanceRow* Row = nullptr;
+	if (Table && Table->GetRowStruct() == FASLootRarityAppearanceRow::StaticStruct())
+	{
+		const FName RowName(*StaticEnum<EASLootRarity>()->GetNameStringByValue(static_cast<int64>(Rarity)));
+		Row = Table->FindRow<FASLootRarityAppearanceRow>(RowName, TEXT("LootRarityAppearance"), false);
+		if (!Row && Rarity == EASLootRarity::Uncommon)
+			Row = Table->FindRow<FASLootRarityAppearanceRow>(TEXT("Common"), TEXT("LootRarityAppearance"), false);
+		if (Row && Row->Rarity != Rarity) Row = nullptr;
+	}
+	SetLootRarityAppearance(Rarity, Row ? Row->ChestMesh.Get() : nullptr, Row ? Row->ChestMaterial.Get() : nullptr,
+		Row ? Row->MaterialIndex : 0, Row ? Row->GetResolvedColor() : GetLootRarityColor(Rarity),
+		Row ? Row->ColorParameter : (ChestMesh->GetNumMaterials() > 0 ? FName(TEXT("RarityColor")) : NAME_None));
 }
 
 void AASLootChest::OnRep_LootRarityAppearance()
@@ -209,6 +239,7 @@ void AASLootChest::BeginPlay()
 
 void AASLootChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	AppearanceAssetRequest.Reset();
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(EmptyDespawnTimerHandle);

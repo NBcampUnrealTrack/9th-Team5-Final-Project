@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Items/Data/ASItemAssetLoading.h"
 #include "GameFramework/Actor.h"
 #include "Interaction/ASInteractable.h"
 #include "Items/Data/ASItemGrant.h"
@@ -46,6 +47,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Loot|Appearance")
 	EASLootRarity GetLootRarity() const { return LootRarity; }
+	/** Resolve configured appearance asynchronously while preserving the immediate spawn API. */
+	void SetLootRarityFromSettings(EASLootRarity Rarity);
 	
 	/** 루팅 창 제목. 비어 있으면 희귀도 기본 문구를 쓴다. (예: 시체 상자 "OOO의 시체") */
 	UFUNCTION(BlueprintPure, Category = "Loot")
@@ -149,4 +152,6 @@ private:
 	float EmptyDespawnDelay = 30.0f;
 
 	FTimerHandle EmptyDespawnTimerHandle;
+	FASItemAssetRequest AppearanceAssetRequest;
+	bool bApplyingRaritySettings = false;
 };

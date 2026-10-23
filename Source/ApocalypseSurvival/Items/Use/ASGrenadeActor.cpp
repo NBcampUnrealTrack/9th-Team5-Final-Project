@@ -117,10 +117,24 @@ bool AASGrenadeActor::InitializeGrenade(UAbilitySystemComponent* SourceASC, UASI
 	{
 		DamageSpec.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
 	}
-	if (UStaticMesh* ItemMesh = Definition->WorldMesh.LoadSynchronous())
+	if (UStaticMesh* ItemMesh = Definition->WorldMesh.Get())
 	{
 		MeshComponent->SetStaticMesh(ItemMesh);
 		MeshComponent->SetRelativeScale3D(FVector::OneVector);
+	}
+	else if (!Definition->WorldMesh.IsNull())
+	{
+		const TWeakObjectPtr<const UASItemDefinition> WeakDefinition(Definition);
+		MeshAssetRequest.Request(Definition->WorldMesh.ToSoftObjectPath(), FStreamableDelegate::CreateWeakLambda(this,
+			[this, WeakDefinition]
+			{
+				if (bExploded || IsActorBeingDestroyed() || !WeakDefinition.IsValid()) return;
+				if (UStaticMesh* ItemMesh = WeakDefinition->WorldMesh.Get())
+				{
+					MeshComponent->SetStaticMesh(ItemMesh);
+					MeshComponent->SetRelativeScale3D(FVector::OneVector);
+				}
+			}));
 	}
 	SourceItem = InSourceItem;
 	InstigatorAvatar = SourceASC->GetAvatarActor();
@@ -279,6 +293,7 @@ void AASGrenadeActor::MulticastExplosion_Implementation(const FVector_NetQuantiz
 
 void AASGrenadeActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	MeshAssetRequest.Reset();
 	GetWorldTimerManager().ClearTimer(FuseTimerHandle);
 	if (IsValid(TrailComponent)) TrailComponent->DeactivateImmediate();
 	Super::EndPlay(EndPlayReason);

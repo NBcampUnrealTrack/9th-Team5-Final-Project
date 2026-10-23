@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/DragDropOperation.h"
+#include "Items/Data/ASItemAssetLoading.h"
 #include "ASInventorySlotWidget.generated.h"
 
 class UASInventoryBarWidget;
@@ -39,6 +40,7 @@ public:
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual void NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation) override;
@@ -67,4 +69,5 @@ private:
 	int32 SlotIndex = INDEX_NONE;
 	FGuid PressedItem;
 	bool bPressed = false;
+	FASItemAssetRequest IconAssetRequest;
 };

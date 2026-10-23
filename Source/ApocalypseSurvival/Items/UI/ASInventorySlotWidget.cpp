@@ -101,6 +101,12 @@ void UASInventorySlotWidget::InitializeSlot(UASInventoryBarWidget* InBar, const 
 	RefreshSlot();
 }
 
+void UASInventorySlotWidget::NativeDestruct()
+{
+	IconAssetRequest.Reset();
+	Super::NativeDestruct();
+}
+
 UASItemInstance* UASInventorySlotWidget::GetItem() const
 {
 	UASInventoryComponent* Inventory = Bar ? Bar->GetInventory() : nullptr;
@@ -111,7 +117,9 @@ void UASInventorySlotWidget::RefreshSlot()
 {
 	UASItemInstance* Item = GetItem();
 	const UASItemDefinition* Definition = Item ? Item->GetItemDefinition() : nullptr;
-	UTexture2D* Icon = Definition ? Definition->Icon.LoadSynchronous() : nullptr;
+	IconAssetRequest.Request(Definition ? Definition->Icon.ToSoftObjectPath() : FSoftObjectPath(),
+		FStreamableDelegate::CreateWeakLambda(this, [this] { RefreshSlot(); }));
+	UTexture2D* Icon = Definition ? Definition->Icon.Get() : nullptr;
 	const bool bWeaponSlot = SlotIndex == UASInventoryComponent::WeaponSlotIndex;
 	const bool bEquipped = Item && bWeaponSlot;
 	if (RarityBackground)
@@ -173,7 +181,7 @@ void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, con
 	Drag->FromSlot = SlotIndex;
 	Drag->ItemId = PressedItem;
 	UImage* Visual = NewObject<UImage>(Drag);
-	UTexture2D* Icon = Item->GetItemDefinition()->Icon.LoadSynchronous();
+	UTexture2D* Icon = Item->GetItemDefinition()->Icon.Get();
 	Visual->SetBrushFromTexture(Icon);
 	Visual->SetDesiredSizeOverride(FVector2D(56.0f));
 	Visual->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
@@ -190,6 +198,13 @@ void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, con
 	UOverlaySlot* DragIconSlot = DragOverlay->AddChildToOverlay(Visual);
 	DragIconSlot->SetHorizontalAlignment(HAlign_Fill);
 	DragIconSlot->SetVerticalAlignment(VAlign_Fill);
+	if (!Icon)
+	{
+		UTextBlock* LoadingName = NewObject<UTextBlock>(Drag);
+		LoadingName->SetText(Item->GetItemDefinition()->DisplayName);
+		LoadingName->SetVisibility(ESlateVisibility::HitTestInvisible);
+		DragOverlay->AddChildToOverlay(LoadingName);
+	}
 	DragSize->SetContent(DragOverlay);
 	Drag->DefaultDragVisual = DragSize;
 	Drag->Pivot = EDragPivot::CenterCenter;

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Items/Data/ASItemAssetLoading.h"
 #include "ASLootEntryWidget.generated.h"
 
 class UASItemInstance;
@@ -56,4 +57,5 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> QuantityText;
+	FASItemAssetRequest IconAssetRequest;
 };

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
+#include "Items/Data/ASItemAssetLoading.h"
 #include "ASGrenadeActor.generated.h"
 
 class UAbilitySystemComponent;
@@ -128,6 +129,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> TrailComponent;
+	FASItemAssetRequest MeshAssetRequest;
 
 	/** Snapshot of the item PDA at throw time. */
 	UPROPERTY(Replicated)

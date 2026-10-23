@@ -31,6 +31,7 @@ UASInventoryComponent::UASInventoryComponent()
 void UASInventoryComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	PreloadItemAssets();
 	// Player inventory is the ten visible slots. Loot containers keep their configured limit.
 	if (Cast<APawn>(GetOwner()) || Cast<AController>(GetOwner()) || Cast<APlayerState>(GetOwner()))
 	{
@@ -560,6 +561,7 @@ void UASInventoryComponent::SyncReplicatedItems()
 void UASInventoryComponent::NotifyInventoryChanged()
 {
 	SyncReplicatedItems();
+	PreloadItemAssets();
 	GetOwner()->FlushNetDormancy();
 	GetOwner()->ForceNetUpdate();
 	OnInventoryChanged.Broadcast();
@@ -567,7 +569,83 @@ void UASInventoryComponent::NotifyInventoryChanged()
 
 void UASInventoryComponent::OnRep_Items()
 {
+	PreloadItemAssets();
 	OnInventoryChanged.Broadcast();
+}
+
+void UASInventoryComponent::PreloadItemAssets()
+{
+	if (!GetWorld() || GetWorld()->bIsTearingDown) return;
+	TArray<FSoftObjectPath> Paths;
+	for (UASItemInstance* Item : Items)
+	{
+		if (!IsValid(Item) || !Item->IsValidItemInstance()) continue;
+		for (const FSoftObjectPath& Path : ASItemAssetLoading::Gather(*Item->GetItemDefinition(), true)) Paths.AddUnique(Path);
+	}
+	InventoryAssetRequest.Request(Paths, FStreamableDelegate::CreateWeakLambda(this, [this]
+	{
+		if (GetWorld() && !GetWorld()->bIsTearingDown) OnInventoryChanged.Broadcast();
+	}));
+}
+
+void UASInventoryComponent::CancelPendingItemAction()
+{
+	++PendingActionSerial;
+	PendingActionItem.Invalidate();
+	PendingActionAvatar.Reset();
+	ActionAssetRequest.Reset();
+}
+
+bool UASInventoryComponent::PrepareItemAction(const FGuid InstanceId, APawn* Avatar,
+	const bool bEquipOnly, bool& bOutQueued)
+{
+	bOutQueued = false;
+	UASItemInstance* Item = FindItemById(InstanceId);
+	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
+	if (!HasInventoryAuthority() || !Item || !ASC || Avatar != GetInventoryAvatar()
+		|| ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)) return false;
+	const UASItemDefinition* Definition = Item->GetItemDefinition();
+	if (Definition->ItemType != EASItemType::Weapon && Definition->ItemType != EASItemType::Consumable) return false;
+	if (bEquipOnly && Definition->ItemType != EASItemType::Weapon) return false;
+	if (Definition->ItemType == EASItemType::Consumable
+		&& (Definition->UseQuantity <= 0 || Item->GetQuantity() < Definition->UseQuantity)) return false;
+	const TArray<FSoftObjectPath> Paths = ASItemAssetLoading::Gather(*Definition, false);
+	if (ASItemAssetLoading::AreLoaded(Paths))
+	{
+		CancelPendingItemAction();
+		return true;
+	}
+	if (PendingActionItem == InstanceId && PendingActionAvatar.Get() == Avatar && bPendingEquipOnly == bEquipOnly)
+	{
+		bOutQueued = true;
+		return true;
+	}
+	CancelPendingItemAction();
+	PendingActionItem = InstanceId;
+	PendingActionAvatar = Avatar;
+	bPendingEquipOnly = bEquipOnly;
+	const uint64 Serial = PendingActionSerial;
+	const TWeakObjectPtr<UASItemDefinition> ExpectedDefinition(Item->GetItemDefinition());
+	bOutQueued = ActionAssetRequest.Request(Paths, FStreamableDelegate::CreateWeakLambda(this,
+		[this, Serial, InstanceId, ExpectedDefinition, Paths, WeakAvatar = TWeakObjectPtr<APawn>(Avatar), bEquipOnly]
+		{
+			if (Serial != PendingActionSerial) return;
+			UASItemInstance* Current = FindItemById(InstanceId);
+			APawn* CurrentAvatar = WeakAvatar.Get();
+			if (!Current || !CurrentAvatar || !GetWorld() || GetWorld()->bIsTearingDown
+				|| Current->GetItemDefinition() != ExpectedDefinition.Get()
+				|| GetInventoryAvatar() != CurrentAvatar || !ASItemAssetLoading::AreLoaded(Paths))
+			{
+				CancelPendingItemAction();
+				return;
+			}
+			// Revalidate authority, avatar, death and quantity again through the public operation.
+			if (bEquipOnly) EquipItem(InstanceId, CurrentAvatar);
+			else UseItem(InstanceId, CurrentAvatar);
+			if (Serial == PendingActionSerial) CancelPendingItemAction();
+		}));
+	if (!bOutQueued) CancelPendingItemAction();
+	return bOutQueued;
 }
 
 UASItemInstance* UASInventoryComponent::FindItemById(const FGuid InstanceId) const
@@ -582,6 +660,9 @@ UASItemInstance* UASInventoryComponent::FindItemById(const FGuid InstanceId) con
 bool UASInventoryComponent::UseItem(const FGuid InstanceId, APawn* Avatar)
 {
 	if (!HasInventoryAuthority()) return false;
+	bool bQueued = false;
+	if (!PrepareItemAction(InstanceId, Avatar, false, bQueued)) return false;
+	if (bQueued) return true;
 	if (!IsValid(ItemUseComponent))
 	{
 		ItemUseComponent = GetOwner()->FindComponentByClass<UASItemUseComponent>();
@@ -621,6 +702,9 @@ bool UASInventoryComponent::EquipItem(const FGuid InstanceId, APawn* Avatar)
 	if (!Previous) Previous = GetItemAtSlot(WeaponSlotIndex);
 	const int32 SourceSlot = Item->InventorySlot;
 	if (SourceSlot < 0 && (SourceSlot != WeaponSlotIndex || Previous != Item)) return false;
+	bool bQueued = false;
+	if (!PrepareItemAction(InstanceId, Avatar, true, bQueued)) return false;
+	if (bQueued) return true;
 	TGuardValue<bool> Guard(bChangingEquipment, true);
 	if (!IASItemEquipmentInterface::Execute_EquipInventoryItem(Provider, this, Item, Avatar)
 		|| GetEquippedItem() != Item) return false;
@@ -634,6 +718,7 @@ bool UASInventoryComponent::EquipItem(const FGuid InstanceId, APawn* Avatar)
 void UASInventoryComponent::UnequipItem()
 {
 	if (!HasInventoryAuthority() || bChangingEquipment) return;
+	CancelPendingItemAction();
 	APawn* Avatar = GetInventoryAvatar();
 	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
 	if (!ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)) return;
@@ -694,6 +779,8 @@ UActorComponent* UASInventoryComponent::GetEquipmentProvider() const
 
 void UASInventoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	CancelPendingItemAction();
+	InventoryAssetRequest.Reset();
 	// Equipment owns teardown of its actors and GAS grants.
 	for (UASItemInstance* Item : RegisteredItems) RemoveReplicatedSubObject(Item);
 	RegisteredItems.Reset();

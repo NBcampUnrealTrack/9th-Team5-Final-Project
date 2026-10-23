@@ -6,7 +6,6 @@
 #include "Items/Loot/ASLootDefinition.h"
 #include "Items/Loot/ASLootGenerator.h"
 #include "Items/Loot/ASLootValidation.h"
-#include "Items/Loot/ASLootSettings.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 
@@ -57,21 +56,6 @@ namespace
 		return Row;
 	}
 
-	const FASLootRarityAppearanceRow* ResolveRarityAppearance(const EASLootRarity Rarity)
-	{
-		const UASLootSettings* Settings = GetDefault<UASLootSettings>();
-		UDataTable* Table = Settings ? Settings->RarityAppearanceTable.LoadSynchronous() : nullptr;
-		if (!Table || Table->GetRowStruct() != FASLootRarityAppearanceRow::StaticStruct()) return nullptr;
-		const FString RowName = StaticEnum<EASLootRarity>()->GetNameStringByValue(static_cast<int64>(Rarity));
-		const FASLootRarityAppearanceRow* Row = Table->FindRow<FASLootRarityAppearanceRow>(FName(*RowName),
-			TEXT("ResolveLootRarityAppearance"), false);
-		// Enum redirects migrate the value, while existing DataTable row names remain unchanged.
-		if (!Row && Rarity == EASLootRarity::Uncommon)
-		{
-			Row = Table->FindRow<FASLootRarityAppearanceRow>(TEXT("Common"), TEXT("ResolveLootRarityAppearance"), false);
-		}
-		return Row && Row->Rarity == Rarity ? Row : nullptr;
-	}
 }
 
 bool UASLootBlueprintLibrary::ValidateLootItems(const TArray<FASItemGrant>& Items, FString& OutError)
@@ -108,13 +92,7 @@ FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestWithAppearance(UO
 	}
 	if (Preset)
 	{
-		const FASLootRarityAppearanceRow* Appearance = ResolveRarityAppearance(Preset->Rarity);
-		Chest->SetLootRarityAppearance(Preset->Rarity,
-			Appearance ? Appearance->ChestMesh.Get() : nullptr,
-			Appearance ? Appearance->ChestMaterial.Get() : nullptr,
-			Appearance ? Appearance->MaterialIndex : 0,
-			Appearance ? Appearance->GetResolvedColor() : FLinearColor::White,
-			Appearance ? Appearance->ColorParameter : NAME_None);
+		Chest->SetLootRarityFromSettings(Preset->Rarity);
 	}
 	Chest->FinishSpawning(SpawnTransform);
 	if (!IsValid(Chest) || Chest->IsActorBeingDestroyed())
@@ -126,13 +104,7 @@ FASLootChestSpawnResult UASLootBlueprintLibrary::SpawnLootChestWithAppearance(UO
 	if (Preset)
 	{
 		// Construction scripts may set their default mesh/material after the deferred spawn setup.
-		const FASLootRarityAppearanceRow* Appearance = ResolveRarityAppearance(Preset->Rarity);
-		Chest->SetLootRarityAppearance(Preset->Rarity,
-			Appearance ? Appearance->ChestMesh.Get() : nullptr,
-			Appearance ? Appearance->ChestMaterial.Get() : nullptr,
-			Appearance ? Appearance->MaterialIndex : 0,
-			Appearance ? Appearance->GetResolvedColor() : FLinearColor::White,
-			Appearance ? Appearance->ColorParameter : NAME_None);
+		Chest->SetLootRarityFromSettings(Preset->Rarity);
 	}
 	// Covers worlds that have not dispatched BeginPlay yet. BeginPlay will reuse this result.
 	if (!Chest->InitializeInitialLoot(Error))
