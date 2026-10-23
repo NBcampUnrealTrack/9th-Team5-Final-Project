@@ -100,6 +100,45 @@ FASTargetHandle UASMonsterTargetSubsystem::FindTargetForActor(const AActor* Acto
 	return Record && Record->Handle == *Handle ? *Handle : FASTargetHandle();
 }
 
+bool UASMonsterTargetSubsystem::FindClosestTargetInRange(
+	const FVector& Origin,
+	const float MaxDistance,
+	const EASMonsterTargetCapability RequiredCapabilities,
+	FASTargetSnapshot& OutTarget) const
+{
+	OutTarget = FASTargetSnapshot();
+	if (!FMath::IsFinite(MaxDistance) || MaxDistance < 0.0f)
+	{
+		return false;
+	}
+
+	const double MaxDistanceSquared = FMath::Square(static_cast<double>(MaxDistance));
+	double ClosestDistanceSquared = MaxDistanceSquared;
+	bool bFoundTarget = false;
+	for (const TPair<int32, FTargetRecord>& Pair : TargetsById)
+	{
+		FASTargetSnapshot Snapshot;
+		if (!BuildSnapshot(Pair.Value, Snapshot) || !Snapshot.bAlive
+			|| !ASHasAllTargetCapabilities(Snapshot.Capabilities, RequiredCapabilities))
+		{
+			continue;
+		}
+
+		const double DistanceSquared = FVector::DistSquared2D(Origin, Snapshot.Location);
+		const bool bIsCloser = DistanceSquared < ClosestDistanceSquared;
+		const bool bBreaksDistanceTie = DistanceSquared == ClosestDistanceSquared
+			&& (!bFoundTarget || Snapshot.Handle.Id < OutTarget.Handle.Id);
+		if (bIsCloser || bBreaksDistanceTie)
+		{
+			ClosestDistanceSquared = DistanceSquared;
+			OutTarget = MoveTemp(Snapshot);
+			bFoundTarget = true;
+		}
+	}
+
+	return bFoundTarget;
+}
+
 void UASMonsterTargetSubsystem::FindTargetsInRange(
 	const FVector& Origin,
 	const float MaxDistance,

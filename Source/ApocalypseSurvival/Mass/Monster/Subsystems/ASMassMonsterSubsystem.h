@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Mass/EntityHandle.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "ASMassMonsterSubsystem.generated.h"
 
@@ -120,7 +121,7 @@ public:
 	bool QueueMonsterSpawns(UMassEntityConfigAsset* EntityConfig,
 		TConstArrayView<FTransform> SpawnTransforms,
 		EASMassMonsterWorldBehavior WorldBehavior,
-		int32 InitialTargetId,
+		FASTargetHandle InitialPrimaryTarget,
 		const FVector& InitialTargetLocation,
 		bool bCountTowardWave);
 
@@ -185,7 +186,7 @@ private:
 		TWeakObjectPtr<UMassEntityConfigAsset> EntityConfig;
 		TArray<FTransform> SpawnTransforms;
 		EASMassMonsterWorldBehavior WorldBehavior = EASMassMonsterWorldBehavior::DayTerritory;
-		int32 InitialTargetId = INDEX_NONE;
+		FASTargetHandle InitialPrimaryTarget;
 		FVector InitialTargetLocation = FVector::ZeroVector;
 		bool bCountTowardWave = false;
 	};
@@ -196,7 +197,7 @@ private:
 			const struct FASMassMonsterConfigFragment&)> Predicate);
 	void FlushQueuedMonsterSpawns();
 	void ScheduleQueuedMonsterSpawnFlush();
-	void ConfigureInitialTargets(TConstArrayView<FMassEntityHandle> Entities, int32 TargetId,
+	void ConfigureInitialTargets(TConstArrayView<FMassEntityHandle> Entities, FASTargetHandle PrimaryTarget,
 		const FVector& TargetLocation);
 	void CompactManagedEntities();
 

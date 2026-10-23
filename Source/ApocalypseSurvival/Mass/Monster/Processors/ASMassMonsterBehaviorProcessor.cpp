@@ -1,7 +1,7 @@
 #include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
 
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
-#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Engine/World.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
@@ -34,14 +34,15 @@ namespace ASMassMonsterBehavior
 		Target.RefreshTimeRemaining = FMath::Max(0.01f, NextRefreshDelay);
 	}
 
-	static bool CopySnapshotToTarget(const FASMassPlayerTargetSnapshot* Snapshot, FASMassMonsterTargetFragment& Target)
+	static bool CopySnapshotToTarget(const FASTargetSnapshot* Snapshot, FASMassMonsterTargetFragment& Target)
 	{
-		if (!Snapshot || !Snapshot->bAlive || !Snapshot->Pawn.IsValid())
+		if (!Snapshot || !Snapshot->bAlive || !Snapshot->Actor.IsValid()
+			|| !ASHasAllTargetCapabilities(Snapshot->Capabilities, EASMonsterTargetCapability::PrimaryTarget))
 		{
 			return false;
 		}
 
-		Target.TargetId = Snapshot->TargetId;
+		Target.PrimaryTarget = Snapshot->Handle;
 		Target.CachedTargetLocation = Snapshot->Location;
 		return true;
 	}
@@ -94,7 +95,7 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterBehaviorProcessor);
 
 	UWorld* World = GetWorld();
-	UASMassPlayerTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMassPlayerTargetSubsystem>() : nullptr;
+	UASMonsterTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMonsterTargetSubsystem>() : nullptr;
 	if (!TargetSubsystem)
 	{
 		return;
@@ -145,14 +146,17 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 			{
 				if (bRefreshTarget)
 				{
-					const FASMassPlayerTargetSnapshot* Snapshot = Target.HasTarget()
-						? TargetSubsystem->FindTarget(Target.TargetId)
-						: nullptr;
+					FASTargetSnapshot Snapshot;
+					const bool bHasCurrentSnapshot = Target.HasTarget()
+						&& TargetSubsystem->ResolveTarget(Target.PrimaryTarget, Snapshot);
 
-					if (!ASMassMonsterBehavior::CopySnapshotToTarget(Snapshot, Target))
+					if (!ASMassMonsterBehavior::CopySnapshotToTarget(
+						bHasCurrentSnapshot ? &Snapshot : nullptr, Target))
 					{
-						Snapshot = TargetSubsystem->FindClosestAliveTarget(EntityLocation, TNumericLimits<float>::Max());
-						if (!ASMassMonsterBehavior::CopySnapshotToTarget(Snapshot, Target))
+						const bool bFoundClosest = TargetSubsystem->FindClosestTargetInRange(
+							EntityLocation, TNumericLimits<float>::Max(),
+							EASMonsterTargetCapability::PrimaryTarget, Snapshot);
+						if (!ASMassMonsterBehavior::CopySnapshotToTarget(bFoundClosest ? &Snapshot : nullptr, Target))
 						{
 							ASMassMonsterBehavior::ClearTarget(Target, RefreshInterval);
 						}
@@ -201,12 +205,15 @@ void UASMassMonsterBehaviorProcessor::Execute(FMassEntityManager& EntityManager,
 			if (bRefreshTarget)
 			{
 				const bool bHadTarget = Target.HasTarget();
-				const FASMassPlayerTargetSnapshot* Snapshot = bHadTarget
-					? TargetSubsystem->FindTarget(Target.TargetId)
-					: TargetSubsystem->FindClosestAliveTarget(EntityLocation, Home.DetectionRadius);
+				FASTargetSnapshot Snapshot;
+				const bool bHasSnapshot = bHadTarget
+					? TargetSubsystem->ResolveTarget(Target.PrimaryTarget, Snapshot)
+					: TargetSubsystem->FindClosestTargetInRange(EntityLocation, Home.DetectionRadius,
+						EASMonsterTargetCapability::PrimaryTarget, Snapshot);
 				const float ValidDistance = bHadTarget ? Home.LoseTargetRadius : Home.DetectionRadius;
 
-				const bool bValidCurrentTarget = ASMassMonsterBehavior::CopySnapshotToTarget(Snapshot, Target)
+				const bool bValidCurrentTarget = ASMassMonsterBehavior::CopySnapshotToTarget(
+					bHasSnapshot ? &Snapshot : nullptr, Target)
 					&& FVector::DistSquared2D(EntityLocation, Target.CachedTargetLocation)
 						<= FMath::Square(ValidDistance);
 

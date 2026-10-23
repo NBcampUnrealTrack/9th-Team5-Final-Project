@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "MassProcessor.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetTypes.h"
 #include "ASMassMonsterChargeAttackProcessor.generated.h"
 
 /** Mass 일반 몬스터의 선딜·직선 돌진·단일 타깃 피해를 처리한다. */
@@ -19,5 +20,5 @@ protected:
 
 private:
 	FMassEntityQuery EntityQuery;
-	TMap<FMassEntityHandle, TSet<int32>> HitTargetIdsByEntity;
+	TMap<FMassEntityHandle, TSet<FASTargetHandle>> HitTargetsByEntity;
 };

@@ -128,7 +128,7 @@ void UASMassMonsterSummonProcessor::Execute(FMassEntityManager& EntityManager, F
 					continue;
 				}
 
-				Combat.LockedTargetId = Targets[EntityIt].TargetId;
+				Combat.LockedTarget = Targets[EntityIt].PrimaryTarget;
 				Combat.LockedTargetLocation = Targets[EntityIt].CachedTargetLocation;
 				Combat.PhaseEndTimeSeconds = CurrentTime + Config.SummonWindupDuration;
 				Combat.AttackState = EASMassMonsterAttackState::Windup;
@@ -146,7 +146,7 @@ void UASMassMonsterSummonProcessor::Execute(FMassEntityManager& EntityManager, F
 				Config.SummonMaxRadius, GetTypeHash(Entity.Index));
 			const bool bQueued = !SpawnTransforms.IsEmpty() && MonsterSubsystem->QueueMonsterSpawns(
 				Config.SummonedEntityConfig, SpawnTransforms, Behaviors[EntityIt].WorldBehavior,
-				Combat.LockedTargetId, Combat.LockedTargetLocation, true);
+				Combat.LockedTarget, Combat.LockedTargetLocation, true);
 
 			if (bQueued)
 			{

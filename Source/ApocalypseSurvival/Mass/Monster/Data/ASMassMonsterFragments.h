@@ -5,6 +5,7 @@
 #include "MassEntityTypes.h"
 #include "MassLODTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetTypes.h"
 #include "ASMassMonsterFragments.generated.h"
 
 class AASMassMonsterProjectile;
@@ -21,8 +22,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterHealthFragment : public FMassFragmen
 	float CurrentHealth = 100.0f;
 	float DeathTimeRemaining = 0.0f;
 	bool bDeathTimerStarted = false;
-	/** 가장 최근에 피해를 준 플레이어의 Mass TargetId. 경험치 수령자 판정에만 쓴다. */
-	int32 LastDamageInstigatorTargetId = INDEX_NONE;
+	/** 가장 최근에 피해를 준 등록 타깃. 경험치 수령자 판정에만 쓴다. */
+	FASTargetHandle LastDamageInstigator;
 };
 
 /** 낮/밤 행동 모드와 현재 상위 행동 상태. */
@@ -41,7 +42,7 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTargetFragment : public FMassFragmen
 {
 	GENERATED_BODY()
 
-	int32 TargetId = INDEX_NONE;
+	FASTargetHandle PrimaryTarget;
 	FVector CachedTargetLocation = FVector::ZeroVector;
 	float Aggro = 0.0f;
 	float RefreshTimeRemaining = 0.0f;
@@ -49,12 +50,12 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTargetFragment : public FMassFragmen
 
 	bool HasTarget() const
 	{
-		return TargetId != INDEX_NONE;
+		return PrimaryTarget.IsValid();
 	}
 
 	void Reset()
 	{
-		TargetId = INDEX_NONE;
+		PrimaryTarget = FASTargetHandle();
 		CachedTargetLocation = FVector::ZeroVector;
 		Aggro = 0.0f;
 		RefreshTimeRemaining = 0.0f;
@@ -72,7 +73,7 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterCombatFragment : public FMassFragmen
 	EASMassMonsterAttackState AttackState = EASMassMonsterAttackState::Ready;
 	FVector LockedTargetLocation = FVector::ZeroVector;
 	FVector LockedDirection = FVector::ForwardVector;
-	int32 LockedTargetId = INDEX_NONE;
+	FASTargetHandle LockedTarget;
 	float ChargeDistanceTraveled = 0.0f;
 	uint8 PatternActivationCount = 0;
 	bool bPrimaryEffectApplied = false;

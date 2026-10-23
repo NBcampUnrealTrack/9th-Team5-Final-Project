@@ -26,6 +26,8 @@ public:
 
 	bool ResolveTarget(FASTargetHandle Handle, FASTargetSnapshot& OutSnapshot) const;
 	FASTargetHandle FindTargetForActor(const AActor* Actor) const;
+	bool FindClosestTargetInRange(const FVector& Origin, float MaxDistance,
+		EASMonsterTargetCapability RequiredCapabilities, FASTargetSnapshot& OutTarget) const;
 
 	void FindTargetsInRange(const FVector& Origin, float MaxDistance,
 		EASMonsterTargetCapability RequiredCapabilities, TArray<FASTargetSnapshot>& OutTargets) const;

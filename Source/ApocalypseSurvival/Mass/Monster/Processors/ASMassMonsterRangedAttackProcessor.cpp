@@ -1,12 +1,11 @@
 #include "Mass/Monster/Processors/ASMassMonsterRangedAttackProcessor.h"
 
 #include "Engine/World.h"
-#include "GameFramework/Pawn.h"
 #include "Mass/Monster/Combat/ASMassMonsterProjectile.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
 #include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
-#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
@@ -44,8 +43,8 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterRangedAttackProcessor);
 
 	UWorld* World = GetWorld();
-	UASMassPlayerTargetSubsystem* TargetSubsystem = World
-		? World->GetSubsystem<UASMassPlayerTargetSubsystem>()
+	UASMonsterTargetSubsystem* TargetSubsystem = World
+		? World->GetSubsystem<UASMonsterTargetSubsystem>()
 		: nullptr;
 	if (!World || !TargetSubsystem)
 	{
@@ -87,16 +86,17 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 				continue;
 			}
 
-			APawn* TargetPawn = TargetSubsystem->ResolveTargetPawn(Targets[EntityIt].TargetId);
+			FASTargetSnapshot TargetSnapshot;
 			const FVector EntityLocation = Transforms[EntityIt].GetTransform().GetLocation();
-			if (!IsValid(TargetPawn)
-				|| FVector::DistSquared2D(EntityLocation, TargetPawn->GetActorLocation()) > FMath::Square(Config.AttackRange))
+			if (!TargetSubsystem->ResolveTarget(Targets[EntityIt].PrimaryTarget, TargetSnapshot)
+				|| !TargetSnapshot.bAlive || !TargetSnapshot.bAttackable || !TargetSnapshot.Actor.IsValid()
+				|| FVector::DistSquared2D(EntityLocation, TargetSnapshot.Location) > FMath::Square(Config.AttackRange))
 			{
 				continue;
 			}
 
 			const FVector SpawnLocation = EntityLocation + FVector(0.0f, 0.0f, Config.RangedProjectileSpawnHeight);
-			FVector Direction = (TargetPawn->GetActorLocation() - SpawnLocation).GetSafeNormal();
+			FVector Direction = (TargetSnapshot.Location - SpawnLocation).GetSafeNormal();
 			if (Direction.IsNearlyZero())
 			{
 				continue;

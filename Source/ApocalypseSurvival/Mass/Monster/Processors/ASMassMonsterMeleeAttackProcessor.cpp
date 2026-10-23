@@ -1,11 +1,10 @@
 #include "Mass/Monster/Processors/ASMassMonsterMeleeAttackProcessor.h"
 
 #include "Engine/World.h"
-#include "GameFramework/Pawn.h"
 #include "Mass/Monster/Combat/ASMassMonsterDamageBridge.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
-#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
@@ -42,7 +41,7 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterMeleeAttackProcessor);
 
 	UWorld* World = GetWorld();
-	UASMassPlayerTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMassPlayerTargetSubsystem>() : nullptr;
+	UASMonsterTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMonsterTargetSubsystem>() : nullptr;
 	if (!World || !TargetSubsystem)
 	{
 		return;
@@ -81,7 +80,7 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 				continue;
 			}
 
-			APawn* TargetPawn = TargetSubsystem->ResolveTargetPawn(Targets[EntityIt].TargetId);
+			FASTargetSnapshot TargetSnapshot;
 			const FVector SourceLocation = Transforms[EntityIt].GetTransform().GetLocation();
 			const float EffectiveAttackRange = Combat.bUseFallbackMelee
 				? Config.FallbackMeleeAttackRange
@@ -92,13 +91,14 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 			const float EffectiveCooldown = Combat.bUseFallbackMelee
 				? Config.FallbackMeleeAttackCooldown
 				: Config.AttackCooldown;
-			if (!IsValid(TargetPawn)
-				|| FVector::DistSquared2D(SourceLocation, TargetPawn->GetActorLocation()) > FMath::Square(EffectiveAttackRange))
+			if (!TargetSubsystem->ResolveTarget(Targets[EntityIt].PrimaryTarget, TargetSnapshot)
+				|| !TargetSnapshot.bAlive || !TargetSnapshot.bAttackable || !TargetSnapshot.Actor.IsValid()
+				|| FVector::DistSquared2D(SourceLocation, TargetSnapshot.Location) > FMath::Square(EffectiveAttackRange))
 			{
 				continue;
 			}
 
-			ASMassMonsterDamage::ApplyToActor(TargetPawn, EffectiveAttackPower, SourceLocation);
+			ASMassMonsterDamage::ApplyToActor(TargetSnapshot.Actor.Get(), EffectiveAttackPower, SourceLocation);
 			Combat.NextAttackTimeSeconds = CurrentTime + EffectiveCooldown;
 			Combat.AttackState = EASMassMonsterAttackState::Recovering;
 		}
