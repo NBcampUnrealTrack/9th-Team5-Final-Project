@@ -53,6 +53,7 @@ public class ApocalypseSurvival : ModuleRules
 			// Mass Multiplayer
 			"MassReplication",
 			"MassAIReplication",
+			"NetCore",
 
 			"Niagara",
 			"Slate",

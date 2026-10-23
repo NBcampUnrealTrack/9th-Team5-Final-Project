@@ -68,6 +68,7 @@ struct APOCALYPSESURVIVAL_API FASCombatTargetRef
 	bool IsActor() const;
 	bool IsMass() const;
 	AActor* GetActor() const;
+	uint64 GetMassTargetId() const { return MassTargetId; }
 	const FVector& GetLocation() const { return Location; }
 	float GetHitRadius() const { return HitRadius; }
 	void Reset();
@@ -130,6 +131,10 @@ public:
 	FASCombatApplyResult ResolveAndApply(const FASCombatTargetQuery& Query,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 		FASCombatTargetHitSet* InOutHitTargets = nullptr);
+
+	/** Query 정렬 정책으로 고른 단일 Actor/Mass 타깃 하나에만 EffectSpec을 적용한다. */
+	FASCombatApplyResult ResolveAndApplyBestTarget(const FASCombatTargetQuery& Query,
+		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs);
 
 	UE_DEPRECATED(5.8, "Use FindActorTargets with FASCombatTargetQuery instead.")
 	TArray<AActor*> FindActorTargetsInRadius(const FVector& Center, float Radius,

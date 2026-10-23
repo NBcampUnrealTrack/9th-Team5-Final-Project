@@ -1,5 +1,6 @@
 #include "Mass/Monster/Processors/ASMassMonsterVisualizationProcessors.h"
 
+#include "Mass/Monster/Processors/ASMassMonsterClientInterpolationProcessor.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
@@ -104,6 +105,7 @@ UASMassMonsterUpdateISMProcessor::UASMassMonsterUpdateISMProcessor()
 	bAutoRegisterWithProcessingPhases = true;
 	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterTemporaryVisualProcessor::StaticClass()->GetFName());
 	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterVisualizationProcessor::StaticClass()->GetFName());
+	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterClientInterpolationProcessor::StaticClass()->GetFName());
 }
 
 void UASMassMonsterUpdateISMProcessor::ConfigureQueries(
