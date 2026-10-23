@@ -11,6 +11,7 @@ class UASItemInstance;
 class UBorder;
 class UImage;
 class UTextBlock;
+class UASItemRarityBackground;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API UASInventorySlotDragDrop : public UDragDropOperation
@@ -46,6 +47,8 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> SlotBorder;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UASItemRarityBackground> RarityBackground;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> ItemIcon;
 	UPROPERTY(meta = (BindWidgetOptional))
