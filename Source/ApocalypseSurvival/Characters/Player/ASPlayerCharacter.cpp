@@ -9,6 +9,7 @@
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "Core/Framework/ASCharacterSelectSubsystem.h"
+#include "Core/Framework/ASGameState.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffectExtension.h"
@@ -106,6 +107,38 @@ void AASPlayerCharacter::MulticastDrawWeaponAttackDebug_Implementation(
 			DrawDebugLine(World, Start, End, Color, false, 1.0f, 0, 2.0f);
 		}
 	}
+}
+
+void AASPlayerCharacter::MulticastDrawMeleeConeDebug_Implementation(
+	const FVector Origin,
+	const FVector Direction,
+	const float Radius,
+	const float AngleDegrees,
+	const bool bHit)
+{
+	const UWorld* World = GetWorld();
+	if (!World || Direction.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FColor Color = bHit ? FColor::Red : FColor::Green;
+	const float HalfAngle = AngleDegrees * 0.5f;
+
+	// 부채꼴 테두리: 양쪽 직선 + 호를 선분으로 이어 그린다.
+	constexpr int32 ArcSegments = 12;
+	FVector PreviousPoint = Origin + Direction.RotateAngleAxis(-HalfAngle, FVector::UpVector) * Radius;
+	DrawDebugLine(World, Origin, PreviousPoint, Color, false, 1.0f, 0, 2.0f);
+
+	for (int32 Index = 1; Index <= ArcSegments; ++Index)
+	{
+		const float Angle = -HalfAngle + AngleDegrees * (static_cast<float>(Index) / ArcSegments);
+		const FVector Point = Origin + Direction.RotateAngleAxis(Angle, FVector::UpVector) * Radius;
+		DrawDebugLine(World, PreviousPoint, Point, Color, false, 1.0f, 0, 2.0f);
+		PreviousPoint = Point;
+	}
+
+	DrawDebugLine(World, Origin, PreviousPoint, Color, false, 1.0f, 0, 2.0f);
 }
 
 void AASPlayerCharacter::PossessedBy(AController* NewController)
@@ -415,6 +448,10 @@ void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		{
 			EnhancedInput->BindAction(ReviveAction, ETriggerEvent::Started, this, &AASPlayerCharacter::OnRevivePressed);
 		}
+		if (SpectateNextAction)
+		{
+			EnhancedInput->BindAction(SpectateNextAction, ETriggerEvent::Started, this, &AASPlayerCharacter::OnSpectateNextPressed);
+		}
 	}
 }
 
@@ -469,6 +506,13 @@ void AASPlayerCharacter::ServerRequestRevive_Implementation(AASPlayerCharacter* 
 {
 	// 클라이언트 요청이라 서버에서 다시 확인한다.
 	if (!Target || Target == this || IsDead() || IsDowned())
+	{
+		return;
+	}
+	
+	// 팀 부활 횟수가 남아 있어야 부활을 시작할 수 있다. (차감은 완료할 때)
+	const AASGameState* GS = GetWorld()->GetGameState<AASGameState>();
+	if (!GS || GS->GetTeamRevivesRemaining() <= 0)
 	{
 		return;
 	}
@@ -577,6 +621,14 @@ void AASPlayerCharacter::Revive()
 	{
 		return;
 	}
+	
+	// 완료하는 순간 팀 부활 횟수를 쓴다. 그사이 다른 사람이 마지막 횟수를 썼으면 부활 실패
+	AASGameState* GS = GetWorld()->GetGameState<AASGameState>();
+	if (!GS || !GS->ConsumeTeamRevive())
+	{
+		CancelRevive();
+		return;
+	}
 
 	GetWorldTimerManager().ClearTimer(ReviveTickTimerHandle);
 	GetWorldTimerManager().ClearTimer(BleedOutTimerHandle);
@@ -590,11 +642,71 @@ void AASPlayerCharacter::Revive()
 	ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Downed, 1, EGameplayTagReplicationState::TagAndCountToAll);
 
 	UE_LOG(LogTemp, Log, TEXT("[Downed] %s 부활 완료 (체력 %.0f)"), *GetName(), MaxHealth * ReviveHealthRatio);
+	
+	// 이번 부활로 팀 부활 횟수를 다 썼으면, 쓰러져 있는 다른 사람은 더 살릴 수 없으므로 바로 사망 처리
+	if (GS->GetTeamRevivesRemaining() <= 0)
+	{
+		if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+		{
+			GameMode->KillUnrevivablePlayers();
+		}
+	}
 }
 
 void AASPlayerCharacter::OnRep_BeingRevived()
 {
 	OnBeingRevivedChanged(bBeingRevived);
+}
+
+void AASPlayerCharacter::OnSpectateNextPressed()
+{
+	// 살아 있을 때 좌클릭은 공격이다. 사망(관전) 중일 때만 처리한다.
+	if (!IsDead())
+	{
+		return;
+	}
+	
+	ServerRequestSpectateNext();
+}
+
+void AASPlayerCharacter::MulticastHideCorpse_Implementation()
+{
+	// 붙어 있는 액터(무기 등)도 같이 숨기고 끈다.
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors, true, true);
+	for (AActor* Attached : AttachedActors)
+	{
+		if (IsValid(Attached))
+		{
+			Attached->SetActorHiddenInGame(true);
+			Attached->SetActorEnableCollision(false);
+			Attached->SetActorTickEnabled(false);
+		}
+	}
+
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+	SetActorTickEnabled(false);
+
+	// 메시 애니메이션, 이동 컴포넌트 같은 컴포넌트 틱도 끈다.
+	TInlineComponentArray<UActorComponent*> Components(this);
+	for (UActorComponent* Component : Components)
+	{
+		Component->SetComponentTickEnabled(false);
+	}
+}
+
+void AASPlayerCharacter::ServerRequestSpectateNext_Implementation()
+{
+	if (!IsDead())
+	{
+		return;
+	}
+	
+	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+	{
+		GameMode->SpectateNext(Cast<APlayerController>(GetController()));
+	}
 }
 
 void AASPlayerCharacter::HandleDeadTagChanged(const FGameplayTag Tag, int32 NewCount)

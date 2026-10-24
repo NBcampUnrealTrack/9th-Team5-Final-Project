@@ -153,6 +153,9 @@ public:
 	/** 익명 Target Id가 아직 살아 있는 관리 몬스터인지 확인하고 최신 위치를 반환한다. */
 	bool GetAliveMonsterTarget(uint64 TargetId, FVector& OutLocation, float& OutHitRadius) const;
 
+	/** Target Id로 지정한 살아 있는 Mass 몬스터 하나에 서버 피해를 적용한다. */
+	int32 ApplyDamageToTarget(uint64 TargetId, float Damage, AActor* DamageInstigator);
+
 	/** Actor 충돌체가 없는 Mass 몬스터에 원형 서버 피해를 적용한다. 반환값은 실제 피격 수다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
 	int32 ApplyDamageInRadius(const FVector& Center, float Radius, float Damage,
@@ -189,7 +192,8 @@ private:
 
 	bool CanMutateEntities(FString& OutError) const;
 	int32 ApplyDamageToMatchingMonsters(float Damage, AActor* DamageInstigator, int32 MaxTargets,
-		TFunctionRef<bool(const FVector&, const struct FASMassMonsterConfigFragment&)> Predicate);
+		TFunctionRef<bool(FMassEntityHandle, const FVector&,
+			const struct FASMassMonsterConfigFragment&)> Predicate);
 	void FlushQueuedMonsterSpawns();
 	void ScheduleQueuedMonsterSpawnFlush();
 	void ConfigureInitialTargets(TConstArrayView<FMassEntityHandle> Entities, int32 TargetId,

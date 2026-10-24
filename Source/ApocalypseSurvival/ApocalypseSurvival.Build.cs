@@ -13,6 +13,8 @@ public class ApocalypseSurvival : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"DeveloperSettings",
+			"OnlineSubsystem",
+			"OnlineSubsystemUtils",
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",
@@ -51,6 +53,7 @@ public class ApocalypseSurvival : ModuleRules
 			// Mass Multiplayer
 			"MassReplication",
 			"MassAIReplication",
+			"NetCore",
 
 			"Niagara",
 			"Slate",
@@ -75,9 +78,5 @@ public class ApocalypseSurvival : ModuleRules
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
-
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
 	}
 }

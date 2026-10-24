@@ -6,6 +6,7 @@
 #include "ASMassMonsterTrait.generated.h"
 
 class UASMonsterDefinition;
+class UASMonsterStatDefinition;
 
 /**
  * 일반 몬스터 Entity의 프로젝트 전용 데이터 구성을 추가한다.
@@ -22,6 +23,10 @@ protected:
 	/** 설정하면 기존 Actor 몬스터와 공유하는 능력치를 Parameters에 덮어쓴다. */
 	UPROPERTY(EditAnywhere, Category = "Monster")
 	TObjectPtr<UASMonsterDefinition> MonsterDefinition;
+
+	/** MonsterDefinition이 없는 Mass 전용 몬스터도 사용할 공통 스탯 원본이다. */
+	UPROPERTY(EditAnywhere, Category = "Monster|Stats")
+	TObjectPtr<UASMonsterStatDefinition> StatDefinition;
 
 	/** Mass 전용 공격 패턴·쿨다운·갱신 주기와 Definition이 없을 때 사용할 기본값. */
 	UPROPERTY(EditAnywhere, Category = "Monster")

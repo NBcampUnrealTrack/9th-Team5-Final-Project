@@ -73,6 +73,14 @@ public:
 	
 	/** 서버 전용. 부활 완료. 체력을 일부 채우고 일어난다. */
 	void Revive();
+	
+	/**
+     * 서버에서 호출, 모든 머신에서 실행. 멀티에서 사망 후 시체를 숨긴다.
+	 * 파괴하지 않는 이유: 관전 입력(좌클릭)을 이 캐릭터가 받으므로 빙의를 유지해야 한다.
+	 * 숨기기만 하면 틱·충돌·애니메이션은 계속 돌기 때문에 같이 끈다. 이 설정들은 복제되지 않아서 Multicast 로 각 머신이 직접 끈다.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastHideCorpse();
 
 	/** 누군가 부활시키는 중인가 (UI용, 모든 머신) */
 	UFUNCTION(BlueprintPure, Category = "Downed")
@@ -93,6 +101,10 @@ public:
 		float Radius,
 		bool bIsMelee,
 		bool bHit);
+	
+	/** 근접 평타 부채꼴 판정 디버그 표시 (모든 머신) */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastDrawMeleeConeDebug(FVector Origin, FVector Direction, float Radius, float AngleDegrees, bool bHit);
 	
 	UFUNCTION(Exec)
 	void DebugAddExp(int32 Amount);
@@ -160,6 +172,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> ReviveAction;
 	
+	/* 관전 중 다음 파티원 화면으로 넘기기 (좌클릭) */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> SpectateNextAction;
+	
 	// 레벨업 순간 호출 (서버, 클라 모두). 화면 문구 같은 보이는 것은 BP에서 붙인다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Progression")
 	void OnLevelUp(int32 NewLevel);
@@ -225,6 +241,12 @@ void StartRevive(AASPlayerCharacter* Reviver);
 
 	TWeakObjectPtr<UAbilitySystemComponent> ReviverAbilitySystem;
 	FDelegateHandle ReviverAbilityActivatedHandle;
+	
+	/* 로컬: 좌클릭. 사망(관전) 중이면 서버에 다음 파티원 관전을 요청한다. */
+	void OnSpectateNextPressed();
+	
+	UFUNCTION(Server, Reliable)
+	void ServerRequestSpectateNext();
 	
 	// 성장 컴포넌트(PlayerState) 레벨업 이벤트 구독. ASC 연결 때 걸고 EndPlay에서 푼다
 	void BindProgressionDelegates();

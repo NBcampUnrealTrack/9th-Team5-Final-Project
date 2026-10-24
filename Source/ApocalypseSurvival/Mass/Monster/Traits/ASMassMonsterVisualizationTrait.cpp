@@ -3,11 +3,13 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualSubsystem.h"
 #include "MassActorSubsystem.h"
 #include "MassEntityTemplateRegistry.h"
 #include "MassLODFragments.h"
 #include "MassRepresentationFragments.h"
 #include "MassRepresentationTypes.h"
+#include "MassRepresentationSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterVisualizationTrait)
@@ -45,10 +47,16 @@ UASMassMonsterVisualizationTrait::UASMassMonsterVisualizationTrait()
 		FMassStaticMeshInstanceVisualizationMeshDesc& MeshDesc =
 			StaticMeshInstanceDesc.Meshes.AddDefaulted_GetRef();
 		MeshDesc.Mesh = CubeMeshFinder.Object;
-		MeshDesc.LocalTransform = FTransform::Identity;
+		// Entity Transform은 NavMesh 지면 좌표를 유지한다. 표현 메시만 중심 원점의 Cube 높이 절반만큼 올린다.
+		// 실제 모델은 Entity Config의 Visualization Trait에서 메시 Pivot/바운드에 맞는 Local Transform을 지정한다.
+		MeshDesc.LocalTransform = FTransform(FVector(0.0f, 0.0f, 50.0f));
 		MeshDesc.SetSignificanceRange(EMassLOD::High, EMassLOD::Max);
 		MeshDesc.bCastShadows = false;
 		MeshDesc.Mobility = EComponentMobility::Movable;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[MassMonsterVisual] Required cube mesh is missing."));
 	}
 }
 
@@ -66,6 +74,22 @@ void UASMassMonsterVisualizationTrait::BuildTemplate(
 	BuildContext.AddFragment<FMassActorFragment>();
 	BuildContext.AddFragment<FMassViewerInfoFragment>();
 	BuildContext.AddTag<FMassCollectLODViewerInfoTag>();
+
+	// 런타임 Processor가 ISM 배열을 순회하는 도중 Descriptor를 추가하면 MassRepresentation의
+	// MTAccessDetector와 충돌한다. Entity Config Template 생성 시점에 상태 Descriptor를 미리 등록한다.
+	if (!BuildContext.IsInspectingData() && StaticMeshInstanceDesc.IsValid())
+	{
+		if (UMassRepresentationSubsystem* RepresentationSubsystem = World.GetSubsystem<UMassRepresentationSubsystem>())
+		{
+			const FStaticMeshInstanceVisualizationDescHandle BaseHandle =
+				RepresentationSubsystem->FindOrAddStaticMeshDesc(StaticMeshInstanceDesc);
+			if (UASMassMonsterTemporaryVisualSubsystem* VisualSubsystem =
+				World.GetSubsystem<UASMassMonsterTemporaryVisualSubsystem>())
+			{
+				VisualSubsystem->RegisterStateVisuals(StaticMeshInstanceDesc, BaseHandle);
+			}
+		}
+	}
 
 	Super::BuildTemplate(BuildContext, World);
 	BuildContext.RequireTag<FASMassMonsterTag>();

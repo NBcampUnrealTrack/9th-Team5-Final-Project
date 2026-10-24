@@ -62,6 +62,9 @@ protected:
 
 private:
 	bool IsFollowingPawn() const { return bLockedToPawn || bCentering; }
+	
+	/* 관전 중 대상을 계속 따라간다 */
+	bool IsSpectating() const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta = (ClampMin = "-89.0", ClampMax = "-10.0", Units = "deg"))
 	float CameraPitch = -55.0f;

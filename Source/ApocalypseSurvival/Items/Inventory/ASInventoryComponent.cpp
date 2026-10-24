@@ -436,6 +436,17 @@ bool UASInventoryComponent::SwapSlots(const int32 FromSlot, const int32 ToSlot,
 	UASItemInstance* To = GetItemAtSlot(ToSlot);
 	if (!From || From->GetInstanceId() != ExpectedFromItem
 		|| (To ? To->GetInstanceId() : FGuid()) != ExpectedToItem) return false;
+	if (To && To->GetItemDefinition() == From->GetItemDefinition()
+		&& To->GetItemDefinition()->MaxStackSize > 1)
+	{
+		// Match loot transfer rules. A full destination leaves both stacks in place.
+		if (!To->CanStackWith(From)) return false;
+		const int32 MergedQuantity = To->AddQuantity(From->GetQuantity());
+		From->RemoveQuantity(MergedQuantity);
+		if (!From->IsValidItemInstance()) Items.RemoveSingle(From);
+		NotifyInventoryChanged();
+		return true;
+	}
 	From->InventorySlot = ToSlot;
 	if (To) To->InventorySlot = FromSlot;
 	NotifyInventoryChanged();

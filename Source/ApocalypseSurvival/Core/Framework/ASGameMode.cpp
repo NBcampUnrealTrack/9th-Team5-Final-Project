@@ -5,7 +5,12 @@
 #include "Core/Framework/ASRespawnPoint.h"
 #include "Core/Framework/ASCharacterSelectSubsystem.h"
 #include "Core/Framework/ASPlayerState.h"
+#include "Core/Framework/ASPlayerController.h"
 #include "Items/Loot/ASLootDaySpawnSubsystem.h"
+#include "Items/Loot/ASLootChest.h"
+#include "Items/Inventory/ASInventoryComponent.h"
+#include "Items/ASItemInstance.h"
+#include "Items/Data/ASItemGrant.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
@@ -63,6 +68,12 @@ bool AASGameMode::IsDeathCountEnabled() const
 	return !IsMultiplayerRules();
 }
 
+bool AASGameMode::IsDownedEnabled() const
+{
+	const AASGameState* GS = GetASGameState();
+	return IsMultiplayerRules() && GS && GS->GetTeamRevivesRemaining() > 0;
+}
+
 bool AASGameMode::IsMultiplayerRules() const
 {
 	return GetNetMode() != NM_Standalone;
@@ -82,6 +93,10 @@ void AASGameMode::HandleMatchHasStarted()
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
 	
+	// Ready 이후 생성되는 Actor와 Mass가 같은 난이도 입력을 읽도록 GameState에 먼저 복제한다.
+	GS->SetMonsterStatDifficulty(MonsterStatDifficulty);
+	// 멀티면 팀 공용 부활 횟수를 채운다. 싱글은 0 (쓰러짐 없음)
+	GS->SetTeamRevivesRemaining(IsMultiplayerRules() ? TeamReviveCount : 0);
 	GS->SetPhase(EGamePhase::Ready, ReadyDuration);
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] Ready (%.0f초)"), ReadyDuration);
 	
@@ -142,7 +157,7 @@ void AASGameMode::StartNight()
 	// 스폰 위치 선정, 기존 몬스터 집계, 웨이브 생성은 SpawnSubsystem이 전담한다.
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
-		SpawnSubsystem->HandleNightStarted(Day, WaveDataTable);
+		SpawnSubsystem->HandleNightStarted(Day, WaveDataTable, MonsterSpawnGroupDataTable);
 	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnNightTimeUp, Duration, false);
@@ -467,8 +482,27 @@ void AASGameMode::OnPlayerDied(AController* DeadController)
 	// 멀티: 쓰러진 뒤 부활 못 받고 죽으면 그 판은 리스폰 없음 (관전)
 	if (IsMultiplayerRules())
 	{
-		UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 사망 (멀티: 리스폰 없음)"), *GetNameSafe(DeadController));
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 사망 (멀티: 리스폰 없음, 관전)"), *GetNameSafe(DeadController));
+		
+		APawn* DeadPawn = DeadController->GetPawn();
+		
+		// 이 플레이어를 보고 있던 관전자들은 다른 파티원으로 옮긴다.
+		ReassignSpectatorsWatching(DeadPawn);
+		
 		CheckPartyWipe();
+		
+		// 전멸이 아니면 죽은 플레이어도 관전 시작
+		if (APlayerController* DeadPlayer = Cast<APlayerController>(DeadController); DeadPlayer && !IsGameEnded())
+		{
+			StartSpectating(DeadPlayer);
+		}
+		
+		// 시체는 파밍할 수 있게 남기고, 사망자 인벤토리를 시체 루팅 상자로 옮긴다.
+		// 파밍이 끝나 상자가 비면 시체를 숨긴다. 옮길 게 없으면 바로 숨긴다.
+		if (AASPlayerCharacter* Corpse = Cast<AASPlayerCharacter>(DeadPawn))
+		{
+			SpawnCorpseLoot(Corpse, DeadController);
+		}
 		return;
 	}
 	
@@ -516,6 +550,216 @@ void AASGameMode::CheckPartyWipe()
 	
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] 파티 전멸"));
 	EndGame(false);
+}
+
+TArray<AASPlayerCharacter*> AASGameMode::GetSpectateCandidates(const APlayerController* Spectator) const
+{
+	TArray<AASPlayerCharacter*> Candidates;
+	
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PlayerController = It->Get();
+		if (!PlayerController || PlayerController == Spectator)
+		{
+			continue;
+		}
+		
+		AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(PlayerController->GetPawn());
+		if (Character && !Character->IsDead())
+		{
+			Candidates.Add(Character);
+		}
+	}
+	
+	return Candidates;
+}
+
+void AASGameMode::StartSpectating(APlayerController* Spectator)
+{
+	if (!Spectator)
+	{
+		return;
+	}
+	
+	const TArray<AASPlayerCharacter*> Candidates = GetSpectateCandidates(Spectator);
+	if (Candidates.Num() == 0)
+	{
+		return;
+	}
+	
+	// 지금 보고 있는 곳(처음엔 자기 시체)에서 가장 가까운 파티원
+	const AActor* CurrentView = Spectator->GetViewTarget();
+	const FVector From = CurrentView ? CurrentView->GetActorLocation() : FVector::ZeroVector;
+	
+	AASPlayerCharacter* Nearest = nullptr;
+	float NearestDistanceSq = TNumericLimits<float>::Max();
+	for (AASPlayerCharacter* Candidate : Candidates)
+	{
+		const float DistanceSq = FVector::DistSquared(From, Candidate->GetActorLocation());
+		if (DistanceSq < NearestDistanceSq)
+		{
+			NearestDistanceSq = DistanceSq;
+			Nearest = Candidate;
+		}
+	}
+	
+	Spectators.AddUnique(Spectator);
+	
+	// 서버에서 바꾸면 해당 클라이언트의 카메라에도 전달된다.
+	Spectator->SetViewTargetWithBlend(Nearest, 0.5f);
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 관전: %s"), *GetNameSafe(Spectator), *GetNameSafe(Nearest));
+}
+
+void AASGameMode::ReassignSpectatorsWatching(const AActor* LostTarget)
+{
+	if (!LostTarget)
+	{
+		return;
+	}
+	
+	// StartSpectating 이 목록을 건드릴 수 있어서 복사본으로 돈다.
+	const TArray<TWeakObjectPtr<APlayerController>> SpectatorsCopy = Spectators;
+	for (const TWeakObjectPtr<APlayerController>& WeakSpectator : SpectatorsCopy)
+	{
+		APlayerController* Spectator = WeakSpectator.Get();
+		if (Spectator && Spectator->GetViewTarget() == LostTarget)
+		{
+			StartSpectating(Spectator);
+		}
+	}
+}
+
+void AASGameMode::SpectateNext(APlayerController* Spectator)
+{
+	if (!Spectator || !Spectators.Contains(Spectator) || IsGameEnded())
+	{
+		return;
+	}
+	
+	const TArray<AASPlayerCharacter*> Candidates = GetSpectateCandidates(Spectator);
+	if (Candidates.Num() == 0)
+	{
+		return;
+	}
+	
+	// 지금 보는 파티원의 다음 순서. 목록에 없으면(이미 죽었으면) 첫 번째
+	const int32 CurrentIndex = Candidates.IndexOfByKey(Spectator->GetViewTarget());
+	const int32 NextIndex = (CurrentIndex == INDEX_NONE) ? 0 : (CurrentIndex + 1) % Candidates.Num();
+	
+	Spectator->SetViewTargetWithBlend(Candidates[NextIndex], 0.3f);
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 관전 전환: %s"), *GetNameSafe(Spectator), *GetNameSafe(Candidates[NextIndex]));
+}
+
+void AASGameMode::KillUnrevivablePlayers()
+{
+	if (!IsMultiplayerRules() || IsGameEnded())
+	{
+		return;
+	}
+	
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PlayerController = It->Get();
+		AASPlayerCharacter* Character = PlayerController ? Cast<AASPlayerCharacter>(PlayerController->GetPawn()) : nullptr;
+		if (Character && Character->IsDowned())
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Revive] 팀 부활 횟수 소진, %s 즉시 사망"), *GetNameSafe(Character));
+			
+			// 시간 초과 사망과 같은 경로 (사망 → 관전 → 시체 파밍)
+			Character->BleedOut();
+		}
+	}
+}
+
+void AASGameMode::SpawnCorpseLoot(AASPlayerCharacter* Corpse, AController* DeadController)
+{
+	if (!IsValid(Corpse))
+	{
+		return;
+	}
+	
+	const AASPlayerController* DeadPlayer = Cast<AASPlayerController>(DeadController);
+	UASInventoryComponent* DeadInventory = DeadPlayer ? DeadPlayer->GetInventoryComponent() : nullptr;
+	
+	// 장착 무기도 인벤토리 아이템으로 넘기기 위해 먼저 해제한다.
+	if (DeadInventory)
+	{
+		DeadInventory->UnequipItem();
+	}
+	
+	// 상자에 넣을 목록 (정의 + 수량)
+	TArray<FASItemGrant> Grants;
+	TArray<UASItemInstance*> ItemsToRemove;
+	if (DeadInventory)
+	{
+		for (UASItemInstance* Item : DeadInventory->GetItemInstances())
+		{
+			if (IsValid(Item) && Item->GetItemDefinition() && Item->GetQuantity() > 0)
+			{
+				FASItemGrant Grant;
+				Grant.ItemDefinition = Item->GetItemDefinition();
+				Grant.Quantity = Item->GetQuantity();
+				Grants.Add(Grant);
+				ItemsToRemove.Add(Item);
+			}
+		}
+	}
+	
+	// 옮길 게 없거나 상자 클래스가 없으면 시체만 숨긴다.
+	if (Grants.Num() == 0 || !CorpseLootClass)
+	{
+		if (!CorpseLootClass)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[GameMode] CorpseLootClass 가 비어 있어 시체 파밍 없이 숨긴다. BP_GameMode 에 BP_CorpseLoot 를 지정해야 한다."));
+		}
+		Corpse->MulticastHideCorpse();
+		return;
+	}
+	
+	// 시체 위치에 상자 생성. Owner 를 시체로 둬서 상자가 사라질 때 어느 시체인지 안다.
+	const FTransform SpawnTransform(Corpse->GetActorRotation(), Corpse->GetActorLocation());
+	AASLootChest* Loot = GetWorld()->SpawnActorDeferred<AASLootChest>(
+		CorpseLootClass, SpawnTransform, Corpse, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Loot)
+	{
+		Corpse->MulticastHideCorpse();
+		return;
+	}
+	
+	Loot->SetInitialLoot(Grants);
+	// 루팅 창 제목: "닉네임의 시체"
+	const APlayerState* DeadPlayerState = DeadController ? DeadController->GetPlayerState<APlayerState>() : nullptr;
+	const FString DeadName = DeadPlayerState ? DeadPlayerState->GetPlayerName() : TEXT("플레이어");
+	Loot->SetLootDisplayName(FText::FromString(FString::Printf(TEXT("%s의 시체"), *DeadName)));
+	Loot->FinishSpawning(SpawnTransform);
+	
+	// 내용물 생성에 실패하면 상자는 스스로 사라진다. 그때는 아이템을 지우지 않는다.
+	if (!IsValid(Loot) || Loot->IsActorBeingDestroyed())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GameMode] 시체 루팅 상자 생성 실패, 시체만 숨긴다."));
+		Corpse->MulticastHideCorpse();
+		return;
+	}
+	
+	// 상자로 옮겼으니 사망자 인벤토리에서는 지운다.
+	for (UASItemInstance* Item : ItemsToRemove)
+	{
+		if (IsValid(Item))
+		{
+			DeadInventory->RemoveItemInstance(Item, Item->GetQuantity());
+		}
+	}
+	
+	Loot->OnDestroyed.AddDynamic(this, &AASGameMode::HandleCorpseLootDestroyed);
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 시체 루팅 상자 생성 (아이템 %d종)"), *GetNameSafe(Corpse), Grants.Num());
+}
+
+void AASGameMode::HandleCorpseLootDestroyed(AActor* DestroyedActor)
+{
+	if (AASPlayerCharacter* Corpse = DestroyedActor ? Cast<AASPlayerCharacter>(DestroyedActor->GetOwner()) : nullptr)
+	{
+		Corpse->MulticastHideCorpse();
+	}
 }
 
 void AASGameMode::RespawnPlayer(AController* Controller)

@@ -59,6 +59,7 @@ void UASMassMonsterSuicideAttackProcessor::ConfigureQueries(const TSharedRef<FMa
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterDeadTag>(EMassFragmentPresence::None);
 }
@@ -84,6 +85,7 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TArrayView<FASMassMonsterCombatFragment> Combats = Context.GetMutableFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
 		if (Config.AttackPattern != EASMassMonsterAttackPattern::Suicide)
@@ -129,7 +131,7 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 					continue;
 				}
 
-				ASMassMonsterDamage::ApplyToActor(Snapshot.Pawn.Get(), Config.AttackPower, ExplosionOrigin);
+				ASMassMonsterDamage::ApplyToActor(Snapshot.Pawn.Get(), RuntimeStats[EntityIt].AttackPower, ExplosionOrigin);
 			}
 
 			Combat.bPrimaryEffectApplied = true;

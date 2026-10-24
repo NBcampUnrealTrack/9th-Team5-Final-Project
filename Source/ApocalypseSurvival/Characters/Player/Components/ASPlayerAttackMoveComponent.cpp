@@ -68,17 +68,24 @@ bool UASPlayerAttackMoveComponent::ConfirmAttackMove(const FVector& Destination)
 	// Ability 활성화와 조준 UI 종료는 Controller/Primary Attack이 담당한다.
 	FVector TargetLocation;
 	float TargetHitRadius = 0.0f;
-	const float ClickTargetingRadius = GetAttackRange() + AttackRangeTolerance;
+	// 즉시 공격 대상은 반드시 현재 공격 사거리 안의 후보 중에서만 고른다.
+	// 더 넓은 탐색 반경의 사거리 밖 후보가 클릭 지점에 더 가깝더라도
+	// 사거리 안 후보를 밀어내고 추적 대상으로 선택하면 안 된다.
+	const float AttackTargetingRadius = GetAttackRange() + AttackRangeTolerance;
 	const bool bClickIsInAttackRange = FVector::DistSquared2D(Pawn->GetActorLocation(), Destination)
-		<= FMath::Square(ClickTargetingRadius);
+		<= FMath::Square(AttackTargetingRadius);
 	const EASCombatTargetSortPolicy InitialSortPolicy = bClickIsInAttackRange
 		? EASCombatTargetSortPolicy::NearestToPriorityLocation
 		: EASCombatTargetSortPolicy::NearestToSearchOrigin;
-	if (FindBestTarget(InitialSortPolicy) && RefreshCurrentTarget(TargetLocation, TargetHitRadius)
+	if (FindBestTarget(InitialSortPolicy, AttackTargetingRadius)
+		&& RefreshCurrentTarget(TargetLocation, TargetHitRadius)
 		&& IsTargetInAttackRange(TargetLocation, TargetHitRadius))
 	{
 		State = EASAttackMoveState::Idle;
-		RequestAttack(CurrentTarget.GetActor(), TargetLocation);
+		// Actor 대상은 실행 단계가 동일한 클릭 기준을 다시 검증할 수 있도록 원래 클릭 위치를 전달한다.
+		// Mass 대상은 Actor가 없어 어빌리티가 위치로 방향을 정하므로, 대상 위치를 전달해야 대상 쪽을 본다.
+		AActor* TargetActor = CurrentTarget.GetActor();
+		RequestAttack(TargetActor, TargetActor ? CommandDestination : TargetLocation);
 		return true;
 	}
 
@@ -159,7 +166,9 @@ float UASPlayerAttackMoveComponent::GetAttackRange() const
 	return Definition ? FMath::Max(0.0f, Definition->AttackRange) : 0.0f;
 }
 
-bool UASPlayerAttackMoveComponent::FindBestTarget(const EASCombatTargetSortPolicy SortPolicy)
+bool UASPlayerAttackMoveComponent::FindBestTarget(
+	const EASCombatTargetSortPolicy SortPolicy,
+	const float SearchRadius)
 {
 	const AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
 	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
@@ -169,7 +178,6 @@ bool UASPlayerAttackMoveComponent::FindBestTarget(const EASCombatTargetSortPolic
 		return false;
 	}
 
-	const float AcquireRadius = FMath::Max(GetAttackRange(), MinimumAcquireRadius);
 	const UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
 	if (!CombatTargets)
 	{
@@ -179,7 +187,7 @@ bool UASPlayerAttackMoveComponent::FindBestTarget(const EASCombatTargetSortPolic
 
 	FASCombatTargetQuery Query;
 	Query.SearchOrigin = Pawn->GetActorLocation();
-	Query.SearchRadius = AcquireRadius;
+	Query.SearchRadius = FMath::Max(0.0f, SearchRadius);
 	Query.Instigator = Pawn;
 	Query.Domain = EASCombatTargetDomain::All;
 	Query.SortPolicy = SortPolicy;
@@ -255,7 +263,8 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 	bool bHasTarget = RefreshCurrentTarget(TargetLocation, TargetHitRadius);
 	if (!bHasTarget && CurrentTime >= NextSearchTime)
 	{
-		FindBestTarget(EASCombatTargetSortPolicy::NearestToSearchOrigin);
+		const float AcquireRadius = FMath::Max(GetAttackRange(), MinimumAcquireRadius);
+		FindBestTarget(EASCombatTargetSortPolicy::NearestToSearchOrigin, AcquireRadius);
 		bHasTarget = RefreshCurrentTarget(TargetLocation, TargetHitRadius);
 		NextSearchTime = CurrentTime + SearchInterval;
 	}
@@ -278,7 +287,9 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 	{
 		Controller->StopMovement();
 		State = EASAttackMoveState::Attacking;
-		RequestAttack(CurrentTarget.GetActor(), TargetLocation);
+		// Mass 대상은 Actor가 없으므로 대상 위치를 넘겨 어빌리티가 대상 쪽으로 몸을 돌리게 한다.
+		AActor* TargetActor = CurrentTarget.GetActor();
+		RequestAttack(TargetActor, TargetActor ? CommandDestination : TargetLocation);
 		return;
 	}
 

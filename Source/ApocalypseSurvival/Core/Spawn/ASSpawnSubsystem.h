@@ -11,6 +11,7 @@ class AASMonsterSpawnPoint;
 class UDataTable;
 class UMassEntityConfigAsset;
 struct FASDayMonsterGroupSelectionEntry;
+struct FASMonsterSpawnGroupDataRow;
 
 USTRUCT()
 struct FASPendingWaveMonsterSpawn
@@ -37,7 +38,7 @@ public:
 	virtual void Deinitialize() override;
 
 	void HandleDayStarted(int32 Day, UDataTable* DaySpawnDataTable, UDataTable* MonsterSpawnGroupDataTable);
-	void HandleNightStarted(int32 Day, UDataTable* WaveDataTable);
+	void HandleNightStarted(int32 Day, UDataTable* WaveDataTable, UDataTable* MonsterSpawnGroupDataTable);
 	void HandleNightEnded();
 	void StopAllSpawning();
 	bool IsWaveSpawnFinished() const {return SpawnedWaveMonsterCount >= TotalWaveMonsterCount;}
@@ -46,7 +47,9 @@ private:
 	void SpawnDayUnits(int32 Day, UDataTable* DaySpawnDataTable, UDataTable* MonsterSpawnGroupDataTable);
 	int32 SpawnDayGroup(const FASDayMonsterGroupSelectionEntry& GroupSelection, UDataTable* MonsterSpawnGroupDataTable,
 		const AASMonsterSpawnPoint& SpawnPoint);
-	void StartWave(int32 Day, UDataTable* WaveDataTable);
+	void StartWave(int32 Day, UDataTable* WaveDataTable, UDataTable* MonsterSpawnGroupDataTable);
+	bool AppendWaveGroup(const FASMonsterSpawnGroupDataRow& MonsterGroupData, int32 RepeatCount,
+		const FString& SourceName);
 	void StopWave();
 	void SpawnWaveTick();
 

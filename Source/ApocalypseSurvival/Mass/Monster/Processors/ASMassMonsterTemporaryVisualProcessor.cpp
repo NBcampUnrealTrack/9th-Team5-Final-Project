@@ -18,7 +18,11 @@ UASMassMonsterTemporaryVisualProcessor::UASMassMonsterTemporaryVisualProcessor()
 {
 	bAutoRegisterWithProcessingPhases = true;
 	bRequiresGameThreadExecution = true;
-	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Client | EProcessorExecutionFlags::Standalone);
+	// 리슨 서버 호스트도 화면에 Representation을 생성하므로 시각화 상태를 적용해야 한다.
+	// Dedicated Server는 Representation Fragment가 없어 EntityQuery가 비어 실행 비용이 없다.
+	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::Client
+		| EProcessorExecutionFlags::Server
+		| EProcessorExecutionFlags::Standalone);
 	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterVisualizationProcessor::StaticClass()->GetFName());
 	ExecutionOrder.ExecuteBefore.Add(UASMassMonsterUpdateISMProcessor::StaticClass()->GetFName());
 }
@@ -46,7 +50,7 @@ void UASMassMonsterTemporaryVisualProcessor::Execute(
 	UASMassMonsterTemporaryVisualSubsystem* VisualSubsystem = World
 		? World->GetSubsystem<UASMassMonsterTemporaryVisualSubsystem>()
 		: nullptr;
-	if (!VisualSubsystem || !VisualSubsystem->InitializeVisualDescriptors())
+	if (!VisualSubsystem)
 	{
 		return;
 	}
@@ -91,19 +95,40 @@ void UASMassMonsterTemporaryVisualProcessor::Execute(
 					: EASMassMonsterTemporaryVisualState::DaySpawn;
 			}
 
-			if (Visual.bHasAppliedState && Visual.AppliedState == DesiredState)
+			FMassRepresentationFragment& Representation = Representations[EntityIt];
+			// 첫 프레임의 Descriptor는 Entity Config Visualization Trait가 등록한 원본이다.
+			// Hit/Dead Descriptor로 교체된 뒤에도 이 Handle을 유지해 다중 메시 외형으로 복구한다.
+			if (!Visual.BaseVisualHandle.IsValid())
+			{
+				Visual.BaseVisualHandle = Representation.StaticMeshDescHandle;
+			}
+			if (!Visual.BaseVisualHandle.IsValid())
 			{
 				continue;
 			}
 
-			const FStaticMeshInstanceVisualizationDescHandle NewHandle =
-				VisualSubsystem->GetVisualHandle(DesiredState);
+			const FStaticMeshInstanceVisualizationDescHandle NewHandle = VisualSubsystem->GetVisualHandle(
+				DesiredState,
+				Visual.BaseVisualHandle);
 			if (!NewHandle.IsValid())
 			{
 				continue;
 			}
 
-			FMassRepresentationFragment& Representation = Representations[EntityIt];
+			if (Visual.bHasAppliedState && Visual.AppliedState == DesiredState
+				&& Representation.StaticMeshDescHandle == NewHandle)
+			{
+				continue;
+			}
+
+			// 현재 Descriptor와 요청 Descriptor가 같으면 Instance를 재등록할 필요가 없다.
+			if (Representation.StaticMeshDescHandle == NewHandle)
+			{
+				Visual.AppliedState = DesiredState;
+				Visual.bHasAppliedState = true;
+				continue;
+			}
+
 			const FMassRepresentationLODFragment& LOD = LODs[EntityIt];
 			const FMassEntityHandle Entity = Context.GetEntity(EntityIt);
 			if (Representation.CurrentRepresentation == EMassRepresentationType::StaticMeshInstance)
@@ -121,6 +146,12 @@ void UASMassMonsterTemporaryVisualProcessor::Execute(
 			}
 
 			Representation.StaticMeshDescHandle = NewHandle;
+			// Descriptor만 교체한 채 StaticMeshInstance 상태를 유지하면 UpdateISM이 새 Descriptor에
+			// 기존 Instance가 있다고 가정할 수 있다. 그 결과 이전 색상 ISM이 남아 겹쳐 렌더링된다.
+			// 한 프레임 Representation을 None으로 돌려 다음 Visualization 단계가 새 Descriptor에
+			// Instance를 처음부터 등록하도록 강제한다.
+			Representation.CurrentRepresentation = EMassRepresentationType::None;
+			Representation.PrevLODSignificance = -1.0f;
 			Visual.AppliedState = DesiredState;
 			Visual.bHasAppliedState = true;
 		}
