@@ -1,5 +1,7 @@
 ﻿#include "Skills/Area/ASSkillAreaActor.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "Net/UnrealNetwork.h"
@@ -94,6 +96,9 @@ void AASSkillAreaActor::DoDamageTick()
 		Query.bCanHitPlayers = bCanHitPlayers;
 		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs);
 	}
+	
+	//GameplayCue로 충격파 이펙트 (모든 화면)
+	ExecutePulseCue(Center);
 
 	if (bDrawDebug)
 	{
@@ -107,4 +112,28 @@ void AASSkillAreaActor::DoDamageTick()
 	{
 		GetWorldTimerManager().ClearTimer(TickTimerHandle);
 	}
+}
+
+void AASSkillAreaActor::ExecutePulseCue(const FVector& Center) const
+{
+	if (!PulseCueTag.IsValid())
+	{
+		return;
+	}
+
+	//장판은 ASC가 없으니 시전자 ASC로 실행 (서버에서 부르면 ASC가 모든 화면에 복제)
+	UAbilitySystemComponent* InstigatorASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(InstigatorAvatar.Get());
+	if (!InstigatorASC)
+	{
+		return;
+	}
+
+	FGameplayCueParameters CueParams;
+	CueParams.Location = Center;
+	CueParams.RawMagnitude = Radius;
+	CueParams.Instigator = InstigatorAvatar.Get();
+	CueParams.EffectCauser = const_cast<AASSkillAreaActor*>(this);
+	CueParams.SourceObject = this;
+	CueParams.NormalizedMagnitude = TickInterval;
+	InstigatorASC->ExecuteGameplayCue(PulseCueTag, CueParams);
 }

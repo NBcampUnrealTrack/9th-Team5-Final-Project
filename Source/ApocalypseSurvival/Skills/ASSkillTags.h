@@ -45,6 +45,9 @@ namespace ASGameplayTags
 	//강태오 데드 앵글 발동 중 (GE_Taeo_DeadAngle이 붙임, 표시·조건용 - 감소량은 DamageReduction 어트리뷰트)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Taeo_DeadAngle);
 
+	//GameplayCue: 강태오 레드라인 충격파 (BP_Taeo_Redline_Area의 Pulse Cue Tag)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Taeo_RedlinePulse);
+
 	//적중 이벤트 (피해를 준 순간 공격자 ASC로 전송, 전투 서브시스템에서 보낼 예정)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Hit_Dealt);
 

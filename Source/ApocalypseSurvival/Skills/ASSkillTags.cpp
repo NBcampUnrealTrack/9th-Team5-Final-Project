@@ -18,6 +18,7 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(State_Taeo_Redline, "State.Taeo.Redline");
 	UE_DEFINE_GAMEPLAY_TAG(State_Taeo_Overclock, "State.Taeo.Overclock");
 	UE_DEFINE_GAMEPLAY_TAG(State_Taeo_DeadAngle, "State.Taeo.DeadAngle");
+	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Taeo_RedlinePulse, "GameplayCue.Taeo.RedlinePulse");
 	UE_DEFINE_GAMEPLAY_TAG(Event_Hit_Dealt, "Event.Hit.Dealt");
 	UE_DEFINE_GAMEPLAY_TAG(Attack_Basic, "Attack.Basic");
 }

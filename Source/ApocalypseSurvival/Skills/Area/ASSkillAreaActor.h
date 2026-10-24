@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
+#include "GameplayTagContainer.h"
 #include "ASSkillAreaActor.generated.h"
 
 //일정 시간 유지되며 주기적으로 원 범위 데미지를 주는 액터
@@ -37,9 +38,17 @@ protected:
 	//데미지를 줄 때마다 호출 (서버)
 	UFUNCTION(BlueprintImplementableEvent, Category = "AS|Skill|Area")
 	void BP_OnAreaTick(const TArray<AActor*>& HitTargets);
+	
+	//데미지 줄 때마다 실행할 GameplayCue (시전자 ASC로 모든 화면에 복제, 비우면 안 함)
+	//큐 에셋(GameplayCueNotify)에서 이펙트·사운드 재생. Location = 장판 위치, RawMagnitude = 반경
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area|Cue", meta = (Categories = "GameplayCue"))
+	FGameplayTag PulseCueTag;
 
 private:
 	void DoDamageTick();
+
+	//PulseCueTag 실행 (서버)
+	void ExecutePulseCue(const FVector& Center) const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<USceneComponent> SceneRoot;
