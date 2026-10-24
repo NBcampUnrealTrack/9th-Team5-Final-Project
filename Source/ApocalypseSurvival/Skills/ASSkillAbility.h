@@ -151,6 +151,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Animation", meta = (Categories = "Event"))
 	FGameplayTag HitEventTag;
 
+	//스태미나를 쓴 뒤 회복 지연 GE (GE_StaminaRegen_Delay, 기본 공격과 같은 규칙 - 끝나면 회복 시작)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Cost")
+	TSubclassOf<UGameplayEffect> StaminaRegenDelayEffect;
+
 	//Health Add, SetByCaller(Data.Damage)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Damage")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
