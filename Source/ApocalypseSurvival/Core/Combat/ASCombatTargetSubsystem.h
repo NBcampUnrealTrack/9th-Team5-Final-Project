@@ -139,6 +139,10 @@ public:
 	FASCombatApplyResult ResolveAndApplyBestTarget(const FASCombatTargetQuery& Query,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs);
 
+	/** 이미 확정된 Actor/Mass 타깃을 다른 후보로 재선택하지 않고 검증·적용한다. */
+	FASCombatApplyResult ApplyEffectSpecsToTarget(const FASCombatTargetRef& Target,
+		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator);
+
 	UE_DEPRECATED(5.8, "Use FindActorTargets with FASCombatTargetQuery instead.")
 	TArray<AActor*> FindActorTargetsInRadius(const FVector& Center, float Radius,
 		const AActor* Instigator, bool bCanHitPlayers) const;

@@ -417,6 +417,42 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
 	return Result;
 }
 
+FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
+	const FASCombatTargetRef& Target,
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+	AActor* Instigator)
+{
+	FASCombatApplyResult Result;
+	FASCombatTargetRef RefreshedTarget = Target;
+	FASCombatTargetQuery ValidationQuery;
+	ValidationQuery.Instigator = Instigator;
+	ValidationQuery.MaxTargets = 1;
+	if (!RefreshTarget(ValidationQuery, RefreshedTarget))
+	{
+		return Result;
+	}
+
+	if (AActor* Actor = RefreshedTarget.GetActor())
+	{
+		if (ApplyEffectSpecsToActor(EffectSpecs, Actor) > 0)
+		{
+			Result.ActorTargets.Add(Actor);
+		}
+		return Result;
+	}
+
+	const float Damage = CalculateDamageMagnitude(EffectSpecs);
+	UASMassMonsterSubsystem* MassMonsters = GetWorld()
+		? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>()
+		: nullptr;
+	if (MassMonsters && Damage > 0.0f)
+	{
+		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
+			RefreshedTarget.GetMassTargetId(), Damage, Instigator);
+	}
+	return Result;
+}
+
 int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActors(
 	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 	const TConstArrayView<AActor*> Targets) const

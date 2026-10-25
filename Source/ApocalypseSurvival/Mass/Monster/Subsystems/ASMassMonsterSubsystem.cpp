@@ -901,11 +901,16 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 				Threats->AddThreat(InstigatorSnapshot.Handle, Config->DirectHitAggro,
 					GetWorld()->GetTimeSeconds(), Config->AggroDecayPerSecond);
 #if !UE_BUILD_SHIPPING
+				const FMassNetworkIDFragment* NetworkId =
+					EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+				const uint32 MassNetworkId = NetworkId && NetworkId->NetID.IsValid()
+					? NetworkId->NetID.GetValue()
+					: 0;
 				UE_LOG(LogApocalypseSurvival, Log,
-					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f"),
+					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f MassNetworkId=%u"),
 					Entity.Index, static_cast<unsigned long long>(Entity.AsNumber()),
 					InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
-					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro);
+					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro, MassNetworkId);
 #endif
 			}
 			if (FASMassMonsterTargetFragment* Target =

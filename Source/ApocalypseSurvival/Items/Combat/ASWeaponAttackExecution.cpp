@@ -292,18 +292,41 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		if (Profile->HomingProjectileClass)
 		{
 			FASCombatTargetRef TargetRef;
-			const bool bFoundTarget = CombatTargets->FindBestTarget(Query, TargetRef);
+			bool bFoundTarget = false;
+			const bool bHasLockedMassTarget = Context.RequestedMassTargetNetworkId != 0;
+			if (bHasLockedMassTarget)
+			{
+				// T1에서 서버가 검증한 안정 ID만 해석한다. 누락·사망·사거리 이탈 시
+				// 클릭 위치로 다른 Mass 몬스터를 재선택하지 않고 이번 공격을 취소한다.
+				bFoundTarget = CombatTargets->GetMassTargetByNetworkId(
+					Context.RequestedMassTargetNetworkId, TargetRef);
+				if (bFoundTarget)
+				{
+					const float TargetAllowedRange = AllowedRange + TargetRef.GetHitRadius();
+					if (FVector::DistSquared2D(Start, TargetRef.GetLocation())
+						> FMath::Square(TargetAllowedRange))
+					{
+						TargetRef.Reset();
+						bFoundTarget = false;
+					}
+				}
+			}
+			else
+			{
+				bFoundTarget = CombatTargets->FindBestTarget(Query, TargetRef);
+			}
 #if !UE_BUILD_SHIPPING
 			const TCHAR* TargetKind = TargetRef.IsMass() ? TEXT("Mass")
 				: (TargetRef.IsActor() ? TEXT("Actor") : TEXT("None"));
 			UE_LOG(LogTemp, Log,
-				TEXT("[MassRangedTarget][T2Fire] Avatar=%s Click=(%.1f,%.1f,%.1f) Search=(%.1f,%.1f,%.1f) Priority=(%.1f,%.1f,%.1f) ClickInRange=%d Found=%d Kind=%s MassEntityId=%llu RequestedMassNetworkId=%u Selected=(%.1f,%.1f,%.1f)"),
+				TEXT("[MassRangedTarget][T2Fire] Avatar=%s Click=(%.1f,%.1f,%.1f) Search=(%.1f,%.1f,%.1f) Priority=(%.1f,%.1f,%.1f) ClickInRange=%d LockedMass=%d Found=%d Kind=%s MassEntityId=%llu RequestedMassNetworkId=%u ResolvedMassNetworkId=%u Selected=(%.1f,%.1f,%.1f)"),
 				*GetNameSafe(Context.Avatar),
 				Context.TargetLocation.X, Context.TargetLocation.Y, Context.TargetLocation.Z,
 				Query.SearchOrigin.X, Query.SearchOrigin.Y, Query.SearchOrigin.Z,
 				Query.PriorityLocation.X, Query.PriorityLocation.Y, Query.PriorityLocation.Z,
-				bClickIsInAttackRange, bFoundTarget, TargetKind,
+				bClickIsInAttackRange, bHasLockedMassTarget, bFoundTarget, TargetKind,
 				static_cast<unsigned long long>(TargetRef.GetMassTargetId()), Context.RequestedMassTargetNetworkId,
+				TargetRef.GetMassNetworkId(),
 				TargetRef.GetLocation().X, TargetRef.GetLocation().Y, TargetRef.GetLocation().Z);
 #endif
 			if (bFoundTarget)
