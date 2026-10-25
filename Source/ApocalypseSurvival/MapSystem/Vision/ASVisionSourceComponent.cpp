@@ -1,6 +1,7 @@
 ﻿#include "MapSystem/Vision/ASVisionSourceComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Actor.h"
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
@@ -72,6 +73,12 @@ bool UASVisionSourceComponent::IsProvidingVision(const FGameplayTag& DeadStateTa
 	if (DeadStateTag.IsValid())
 	{
 		const UAbilitySystemComponent* AbilitySystem = ASMapAbilityUtils::FindAbilitySystemComponent(Owner);
+
+		// ASC가 준비되기 전에는 사망 여부를 알 수 없으므로 GAS 액터의 시야를 보류한다.
+		if (!AbilitySystem && Owner->Implements<UAbilitySystemInterface>())
+		{
+			return false;
+		}
 
 		if (AbilitySystem && AbilitySystem->HasMatchingGameplayTag(DeadStateTag))
 		{

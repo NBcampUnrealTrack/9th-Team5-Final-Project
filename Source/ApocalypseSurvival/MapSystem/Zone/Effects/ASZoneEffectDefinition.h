@@ -4,25 +4,24 @@
 #include "Engine/DataAsset.h"
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
+#include "MapSystem/Zone/Core/ASMapTypes.h"
 #include "ASZoneEffectDefinition.generated.h"
 
 class UGameplayEffect;
 
-/** 하나의 SetByCaller 값. 인덱스 0은 위험도 1이다. */
-USTRUCT(BlueprintType)
-struct APOCALYPSESURVIVAL_API FASZoneEffectMagnitude
+/** 구역 효과를 적용할 대상. */
+UENUM(BlueprintType)
+enum class EASZoneEffectTarget : uint8
 {
-	GENERATED_BODY()
-
-	/** GE 수정자가 사용하는 SetByCaller DataTag와 일치해야 한다. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect", meta = (Categories = "Data"))
-	FGameplayTag DataTag;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
-	TArray<float> ValuesByDangerLevel;
+	All,      // 모든 대상
+	Players,  // 플레이어
+	Monsters  // 몬스터
 };
 
-/** 구역과 팀별 효과. 행 이름 대신 (ZoneId, TeamId)를 키로 사용한다. */
+static_assert(ASMap::MaxDangerLevel == 5 && ASMap::MinDangerLevel == 1,
+	"Zone effect level columns must match the danger level range.");
+
+/** 같은 (ZoneId, Target)의 행을 모아 하나의 GE로 적용한다. */
 USTRUCT(BlueprintType)
 struct APOCALYPSESURVIVAL_API FASZoneEffectRow : public FTableRowBase
 {
@@ -32,26 +31,52 @@ struct APOCALYPSESURVIVAL_API FASZoneEffectRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
 	FName ZoneId;
 
-	/** 정확한 팀 행이 없으면 팀 255 행을 모든 팀의 대체 규칙으로 사용한다. */
+	/** 정확한 대상 행이 없으면 All 행을 대체 규칙으로 사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
-	uint8 TeamId = 255;
+	EASZoneEffectTarget Target = EASZoneEffectTarget::All;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
 	TSubclassOf<UGameplayEffect> Effect;
 
-	/** SetByCaller 키마다 위험도 1..5에 해당하는 값을 저장한다. */
+	/** SetByCaller 태그. 그룹의 유일한 행이면 비워서 수치 없이 GE만 적용할 수 있다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect", meta = (Categories = "Data"))
+	FGameplayTag DataTag;
+
+	/** 위험도 1의 값. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
-	TArray<FASZoneEffectMagnitude> Magnitudes;
+	float Level1 = 1.0f;
+
+	/** 위험도 2의 값. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
+	float Level2 = 1.0f;
+
+	/** 위험도 3의 값. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
+	float Level3 = 1.0f;
+
+	/** 위험도 4의 값. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
+	float Level4 = 1.0f;
+
+	/** 위험도 5의 값. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Effect")
+	float Level5 = 1.0f;
+
+	/** 범위를 벗어나거나 유한하지 않은 값이면 false를 반환한다. */
+	bool GetValueForLevel(int32 DangerLevel, float& OutValue) const;
 };
 
-/** 서버가 구역 안의 ASC에 적용할 팀별 위험도 효과와 구역별 추가 효과 설정. */
+/** 서버가 구역 안의 ASC에 적용할 대상별 위험도 효과와 구역별 추가 효과 설정. */
 UCLASS(BlueprintType)
 class APOCALYPSESURVIVAL_API UASZoneEffectDefinition : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 
 public:
-	/** 기본 효과와 구역별 추가 효과 테이블. 비어 있으면 아무 효과도 적용하지 않는다. */
+	/**
+	 * (ZoneId, Target)별 행을 모아 같은 GE에 태그별 수치를 설정한다. 정확한 대상 그룹이 없으면 All을 사용한다.
+	 * 기본(None) 그룹과 현재 구역 그룹을 현재 위험도로 함께 적용한다. 빈 테이블은 효과를 적용하지 않는다.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (RequiredAssetDataTags = "RowStructure=/Script/ApocalypseSurvival.ASZoneEffectRow"))
 	TObjectPtr<UDataTable> ZoneEffectTable;
 
@@ -62,20 +87,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (ClampMin = "0.05", Units = "s"))
 	float UpdateInterval = 0.25f;
 
-	/** 모든 구역의 기본 행에서 정확한 팀을 먼저 찾고, 없으면 팀 255 행을 반환한다. */
-	const FASZoneEffectRow* FindBaseRow(uint8 TeamId) const;
+	/** 정확한 대상 그룹을 찾고, 없으면 All 그룹을 반환한다. 기본 그룹의 ZoneId는 None이다. */
+	bool FindRows(FName ZoneId, EASZoneEffectTarget Target, TArray<const FASZoneEffectRow*>& OutRows) const;
 
-	/** 해당 구역의 정확한 팀 행을 먼저 찾고, 없으면 팀 255 행을 반환한다. */
-	const FASZoneEffectRow* FindZoneRow(FName ZoneId, uint8 TeamId) const;
+	/** 플레이어/몬스터 외의 팀은 All 그룹만 사용한다. */
+	static EASZoneEffectTarget GetTargetForTeam(uint8 TeamId);
 
 	bool ValidateDefinition(TArray<FString>& OutErrors) const;
-	static bool GetMagnitudeForLevel(const FASZoneEffectMagnitude& Magnitude, int32 DangerLevel, float& OutValue);
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif
-
-private:
-	/** 기본 행과 구역 행에 동일한 배율 검증을 적용한다. */
-	static void ValidateMagnitudes(const TArray<FASZoneEffectMagnitude>& Magnitudes, const FString& OwnerPath, TArray<FString>& OutErrors);
 };

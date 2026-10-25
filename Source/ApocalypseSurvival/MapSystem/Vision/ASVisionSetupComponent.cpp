@@ -1,5 +1,6 @@
 ﻿#include "MapSystem/Vision/ASVisionSetupComponent.h"
 
+#include "ApocalypseSurvival.h"
 #include "Core/Framework/ASGameState.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -37,6 +38,15 @@ void UASVisionSetupComponent::BeginPlay()
 	// 시야 설정은 구역 매니저와 별도로 연결한다. 구역 액터가 없는 레벨에서는 위에서 이미 반환했다.
 	TActorIterator<AASFogOfWarManager> ExistingFog(World);
 	AASFogOfWarManager* FogManager = ExistingFog ? *ExistingFog : nullptr;
+	if (FogManager)
+	{
+		++ExistingFog;
+		if (ExistingFog)
+		{
+			UE_LOG(LogApocalypseSurvival, Warning, TEXT("Multiple AASFogOfWarManager actors exist in the world; using '%s'."),
+				*FogManager->GetPathName());
+		}
+	}
 	if (!FogManager && FogOfWarManagerClass)
 	{
 		// BeginPlay 전에 정의를 지정해 스폰 중의 빈 설정 오류를 피한다.
@@ -52,6 +62,11 @@ void UASVisionSetupComponent::BeginPlay()
 	else if (FogManager && !FogManager->GetVisionDefinition())
 	{
 		FogManager->ServerSetVisionDefinition(VisionDefinition);
+	}
+	else if (FogManager && FogManager->GetVisionDefinition() != VisionDefinition)
+	{
+		UE_LOG(LogApocalypseSurvival, Warning, TEXT("Level fog manager '%s' has VisionDefinition '%s', different from setup VisionDefinition '%s'; using the level's definition."),
+			*FogManager->GetPathName(), *FogManager->GetVisionDefinition()->GetPathName(), *GetPathNameSafe(VisionDefinition.Get()));
 	}
 
 	FogOfWarManager = FogManager;

@@ -88,6 +88,28 @@ struct APOCALYPSESURVIVAL_API FASMapStateSnapshot
 	const FASZoneRuntimeState* FindZone(FName ZoneId) const;
 };
 
+/** 스폰 시스템에 전달하는 월드 공간 지점과 구역 정보. */
+USTRUCT(BlueprintType)
+struct APOCALYPSESURVIVAL_API FASZoneSpawnPoint
+{
+	GENERATED_BODY()
+
+	/** 월드 공간 변환. */
+	UPROPERTY(BlueprintReadOnly, Category = "Map")
+	FTransform Transform = FTransform::Identity;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Map")
+	FName ZoneId;
+
+	/** 구역 표시 이름. */
+	UPROPERTY(BlueprintReadOnly, Category = "Map")
+	FText DisplayName;
+
+	/** 공유 스냅샷의 현재 위험도. 맵이 준비되지 않았으면 0. */
+	UPROPERTY(BlueprintReadOnly, Category = "Map")
+	int32 DangerLevel = 0;
+};
+
 /** HUD 위젯을 위한 특정 위치의 간편 정보. */
 USTRUCT(BlueprintType)
 struct APOCALYPSESURVIVAL_API FASZoneHudInfo

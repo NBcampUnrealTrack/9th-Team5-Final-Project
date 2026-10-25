@@ -107,7 +107,11 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 	TArray<FASZoneConfig> ZoneConfigs;
 	if (MapDefinition)
 	{
-		MapDefinition->ValidateDefinition(ValidationErrors);
+		if (MapDefinition->ValidateDefinition(ValidationErrors) && MapState.IsValid())
+		{
+			// 정의는 맵/안개 영역을 공유하는 표시 데이터이므로 구역 검증 실패 시에도 공개한다. 준비 여부는 아래 스냅샷으로 결정한다.
+			MapState->ServerSetMapDefinition(MapDefinition);
+		}
 		CollectLevelZones();
 		BuildZoneConfigs(ZoneConfigs);
 		ValidateLevel(ZoneConfigs, ValidationErrors);
@@ -148,7 +152,6 @@ bool AASMapSystemManager::InitializeMap(UASMapDefinition* InMapDefinition, UASMa
 	RuleEngine.Configure(ZoneConfigs);
 
 	UASMapStateComponent* State = MapState.Get();
-	State->ServerSetMapDefinition(MapDefinition);
 
 	FASMapStateSnapshot Snapshot = State->GetSnapshot();
 	RuleEngine.ResetMatch(0, Snapshot);
