@@ -35,6 +35,13 @@ public:
 	bool GetAliveMonsterTarget(uint64 TargetId, bool bRequireVisibleToLocalTeam,
 		FVector& OutLocation, float& OutHitRadius) const;
 
+	/** 현재 World의 로컬 Entity ID에서 서버·클라이언트 공통 Mass replication ID를 얻는다. */
+	bool GetMassNetworkId(uint64 TargetId, uint32& OutMassNetworkId) const;
+
+	/** 서버 전용. Mass replication ID를 살아 있는 권한 Entity로 해석한다. */
+	bool GetAliveMonsterTargetByNetworkId(uint32 MassNetworkId, uint64& OutTargetId,
+		FVector& OutLocation, float& OutHitRadius) const;
+
 private:
 	bool FindBestClientReplicaTarget(const FVector& SearchOrigin, float SearchRadius,
 		const FVector& PreferredLocation, bool bRequireVisibleToLocalTeam,

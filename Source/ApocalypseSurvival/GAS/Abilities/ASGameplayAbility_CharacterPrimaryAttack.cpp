@@ -1,4 +1,5 @@
 #include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
+#include "GAS/Abilities/ASGameplayAbilityTargetData.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -70,7 +71,9 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	{
 		AActor* RequestedTarget = nullptr;
 		FVector RequestedTargetLocation = FVector::ZeroVector;
-		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, RequestedTargetLocation))
+		uint32 RequestedMassTargetNetworkId = 0;
+		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, RequestedTargetLocation,
+			RequestedMassTargetNetworkId))
 		{
 			FVector AimDirection = RequestedTarget
 				? (RequestedTarget->GetActorLocation() - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D()
@@ -82,9 +85,11 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 
 			if (!ActorInfo->IsNetAuthority())
 			{
-				SendAimToServer(AimDirection, RequestedTargetLocation, RequestedTarget);
+				SendAimToServer(AimDirection, RequestedTargetLocation, RequestedTarget,
+					RequestedMassTargetNetworkId);
 			}
-			StartAttack(AimDirection, RequestedTargetLocation, RequestedTarget);
+			StartAttack(AimDirection, RequestedTargetLocation, RequestedTarget,
+				RequestedMassTargetNetworkId);
 			return;
 		}
 	}
@@ -180,9 +185,11 @@ void UASGameplayAbility_CharacterPrimaryAttack::ConfirmTargeting()
 	FVector TargetLocation;
 	ComputeLocalAim(AimDirection, TargetLocation);
 	AActor* RequestedTarget = nullptr;
+	uint32 RequestedMassTargetNetworkId = 0;
 	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
 	{
-		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, TargetLocation))
+		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, TargetLocation,
+			RequestedMassTargetNetworkId))
 		{
 			TargetLocation = RequestedTarget ? RequestedTarget->GetActorLocation() : TargetLocation;
 			AimDirection = (TargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
@@ -194,9 +201,9 @@ void UASGameplayAbility_CharacterPrimaryAttack::ConfirmTargeting()
 	}
 	if (!CurrentActorInfo->IsNetAuthority())
 	{
-		SendAimToServer(AimDirection, TargetLocation, RequestedTarget);
+		SendAimToServer(AimDirection, TargetLocation, RequestedTarget, RequestedMassTargetNetworkId);
 	}
-	StartAttack(AimDirection, TargetLocation, RequestedTarget);
+	StartAttack(AimDirection, TargetLocation, RequestedTarget, RequestedMassTargetNetworkId);
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::StopTargetingInput(const bool bWasCancelled)
@@ -310,7 +317,8 @@ void UASGameplayAbility_CharacterPrimaryAttack::ComputeLocalAim(FVector& OutAimD
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::SendAimToServer(
-	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget)
+	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget,
+	const uint32 RequestedMassTargetNetworkId)
 {
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	if (!ASC) return;
@@ -324,6 +332,13 @@ void UASGameplayAbility_CharacterPrimaryAttack::SendAimToServer(
 		FGameplayAbilityTargetData_ActorArray* ActorData = new FGameplayAbilityTargetData_ActorArray();
 		ActorData->TargetActorArray.Add(TWeakObjectPtr<AActor>(RequestedTarget));
 		TargetData.Add(ActorData);
+	}
+	if (RequestedMassTargetNetworkId != 0)
+	{
+		FASGameplayAbilityTargetData_MassTarget* MassData =
+			new FASGameplayAbilityTargetData_MassTarget();
+		MassData->MassNetworkId = RequestedMassTargetNetworkId;
+		TargetData.Add(MassData);
 	}
 	ASC->CallServerSetReplicatedTargetData(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(),
 		TargetData, FGameplayTag(), ASC->ScopedPredictionKey);
@@ -357,11 +372,19 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimReceived(
 	FVector TargetLocation;
 	ComputeLocalAim(AimDirection, TargetLocation);
 	AActor* RequestedTarget = nullptr;
+	uint32 RequestedMassTargetNetworkId = 0;
 	for (int32 DataIndex = 0; DataIndex < Data.Num(); ++DataIndex)
 	{
 		const FGameplayAbilityTargetData* AimData = Data.Get(DataIndex);
 		if (!AimData)
 		{
+			continue;
+		}
+		if (AimData->GetScriptStruct() == FASGameplayAbilityTargetData_MassTarget::StaticStruct())
+		{
+			const FASGameplayAbilityTargetData_MassTarget* MassData =
+				static_cast<const FASGameplayAbilityTargetData_MassTarget*>(AimData);
+			RequestedMassTargetNetworkId = MassData->MassNetworkId;
 			continue;
 		}
 		if (AimData->HasEndPoint())
@@ -377,12 +400,12 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimReceived(
 	}
 #if !UE_BUILD_SHIPPING
 	UE_LOG(LogTemp, Log,
-		TEXT("[MassRangedTarget][T1Receive] Authority=%d Avatar=%s Target=(%.1f,%.1f,%.1f) Aim=(%.4f,%.4f,%.4f) RequestedActor=%s"),
+		TEXT("[MassRangedTarget][T1Receive] Authority=%d Avatar=%s Target=(%.1f,%.1f,%.1f) Aim=(%.4f,%.4f,%.4f) RequestedActor=%s MassNetworkId=%u"),
 		CurrentActorInfo && CurrentActorInfo->IsNetAuthority(), *GetNameSafe(GetAvatarActorFromActorInfo()),
 		TargetLocation.X, TargetLocation.Y, TargetLocation.Z,
-		AimDirection.X, AimDirection.Y, AimDirection.Z, *GetNameSafe(RequestedTarget));
+		AimDirection.X, AimDirection.Y, AimDirection.Z, *GetNameSafe(RequestedTarget), RequestedMassTargetNetworkId);
 #endif
-	StartAttack(AimDirection, TargetLocation, RequestedTarget);
+	StartAttack(AimDirection, TargetLocation, RequestedTarget, RequestedMassTargetNetworkId);
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimCancelled()
@@ -392,7 +415,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimCancelled()
 
 bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 	const FASWeaponAttackExecutionContext& Context, AActor* RequestedTarget,
-	const FVector& TargetLocation, FVector& OutAimDirection) const
+	const uint32 RequestedMassTargetNetworkId, const FVector& TargetLocation, FVector& OutAimDirection) const
 {
 	if (!Context.Avatar || !Context.Definition)
 	{
@@ -404,6 +427,41 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 	{
 		// 방향성 투사체는 타깃 Actor를 받지 않는다. 클라이언트는 위치가 아니라 방향만 보낸다.
 		return false;
+	}
+
+	if (RequestedMassTargetNetworkId != 0)
+	{
+		if (!RangedProfile || !RangedProfile->bUseAttackMoveTargeting || IsValid(RequestedTarget))
+		{
+			return false;
+		}
+
+		if (Context.Avatar->HasAuthority())
+		{
+			UASCombatTargetSubsystem* CombatTargets =
+				Context.Avatar->GetWorld()->GetSubsystem<UASCombatTargetSubsystem>();
+			FASCombatTargetRef ServerTarget;
+			if (!CombatTargets || !CombatTargets->GetMassTargetByNetworkId(
+				RequestedMassTargetNetworkId, ServerTarget))
+			{
+				return false;
+			}
+
+			const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f
+				+ ServerTarget.GetHitRadius();
+			if (FVector::DistSquared2D(Context.Avatar->GetActorLocation(), ServerTarget.GetLocation())
+				> FMath::Square(AllowedRange))
+			{
+				return false;
+			}
+		}
+
+		OutAimDirection = (TargetLocation - Context.Avatar->GetActorLocation()).GetSafeNormal2D();
+		if (OutAimDirection.IsNearlyZero())
+		{
+			OutAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
+		}
+		return !OutAimDirection.IsNearlyZero();
 	}
 
 	if (!IsValid(RequestedTarget))
@@ -452,7 +510,8 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
-	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget)
+	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget,
+	const uint32 RequestedMassTargetNetworkId)
 {
 	if (bAttackStarted || !CurrentActorInfo) return;
 	const UASWeaponAttackExecution* Execution = nullptr;
@@ -465,7 +524,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	}
 
 	FVector ValidAimDirection = AimDirection;
-	if (!IsValidAttackRequest(Context, RequestedTarget, TargetLocation, ValidAimDirection))
+	if (!IsValidAttackRequest(Context, RequestedTarget, RequestedMassTargetNetworkId, TargetLocation, ValidAimDirection))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] 공격 시작 실패: 요청 검증 (Target=%s, Authority=%d)"),
 			*GetNameSafe(RequestedTarget), CurrentActorInfo->IsNetAuthority());
@@ -494,6 +553,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	if (CachedAimDirection.IsNearlyZero()) CachedAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
 	Context.AimDirection = CachedAimDirection;
 	Context.RequestedTarget = RequestedTarget;
+	Context.RequestedMassTargetNetworkId = RequestedMassTargetNetworkId;
 	Context.TargetLocation = TargetLocation;
 	CachedExecutionContext = Context;
 	CachedExecution = Execution;
@@ -502,9 +562,10 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	if (CurrentActorInfo->IsNetAuthority())
 	{
 		UE_LOG(LogTemp, Log,
-			TEXT("[MassRangedTarget][T1Start] Avatar=%s Target=(%.1f,%.1f,%.1f) Aim=(%.4f,%.4f,%.4f) RequestedActor=%s"),
+			TEXT("[MassRangedTarget][T1Start] Avatar=%s Target=(%.1f,%.1f,%.1f) Aim=(%.4f,%.4f,%.4f) RequestedActor=%s MassNetworkId=%u"),
 			*GetNameSafe(Context.Avatar), TargetLocation.X, TargetLocation.Y, TargetLocation.Z,
-			CachedAimDirection.X, CachedAimDirection.Y, CachedAimDirection.Z, *GetNameSafe(RequestedTarget));
+			CachedAimDirection.X, CachedAimDirection.Y, CachedAimDirection.Z, *GetNameSafe(RequestedTarget),
+			RequestedMassTargetNetworkId);
 	}
 #endif
 	// 공격이 시작되는 순간 걷기를 멈추고 대상 방향으로 몸을 돌린다.

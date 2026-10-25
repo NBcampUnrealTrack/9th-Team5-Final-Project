@@ -67,6 +67,7 @@ void FASCombatTargetRef::Reset()
 {
 	Actor.Reset();
 	MassTargetId = 0;
+	MassNetworkId = 0;
 	Location = FVector::ZeroVector;
 	HitRadius = 0.0f;
 }
@@ -307,12 +308,42 @@ bool UASCombatTargetSubsystem::FindBestTarget(
 		{
 			OutTarget.Reset();
 			OutTarget.MassTargetId = MassTargetId;
+			MassTargets->GetMassNetworkId(MassTargetId, OutTarget.MassNetworkId);
 			OutTarget.Location = MassLocation;
 			OutTarget.HitRadius = MassHitRadius;
 		}
 	}
 
 	return OutTarget.IsValid();
+}
+
+bool UASCombatTargetSubsystem::GetMassTargetByNetworkId(
+	const uint32 MassNetworkId,
+	FASCombatTargetRef& OutTarget) const
+{
+	OutTarget.Reset();
+	const UWorld* World = GetWorld();
+	if (!World || MassNetworkId == 0)
+	{
+		return false;
+	}
+
+	const UASMassMonsterTargetQuerySubsystem* MassTargets =
+		World->GetSubsystem<UASMassMonsterTargetQuerySubsystem>();
+	uint64 MassTargetId = 0;
+	FVector Location;
+	float HitRadius = 0.0f;
+	if (!MassTargets || !MassTargets->GetAliveMonsterTargetByNetworkId(
+		MassNetworkId, MassTargetId, Location, HitRadius))
+	{
+		return false;
+	}
+
+	OutTarget.MassTargetId = MassTargetId;
+	OutTarget.MassNetworkId = MassNetworkId;
+	OutTarget.Location = Location;
+	OutTarget.HitRadius = HitRadius;
+	return true;
 }
 
 bool UASCombatTargetSubsystem::RefreshTarget(

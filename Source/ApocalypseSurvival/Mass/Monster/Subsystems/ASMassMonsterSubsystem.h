@@ -154,6 +154,10 @@ public:
 	/** 익명 Target Id가 아직 살아 있는 관리 몬스터인지 확인하고 최신 위치를 반환한다. */
 	bool GetAliveMonsterTarget(uint64 TargetId, FVector& OutLocation, float& OutHitRadius) const;
 
+	/** Mass replication ID를 살아 있는 서버 Entity로 해석한다. */
+	bool GetAliveMonsterTargetByNetworkId(uint32 MassNetworkId, uint64& OutTargetId,
+		FVector& OutLocation, float& OutHitRadius) const;
+
 	/** Target Id로 지정한 살아 있는 Mass 몬스터 하나에 서버 피해를 적용한다. */
 	int32 ApplyDamageToTarget(uint64 TargetId, float Damage, AActor* DamageInstigator);
 

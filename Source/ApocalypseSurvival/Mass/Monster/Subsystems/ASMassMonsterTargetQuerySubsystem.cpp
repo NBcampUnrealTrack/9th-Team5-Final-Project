@@ -6,6 +6,7 @@
 #include "MassEntityQuery.h"
 #include "MassEntitySubsystem.h"
 #include "MassExecutionContext.h"
+#include "MassReplicationFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Replication/ASMassMonsterClientInterpolationFragment.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
@@ -78,6 +79,60 @@ bool UASMassMonsterTargetQuerySubsystem::GetAliveMonsterTarget(
 
 	const UASMassMonsterSubsystem* ServerMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
 	return ServerMonsters && ServerMonsters->GetAliveMonsterTarget(TargetId, OutLocation, OutHitRadius);
+}
+
+bool UASMassMonsterTargetQuerySubsystem::GetMassNetworkId(
+	const uint64 TargetId,
+	uint32& OutMassNetworkId) const
+{
+	OutMassNetworkId = 0;
+	if (!EntitySubsystem || TargetId == 0)
+	{
+		return false;
+	}
+
+	FMassEntityManager& EntityManager = EntitySubsystem->GetMutableEntityManager();
+	if (EntityManager.IsProcessing())
+	{
+		return false;
+	}
+
+	const FMassEntityHandle Entity = FMassEntityHandle::FromNumber(TargetId);
+	if (!EntityManager.IsEntityValid(Entity))
+	{
+		return false;
+	}
+
+	const FMassNetworkIDFragment* NetworkId =
+		EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+	if (!NetworkId || !NetworkId->NetID.IsValid())
+	{
+		return false;
+	}
+
+	OutMassNetworkId = NetworkId->NetID.GetValue();
+	return true;
+}
+
+bool UASMassMonsterTargetQuerySubsystem::GetAliveMonsterTargetByNetworkId(
+	const uint32 MassNetworkId,
+	uint64& OutTargetId,
+	FVector& OutLocation,
+	float& OutHitRadius) const
+{
+	OutTargetId = 0;
+	OutLocation = FVector::ZeroVector;
+	OutHitRadius = 0.0f;
+
+	const UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_Client || MassNetworkId == 0)
+	{
+		return false;
+	}
+
+	const UASMassMonsterSubsystem* ServerMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
+	return ServerMonsters && ServerMonsters->GetAliveMonsterTargetByNetworkId(
+		MassNetworkId, OutTargetId, OutLocation, OutHitRadius);
 }
 
 bool UASMassMonsterTargetQuerySubsystem::FindBestClientReplicaTarget(

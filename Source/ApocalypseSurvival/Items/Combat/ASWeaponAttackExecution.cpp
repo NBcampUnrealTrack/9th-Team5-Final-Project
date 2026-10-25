@@ -297,13 +297,13 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			const TCHAR* TargetKind = TargetRef.IsMass() ? TEXT("Mass")
 				: (TargetRef.IsActor() ? TEXT("Actor") : TEXT("None"));
 			UE_LOG(LogTemp, Log,
-				TEXT("[MassRangedTarget][T2Fire] Avatar=%s Click=(%.1f,%.1f,%.1f) Search=(%.1f,%.1f,%.1f) Priority=(%.1f,%.1f,%.1f) ClickInRange=%d Found=%d Kind=%s MassEntityId=%llu Selected=(%.1f,%.1f,%.1f)"),
+				TEXT("[MassRangedTarget][T2Fire] Avatar=%s Click=(%.1f,%.1f,%.1f) Search=(%.1f,%.1f,%.1f) Priority=(%.1f,%.1f,%.1f) ClickInRange=%d Found=%d Kind=%s MassEntityId=%llu RequestedMassNetworkId=%u Selected=(%.1f,%.1f,%.1f)"),
 				*GetNameSafe(Context.Avatar),
 				Context.TargetLocation.X, Context.TargetLocation.Y, Context.TargetLocation.Z,
 				Query.SearchOrigin.X, Query.SearchOrigin.Y, Query.SearchOrigin.Z,
 				Query.PriorityLocation.X, Query.PriorityLocation.Y, Query.PriorityLocation.Z,
 				bClickIsInAttackRange, bFoundTarget, TargetKind,
-				static_cast<unsigned long long>(TargetRef.GetMassTargetId()),
+				static_cast<unsigned long long>(TargetRef.GetMassTargetId()), Context.RequestedMassTargetNetworkId,
 				TargetRef.GetLocation().X, TargetRef.GetLocation().Y, TargetRef.GetLocation().Z);
 #endif
 			if (bFoundTarget)

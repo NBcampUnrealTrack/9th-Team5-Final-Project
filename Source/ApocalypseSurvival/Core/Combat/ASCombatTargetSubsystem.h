@@ -69,6 +69,7 @@ struct APOCALYPSESURVIVAL_API FASCombatTargetRef
 	bool IsMass() const;
 	AActor* GetActor() const;
 	uint64 GetMassTargetId() const { return MassTargetId; }
+	uint32 GetMassNetworkId() const { return MassNetworkId; }
 	const FVector& GetLocation() const { return Location; }
 	float GetHitRadius() const { return HitRadius; }
 	void Reset();
@@ -76,6 +77,8 @@ struct APOCALYPSESURVIVAL_API FASCombatTargetRef
 private:
 	TWeakObjectPtr<AActor> Actor;
 	uint64 MassTargetId = 0;
+	/** 서버와 Client Bubble 양쪽에서 동일한 Mass replication ID. */
+	uint32 MassNetworkId = 0;
 	FVector Location = FVector::ZeroVector;
 	float HitRadius = 0.0f;
 
@@ -145,6 +148,9 @@ public:
 
 	/** 이전에 반환한 타겟의 유효성, 생존 상태와 최신 위치를 갱신한다. */
 	bool RefreshTarget(const FASCombatTargetQuery& Query, FASCombatTargetRef& InOutTarget) const;
+
+	/** 서버가 클라이언트가 전달한 Mass replication ID를 현재 서버 Entity로 검증할 때 사용한다. */
+	bool GetMassTargetByNetworkId(uint32 MassNetworkId, FASCombatTargetRef& OutTarget) const;
 
 	int32 ApplyEffectSpecsToActors(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 		TConstArrayView<AActor*> Targets) const;

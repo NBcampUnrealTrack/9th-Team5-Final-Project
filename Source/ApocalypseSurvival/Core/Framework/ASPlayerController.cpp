@@ -236,11 +236,13 @@ void AASPlayerController::HandleAttackMoveRequest(const FASPrimaryAttackRequest&
 {
 	PendingAttackMoveTarget = Request.Target;
 	PendingAttackMoveTargetLocation = Request.TargetLocation;
+	PendingAttackMoveMassTargetNetworkId = Request.MassTargetNetworkId;
 	bHasPendingAttackMoveRequest = true;
 	TryActivatePrimaryAttack();
 }
 
-bool AASPlayerController::ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation)
+bool AASPlayerController::ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation,
+	uint32& OutMassTargetNetworkId)
 {
 	if (!bHasPendingAttackMoveRequest)
 	{
@@ -249,8 +251,10 @@ bool AASPlayerController::ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& 
 
 	OutTarget = PendingAttackMoveTarget.Get();
 	OutTargetLocation = PendingAttackMoveTargetLocation;
+	OutMassTargetNetworkId = PendingAttackMoveMassTargetNetworkId;
 	PendingAttackMoveTarget.Reset();
 	PendingAttackMoveTargetLocation = FVector::ZeroVector;
+	PendingAttackMoveMassTargetNetworkId = 0;
 	bHasPendingAttackMoveRequest = false;
 	return true;
 }

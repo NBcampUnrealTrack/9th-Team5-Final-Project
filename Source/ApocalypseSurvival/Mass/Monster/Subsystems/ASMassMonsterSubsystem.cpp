@@ -6,6 +6,7 @@
 #include "MassEntityConfigAsset.h"
 #include "MassEntityManager.h"
 #include "MassEntityTemplate.h"
+#include "MassReplicationFragments.h"
 #include "MassSpawnLocationProcessor.h"
 #include "MassSpawnerSubsystem.h"
 #include "MassSpawnerTypes.h"
@@ -591,6 +592,55 @@ bool UASMassMonsterSubsystem::GetAliveMonsterTarget(
 	OutLocation = Transform->GetTransform().GetLocation();
 	OutHitRadius = FMath::Max(0.0f, Config->HitRadius);
 	return true;
+}
+
+bool UASMassMonsterSubsystem::GetAliveMonsterTargetByNetworkId(
+	const uint32 MassNetworkId,
+	uint64& OutTargetId,
+	FVector& OutLocation,
+	float& OutHitRadius) const
+{
+	OutTargetId = 0;
+	OutLocation = FVector::ZeroVector;
+	OutHitRadius = 0.0f;
+	if (!SpawnerSubsystem || MassNetworkId == 0)
+	{
+		return false;
+	}
+
+	const FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	for (const FMassEntityHandle Entity : ManagedEntities)
+	{
+		if (!EntityManager.IsEntityValid(Entity))
+		{
+			continue;
+		}
+
+		const FMassNetworkIDFragment* NetworkId =
+			EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+		if (!NetworkId || !NetworkId->NetID.IsValid()
+			|| NetworkId->NetID.GetValue() != MassNetworkId)
+		{
+			continue;
+		}
+
+		const FASMassMonsterHealthFragment* Health =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+		const FASMassMonsterConfigFragment* Config =
+			EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
+		if (!Health || Health->CurrentHealth <= 0.0f || !Transform || !Config)
+		{
+			return false;
+		}
+
+		OutTargetId = Entity.AsNumber();
+		OutLocation = Transform->GetTransform().GetLocation();
+		OutHitRadius = FMath::Max(0.0f, Config->HitRadius);
+		return true;
+	}
+
+	return false;
 }
 
 int32 UASMassMonsterSubsystem::ApplyDamageInRadius(

@@ -23,6 +23,8 @@ struct FASWeaponAttackExecutionContext
 	FVector AimDirection = FVector::ForwardVector;
 	/** 서버가 검증한 명시적 타깃. 방향성 투사체는 비어 있다. */
 	TWeakObjectPtr<AActor> RequestedTarget;
+	/** 클라이언트가 제안하고 서버가 검증한 Mass replication ID. */
+	uint32 RequestedMassTargetNetworkId = 0;
 	FVector TargetLocation = FVector::ZeroVector;
 };
 

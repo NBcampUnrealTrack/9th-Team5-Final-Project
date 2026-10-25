@@ -246,17 +246,19 @@ void UASPlayerAttackMoveComponent::RequestAttack(AActor* Target, const FVector& 
 	const TCHAR* TargetKind = CurrentTarget.IsMass() ? TEXT("Mass")
 		: (IsValid(Target) ? TEXT("Actor") : TEXT("None"));
 	UE_LOG(LogTemp, Log,
-		TEXT("[MassRangedTarget][T0] Authority=%d Pawn=%s Click=(%.1f,%.1f,%.1f) Request=(%.1f,%.1f,%.1f) Kind=%s MassEntityId=%llu Selected=(%.1f,%.1f,%.1f)"),
+		TEXT("[MassRangedTarget][T0] Authority=%d Pawn=%s Click=(%.1f,%.1f,%.1f) Request=(%.1f,%.1f,%.1f) Kind=%s MassEntityId=%llu MassNetworkId=%u Selected=(%.1f,%.1f,%.1f)"),
 		Pawn ? Pawn->HasAuthority() : -1, *GetNameSafe(Pawn),
 		CommandDestination.X, CommandDestination.Y, CommandDestination.Z,
 		TargetLocation.X, TargetLocation.Y, TargetLocation.Z, TargetKind,
 		static_cast<unsigned long long>(CurrentTarget.GetMassTargetId()),
+		CurrentTarget.GetMassNetworkId(),
 		CurrentTarget.GetLocation().X, CurrentTarget.GetLocation().Y, CurrentTarget.GetLocation().Z);
 #endif
 
 	FASPrimaryAttackRequest Request;
 	Request.Target = Target;
 	Request.TargetLocation = TargetLocation;
+	Request.MassTargetNetworkId = CurrentTarget.IsMass() ? CurrentTarget.GetMassNetworkId() : 0;
 	OnAttackRequested.Broadcast(Request);
 }
 
