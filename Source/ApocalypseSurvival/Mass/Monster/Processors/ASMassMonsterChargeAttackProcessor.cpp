@@ -7,7 +7,7 @@
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
 #include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
 #include "Mass/Monster/Processors/ASMassMonsterNavigationProcessor.h"
-#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
@@ -81,7 +81,7 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterChargeAttackProcessor);
 
 	UWorld* World = GetWorld();
-	UASMassPlayerTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMassPlayerTargetSubsystem>() : nullptr;
+	UASMonsterTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMonsterTargetSubsystem>() : nullptr;
 	if (!World || !TargetSubsystem)
 	{
 		return;
@@ -89,7 +89,20 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 
 	const double CurrentTime = World->GetTimeSeconds();
 	const float DeltaTime = Context.GetDeltaTimeSeconds();
-	const TConstArrayView<FASMassPlayerTargetSnapshot> TargetSnapshots = TargetSubsystem->GetTargetSnapshots();
+	TArray<FASTargetSnapshot> TargetSnapshots;
+	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
+		EASMonsterTargetCapability::PrimaryTarget, TargetSnapshots);
+	TArray<FASTargetSnapshot> BlockingSnapshots;
+	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
+		EASMonsterTargetCapability::BlockingTarget, BlockingSnapshots);
+	for (const FASTargetSnapshot& Snapshot : BlockingSnapshots)
+	{
+		if (!TargetSnapshots.ContainsByPredicate([&Snapshot](const FASTargetSnapshot& Existing)
+			{ return Existing.Handle == Snapshot.Handle; }))
+		{
+			TargetSnapshots.Add(Snapshot);
+		}
+	}
 	EntityQuery.ForEachEntityChunk(Context, [this, World, TargetSubsystem, CurrentTime, DeltaTime, TargetSnapshots](FMassExecutionContext& Context)
 	{
 		const TArrayView<FTransformFragment> Transforms = Context.GetMutableFragmentView<FTransformFragment>();
@@ -124,14 +137,14 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				{
 					break;
 				}
-				// Behavior의 Target 갱신 주기보다 최신인 Player Snapshot을 사용한다.
-				// Windup 직전에 오래된 CachedTargetLocation을 다시 바라보면 텔레그래프와 실제 돌진 방향이 어긋난다.
-				FVector ChargeTargetLocation = Targets[EntityIt].CachedTargetLocation;
-				if (const FASMassPlayerTargetSnapshot* LatestSnapshot =
-					TargetSubsystem->FindTarget(Targets[EntityIt].TargetId);
-					LatestSnapshot && LatestSnapshot->bAlive && LatestSnapshot->Pawn.IsValid())
+				// Behavior의 Target 갱신 주기보다 최신인 Registry Snapshot을 사용한다.
+				// Windup 직전에 오래된 ActiveTarget 위치를 다시 바라보면 텔레그래프와 실제 돌진 방향이 어긋난다.
+				FVector ChargeTargetLocation = Targets[EntityIt].GetActiveTargetLocation();
+				FASTargetSnapshot LatestSnapshot;
+				if (TargetSubsystem->ResolveTarget(Targets[EntityIt].GetActiveTarget(), LatestSnapshot)
+					&& LatestSnapshot.bAlive && LatestSnapshot.Actor.IsValid())
 				{
-					ChargeTargetLocation = LatestSnapshot->Location;
+					ChargeTargetLocation = LatestSnapshot.Location;
 				}
 
 				if (FVector::DistSquared2D(Transform.GetLocation(), ChargeTargetLocation)
@@ -149,12 +162,12 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				Combat.LockedDirection = Direction;
 				// Windup 시작 순간의 최신 위치를 고정한다. 이후에는 경고 표시와 실제 돌진이 같은 방향을 유지한다.
 				Combat.LockedTargetLocation = ChargeTargetLocation;
-				Combat.LockedTargetId = Targets[EntityIt].TargetId;
+				Combat.LockedTarget = Targets[EntityIt].GetActiveTarget();
 				Combat.ChargeDistanceTraveled = 0.0f;
 				Combat.bPrimaryEffectApplied = false;
 				Combat.PhaseEndTimeSeconds = CurrentTime + Config.ChargeWindupDuration;
 				Combat.AttackState = EASMassMonsterAttackState::Windup;
-				HitTargetIdsByEntity.Remove(Entity);
+				HitTargetsByEntity.Remove(Entity);
 				Transform.SetRotation(Direction.Rotation().Quaternion());
 				ASMassMonsterCharge::SpawnIndicator(*World, Config, Transform.GetLocation(), Direction);
 				break;
@@ -177,18 +190,19 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				Transform.SetLocation(End);
 				Combat.ChargeDistanceTraveled += FVector::Dist2D(Start, End);
 
-				TSet<int32>& HitTargetIds = HitTargetIdsByEntity.FindOrAdd(Entity);
-				for (const FASMassPlayerTargetSnapshot& Snapshot : TargetSnapshots)
+				TSet<FASTargetHandle>& HitTargets = HitTargetsByEntity.FindOrAdd(Entity);
+				for (const FASTargetSnapshot& Snapshot : TargetSnapshots)
 				{
-					if (!Snapshot.bAlive || !Snapshot.Pawn.IsValid() || HitTargetIds.Contains(Snapshot.TargetId)
+					if (!Snapshot.bAlive || !Snapshot.bAttackable || !Snapshot.Actor.IsValid() || HitTargets.Contains(Snapshot.Handle)
 						|| !ASMassMonsterCharge::IsPointWithinSegmentRadius(
 							Snapshot.Location, Start, End, Config.ChargeHitRadius))
 					{
 						continue;
 					}
 
-					ASMassMonsterDamage::ApplyToActor(Snapshot.Pawn.Get(), RuntimeStats[EntityIt].AttackPower, Start);
-					HitTargetIds.Add(Snapshot.TargetId);
+					ASMassMonsterDamage::ApplyToActor(Snapshot.Actor.Get(), RuntimeStats[EntityIt].AttackPower,
+						Start, Snapshot.Location);
+					HitTargets.Add(Snapshot.Handle);
 					Combat.bPrimaryEffectApplied = true;
 				}
 
@@ -197,7 +211,7 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 				{
 					Combat.NextAttackTimeSeconds = CurrentTime + Config.AttackCooldown;
 					Combat.AttackState = EASMassMonsterAttackState::Recovering;
-					HitTargetIdsByEntity.Remove(Entity);
+					HitTargetsByEntity.Remove(Entity);
 				}
 				break;
 			}

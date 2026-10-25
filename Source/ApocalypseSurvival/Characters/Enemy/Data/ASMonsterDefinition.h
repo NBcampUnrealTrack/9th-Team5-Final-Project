@@ -114,6 +114,38 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
 	float AggroDecayPerSecond = 25.0f;
 
+	/** 바로 인접한 일반 타깃이 받는 최대 거리 점수. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float ProximityScoreMax = 30.0f;
+
+	/** 이 거리에서 거리 점수가 최대치의 절반이 된다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "1.0", Units = "cm"))
+	float ProximityHalfScoreDistance = 600.0f;
+
+	/** 새 후보가 현재 타깃보다 이 점수만큼 높아야 일반 전환한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float TargetSwitchScoreMargin = 5.0f;
+
+	/** 타깃 변경 뒤 일반 전환을 막는 시간이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", Units = "s"))
+	float MinTargetLockSeconds = 0.75f;
+
+	/** PrimaryTarget 경로 실패 또는 이동 정체 시 차단 후보를 탐색할 전방 반경이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "cm"))
+	float BlockingTargetSearchRadius = 600.0f;
+
+	/** 차단 후보가 PrimaryTarget 방향과 이루어야 하는 최소 2D 내적이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float BlockingTargetMinForwardDot = 0.25f;
+
+	/** 정상적인 이동 요청 중 이 시간만큼 진행하지 못하면 BlockingTarget 탐색을 시작한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "s"))
+	float BlockingTargetStuckSeconds = 0.75f;
+
+	/** 정체 판정에서 실제 진행으로 인정할 최소 2D 이동 거리다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Navigation|Blocking", meta = (ClampMin = "1.0", Units = "cm"))
+	float BlockingTargetMinProgressDistance = 20.0f;
+
 	/** CombatComponent가 활성화할 Ability의 태그. 예: Ability.Monster.Attack.Ranged */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (Categories = "Ability.Monster"))
 	FGameplayTag AttackAbilityTag;

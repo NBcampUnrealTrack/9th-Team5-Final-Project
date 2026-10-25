@@ -1,10 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/StaticArray.h"
 #include "Engine/DataTable.h"
 #include "MassEntityTypes.h"
 #include "MassLODTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetTypes.h"
 #include "ASMassMonsterFragments.generated.h"
 
 class AASMassMonsterProjectile;
@@ -21,8 +23,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterHealthFragment : public FMassFragmen
 	float CurrentHealth = 100.0f;
 	float DeathTimeRemaining = 0.0f;
 	bool bDeathTimerStarted = false;
-	/** 가장 최근에 피해를 준 플레이어의 Mass TargetId. 경험치 수령자 판정에만 쓴다. */
-	int32 LastDamageInstigatorTargetId = INDEX_NONE;
+	/** 가장 최근에 피해를 준 등록 타깃. 경험치 수령자 판정에만 쓴다. */
+	FASTargetHandle LastDamageInstigator;
 };
 
 /** 낮/밤 행동 모드와 현재 상위 행동 상태. */
@@ -41,24 +43,79 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTargetFragment : public FMassFragmen
 {
 	GENERATED_BODY()
 
-	int32 TargetId = INDEX_NONE;
-	FVector CachedTargetLocation = FVector::ZeroVector;
-	float Aggro = 0.0f;
+	FASTargetHandle PrimaryTarget;
+	FASTargetHandle BlockingTarget;
+	FVector CachedPrimaryTargetLocation = FVector::ZeroVector;
+	FVector CachedBlockingTargetLocation = FVector::ZeroVector;
 	float RefreshTimeRemaining = 0.0f;
+	float TargetLockTimeRemaining = 0.0f;
 	bool bRefreshScheduleInitialized = false;
+
+	bool HasPrimaryTarget() const
+	{
+		return PrimaryTarget.IsValid();
+	}
+
+	bool HasBlockingTarget() const
+	{
+		return BlockingTarget.IsValid();
+	}
 
 	bool HasTarget() const
 	{
-		return TargetId != INDEX_NONE;
+		return HasBlockingTarget() || HasPrimaryTarget();
+	}
+
+	FASTargetHandle GetActiveTarget() const
+	{
+		return HasBlockingTarget() ? BlockingTarget : PrimaryTarget;
+	}
+
+	const FVector& GetActiveTargetLocation() const
+	{
+		return HasBlockingTarget() ? CachedBlockingTargetLocation : CachedPrimaryTargetLocation;
+	}
+
+	void ClearBlockingTarget()
+	{
+		BlockingTarget = FASTargetHandle();
+		CachedBlockingTargetLocation = FVector::ZeroVector;
 	}
 
 	void Reset()
 	{
-		TargetId = INDEX_NONE;
-		CachedTargetLocation = FVector::ZeroVector;
-		Aggro = 0.0f;
+		PrimaryTarget = FASTargetHandle();
+		CachedPrimaryTargetLocation = FVector::ZeroVector;
+		ClearBlockingTarget();
 		RefreshTimeRemaining = 0.0f;
+		TargetLockTimeRemaining = 0.0f;
 	}
+};
+
+/** 최근 피해·도발처럼 이 몬스터와 직접 상호작용한 대상의 제한된 위협 기억 슬롯이다. */
+struct FASMassMonsterThreatEntry
+{
+	FASTargetHandle Target;
+	float StoredThreat = 0.0f;
+	double LastUpdateTimeSeconds = 0.0;
+};
+
+/**
+ * 월드의 전체 후보 수와 무관하게 몬스터 하나가 짧게 기억하는 위협 대상이다.
+ * 감쇠는 매 프레임 값을 변경하지 않고 조회 시점의 Timestamp 차이로 계산한다.
+ */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterThreatFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	static constexpr int32 MaxRememberedThreats = 8;
+
+	TStaticArray<FASMassMonsterThreatEntry, MaxRememberedThreats> Entries;
+
+	float GetEffectiveThreat(FASTargetHandle Target, double CurrentTimeSeconds, float DecayPerSecond) const;
+	void AddThreat(FASTargetHandle Target, float ThreatAmount, double CurrentTimeSeconds, float DecayPerSecond);
+	void Reset();
 };
 
 /** 공격 쿨다운과 준비/회복 단계를 저장한다. */
@@ -72,7 +129,7 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterCombatFragment : public FMassFragmen
 	EASMassMonsterAttackState AttackState = EASMassMonsterAttackState::Ready;
 	FVector LockedTargetLocation = FVector::ZeroVector;
 	FVector LockedDirection = FVector::ForwardVector;
-	int32 LockedTargetId = INDEX_NONE;
+	FASTargetHandle LockedTarget;
 	float ChargeDistanceTraveled = 0.0f;
 	uint8 PatternActivationCount = 0;
 	bool bPrimaryEffectApplied = false;
@@ -129,8 +186,11 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterNavigationFragment : public FMassFra
 	GENERATED_BODY()
 
 	FVector LastRequestedGoal = FVector::ZeroVector;
+	FVector LastProgressLocation = FVector::ZeroVector;
 	float PathRefreshTimeRemaining = 0.0f;
+	float StuckTimeSeconds = 0.0f;
 	bool bHasRequestedGoal = false;
+	bool bHasProgressSample = false;
 };
 
 /**
@@ -295,6 +355,22 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0"))
 	float AggroDecayPerSecond = 25.0f;
 
+	/** 바로 인접한 일반 타깃이 받는 최대 거리 점수. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float ProximityScoreMax = 30.0f;
+
+	/** 이 거리에서 거리 점수가 최대치의 절반이 된다. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "1.0", Units = "cm"))
+	float ProximityHalfScoreDistance = 600.0f;
+
+	/** 새 후보가 현재 타깃보다 이 점수만큼 높아야 일반 전환을 허용한다. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0"))
+	float TargetSwitchScoreMargin = 5.0f;
+
+	/** 타깃 변경 직후 일반 재평가 전환을 막는 최소 시간이다. */
+	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.0", Units = "s"))
+	float MinTargetLockSeconds = 0.75f;
+
 	UPROPERTY(EditAnywhere, Category = "Targeting", meta = (ClampMin = "0.01", Units = "s"))
 	float TargetRefreshInterval = 0.25f;
 
@@ -303,6 +379,22 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
 	float TargetMoveRepathDistance = 150.0f;
+
+	/** PrimaryTarget 경로 실패 또는 이동 정체 시 차단 후보를 탐색할 전방 반경이다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "cm"))
+	float BlockingTargetSearchRadius = 600.0f;
+
+	/** 차단 후보가 PrimaryTarget 방향과 이루어야 하는 최소 2D 내적이다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float BlockingTargetMinForwardDot = 0.25f;
+
+	/** 정상적인 이동 요청 중 이 시간만큼 진행하지 못하면 BlockingTarget 탐색을 시작한다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "0.0", Units = "s"))
+	float BlockingTargetStuckSeconds = 0.75f;
+
+	/** 정체 판정에서 실제 진행으로 인정할 최소 2D 이동 거리다. */
+	UPROPERTY(EditAnywhere, Category = "Navigation|Blocking", meta = (ClampMin = "1.0", Units = "cm"))
+	float BlockingTargetMinProgressDistance = 20.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
 	float DeathDespawnDelay = 1.5f;
