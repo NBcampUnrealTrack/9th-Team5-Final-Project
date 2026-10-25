@@ -26,6 +26,17 @@ void AASWeaponProjectile::InitHoming(const TArray<FGameplayEffectSpecHandle>& In
 	LastTargetLocation = InTarget.GetLocation();
 	Speed = FMath::Max(1.0f, InSpeed);
 	bInitialized = true;
+#if !UE_BUILD_SHIPPING
+	const TCHAR* TargetKind = InTarget.IsMass() ? TEXT("Mass")
+		: (InTarget.IsActor() ? TEXT("Actor") : TEXT("None"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[MassRangedTarget][T2Projectile] Projectile=%s Instigator=%s Kind=%s MassEntityId=%llu MassNetworkId=%u Target=(%.1f,%.1f,%.1f)"),
+		*GetNameSafe(this), *GetNameSafe(InInstigatorAvatar),
+		TargetKind,
+		static_cast<unsigned long long>(InTarget.GetMassTargetId()),
+		InTarget.GetMassNetworkId(),
+		InTarget.GetLocation().X, InTarget.GetLocation().Y, InTarget.GetLocation().Z);
+#endif
 }
 
 void AASWeaponProjectile::BeginPlay()
@@ -103,29 +114,23 @@ void AASWeaponProjectile::Impact(const bool bHasTarget)
 	UASCombatTargetSubsystem* CombatTargets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>();
 	if (bHasTarget && CombatTargets)
 	{
-		FASCombatTargetQuery Query;
-		Query.Instigator = InstigatorAvatar.Get();
-		Query.MaxTargets = 1;
-
-		if (AActor* TargetActor = Target.GetActor())
-		{
-			// 일반 몬스터: 그 액터에만 피해
-			Query.Domain = EASCombatTargetDomain::ActorOnly;
-			Query.ExplicitActor = TargetActor;
-			Query.SearchOrigin = TargetActor->GetActorLocation();
-			Query.SearchRadius = 1.0f;
-			bHit = CombatTargets->ResolveAndApply(Query, DamageSpecs).HasAnyHit();
-		}
-		else
-		{
-			// Mass 몬스터: 대상 위치에서 가장 가까운 한 마리에 피해
-			Query.Domain = EASCombatTargetDomain::MassOnly;
-			Query.SearchOrigin = Target.GetLocation();
-			Query.SearchRadius = Target.GetHitRadius() + ImpactTolerance;
-			Query.SortPolicy = EASCombatTargetSortPolicy::NearestToSearchOrigin;
-			bHit = CombatTargets->ResolveAndApplyBestTarget(Query, DamageSpecs).HasAnyHit();
-		}
+		// 유도 중 유지한 확정 대상에만 피해를 적용한다. 위치 기반 재검색은 하지 않는다.
+		bHit = CombatTargets->ApplyEffectSpecsToTarget(
+			Target, DamageSpecs, InstigatorAvatar.Get()).HasAnyHit();
 	}
+
+#if !UE_BUILD_SHIPPING
+	const TCHAR* TargetKind = Target.IsMass() ? TEXT("Mass")
+		: (Target.IsActor() ? TEXT("Actor") : TEXT("None"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[MassRangedTarget][T3Impact] Projectile=%s Hit=%d Kind=%s MassEntityId=%llu MassNetworkId=%u Target=(%.1f,%.1f,%.1f) Impact=(%.1f,%.1f,%.1f)"),
+		*GetNameSafe(this), bHit,
+		TargetKind,
+		static_cast<unsigned long long>(Target.GetMassTargetId()),
+		Target.GetMassNetworkId(),
+		Target.GetLocation().X, Target.GetLocation().Y, Target.GetLocation().Z,
+		GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
+#endif
 
 	MulticastImpact(GetActorLocation(), bHit);
 

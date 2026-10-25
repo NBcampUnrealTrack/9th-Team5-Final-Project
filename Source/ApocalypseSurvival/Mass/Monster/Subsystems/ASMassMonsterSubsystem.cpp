@@ -6,6 +6,7 @@
 #include "MassEntityConfigAsset.h"
 #include "MassEntityManager.h"
 #include "MassEntityTemplate.h"
+#include "MassReplicationFragments.h"
 #include "MassSpawnLocationProcessor.h"
 #include "MassSpawnerSubsystem.h"
 #include "MassSpawnerTypes.h"
@@ -593,6 +594,55 @@ bool UASMassMonsterSubsystem::GetAliveMonsterTarget(
 	return true;
 }
 
+bool UASMassMonsterSubsystem::GetAliveMonsterTargetByNetworkId(
+	const uint32 MassNetworkId,
+	uint64& OutTargetId,
+	FVector& OutLocation,
+	float& OutHitRadius) const
+{
+	OutTargetId = 0;
+	OutLocation = FVector::ZeroVector;
+	OutHitRadius = 0.0f;
+	if (!SpawnerSubsystem || MassNetworkId == 0)
+	{
+		return false;
+	}
+
+	const FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	for (const FMassEntityHandle Entity : ManagedEntities)
+	{
+		if (!EntityManager.IsEntityValid(Entity))
+		{
+			continue;
+		}
+
+		const FMassNetworkIDFragment* NetworkId =
+			EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+		if (!NetworkId || !NetworkId->NetID.IsValid()
+			|| NetworkId->NetID.GetValue() != MassNetworkId)
+		{
+			continue;
+		}
+
+		const FASMassMonsterHealthFragment* Health =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+		const FASMassMonsterConfigFragment* Config =
+			EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
+		if (!Health || Health->CurrentHealth <= 0.0f || !Transform || !Config)
+		{
+			return false;
+		}
+
+		OutTargetId = Entity.AsNumber();
+		OutLocation = Transform->GetTransform().GetLocation();
+		OutHitRadius = FMath::Max(0.0f, Config->HitRadius);
+		return true;
+	}
+
+	return false;
+}
+
 int32 UASMassMonsterSubsystem::ApplyDamageInRadius(
 	const FVector& Center,
 	const float Radius,
@@ -781,8 +831,9 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 					GetWorld()->GetTimeSeconds(), Config->AggroDecayPerSecond);
 #if !UE_BUILD_SHIPPING
 				UE_LOG(LogApocalypseSurvival, Log,
-					TEXT("[MassMonsterTarget] DamageThreat Entity=%d Instigator=%d:%d Actor=%s Threat=%.2f"),
-					Candidate.Entity.Index, InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
+					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f"),
+					Candidate.Entity.Index, static_cast<unsigned long long>(Candidate.Entity.AsNumber()),
+					InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
 					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro);
 #endif
 			}
@@ -850,10 +901,16 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 				Threats->AddThreat(InstigatorSnapshot.Handle, Config->DirectHitAggro,
 					GetWorld()->GetTimeSeconds(), Config->AggroDecayPerSecond);
 #if !UE_BUILD_SHIPPING
+				const FMassNetworkIDFragment* NetworkId =
+					EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+				const uint32 MassNetworkId = NetworkId && NetworkId->NetID.IsValid()
+					? NetworkId->NetID.GetValue()
+					: 0;
 				UE_LOG(LogApocalypseSurvival, Log,
-					TEXT("[MassMonsterTarget] DamageThreat Entity=%d Instigator=%d:%d Actor=%s Threat=%.2f"),
-					Entity.Index, InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
-					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro);
+					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f MassNetworkId=%u"),
+					Entity.Index, static_cast<unsigned long long>(Entity.AsNumber()),
+					InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
+					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro, MassNetworkId);
 #endif
 			}
 			if (FASMassMonsterTargetFragment* Target =

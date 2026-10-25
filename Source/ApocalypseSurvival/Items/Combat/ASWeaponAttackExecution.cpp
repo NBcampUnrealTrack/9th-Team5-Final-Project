@@ -264,6 +264,8 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		const bool bRequestedActorInRange = IsValid(RequestedTarget)
 			&& UASCombatTargetSubsystem::IsValidActorTarget(RequestedTarget, Context.Avatar, false)
 			&& FVector::DistSquared2D(Start, RequestedTarget->GetActorLocation()) <= FMath::Square(AllowedRange);
+		const bool bClickIsInAttackRange = FVector::DistSquared2D(Start, Context.TargetLocation)
+			<= FMath::Square(AllowedRange);
 
 		if (bRequestedActorInRange)
 		{
@@ -277,8 +279,6 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		{
 			// 공격 이동이 선택한 Mass 타깃은 Actor 포인터를 가질 수 없다.
 			// 클릭이 사거리 안이면 클릭점 기준, 밖이면 공격자 기준으로 하나를 고른다.
-			const bool bClickIsInAttackRange = FVector::DistSquared2D(Start, Context.TargetLocation)
-				<= FMath::Square(AllowedRange);
 			Query.SearchOrigin = Start;
 			Query.SearchRadius = AllowedRange;
 			Query.PriorityLocation = Context.TargetLocation;
@@ -292,7 +292,43 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		if (Profile->HomingProjectileClass)
 		{
 			FASCombatTargetRef TargetRef;
-			const bool bFoundTarget = CombatTargets->FindBestTarget(Query, TargetRef);
+			bool bFoundTarget = false;
+			const bool bHasLockedMassTarget = Context.RequestedMassTargetNetworkId != 0;
+			if (bHasLockedMassTarget)
+			{
+				// T1에서 서버가 검증한 안정 ID만 해석한다. 누락·사망·사거리 이탈 시
+				// 클릭 위치로 다른 Mass 몬스터를 재선택하지 않고 이번 공격을 취소한다.
+				bFoundTarget = CombatTargets->GetMassTargetByNetworkId(
+					Context.RequestedMassTargetNetworkId, TargetRef);
+				if (bFoundTarget)
+				{
+					const float TargetAllowedRange = AllowedRange + TargetRef.GetHitRadius();
+					if (FVector::DistSquared2D(Start, TargetRef.GetLocation())
+						> FMath::Square(TargetAllowedRange))
+					{
+						TargetRef.Reset();
+						bFoundTarget = false;
+					}
+				}
+			}
+			else
+			{
+				bFoundTarget = CombatTargets->FindBestTarget(Query, TargetRef);
+			}
+#if !UE_BUILD_SHIPPING
+			const TCHAR* TargetKind = TargetRef.IsMass() ? TEXT("Mass")
+				: (TargetRef.IsActor() ? TEXT("Actor") : TEXT("None"));
+			UE_LOG(LogTemp, Log,
+				TEXT("[MassRangedTarget][T2Fire] Avatar=%s Click=(%.1f,%.1f,%.1f) Search=(%.1f,%.1f,%.1f) Priority=(%.1f,%.1f,%.1f) ClickInRange=%d LockedMass=%d Found=%d Kind=%s MassEntityId=%llu RequestedMassNetworkId=%u ResolvedMassNetworkId=%u Selected=(%.1f,%.1f,%.1f)"),
+				*GetNameSafe(Context.Avatar),
+				Context.TargetLocation.X, Context.TargetLocation.Y, Context.TargetLocation.Z,
+				Query.SearchOrigin.X, Query.SearchOrigin.Y, Query.SearchOrigin.Z,
+				Query.PriorityLocation.X, Query.PriorityLocation.Y, Query.PriorityLocation.Z,
+				bClickIsInAttackRange, bHasLockedMassTarget, bFoundTarget, TargetKind,
+				static_cast<unsigned long long>(TargetRef.GetMassTargetId()), Context.RequestedMassTargetNetworkId,
+				TargetRef.GetMassNetworkId(),
+				TargetRef.GetLocation().X, TargetRef.GetLocation().Y, TargetRef.GetLocation().Z);
+#endif
 			if (bFoundTarget)
 			{
 				ASWeaponAttackExecutionPrivate::SpawnHomingProjectile(Context, *Profile, TargetRef);

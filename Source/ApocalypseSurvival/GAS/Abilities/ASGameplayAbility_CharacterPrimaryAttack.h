@@ -41,13 +41,15 @@ private:
 	void ResolveAnimation(const FASWeaponAttackExecutionContext& Context, UAnimMontage*& OutMontage,
 		FGameplayTag& OutHitEventTag, bool& bOutScaleToInterval) const;
 	void ComputeLocalAim(FVector& OutAimDirection, FVector& OutTargetLocation) const;
-	void SendAimToServer(const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget);
+	void SendAimToServer(const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget,
+		uint32 RequestedMassTargetNetworkId);
 	void WaitForClientAim();
 	void OnClientAimReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
 	void OnClientAimCancelled();
-	void StartAttack(const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget);
+	void StartAttack(const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget,
+		uint32 RequestedMassTargetNetworkId);
 	bool IsValidAttackRequest(const FASWeaponAttackExecutionContext& Context, AActor* RequestedTarget,
-		const FVector& TargetLocation, FVector& OutAimDirection) const;
+		uint32 RequestedMassTargetNetworkId, const FVector& TargetLocation, FVector& OutAimDirection) const;
 	void PerformHit();
 	float GetMontagePlayRate(const UAnimMontage* Montage, const UASItemDefinition* Definition,
 		bool bScaleToInterval) const;
