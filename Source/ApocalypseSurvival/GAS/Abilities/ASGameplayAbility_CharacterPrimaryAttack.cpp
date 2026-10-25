@@ -375,6 +375,13 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnClientAimReceived(
 			RequestedTarget = TargetActors[0].Get();
 		}
 	}
+#if !UE_BUILD_SHIPPING
+	UE_LOG(LogTemp, Log,
+		TEXT("[MassRangedTarget][T1Receive] Authority=%d Avatar=%s Target=(%.1f,%.1f,%.1f) Aim=(%.4f,%.4f,%.4f) RequestedActor=%s"),
+		CurrentActorInfo && CurrentActorInfo->IsNetAuthority(), *GetNameSafe(GetAvatarActorFromActorInfo()),
+		TargetLocation.X, TargetLocation.Y, TargetLocation.Z,
+		AimDirection.X, AimDirection.Y, AimDirection.Z, *GetNameSafe(RequestedTarget));
+#endif
 	StartAttack(AimDirection, TargetLocation, RequestedTarget);
 }
 
@@ -491,6 +498,15 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	CachedExecutionContext = Context;
 	CachedExecution = Execution;
 	CachedRequestedTarget = RequestedTarget;
+#if !UE_BUILD_SHIPPING
+	if (CurrentActorInfo->IsNetAuthority())
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[MassRangedTarget][T1Start] Avatar=%s Target=(%.1f,%.1f,%.1f) Aim=(%.4f,%.4f,%.4f) RequestedActor=%s"),
+			*GetNameSafe(Context.Avatar), TargetLocation.X, TargetLocation.Y, TargetLocation.Z,
+			CachedAimDirection.X, CachedAimDirection.Y, CachedAimDirection.Z, *GetNameSafe(RequestedTarget));
+	}
+#endif
 	// 공격이 시작되는 순간 걷기를 멈추고 대상 방향으로 몸을 돌린다.
 	// (어택땅 중 사거리에 적이 들어와 공격할 때, 남은 이동 때문에 몸이 이동 방향으로 다시 돌아가는 것을 막는다)
 	if (ACharacter* AttackingCharacter = Cast<ACharacter>(Context.Avatar))

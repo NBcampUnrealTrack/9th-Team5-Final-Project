@@ -781,8 +781,9 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 					GetWorld()->GetTimeSeconds(), Config->AggroDecayPerSecond);
 #if !UE_BUILD_SHIPPING
 				UE_LOG(LogApocalypseSurvival, Log,
-					TEXT("[MassMonsterTarget] DamageThreat Entity=%d Instigator=%d:%d Actor=%s Threat=%.2f"),
-					Candidate.Entity.Index, InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
+					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f"),
+					Candidate.Entity.Index, static_cast<unsigned long long>(Candidate.Entity.AsNumber()),
+					InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
 					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro);
 #endif
 			}
@@ -851,8 +852,9 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 					GetWorld()->GetTimeSeconds(), Config->AggroDecayPerSecond);
 #if !UE_BUILD_SHIPPING
 				UE_LOG(LogApocalypseSurvival, Log,
-					TEXT("[MassMonsterTarget] DamageThreat Entity=%d Instigator=%d:%d Actor=%s Threat=%.2f"),
-					Entity.Index, InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
+					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f"),
+					Entity.Index, static_cast<unsigned long long>(Entity.AsNumber()),
+					InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
 					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro);
 #endif
 			}

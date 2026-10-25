@@ -26,6 +26,16 @@ void AASWeaponProjectile::InitHoming(const TArray<FGameplayEffectSpecHandle>& In
 	LastTargetLocation = InTarget.GetLocation();
 	Speed = FMath::Max(1.0f, InSpeed);
 	bInitialized = true;
+#if !UE_BUILD_SHIPPING
+	const TCHAR* TargetKind = InTarget.IsMass() ? TEXT("Mass")
+		: (InTarget.IsActor() ? TEXT("Actor") : TEXT("None"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[MassRangedTarget][T2Projectile] Projectile=%s Instigator=%s Kind=%s MassEntityId=%llu Target=(%.1f,%.1f,%.1f)"),
+		*GetNameSafe(this), *GetNameSafe(InInstigatorAvatar),
+		TargetKind,
+		static_cast<unsigned long long>(InTarget.GetMassTargetId()),
+		InTarget.GetLocation().X, InTarget.GetLocation().Y, InTarget.GetLocation().Z);
+#endif
 }
 
 void AASWeaponProjectile::BeginPlay()
@@ -126,6 +136,18 @@ void AASWeaponProjectile::Impact(const bool bHasTarget)
 			bHit = CombatTargets->ResolveAndApplyBestTarget(Query, DamageSpecs).HasAnyHit();
 		}
 	}
+
+#if !UE_BUILD_SHIPPING
+	const TCHAR* TargetKind = Target.IsMass() ? TEXT("Mass")
+		: (Target.IsActor() ? TEXT("Actor") : TEXT("None"));
+	UE_LOG(LogTemp, Log,
+		TEXT("[MassRangedTarget][T3Impact] Projectile=%s Hit=%d Kind=%s MassEntityId=%llu Target=(%.1f,%.1f,%.1f) Impact=(%.1f,%.1f,%.1f)"),
+		*GetNameSafe(this), bHit,
+		TargetKind,
+		static_cast<unsigned long long>(Target.GetMassTargetId()),
+		Target.GetLocation().X, Target.GetLocation().Y, Target.GetLocation().Z,
+		GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
+#endif
 
 	MulticastImpact(GetActorLocation(), bHit);
 
