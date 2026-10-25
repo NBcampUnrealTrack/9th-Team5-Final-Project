@@ -63,6 +63,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	UASPlayerAttackMoveComponent* GetAttackMoveComponent() const { return AttackMoveComponent; }
 
+	/** 실제 시전이 확정된 어빌리티가 기존 클릭 이동·공격 이동을 넘겨받는다. */
+	void CancelMovementForCommittedAbility();
+
 	/** 공격 이동이 준비한 요청을 Primary Attack Ability가 한 번 소비한다. */
 	bool ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation,
 		uint32& OutMassTargetNetworkId);

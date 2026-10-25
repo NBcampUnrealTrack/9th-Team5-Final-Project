@@ -21,6 +21,7 @@
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
 #include "Skills/Settings/ASSkillSettingsSubsystem.h"
 #include "TimerManager.h"
+#include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Engine/Texture2D.h"
 
 UASSkillAbility::UASSkillAbility()
@@ -64,6 +65,13 @@ void UASSkillAbility::ActivateAbility(
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+
+	// 즉발·자기 대상 스킬은 여기서 처음 실행이 확정된다. 조준형 스킬은
+	// CastAtTarget에서 확정되므로, 입력을 누른 시점에는 기존 이동을 건드리지 않는다.
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo->PlayerController.Get()))
+	{
+		PlayerController->CancelMovementForCommittedAbility();
 	}
 
 	//조준은 시전 순간에 한 번 확정
@@ -454,6 +462,11 @@ void UASSkillAbility::CastAtTarget(const FVector& AimDirection, const FVector& T
 		return;
 	}
 
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
+	{
+		PlayerController->CancelMovementForCommittedAbility();
+	}
+
 	if (!HasSkillAuthority())
 	{
 		SendAimToServer(AimDirection, TargetLocation);
@@ -514,6 +527,9 @@ void UASSkillAbility::BeginWalkToCast(const FVector& InTargetLocation)
 	//클릭 이동과 같은 경로찾기 이동
 	if (AASPlayerController* ASPlayerController = Cast<AASPlayerController>(PlayerController))
 	{
+		// 위치를 확정해 스킬 전용 이동을 시작했으므로 기존 공격 이동은 더 이상
+		// 새 길찾기 요청을 덮어쓰면 안 된다. 비용·쿨타임은 사거리 진입 시 커밋한다.
+		ASPlayerController->GetAttackMoveComponent()->CancelAttackMove();
 		ASPlayerController->RequestMoveTo(InTargetLocation);
 	}
 	else
@@ -667,6 +683,15 @@ void UASSkillAbility::OnOtherAbilityFailed(const UGameplayAbility* FailedAbility
 		return;
 	}
 
+	// 쿨타임·비용 부족은 현재 조준 중인 스킬과 무관한 정상적인 입력 실패다.
+	// 이 경우 기존 조준/걸어가서 시전을 취소하거나 실패한 스킬을 재시도하면 안 된다.
+	const UAbilitySystemGlobals& AbilitySystemGlobals = UAbilitySystemGlobals::Get();
+	if (FailureTags.HasTagExact(AbilitySystemGlobals.ActivateFailCooldownTag)
+		|| FailureTags.HasTagExact(AbilitySystemGlobals.ActivateFailCostTag))
+	{
+		return;
+	}
+
 	//조준·이동 중인 이 스킬 때문에 막혔을 수 있으므로, 취소한 뒤 다음 틱에 그 스킬을 다시 발동
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const FGameplayAbilitySpec* FailedSpec = ASC ? ASC->FindAbilitySpecFromClass(FailedAbility->GetClass()) : nullptr;
@@ -786,6 +811,11 @@ void UASSkillAbility::OnClientAimReceived(const FGameplayAbilityTargetDataHandle
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
+	}
+
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
+	{
+		PlayerController->CancelMovementForCommittedAbility();
 	}
 
 	StartSkill(AimDirection, TargetLocation);
