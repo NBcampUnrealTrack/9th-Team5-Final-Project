@@ -63,10 +63,9 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 			{
 				Error(TEXT("MeleeAttackProfile requires a StaminaCostEffect."));
 			}
-			if (!FMath::IsFinite(MeleeProfile->HitRadius) || MeleeProfile->HitRadius < 0.0f
-				|| !FMath::IsFinite(MeleeProfile->HitboxOffset) || MeleeProfile->HitboxOffset < 0.0f)
+			if (!FMath::IsFinite(MeleeProfile->HitAngle) || MeleeProfile->HitAngle <= 0.0f || MeleeProfile->HitAngle > 360.0f)
 			{
-				Error(TEXT("MeleeAttackProfile hit dimensions must be finite and nonnegative."));
+				Error(TEXT("MeleeAttackProfile HitAngle must be in (0, 360]."));
 			}
 		}
 		if (const UASRangedAttackProfile* RangedProfile = Cast<UASRangedAttackProfile>(AttackProfile))

@@ -113,6 +113,10 @@ public:
 		bool bIsMelee,
 		bool bHit);
 	
+	/** 근접 평타 부채꼴 판정 디버그 표시 (모든 머신) */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastDrawMeleeConeDebug(FVector Origin, FVector Direction, float Radius, float AngleDegrees, bool bHit);
+	
 	UFUNCTION(Exec)
 	void DebugAddExp(int32 Amount);
 	

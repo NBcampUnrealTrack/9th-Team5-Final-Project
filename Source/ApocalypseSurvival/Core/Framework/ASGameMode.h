@@ -14,6 +14,7 @@ class UASZoneEffectComponent;
 class UDataTable;
 class UGameplayEffect;
 class AASPlayerCharacter;
+class AASLootChest;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -70,13 +71,17 @@ public:
 bool IsMultiplayerRules() const;
 	
 	// 체력이 0이 됐을 때 사망 대신 쓰러지는가 (멀티 규칙)
-	bool IsDownedEnabled() const { return IsMultiplayerRules(); }
+	bool IsDownedEnabled() const;
 	
 	// 플레이어가 쓰러졌을 때 캐릭터가 호출 (서버 전용). 전멸이면 패배
 	void OnPlayerDowned(AController* DownedController);
 	
 	// 관전 중인 플레이어가 좌클릭으로 다음 파티원 화면으로 넘길 때 캐릭터가 호출 (서버 전용)
 	void SpectateNext(APlayerController* Spectator);
+	
+	// 팀 부활 횟수를 다 썼을 때 캐릭터가 호출 (서버 전용).
+	// 쓰러져 있는 사람은 더 살릴 수 없으므로 바로 사망 처리한다. (임시 규칙, 팀 상의 예정)
+	void KillUnrevivablePlayers();
 		
 	// 맵에 배치된 리스폰 포인트 목록
 	TArray<AASRespawnPoint*> GetAvailableRespawnPoints() const;
@@ -105,6 +110,14 @@ protected:
 	// 클라이언트 캐릭터 선택을 기다리는 최대 시간. 넘으면 기본 캐릭터로 스폰
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Spawn", meta = (ClampMin = "0.5", Units = "s"))
 	float CharacterSelectTimeout = 5.f;
+	
+	// 멀티: 팀 공용 부활 횟수 (임시값). 다 쓰면 체력 0일 때 쓰러지지 않고 바로 사망
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Revive", meta = (ClampMin = "0"))
+	int32 TeamReviveCount = 3;
+	
+	// 멀티: 사망자 인벤토리를 담는 시체 루팅 상자 (BP_CorpseLoot). 비면 사라지고 시체도 숨긴다
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Death")
+	TSubclassOf<AASLootChest> CorpseLootClass;
 	
 	// 게임 시작 전 대기 시간 (초)
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Time")
@@ -206,6 +219,13 @@ private:
 	
 	// 관전 중인 플레이어 (멀티에서 사망한 플레이어)
 	TArray<TWeakObjectPtr<APlayerController>> Spectators;
+	
+	// 시체 위치에 루팅 상자를 만들고 사망자 인벤토리를 옮긴다. 옮길 게 없으면 시체를 바로 숨긴다
+	void SpawnCorpseLoot(AASPlayerCharacter* Corpse, AController* DeadController);
+	
+	// 시체 루팅 상자가 비어서 사라지면 시체를 숨긴다 (상자의 Owner = 시체)
+	UFUNCTION()
+	void HandleCorpseLootDestroyed(AActor* DestroyedActor);
 	
 	// 맵 시스템(구역·시야·구역 효과). 구역 액터가 없는 레벨에서는 동작하지 않는다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))

@@ -10,6 +10,7 @@ class UAnimMontage;
 class UASItemDefinition;
 class UASWeaponAttackExecution;
 class UGameplayEffect;
+class AASWeaponProjectile;
 
 /** How many valid targets receive damage after an attack finds its hit location. */
 UENUM(BlueprintType)
@@ -62,13 +63,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee")
 	TSubclassOf<UGameplayEffect> StaminaRegenDelayEffect;
 
-	/** Width of the melee hit area. Zero derives it from AttackRange. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee", meta = (ClampMin = "0.0", Units = "cm"))
-	float HitRadius = 0.0f;
-
-	/** Distance from the character to the hit-area center. Zero keeps its front edge at AttackRange. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee", meta = (ClampMin = "0.0", Units = "cm"))
-	float HitboxOffset = 0.0f;
+	/** 캐릭터 앞쪽 부채꼴 판정의 전체 각도 (임시값). 반경은 무기의 AttackRange */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee", meta = (ClampMin = "1.0", ClampMax = "360.0", Units = "deg"))
+	float HitAngle = 60.0f;
 };
 
 UCLASS(BlueprintType, Const)
@@ -91,6 +88,16 @@ public:
 	/** true면 A+클릭이 적을 선택·추적한다. false면 클릭 방향으로 투사체를 한 발 발사한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged")
 	bool bUseAttackMoveTargeting = true;
+	
+	/** 타겟 지정(A+클릭) 모드의 유도 투사체 (Single 모드). 비어 있으면 기존 즉시 판정 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Homing",
+		meta = (EditCondition = "bUseAttackMoveTargeting", EditConditionHides))
+	TSubclassOf<AASWeaponProjectile> HomingProjectileClass;
+
+	/** 유도 투사체 속도 (임시값) */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Homing",
+		meta = (ClampMin = "1.0", Units = "cm/s", EditCondition = "bUseAttackMoveTargeting", EditConditionHides))
+	float HomingProjectileSpeed = 2500.0f;
 
 	/** 방향성 투사체 모드에서만 쓰는 발사체 클래스. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",

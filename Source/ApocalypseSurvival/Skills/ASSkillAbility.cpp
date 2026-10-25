@@ -1066,6 +1066,17 @@ void UASSkillAbility::ApplyCost(
 		SpecHandle.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_StaminaCost, -FMath::Max(0.0f, Stats->StaminaCost));
 		ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
 	}
+
+	//스태미나를 썼으면 회복 지연 → 끝나면 Slow → Fast 회복 시작 (안 걸면 기본 공격 전까지 회복 안 됨)
+	if (Stats->StaminaCost > 0.0f && StaminaRegenDelayEffect)
+	{
+		FGameplayEffectSpecHandle DelaySpec = MakeOutgoingGameplayEffectSpec(
+			Handle, ActorInfo, ActivationInfo, StaminaRegenDelayEffect, GetAbilityLevel(Handle, ActorInfo));
+		if (DelaySpec.IsValid())
+		{
+			ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, DelaySpec);
+		}
+	}
 }
 
 UTexture2D* UASSkillAbility::GetSkillIcon() const

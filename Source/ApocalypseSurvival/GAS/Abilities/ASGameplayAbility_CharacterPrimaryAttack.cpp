@@ -10,6 +10,8 @@
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Combat/ASWeaponAttackProfile.h"
@@ -134,8 +136,17 @@ void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 {
 	FASWeaponAttackExecutionContext Context;
 	const UASWeaponAttackExecution* Execution = nullptr;
-	if (!BuildExecutionContext(Context, Execution) || !Execution->CanPayCost(Context))
+	if (!BuildExecutionContext(Context, Execution))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] %s 조준 시작 실패: 장착 무기/프로필 없음 (Authority=%d)"),
+			*GetNameSafe(GetAvatarActorFromActorInfo()), CurrentActorInfo->IsNetAuthority());
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+	if (!Execution->CanPayCost(Context))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] %s 조준 시작 실패: 비용 부족 (스태미나/탄약, Authority=%d)"),
+			*GetNameSafe(GetAvatarActorFromActorInfo()), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
@@ -243,13 +254,23 @@ bool UASGameplayAbility_CharacterPrimaryAttack::BuildExecutionContext(
 	UASInventoryComponent* Inventory = Weapon ? Weapon->GetTypedOuter<UASInventoryComponent>() : nullptr;
 	if (!Avatar || !ASC || !Weapon || !Definition || !Inventory || Definition->ItemType != EASItemType::Weapon)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] 컨텍스트 실패 (Authority=%d): Avatar=%d ASC=%d Equipment=%d Weapon=%d Definition=%d Inventory=%d IsWeapon=%d WeaponOuter=%s"),
+			Avatar ? Avatar->HasAuthority() : -1,
+			Avatar != nullptr, ASC != nullptr, Equipment != nullptr, Weapon != nullptr, Definition != nullptr, Inventory != nullptr,
+			Definition ? Definition->ItemType == EASItemType::Weapon : -1,
+			*GetNameSafe(Weapon ? Weapon->GetOuter() : nullptr));
 		return false;
 	}
 
 	const UASWeaponAttackProfile* Profile = Definition->AttackProfile;
 	UClass* ExecutionClass = Profile ? Profile->ExecutionClass.Get() : nullptr;
 	OutExecution = ExecutionClass ? ExecutionClass->GetDefaultObject<UASWeaponAttackExecution>() : nullptr;
-	if (!OutExecution) return false;
+	if (!OutExecution)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] 컨텍스트 실패: Profile=%s ExecutionClass=%s"),
+			*GetNameSafe(Profile), *GetNameSafe(ExecutionClass));
+		return false;
+	}
 
 	OutContext.Avatar = Avatar;
 	OutContext.AbilitySystem = ASC;
@@ -431,6 +452,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	FASWeaponAttackExecutionContext Context;
 	if (!BuildExecutionContext(Context, Execution) || !Execution->CanPayCost(Context))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] 공격 시작 실패: 무기/비용 (Authority=%d)"), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
@@ -438,6 +460,8 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	FVector ValidAimDirection = AimDirection;
 	if (!IsValidAttackRequest(Context, RequestedTarget, TargetLocation, ValidAimDirection))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] 공격 시작 실패: 요청 검증 (Target=%s, Authority=%d)"),
+			*GetNameSafe(RequestedTarget), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
@@ -451,6 +475,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 
 	if (CurrentActorInfo->IsNetAuthority() && !Execution->CommitCost(Context))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] 공격 시작 실패: 비용 지불 (Authority=%d)"), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
@@ -466,6 +491,16 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	CachedExecutionContext = Context;
 	CachedExecution = Execution;
 	CachedRequestedTarget = RequestedTarget;
+	// 공격이 시작되는 순간 걷기를 멈추고 대상 방향으로 몸을 돌린다.
+	// (어택땅 중 사거리에 적이 들어와 공격할 때, 남은 이동 때문에 몸이 이동 방향으로 다시 돌아가는 것을 막는다)
+	if (ACharacter* AttackingCharacter = Cast<ACharacter>(Context.Avatar))
+	{
+		if (AController* AttackingController = AttackingCharacter->GetController())
+		{
+			AttackingController->StopMovement();
+		}
+		AttackingCharacter->GetCharacterMovement()->StopMovementImmediately();
+	}
 	Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
 
 	bool bScaleToInterval = true;

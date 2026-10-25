@@ -4,6 +4,9 @@
 #include "ASSkillDash.h"
 
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionMoveToForce.h"
+#include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "CollisionQueryParams.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/HitResult.h"
@@ -12,6 +15,8 @@
 #include "TimerManager.h"
 #include "GameFramework/RootMotionSource.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 namespace ASSkillDashPrivate
 {
@@ -34,7 +39,9 @@ void UASSkillDash::EndAbility(
 {
 	//취소 등으로 끝나도 돌진 정리 (태스크는 어빌리티 종료 시 자동으로 끝남)
 	bDashStopped = true;
+	bPlayingEndSection = false;
 	DashTask = nullptr;
+	UnlockRotation();
 
 	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
 	{
@@ -64,8 +71,13 @@ void UASSkillDash::OnSkillEffect_Implementation()
 	const FVector TargetLocation = StartLocation + Aim * DashDistance;
 
 	bDashStopped = false;
+	bPlayingEndSection = false;
 	LastSweepLocation = StartLocation;
 	DashHitTargets.Reset();
+
+	//돌진 방향을 바라보고 회전 잠금 (노티파이 대기 중 우클릭으로 돌아갔어도 다시 맞춤)
+	Avatar->SetActorRotation(FRotator(0.0f, Aim.Rotation().Yaw, 0.0f));
+	LockRotation();
 
 	//서버·클라이언트 모두 실행 (LocalPredicted라 내 화면에서도 바로 움직임)
 	DashTask = UAbilityTask_ApplyRootMotionMoveToForce::ApplyRootMotionMoveToForce(
@@ -227,7 +239,83 @@ void UASSkillDash::StopDash()
 				FActiveGameplayEffectHandle Spec = ApplyGameplayEffectSpecToOwner(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, SpecHandle);
 			}
 		}
-		
+
+		//착지 동작(End 섹션)이 있으면 재생 후 OnMontageCompleted에서 종료, 없으면 바로 종료
+		if (!TryPlayEndSection())
+		{
+			FinishSkill(false);
+		}
+	}
+}
+
+bool UASSkillDash::TryPlayEndSection()
+{
+	if (!AnimMontage || DashEndSection.IsNone() || !AnimMontage->IsValidSectionName(DashEndSection))
+	{
+		return false;
+	}
+
+	//몽타주가 실제로 재생 중일 때만 (아니면 끝나는 신호가 안 와서 스킬이 안 끝남)
+	const UAnimInstance* AnimInstance = GetActorInfo().GetAnimInstance();
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!AnimInstance || !ASC || !AnimInstance->Montage_IsPlaying(AnimMontage))
+	{
+		return false;
+	}
+
+	//ASC로 점프해야 다른 플레이어 화면에도 복제됨
+	ASC->CurrentMontageJumpToSection(DashEndSection);
+	bPlayingEndSection = true;
+	return true;
+}
+
+void UASSkillDash::OnMontageCompleted()
+{
+	//End 재생이 끝남 → 스킬 종료 (돌진 중에는 Loop이라 여기 안 옴, bEndAbilityManually라 부모는 무시)
+	if (bPlayingEndSection)
+	{
+		bPlayingEndSection = false;
 		FinishSkill(false);
+		return;
+	}
+
+	Super::OnMontageCompleted();
+}
+
+void UASSkillDash::LockRotation()
+{
+	if (bRotationLocked)
+	{
+		return;
+	}
+
+	const ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr;
+	if (!Movement)
+	{
+		return;
+	}
+
+	//원래 값 저장 후 끄기 (이동 방향·컨트롤러 방향으로 회전 안 함)
+	bSavedOrientRotationToMovement = Movement->bOrientRotationToMovement;
+	bSavedUseControllerDesiredRotation = Movement->bUseControllerDesiredRotation;
+	Movement->bOrientRotationToMovement = false;
+	Movement->bUseControllerDesiredRotation = false;
+	bRotationLocked = true;
+}
+
+void UASSkillDash::UnlockRotation()
+{
+	if (!bRotationLocked)
+	{
+		return;
+	}
+	bRotationLocked = false;
+
+	const ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	if (UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr)
+	{
+		Movement->bOrientRotationToMovement = bSavedOrientRotationToMovement;
+		Movement->bUseControllerDesiredRotation = bSavedUseControllerDesiredRotation;
 	}
 }
