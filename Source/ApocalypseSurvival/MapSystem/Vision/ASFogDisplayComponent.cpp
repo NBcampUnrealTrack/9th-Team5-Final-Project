@@ -143,17 +143,18 @@ void UASFogDisplayComponent::UpdateShownAlpha(float Fraction)
 	}
 }
 
-void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
+void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition, const FVector2D& WorldMin, const FVector2D& WorldMax)
 {
-	const FIntPoint WantedResolution = ASFogMask::ComputeResolution(Definition->GetFogWorldSize(), Definition->Settings.MaskResolution);
+	const FIntPoint WantedResolution = ASFogMask::ComputeResolution(
+		(WorldMax - WorldMin).ComponentMax(FVector2D(1.0, 1.0)), Definition->Settings.MaskResolution);
 	if (Definition != VisionDefinition || WantedResolution.X != ResolutionX || WantedResolution.Y != ResolutionY
-		|| Definition->FogWorldMin != ConfiguredFogWorldMin || Definition->FogWorldMax != ConfiguredFogWorldMax)
+		|| WorldMin != FogWorldMin || WorldMax != FogWorldMax)
 	{
 		VisionDefinition = Definition;
 		ResolutionX = WantedResolution.X;
 		ResolutionY = WantedResolution.Y;
-		ConfiguredFogWorldMin = Definition->FogWorldMin;
-		ConfiguredFogWorldMax = Definition->FogWorldMax;
+		FogWorldMin = WorldMin;
+		FogWorldMax = WorldMax;
 
 		const int32 CellCount = ResolutionX * ResolutionY;
 		VisibleCells.Init(0, CellCount);
@@ -213,7 +214,7 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition)
 void UASFogDisplayComponent::UpdateWorldFog()
 {
 	UMaterialInterface* FogMaterial = VisionDefinition ? VisionDefinition->WorldFogMaterial.Get() : nullptr;
-	if (!bApplyWorldFog || !FogMaterial || !FogTexture)
+	if (!FogMaterial || !FogTexture)
 	{
 		RemoveWorldFog();
 		return;
@@ -233,8 +234,8 @@ void UASFogDisplayComponent::UpdateWorldFog()
 
 	// 시야 정의나 해상도가 바뀌면 텍스처를 다시 생성한다.
 	WorldFogMaterial->SetTextureParameterValue(TEXT("FogTexture"), FogTexture);
-	const FVector2D WorldSize = VisionDefinition->GetFogWorldSize();
-	WorldFogMaterial->SetVectorParameterValue(TEXT("MapWorldMin"), FLinearColor(VisionDefinition->FogWorldMin.X, VisionDefinition->FogWorldMin.Y, 0.0f, 0.0f));
+	const FVector2D WorldSize = GetFogWorldSize();
+	WorldFogMaterial->SetVectorParameterValue(TEXT("MapWorldMin"), FLinearColor(FogWorldMin.X, FogWorldMin.Y, 0.0f, 0.0f));
 	WorldFogMaterial->SetVectorParameterValue(TEXT("MapWorldSize"), FLinearColor(WorldSize.X, WorldSize.Y, 0.0f, 0.0f));
 
 	if (!WorldFogVolume)
@@ -292,7 +293,7 @@ void UASFogDisplayComponent::UpdateLocalMask()
 
 	const FLocalMaskContext Context{
 		Manager->IsWallOcclusionEnabled(), Manager->GetNightAlpha(),
-		UASVisionFunctionLibrary::GetLocalTeamId(this), VisionDefinition->GetFogWorldSize(),
+		UASVisionFunctionLibrary::GetLocalTeamId(this), GetFogWorldSize(),
 		FMath::Clamp(VisionDefinition->Settings.FogEdgeBlurTexels, 0, 8), GetLocalVisionSource()
 	};
 	AdvancePendingFade();
@@ -479,8 +480,8 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion, bool bLocalRegionChanged)
 {
 	RawChangedRegions.Reset();
-	const uint8 Explored = static_cast<uint8>(FMath::Clamp(ExploredAlpha, 0, 255));
-	const uint8 Unexplored = static_cast<uint8>(FMath::Clamp(UnexploredAlpha, 0, 255));
+	const uint8 Explored = VisionDefinition->ExploredAlpha;
+	const uint8 Unexplored = VisionDefinition->UnexploredAlpha;
 	for (int32 TileIndex = 0; TileIndex < PreviousVisibleTiles.Num(); ++TileIndex)
 	{
 		const FIntRect Region = TileRegion(TileIndex);
@@ -714,7 +715,10 @@ FVector2D UASFogDisplayComponent::WorldToGrid(const FVector& Location) const
 	{
 		return FVector2D::ZeroVector;
 	}
-	const FVector2D UV = VisionDefinition->WorldToFogUV(Location);
+	const FVector2D Size = GetFogWorldSize();
+	const FVector2D UV(
+		(Location.Y - FogWorldMin.Y) / Size.Y,
+		1.0 - (Location.X - FogWorldMin.X) / Size.X);
 	return FVector2D(UV.X * ResolutionX, UV.Y * ResolutionY);
 }
 
@@ -800,7 +804,7 @@ void UASFogDisplayComponent::RebuildMassVisibilityBuffer()
 		return;
 	}
 
-	const FVector2D WorldSize = VisionDefinition->GetFogWorldSize();
+	const FVector2D WorldSize = GetFogWorldSize();
 	const float CellSize = FMath::Max(1.0f, FMath::Max(WorldSize.Y / ResolutionX, WorldSize.X / ResolutionY));
 	const int32 BufferRadiusCells = FMath::CeilToInt(
 		FMath::Max(0.0f, VisionDefinition->Settings.MassVisibilityBufferDistance) / CellSize);

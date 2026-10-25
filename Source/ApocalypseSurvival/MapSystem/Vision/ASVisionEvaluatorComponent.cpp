@@ -127,22 +127,27 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 	}
 }
 
+ECollisionChannel UASVisionEvaluatorComponent::GetVisionWallChannel() const
+{
+	return VisionDefinition ? VisionDefinition->Settings.VisionWallChannel : FASVisionSettings().VisionWallChannel;
+}
+
 bool UASVisionEvaluatorComponent::IsBlockedByWall(const FVector& From, const FVector& To, const AActor* IgnoreA, const AActor* IgnoreB) const
 {
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASFogOfWarVisibility), false);
 	Params.AddIgnoredActor(IgnoreA);
 	Params.AddIgnoredActor(IgnoreB);
-	return GetWorld()->LineTraceTestByChannel(From, To, VisionWallChannel, Params);
+	return GetWorld()->LineTraceTestByChannel(From, To, GetVisionWallChannel(), Params);
 }
 
 FVector UASVisionEvaluatorComponent::GetTraceLocation(const AActor* Actor) const
 {
-	const float Offset = VisionDefinition ? VisionDefinition->Settings.TraceHeightOffset : 50.0f;
+	const float Offset = VisionDefinition ? VisionDefinition->Settings.TraceHeightOffset : FASVisionSettings().TraceHeightOffset;
 	return Actor ? Actor->GetActorLocation() + FVector(0.0, 0.0, Offset) : FVector::ZeroVector;
 }
 
 bool UASVisionEvaluatorComponent::TraceVisionWall(FHitResult& Hit, const FVector& From, const FVector& To, const AActor* IgnoreActor) const
 {
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASFogOfWarLocalMask), false, IgnoreActor);
-	return GetWorld()->LineTraceSingleByChannel(Hit, From, To, VisionWallChannel, Params);
+	return GetWorld()->LineTraceSingleByChannel(Hit, From, To, GetVisionWallChannel(), Params);
 }

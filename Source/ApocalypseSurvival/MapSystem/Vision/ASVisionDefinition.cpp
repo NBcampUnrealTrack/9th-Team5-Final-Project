@@ -89,22 +89,7 @@ bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		OutErrors.Add(FString::Printf(TEXT("%s: MassVisibilityCullDelaySeconds must be finite and in 0..2."), *AssetName));
 	}
 
-	if (!FMath::IsFinite(FogWorldMin.X) || !FMath::IsFinite(FogWorldMin.Y)
-		|| !FMath::IsFinite(FogWorldMax.X) || !FMath::IsFinite(FogWorldMax.Y)
-		|| FogWorldMax.X <= FogWorldMin.X || FogWorldMax.Y <= FogWorldMin.Y)
-	{
-		OutErrors.Add(FString::Printf(TEXT("%s: FogWorldMax must be finite and greater than FogWorldMin."), *AssetName));
-	}
-
 	return OutErrors.Num() == InitialErrorCount;
-}
-
-FVector2D UASVisionDefinition::WorldToFogUV(const FVector& WorldLocation) const
-{
-	const FVector2D Size = GetFogWorldSize();
-	return FVector2D(
-		(WorldLocation.Y - FogWorldMin.Y) / Size.Y,
-		1.0 - (WorldLocation.X - FogWorldMin.X) / Size.X);
 }
 
 #if WITH_EDITOR

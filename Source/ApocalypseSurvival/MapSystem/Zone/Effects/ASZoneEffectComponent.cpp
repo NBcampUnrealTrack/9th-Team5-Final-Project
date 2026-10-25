@@ -160,19 +160,21 @@ void UASZoneEffectComponent::UpdateEffects()
 			continue;
 		}
 
-		const uint8 TeamId = ASZoneEffectComponentPrivate::GetTeamId(Pawn);
-		const FASZoneEffectRow* BaseRow = ZoneEffectDefinition->FindBaseRow(TeamId);
-		const FASZoneEffectRow* Row = ZoneEffectDefinition->FindZoneRow(ZoneId, TeamId);
+		const EASZoneEffectTarget Target = UASZoneEffectDefinition::GetTargetForTeam(ASZoneEffectComponentPrivate::GetTeamId(Pawn));
+		TArray<const FASZoneEffectRow*> BaseRows;
+		TArray<const FASZoneEffectRow*> ZoneRows;
+		ZoneEffectDefinition->FindRows(NAME_None, Target, BaseRows);
+		ZoneEffectDefinition->FindRows(ZoneId, Target, ZoneRows);
 		FEntry& Entry = Entries.FindOrAdd(ASC);
 		Entry.Pawn = Pawn;
 
-		// 기본 행과 위험도가 같으면 구역 이동만으로는 기본 효과를 다시 적용하지 않는다.
+		// 기본 그룹과 위험도가 같으면 구역 이동만으로는 기본 효과를 다시 적용하지 않는다.
 		FEffectSlot& DangerSlot = Entry.DangerEffect;
-		SyncSlot(ASC, DangerSlot, BaseRow, Zone->DangerLevel);
+		SyncSlot(ASC, DangerSlot, BaseRows, Zone->DangerLevel);
 
-		// 구역 슬롯은 선택된 행의 키, GE, 위험도가 바뀔 때만 다시 적용한다.
+		// 구역 슬롯은 선택된 그룹의 키, GE, 위험도가 바뀔 때만 다시 적용한다.
 		FEffectSlot& ZoneSlot = Entry.ZoneEffect;
-		SyncSlot(ASC, ZoneSlot, Row, Zone->DangerLevel);
+		SyncSlot(ASC, ZoneSlot, ZoneRows, Zone->DangerLevel);
 
 		if (!DangerSlot.Handle.IsValid() && !ZoneSlot.Handle.IsValid())
 		{
@@ -229,8 +231,13 @@ void UASZoneEffectComponent::WarnUnknownZoneRows()
 }
 
 FActiveGameplayEffectHandle UASZoneEffectComponent::ApplyEffect(UAbilitySystemComponent* ASC,
-	TSubclassOf<UGameplayEffect> Effect, const TArray<FASZoneEffectMagnitude>& Magnitudes, int32 DangerLevel)
+	const TArray<const FASZoneEffectRow*>& Rows, int32 DangerLevel)
 {
+	if (Rows.IsEmpty() || !Rows[0])
+	{
+		return FActiveGameplayEffectHandle();
+	}
+	const TSubclassOf<UGameplayEffect> Effect = Rows[0]->Effect;
 	if (!Effect)
 	{
 		return FActiveGameplayEffectHandle();
@@ -252,33 +259,46 @@ FActiveGameplayEffectHandle UASZoneEffectComponent::ApplyEffect(UAbilitySystemCo
 	{
 		return FActiveGameplayEffectHandle();
 	}
-	for (const FASZoneEffectMagnitude& Magnitude : Magnitudes)
+	for (const FASZoneEffectRow* Row : Rows)
 	{
-		float Value = 0.0f;
-		if (!UASZoneEffectDefinition::GetMagnitudeForLevel(Magnitude, DangerLevel, Value))
+		if (!Row || Row->Effect != Effect)
 		{
 			return FActiveGameplayEffectHandle();
 		}
-		Spec.Data->SetSetByCallerMagnitude(Magnitude.DataTag, Value);
+		if (!Row->DataTag.IsValid())
+		{
+			if (Rows.Num() != 1)
+			{
+				return FActiveGameplayEffectHandle();
+			}
+			continue;
+		}
+		float Value = 0.0f;
+		if (!Row->GetValueForLevel(DangerLevel, Value))
+		{
+			return FActiveGameplayEffectHandle();
+		}
+		Spec.Data->SetSetByCallerMagnitude(Row->DataTag, Value);
 	}
 	return ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 }
 
 void UASZoneEffectComponent::SyncSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot,
-	const FASZoneEffectRow* Row, int32 DangerLevel)
+	const TArray<const FASZoneEffectRow*>& Rows, int32 DangerLevel)
 {
+	const FASZoneEffectRow* Row = Rows.IsEmpty() ? nullptr : Rows[0];
 	if (Row && Row->Effect)
 	{
-		if (Slot.ZoneId != Row->ZoneId || Slot.TeamId != Row->TeamId
+		if (Slot.ZoneId != Row->ZoneId || Slot.Target != Row->Target
 			|| Slot.Effect != Row->Effect || Slot.DangerLevel != DangerLevel
 			|| !ASC->GetActiveGameplayEffect(Slot.Handle))
 		{
 			RemoveSlot(ASC, Slot);
-			Slot.Handle = ApplyEffect(ASC, Row->Effect, Row->Magnitudes, DangerLevel);
+			Slot.Handle = ApplyEffect(ASC, Rows, DangerLevel);
 			if (Slot.Handle.IsValid())
 			{
 				Slot.ZoneId = Row->ZoneId;
-				Slot.TeamId = Row->TeamId;
+				Slot.Target = Row->Target;
 				Slot.Effect = Row->Effect;
 				Slot.DangerLevel = DangerLevel;
 			}
@@ -375,11 +395,13 @@ void UASZoneEffectComponent::DumpState() const
 		const FEntry& Entry = Pair.Value;
 		const APawn* Pawn = Entry.Pawn.Get();
 		const UAbilitySystemComponent* ASC = Pair.Key.Get();
-		UE_LOG(LogApocalypseSurvival, Log, TEXT("  Pawn=%s Team=%u Base(DangerLevel=%d Handle=%s Valid=%s Active=%s) Zone(ZoneId=%s Handle=%s Valid=%s Active=%s)"),
-			*GetNameSafe(Pawn), ASZoneEffectComponentPrivate::GetTeamId(Pawn), Entry.DangerEffect.DangerLevel,
+		UE_LOG(LogApocalypseSurvival, Log, TEXT("  Pawn=%s Base(Target=%s DangerLevel=%d Handle=%s Valid=%s Active=%s) Zone(ZoneId=%s Target=%s Handle=%s Valid=%s Active=%s)"),
+			*GetNameSafe(Pawn), *StaticEnum<EASZoneEffectTarget>()->GetNameStringByValue(static_cast<int64>(Entry.DangerEffect.Target)),
+			Entry.DangerEffect.DangerLevel,
 			*Entry.DangerEffect.Handle.ToString(), Entry.DangerEffect.Handle.IsValid() ? TEXT("true") : TEXT("false"),
 			ASC && ASC->GetActiveGameplayEffect(Entry.DangerEffect.Handle) ? TEXT("true") : TEXT("false"),
-			*Entry.ZoneEffect.ZoneId.ToString(), *Entry.ZoneEffect.Handle.ToString(),
+			*Entry.ZoneEffect.ZoneId.ToString(), *StaticEnum<EASZoneEffectTarget>()->GetNameStringByValue(static_cast<int64>(Entry.ZoneEffect.Target)),
+			*Entry.ZoneEffect.Handle.ToString(),
 			Entry.ZoneEffect.Handle.IsValid() ? TEXT("true") : TEXT("false"),
 			ASC && ASC->GetActiveGameplayEffect(Entry.ZoneEffect.Handle) ? TEXT("true") : TEXT("false"));
 	}
