@@ -192,8 +192,10 @@ namespace ASMassMonsterNavigation
 
 	static bool SelectBlockingTarget(const UASMonsterTargetSubsystem& TargetSubsystem,
 		const FVector& EntityLocation, FASMassMonsterTargetFragment& Target,
-		const FASMassMonsterConfigFragment& Config)
+		const FASMassMonsterConfigFragment& Config, int32& OutCandidateCount, int32& OutEligibleCount)
 	{
+		OutCandidateCount = 0;
+		OutEligibleCount = 0;
 		if (!Target.HasPrimaryTarget() || Target.HasBlockingTarget() || Config.BlockingTargetSearchRadius <= 0.0f)
 		{
 			return false;
@@ -210,6 +212,7 @@ namespace ASMassMonsterNavigation
 		TArray<FASTargetSnapshot> Candidates;
 		TargetSubsystem.FindTargetsInRange(EntityLocation, Config.BlockingTargetSearchRadius,
 			EASMonsterTargetCapability::BlockingTarget, Candidates);
+		OutCandidateCount = Candidates.Num();
 
 		const FASTargetSnapshot* BestCandidate = nullptr;
 		float BestScore = TNumericLimits<float>::Max();
@@ -233,6 +236,8 @@ namespace ASMassMonsterNavigation
 			{
 				continue;
 			}
+
+			++OutEligibleCount;
 
 			const float AlongPrimary = FVector::DotProduct(CandidateOffset, PrimaryDirection);
 			const float LateralDistance = FMath::Sqrt(FMath::Max(0.0f,
@@ -408,14 +413,27 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 				|| FVector::DistSquared2D(Goal, NavigationState.LastRequestedGoal) > RepathDistanceSquared;
 			const bool bPathUnavailable = !CachedPath.NavPath.IsValid() || ShortPath.IsDone();
 			const bool bRefreshDue = NavigationState.PathRefreshTimeRemaining <= 0.0f;
-			if (bProgressStalled && bRefreshDue
-				&& ASMassMonsterNavigation::SelectBlockingTarget(*TargetSubsystem, EntityLocation, Target, Config))
+			int32 BlockingCandidateCount = 0;
+			int32 EligibleBlockingCandidateCount = 0;
+			const bool bSelectedBlockingTarget = bProgressStalled && bRefreshDue
+				&& ASMassMonsterNavigation::SelectBlockingTarget(*TargetSubsystem, EntityLocation, Target, Config,
+					BlockingCandidateCount, EligibleBlockingCandidateCount);
+#if !UE_BUILD_SHIPPING
+			if (bProgressStalled && bRefreshDue && !bSelectedBlockingTarget)
+			{
+				UE_LOG(LogApocalypseSurvival, Verbose,
+					TEXT("[MassMonsterBlocking] Entity=%d Reason=Stuck Candidates=%d Eligible=%d Selected=None"),
+					Context.GetEntity(EntityIt).Index, BlockingCandidateCount, EligibleBlockingCandidateCount);
+			}
+#endif
+			if (bSelectedBlockingTarget)
 			{
 #if !UE_BUILD_SHIPPING
 				UE_LOG(LogApocalypseSurvival, Log,
-					TEXT("[MassMonsterBlocking] Entity=%d Primary=%d:%d Blocking=%d:%d Reason=Stuck"),
+					TEXT("[MassMonsterBlocking] Entity=%d Primary=%d:%d Blocking=%d:%d Reason=Stuck Candidates=%d Eligible=%d"),
 					Context.GetEntity(EntityIt).Index, Target.PrimaryTarget.Id, Target.PrimaryTarget.Generation,
-					Target.BlockingTarget.Id, Target.BlockingTarget.Generation);
+					Target.BlockingTarget.Id, Target.BlockingTarget.Generation,
+					BlockingCandidateCount, EligibleBlockingCandidateCount);
 #endif
 				ASMassMonsterNavigation::Stop(*World, MoveTarget, CachedPath, ShortPath);
 				ASMassMonsterNavigation::ResetProgressTracking(NavigationState);
@@ -454,15 +472,27 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 				ShortPath);
 			if (!bPathRequested && !CachedPath.NavPath.IsValid())
 			{
-				if (!Target.HasBlockingTarget()
+				int32 PathFailureCandidateCount = 0;
+				int32 PathFailureEligibleCandidateCount = 0;
+				const bool bSelectedPathFailureBlockingTarget = !Target.HasBlockingTarget()
 					&& ASMassMonsterNavigation::SelectBlockingTarget(*TargetSubsystem,
-						Transforms[EntityIt].GetTransform().GetLocation(), Target, Config))
+						EntityLocation, Target, Config, PathFailureCandidateCount, PathFailureEligibleCandidateCount);
+#if !UE_BUILD_SHIPPING
+				if (!bSelectedPathFailureBlockingTarget && !Target.HasBlockingTarget())
+				{
+					UE_LOG(LogApocalypseSurvival, Verbose,
+						TEXT("[MassMonsterBlocking] Entity=%d Reason=PathFailure Candidates=%d Eligible=%d Selected=None"),
+						Entity.Index, PathFailureCandidateCount, PathFailureEligibleCandidateCount);
+				}
+#endif
+				if (bSelectedPathFailureBlockingTarget)
 				{
 #if !UE_BUILD_SHIPPING
 					UE_LOG(LogApocalypseSurvival, Log,
-						TEXT("[MassMonsterBlocking] Entity=%d Primary=%d:%d Blocking=%d:%d Reason=PathFailure"),
+						TEXT("[MassMonsterBlocking] Entity=%d Primary=%d:%d Blocking=%d:%d Reason=PathFailure Candidates=%d Eligible=%d"),
 						Entity.Index, Target.PrimaryTarget.Id, Target.PrimaryTarget.Generation,
-						Target.BlockingTarget.Id, Target.BlockingTarget.Generation);
+						Target.BlockingTarget.Id, Target.BlockingTarget.Generation,
+						PathFailureCandidateCount, PathFailureEligibleCandidateCount);
 #endif
 					ASMassMonsterNavigation::Stop(*World, MoveTarget, CachedPath, ShortPath);
 					ASMassMonsterNavigation::ResetProgressTracking(NavigationState);

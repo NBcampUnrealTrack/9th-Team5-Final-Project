@@ -1,5 +1,6 @@
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 
+#include "ApocalypseSurvival.h"
 #include "Mass/Monster/Targeting/ASMonsterTargetableComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -50,6 +51,11 @@ FASTargetHandle UASMonsterTargetSubsystem::RegisterTarget(UASMonsterTargetableCo
 	Record.Actor = Actor;
 	Record.Component = &Component;
 	HandlesByActor.Add(ActorKey, Handle);
+#if !UE_BUILD_SHIPPING
+	UE_LOG(LogApocalypseSurvival, Verbose,
+		TEXT("[MassMonsterTargetRegistry] Registered Actor=%s Handle=%d:%d"),
+		*GetNameSafe(Actor), Handle.Id, Handle.Generation);
+#endif
 	return Handle;
 }
 
@@ -66,9 +72,17 @@ void UASMonsterTargetSubsystem::UnregisterTarget(const FASTargetHandle Handle)
 		return;
 	}
 
+#if !UE_BUILD_SHIPPING
+	const FString ActorName = GetNameSafe(Record->Actor.Get());
+#endif
 	RemoveActorMapping(*Record);
 	TargetsById.Remove(Handle.Id);
 	RecycledIds.Add(Handle.Id);
+#if !UE_BUILD_SHIPPING
+	UE_LOG(LogApocalypseSurvival, Verbose,
+		TEXT("[MassMonsterTargetRegistry] Unregistered Actor=%s Handle=%d:%d"),
+		*ActorName, Handle.Id, Handle.Generation);
+#endif
 }
 
 bool UASMonsterTargetSubsystem::ResolveTarget(const FASTargetHandle Handle, FASTargetSnapshot& OutSnapshot) const
