@@ -10,6 +10,7 @@
 #include "GameFramework/Pawn.h"
 #include "GenericTeamAgentInterface.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMassMonsterTargetQuerySubsystem.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "Skills/ASSkillTags.h"
 
@@ -294,12 +295,13 @@ bool UASCombatTargetSubsystem::FindBestTarget(
 
 	if (Query.Domain != EASCombatTargetDomain::ActorOnly)
 	{
-		const UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
+		const UASMassMonsterTargetQuerySubsystem* MassTargets =
+			World->GetSubsystem<UASMassMonsterTargetQuerySubsystem>();
 		uint64 MassTargetId = 0;
 		FVector MassLocation;
 		float MassHitRadius = 0.0f;
-		if (MassMonsters && MassMonsters->FindBestAliveMonsterTarget(
-			Query.SearchOrigin, Query.SearchRadius, SortOrigin,
+		if (MassTargets && MassTargets->FindBestAliveMonsterTarget(
+			Query.SearchOrigin, Query.SearchRadius, SortOrigin, Query.bRequireVisibleToLocalTeam,
 			MassTargetId, MassLocation, MassHitRadius)
 			&& IsBetterCandidate(MassLocation))
 		{
@@ -340,10 +342,11 @@ bool UASCombatTargetSubsystem::RefreshTarget(
 	}
 	else if (InOutTarget.IsMass())
 	{
-		const UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
-		if (Query.Domain != EASCombatTargetDomain::ActorOnly && MassMonsters
-			&& MassMonsters->GetAliveMonsterTarget(
-				InOutTarget.MassTargetId, InOutTarget.Location, InOutTarget.HitRadius))
+		const UASMassMonsterTargetQuerySubsystem* MassTargets =
+			World->GetSubsystem<UASMassMonsterTargetQuerySubsystem>();
+		if (Query.Domain != EASCombatTargetDomain::ActorOnly && MassTargets
+			&& MassTargets->GetAliveMonsterTarget(InOutTarget.MassTargetId,
+				Query.bRequireVisibleToLocalTeam, InOutTarget.Location, InOutTarget.HitRadius))
 		{
 			return true;
 		}

@@ -573,11 +573,41 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnHitEvent(FGameplayEventData Pa
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnMontageFinished()
 {
-	if (!bHitPerformed && CurrentActorInfo && CurrentActorInfo->IsNetAuthority()) PerformHit();
+	if (!IsActive() || !CurrentActorInfo)
+	{
+		return;
+	}
+
+	// LocalPredicted 일반 공격은 클라이언트와 서버에 각각 Ability 인스턴스가 있다.
+	// 예측 클라이언트가 여기서 EndAbility를 복제하면, 서버가 AnimNotify/Fallback으로
+	// PerformHit를 호출하기 전에 authoritative Ability가 끝날 수 있다. 그 결과 클라이언트에는
+	// 공격 몽타주만 보이고 서버 피해 판정과 디버그 콘은 실행되지 않는 레이스가 생긴다.
+	// 타격이 시작된 뒤의 종료 권한은 서버에만 둔다. 클라이언트는 서버의 종료 복제를 기다린다.
+	if (!CurrentActorInfo->IsNetAuthority())
+	{
+		return;
+	}
+
+	if (!bHitPerformed)
+	{
+		PerformHit();
+	}
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnMontageCancelled()
 {
+	if (!IsActive() || !CurrentActorInfo)
+	{
+		return;
+	}
+
+	// 로컬 몽타주의 중단은 표현 계층의 이벤트일 수 있으므로 서버 공격을 취소하지 않는다.
+	// 서버가 실제 취소 여부와 Ability 종료를 권위적으로 결정해 클라이언트에 복제한다.
+	if (!CurrentActorInfo->IsNetAuthority())
+	{
+		return;
+	}
+
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
