@@ -139,6 +139,17 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 
 void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 {
+	// 일반 공격은 별도 쿨타임 GE 대신 이 인스턴스의 공격 간격을 사용한다.
+	// A 입력이 쿨타임 중 조준 상태에 들어가면, 나중에 좌클릭해도 공격이 실패하고
+	// 준비 상태만 남을 수 있으므로 시작 단계에서 무시한다.
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
+	if (World && World->GetTimeSeconds() < NextAttackTime)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
 	FASWeaponAttackExecutionContext Context;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	if (!BuildExecutionContext(Context, Execution))
