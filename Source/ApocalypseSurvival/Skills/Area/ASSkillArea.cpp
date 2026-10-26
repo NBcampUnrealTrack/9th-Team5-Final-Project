@@ -52,7 +52,12 @@ void UASSkillArea::OnSkillEffect_Implementation()
 		return;
 	}
 
-	Area->InitArea(MakeDamageSpec(), Avatar, Radius, Duration, TickInterval, bDamageOnSpawn, bCanHitPlayers, bDrawDebug);
+	FASCombatImpactContext ImpactContext;
+	ImpactContext.Preset = ImpactPreset;
+	ImpactContext.HitLocation = Location;
+	ImpactContext.HitDirection = Aim;
+	Area->InitArea(MakeDamageSpec(), Avatar, Radius, Duration, TickInterval,
+		bDamageOnSpawn, bCanHitPlayers, bDrawDebug, ImpactContext);
 	Area->FinishSpawning(SpawnTransform);
 
 	if (bAttachToOwner)

@@ -12,9 +12,11 @@ UASAbilitySystemComponent::UASAbilitySystemComponent()
 
 void UASAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
-	// 죽었거나 쓰러져 있으면 어떤 어빌리티도 입력으로 발동하지 않는다.
+	// 죽었거나 쓰러졌거나 피격 경직 중이면 어떤 어빌리티도 입력으로 발동하지 않는다.
 	// 어빌리티마다 차단 태그를 적지 않아도 되도록 입력 입구에서 한 번에 막는다.
-	if (!InputTag.IsValid() || IsDead() || HasMatchingGameplayTag(ASGameplayTags::State_Downed))
+	if (!InputTag.IsValid() || IsDead()
+		|| HasMatchingGameplayTag(ASGameplayTags::State_Downed)
+		|| HasMatchingGameplayTag(ASGameplayTags::State_Staggered))
 	{
 		return;
 	}

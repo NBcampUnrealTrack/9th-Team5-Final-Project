@@ -26,6 +26,18 @@ namespace ASGameplayTags
 	/** 피해 무적. 지속형 GE가 부여하며, 피해 GE는 이 태그가 있으면 적용되지 않는다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable);
 
+	/** 플레이어가 피격 경직 또는 넉다운으로 조작을 잠시 잃은 상태. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
+
+	/** State.Staggered 중 넉다운 연출을 구분하는 하위 상태. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_KnockedDown);
+
+	/** 피격 제어만 무시하는 슈퍼아머. 피해와 피격 표현은 그대로 적용된다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_SuperArmor);
+
+	/** 실제 플레이어 경직 직후 연속 경직만 막는 짧은 보호 상태. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_StaggerProtected);
+
 	/** 체력이 0 이 되었을 때 ASC 에 보내는 이벤트. 사망 어빌리티가 이 태그로 켜진다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Death);
 

@@ -38,14 +38,15 @@ void AASSkillProjectileActor::InitProjectile(
 	float Speed,
 	float MaxRange,
 	int32 InPierceCount,
-	bool bInCanHitPlayers)
+	bool bInCanHitPlayers,
+	const FASCombatImpactContext& InImpactContext)
 {
 	TArray<FGameplayEffectSpecHandle> Specs;
 	if (InDamageSpec.IsValid())
 	{
 		Specs.Add(InDamageSpec);
 	}
-	InitProjectile(Specs, InInstigatorAvatar, Direction, Speed, MaxRange, InPierceCount, bInCanHitPlayers);
+	InitProjectile(Specs, InInstigatorAvatar, Direction, Speed, MaxRange, InPierceCount, bInCanHitPlayers, InImpactContext);
 }
 
 void AASSkillProjectileActor::InitProjectile(
@@ -55,10 +56,12 @@ void AASSkillProjectileActor::InitProjectile(
 	float Speed,
 	float MaxRange,
 	int32 InPierceCount,
-	bool bInCanHitPlayers)
+	bool bInCanHitPlayers,
+	const FASCombatImpactContext& InImpactContext)
 {
 	DamageSpecs = InDamageSpecs;
 	InstigatorAvatar = InInstigatorAvatar;
+	ImpactContext = InImpactContext;
 	PierceCount = InPierceCount;
 	bCanHitPlayers = bInCanHitPlayers;
 	SetActorTickEnabled(true);
@@ -160,7 +163,7 @@ void AASSkillProjectileActor::ResolveHitsAlongSegment(const FVector& CurrentLoca
 		Query.Instigator = InstigatorAvatar.Get();
 		Query.bCanHitPlayers = bCanHitPlayers;
 		Query.MaxTargets = PierceCount >= 0 ? RemainingHits : 0;
-		CombatTargets->ResolveAndApply(Query, DamageSpecs, &HitTargets);
+		CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext, &HitTargets);
 	}
 
 	PreviousLocation = CurrentLocation;

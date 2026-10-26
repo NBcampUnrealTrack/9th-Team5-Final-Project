@@ -16,6 +16,7 @@ UASMonsterChargeAbility::UASMonsterChargeAbility()
 	bCanHitPlayers = true;
 	bAimAtCursor = false;
 	bFaceAimDirection = true;
+	ImpactPreset = EASImpactPreset::Heavy;
 	BaseDamage = 0.0f;
 	AttackPowerScale = 1.0f;
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
@@ -206,7 +207,11 @@ void UASMonsterChargeAbility::ApplyChargeHitDamage()
 		Query.Instigator = Character;
 		Query.bCanHitPlayers = bCanHitPlayers;
 		const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
-		CombatTargets->ResolveAndApply(Query, MakeArrayView(&DamageSpec, 1), &HitTargets);
+		FASCombatImpactContext ImpactContext;
+		ImpactContext.Preset = ImpactPreset;
+		ImpactContext.HitLocation = Character->GetActorLocation();
+		ImpactContext.HitDirection = ChargeDirection;
+		CombatTargets->ResolveAndApply(Query, MakeArrayView(&DamageSpec, 1), ImpactContext, &HitTargets);
 	}
 }
 

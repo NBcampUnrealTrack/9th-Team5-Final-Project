@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Characters/ASCharacterBase.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "GameplayTagContainer.h"
 #include "Mass/Monster/Targeting/ASMonsterTargetable.h"
 #include "ASPlayerCharacter.generated.h"
@@ -17,6 +18,8 @@ struct FOnAttributeChangeData;
 class UInputAction;
 class UInputMappingContext;
 class UGameplayAbility;
+class UAnimInstance;
+class UAnimMontage;
 struct FGameplayEventData;
 
 /**
@@ -72,6 +75,13 @@ public:
 	/* 쓰러져서 부활을 기다리는 중인가 (멀티 전용). 모든 머신에서 같은 답을 준다. */
 	UFUNCTION(BlueprintPure, Category = "Downed")
 	bool IsDowned() const;
+
+	/** 피격 경직 또는 넉다운으로 조작이 잠시 제한되어 있는가. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Impact")
+	bool IsStaggered() const;
+
+	/** 서버 전용. 피해가 정상 적용된 뒤, ImpactPreset에 따라 제어 반응을 적용한다. */
+	void ApplyImpactReaction(const FASCombatImpactContext& ImpactContext);
 	
 	/* 서버 전용. 멀티 규칙에서 체력이 0이 되면 사망 대신 쓰러진다. */
 	void EnterDowned();
@@ -116,6 +126,10 @@ public:
 	/** 근접 평타 부채꼴 판정 디버그 표시 (모든 머신) */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastDrawMeleeConeDebug(FVector Origin, FVector Direction, float Radius, float AngleDegrees, bool bHit);
+
+	/** 서버가 확인한 근접 명중의 로컬 공격자 몽타주만 잠시 멈춘다. 게임플레이 시간에는 영향을 주지 않는다. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayMeleeHitStop(float Duration);
 	
 	UFUNCTION(Exec)
 	void DebugAddExp(int32 Amount);
@@ -154,6 +168,10 @@ protected:
 	/** 쓰러지거나 일어날 때 모든 머신에서 불린다. 쓰러진 자세, 남은 시간 UI 같은 보이는 것은 BP에서 붙인다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Downed")
 	void OnDownedChanged(bool bDowned);
+
+	/** 피격 경직 시작/종료 시 모든 머신에서 호출된다. 넉다운 여부는 IsStaggered와 State.KnockedDown 태그로 확인한다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Impact")
+	void OnStaggerChanged(bool bStaggered);
 
 	/** 쓰러진 뒤 사망까지 걸리는 시간 (임시값) */
 	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "1.0", Units = "s"))
@@ -217,11 +235,29 @@ private:
 	/** 쓰러짐 태그가 붙거나 떨어졌을 때. 모든 머신에서 불린다. */
 	void HandleDownedTagChanged(const FGameplayTag Tag, int32 NewCount);
 
+	/** 피격 경직 태그가 붙거나 떨어졌을 때. 모든 머신에서 이동과 연출을 맞춘다. */
+	void HandleStaggeredTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	/** 서버 전용. 경직/넉다운 태그를 제거한다. */
+	void ClearImpactReaction();
+
+	/** 서버 전용. 연속 경직 보호 태그를 제거한다. */
+	void ClearStaggerProtection();
+
+	/** 로컬 타격 정지 타이머가 끝나면 멈췄던 공격 몽타주만 다시 재생한다. */
+	void ResumeMeleeHitStop();
+
 	/** 서버에서만 Monster Target Registry 등록 상태를 사망/쓰러짐 상태와 맞춘다. */
 	void RefreshMonsterTargetingRegistration();
 
 	FDelegateHandle DownedTagChangedHandle;
+	FDelegateHandle StaggeredTagChangedHandle;
 	FTimerHandle BleedOutTimerHandle;
+	FTimerHandle ImpactReactionTimerHandle;
+	FTimerHandle StaggerProtectionTimerHandle;
+	FTimerHandle MeleeHitStopTimerHandle;
+	TWeakObjectPtr<UAnimInstance> HitStopAnimInstance;
+	TWeakObjectPtr<UAnimMontage> HitStopMontage;
 
 	/** 서버 전용. 부활 시작 / 취소 / 진행 확인 */
 void StartRevive(AASPlayerCharacter* Reviver);

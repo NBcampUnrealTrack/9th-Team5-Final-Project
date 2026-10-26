@@ -7,6 +7,7 @@ UASMeleeAttackProfile::UASMeleeAttackProfile()
 {
 	ExecutionClass = UASMeleeAttackExecution::StaticClass();
 	TargetMode = EASAttackTargetMode::Area;
+	ImpactPreset = EASImpactPreset::Standard;
 	HitEventTag = ASGameplayTags::Event_Skill_Hit;
 }
 

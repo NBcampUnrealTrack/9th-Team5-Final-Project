@@ -18,10 +18,11 @@ AASWeaponProjectile::AASWeaponProjectile()
 }
 
 void AASWeaponProjectile::InitHoming(const TArray<FGameplayEffectSpecHandle>& InDamageSpecs, AActor* InInstigatorAvatar,
-	const FASCombatTargetRef& InTarget, const float InSpeed)
+	const FASCombatTargetRef& InTarget, const float InSpeed, const FASCombatImpactContext& InImpactContext)
 {
 	DamageSpecs = InDamageSpecs;
 	InstigatorAvatar = InInstigatorAvatar;
+	ImpactContext = InImpactContext;
 	Target = InTarget;
 	LastTargetLocation = InTarget.GetLocation();
 	Speed = FMath::Max(1.0f, InSpeed);
@@ -116,7 +117,7 @@ void AASWeaponProjectile::Impact(const bool bHasTarget)
 	{
 		// 유도 중 유지한 확정 대상에만 피해를 적용한다. 위치 기반 재검색은 하지 않는다.
 		bHit = CombatTargets->ApplyEffectSpecsToTarget(
-			Target, DamageSpecs, InstigatorAvatar.Get()).HasAnyHit();
+			Target, DamageSpecs, InstigatorAvatar.Get(), ImpactContext).HasAnyHit();
 	}
 
 #if !UE_BUILD_SHIPPING

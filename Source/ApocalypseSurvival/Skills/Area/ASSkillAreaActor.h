@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
@@ -27,7 +28,8 @@ public:
 		float InTickInterval,
 		bool bInDamageOnSpawn,
 		bool bInCanHitPlayers,
-		bool bInDrawDebug);
+		bool bInDrawDebug,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 	UFUNCTION(BlueprintPure, Category = "AS|Skill|Area")
 	float GetRadius() const { return Radius; }
@@ -58,6 +60,7 @@ private:
 	float Radius = 300.0f;
 
 	FGameplayEffectSpecHandle DamageSpec;
+	FASCombatImpactContext ImpactContext;
 	TWeakObjectPtr<AActor> InstigatorAvatar;
 
 	float Duration = 3.0f;

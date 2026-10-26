@@ -57,7 +57,11 @@ void UASSkillProjectile::OnSkillEffect_Implementation()
 		return;
 	}
 
-	Projectile->InitProjectile(MakeDamageSpec(), Avatar, Aim, Speed, MaxRange, PierceCount, bCanHitPlayers);
+	FASCombatImpactContext ImpactContext;
+	ImpactContext.Preset = ImpactPreset;
+	ImpactContext.HitLocation = Location;
+	ImpactContext.HitDirection = Aim;
+	Projectile->InitProjectile(MakeDamageSpec(), Avatar, Aim, Speed, MaxRange, PierceCount, bCanHitPlayers, ImpactContext);
 	Projectile->FinishSpawning(SpawnTransform);
 }
 

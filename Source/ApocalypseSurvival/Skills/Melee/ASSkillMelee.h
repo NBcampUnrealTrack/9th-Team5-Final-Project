@@ -13,6 +13,9 @@ class APOCALYPSESURVIVAL_API UASSkillMelee : public UASSkillAbility
 {
 	GENERATED_BODY()
 
+public:
+	UASSkillMelee();
+
 protected:
 	virtual void OnSkillEffect_Implementation() override;
 	virtual void ApplySkillStats(const FASSkillStatsRow& Stats) override;

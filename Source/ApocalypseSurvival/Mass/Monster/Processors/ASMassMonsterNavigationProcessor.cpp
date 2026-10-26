@@ -284,6 +284,7 @@ void UASMassMonsterNavigationProcessor::ConfigureQueries(const TSharedRef<FMassE
 	EntityQuery.AddRequirement<FMassNavMeshShortPathFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterHitReactionFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterModifierFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadWrite);
@@ -307,8 +308,9 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 
 	int32 RemainingPathRequests = FMath::Max(1, MaxPathRequestsPerFrame);
 	const float DeltaTime = Context.GetDeltaTimeSeconds();
+	const double CurrentTime = World->GetTimeSeconds();
 
-	EntityQuery.ForEachEntityChunk(Context, [this, World, TargetSubsystem, DeltaTime, &RemainingPathRequests](FMassExecutionContext& Context)
+	EntityQuery.ForEachEntityChunk(Context, [this, World, TargetSubsystem, DeltaTime, CurrentTime, &RemainingPathRequests](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TConstArrayView<FAgentRadiusFragment> AgentRadii = Context.GetFragmentView<FAgentRadiusFragment>();
@@ -316,6 +318,7 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 		const TConstArrayView<FMassDesiredMovementFragment> DesiredMovements = Context.GetFragmentView<FMassDesiredMovementFragment>();
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterCombatFragment> Combats = Context.GetFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterHitReactionFragment> HitReactions = Context.GetFragmentView<FASMassMonsterHitReactionFragment>();
 		const TConstArrayView<FASMassMonsterModifierFragment> Modifiers = Context.GetFragmentView<FASMassMonsterModifierFragment>();
 		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const TArrayView<FASMassMonsterTargetFragment> Targets = Context.GetMutableFragmentView<FASMassMonsterTargetFragment>();
@@ -336,6 +339,14 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 			FASMassMonsterNavigationFragment& NavigationState = NavigationStates[EntityIt];
 			const FASMassMonsterBehaviorFragment& Behavior = Behaviors[EntityIt];
 			const FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
+			if (HitReactions[EntityIt].IsControlActive(CurrentTime))
+			{
+				ASMassMonsterNavigation::Stop(*World, MoveTarget, CachedPath, ShortPath);
+				ASMassMonsterNavigation::ResetProgressTracking(NavigationState);
+				NavigationState.bHasRequestedGoal = false;
+				NavigationState.PathRefreshTimeRemaining = 0.0f;
+				continue;
+			}
 
 			// 돌진 준비/실행과 자폭 시전 중에는 행동 상태가 Chase로 바뀌어도 이동을 재개하지 않는다.
 			const bool bLocksMovementForPattern =

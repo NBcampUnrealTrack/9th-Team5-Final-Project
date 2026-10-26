@@ -28,7 +28,8 @@ public:
 		float Speed,
 		float MaxRange,
 		int32 InPierceCount,
-		bool bInCanHitPlayers);
+		bool bInCanHitPlayers,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 	/** 여러 무기 피해 효과를 하나의 투사체에 실을 때 쓰는 초기화 경로. */
 	void InitProjectile(
@@ -38,7 +39,8 @@ public:
 		float Speed,
 		float MaxRange,
 		int32 InPierceCount,
-		bool bInCanHitPlayers);
+		bool bInCanHitPlayers,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 protected:
 	virtual void BeginPlay() override;
@@ -59,6 +61,7 @@ protected:
 
 	TArray<FGameplayEffectSpecHandle> DamageSpecs;
 	TWeakObjectPtr<AActor> InstigatorAvatar;
+	FASCombatImpactContext ImpactContext;
 
 private:
 	UFUNCTION()

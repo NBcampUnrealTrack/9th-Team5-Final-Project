@@ -26,7 +26,8 @@ public:
 
 	/** 서버 전용. SpawnActorDeferred 후 FinishSpawning 전에 호출한다. */
 	void InitHoming(const TArray<FGameplayEffectSpecHandle>& InDamageSpecs, AActor* InInstigatorAvatar,
-		const FASCombatTargetRef& InTarget, float InSpeed);
+		const FASCombatTargetRef& InTarget, float InSpeed,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 protected:
 	virtual void BeginPlay() override;
@@ -55,6 +56,7 @@ private:
 
 	TArray<FGameplayEffectSpecHandle> DamageSpecs;
 	TWeakObjectPtr<AActor> InstigatorAvatar;
+	FASCombatImpactContext ImpactContext;
 
 	/** 따라가는 대상. RefreshTarget 이 위치를 갱신하고, 대상이 죽으면 비운다. */
 	FASCombatTargetRef Target;

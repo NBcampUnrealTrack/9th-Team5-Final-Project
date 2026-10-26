@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "MassClientBubbleHandler.h"
 #include "MassReplicationTransformHandlers.h"
@@ -23,6 +24,14 @@ struct APOCALYPSESURVIVAL_API FASReplicatedMonsterVisualData
 	/** 낮/밤에 따라 선택되는 클라이언트 전용 외형 상태다. */
 	UPROPERTY(Transient)
 	EASMassMonsterWorldBehavior WorldBehavior = EASMassMonsterWorldBehavior::DayTerritory;
+
+	/** 마지막으로 서버가 실제 제어 반응을 적용한 종류. 클라이언트 표현 전용이다. */
+	UPROPERTY(Transient)
+	EASResolvedHitReaction ImpactReaction = EASResolvedHitReaction::VisualOnly;
+
+	/** 실제 제어 반응마다 증가하는 1바이트 시퀀스. 동일 체력의 연속 경직도 표현할 수 있다. */
+	UPROPERTY(Transient)
+	uint8 ImpactReactionSequence = 0;
 };
 
 /** MassReplication Fast Array가 몬스터 한 개체에 대해 전송하는 데이터다. */

@@ -71,7 +71,11 @@ void UASMonsterTargetedAttackAbility::OnSkillEffect_Implementation()
 			Query.bCanHitPlayers = bCanHitPlayers;
 			Query.MaxTargets = 1;
 			const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
-			CombatTargets->ResolveAndApply(Query, MakeArrayView(&DamageSpec, 1));
+			FASCombatImpactContext ImpactContext;
+			ImpactContext.Preset = ImpactPreset;
+			ImpactContext.HitLocation = Target->GetActorLocation();
+			ImpactContext.HitDirection = GetAimDirection();
+			CombatTargets->ResolveAndApply(Query, MakeArrayView(&DamageSpec, 1), ImpactContext);
 		}
 	}
 }
