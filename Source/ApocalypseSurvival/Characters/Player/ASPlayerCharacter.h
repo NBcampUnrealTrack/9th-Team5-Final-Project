@@ -217,6 +217,9 @@ private:
 	/** 쓰러짐 태그가 붙거나 떨어졌을 때. 모든 머신에서 불린다. */
 	void HandleDownedTagChanged(const FGameplayTag Tag, int32 NewCount);
 
+	/** 서버에서만 Monster Target Registry 등록 상태를 사망/쓰러짐 상태와 맞춘다. */
+	void RefreshMonsterTargetingRegistration();
+
 	FDelegateHandle DownedTagChangedHandle;
 	FTimerHandle BleedOutTimerHandle;
 

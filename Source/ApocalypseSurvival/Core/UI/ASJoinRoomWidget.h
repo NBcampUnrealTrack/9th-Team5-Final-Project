@@ -7,6 +7,7 @@
 class UButton;
 class UComboBoxString;
 class UTextBlock;
+class UEditableTextBox;
 
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API UASJoinRoomWidget : public UUserWidget
@@ -35,8 +36,13 @@ protected:
 	TObjectPtr<UComboBoxString> RoomComboBox;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> RoomStatusText;
+	UPROPERTY(BlueprintReadOnly, Category = "Session", meta = (BindWidgetOptional))
+	TObjectPtr<UEditableTextBox> PasswordTextBox;
 
 private:
+	UFUNCTION()
+	void HandlePasswordChanged(const FText& Text);
+	FString LastValidPassword;
 	UFUNCTION()
 	void HandleSessionsFound(bool bSuccess, const TArray<FASSessionSearchResult>& Results);
 	UFUNCTION()

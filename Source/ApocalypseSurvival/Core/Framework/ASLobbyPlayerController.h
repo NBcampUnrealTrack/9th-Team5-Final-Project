@@ -31,6 +31,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void ReceivedPlayer() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
 
@@ -40,6 +41,7 @@ protected:
 	TSubclassOf<UASCharacterSelectWidget> CharacterSelectWidgetClass;
 
 private:
+	void InitializeLobbyUI();
 	UFUNCTION(Server, Reliable)
 	void ServerSetReady(bool bReady);
 	UFUNCTION(Server, Reliable)

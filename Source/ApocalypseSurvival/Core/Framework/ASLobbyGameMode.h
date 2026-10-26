@@ -15,6 +15,8 @@ class APOCALYPSESURVIVAL_API AASLobbyGameMode : public AGameModeBase
 public:
 	AASLobbyGameMode();
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void HandleSeamlessTravelPlayer(AController*& C) override;
+	virtual void PostSeamlessTravel() override;
 	virtual void Logout(AController* Exiting) override;
 	virtual void PreLogin(const FString& Options, const FString& Address, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
 	void RefreshLobby(AController* ExcludedPlayer = nullptr);

@@ -37,6 +37,20 @@ AASGameMode::AASGameMode()
 	ZoneEffects = CreateDefaultSubobject<UASZoneEffectComponent>(TEXT("ZoneEffects"));
 }
 
+bool AASGameMode::ReturnToLobby()
+{
+	if (!HasAuthority() || !IsGameEnded() || LobbyMapPath.IsEmpty()) return false;
+	const bool bPreviousSeamlessTravel = bUseSeamlessTravel;
+	bUseSeamlessTravel = true;
+	if (!GetWorld()->ServerTravel(LobbyMapPath + TEXT("?listen"), true))
+	{
+		bUseSeamlessTravel = bPreviousSeamlessTravel;
+		return false;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Session] Returning all players to the existing lobby."));
+	return true;
+}
+
 // 규칙 조회
 float AASGameMode::GetDayDuration(int32 Day) const
 {

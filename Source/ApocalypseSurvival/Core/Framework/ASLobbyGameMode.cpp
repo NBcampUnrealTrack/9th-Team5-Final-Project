@@ -11,6 +11,7 @@
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
 
 AASLobbyGameMode::AASLobbyGameMode()
 {
@@ -29,6 +30,23 @@ void AASLobbyGameMode::PostLogin(APlayerController* NewPlayer)
 	UE_LOG(LogTemp, Log, TEXT("[Lobby] Player joined: %s"), *GetNameSafe(NewPlayer));
 }
 
+void AASLobbyGameMode::HandleSeamlessTravelPlayer(AController*& C)
+{
+	Super::HandleSeamlessTravelPlayer(C);
+	RefreshLobby();
+}
+
+void AASLobbyGameMode::PostSeamlessTravel()
+{
+	Super::PostSeamlessTravel();
+	if (UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>())
+	{
+		Sessions->ClearMatchCharacters();
+		Sessions->SetLobbyOpen(true);
+	}
+	RefreshLobby();
+}
+
 void AASLobbyGameMode::Logout(AController* Exiting)
 {
 	Super::Logout(Exiting);
@@ -39,6 +57,15 @@ void AASLobbyGameMode::Logout(AController* Exiting)
 void AASLobbyGameMode::PreLogin(const FString& Options, const FString& Address, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage)
 {
 	Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
+	if (!ErrorMessage.IsEmpty()) return;
+	if (const UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>())
+	{
+		if (!Sessions->ValidateRoomPassword(UGameplayStatics::ParseOption(Options, TEXT("RoomPassword"))))
+		{
+			ErrorMessage = TEXT("AS_WRONG_PASSWORD");
+			return;
+		}
+	}
 	if (bStartingGame) ErrorMessage = TEXT("Game is starting.");
 }
 
