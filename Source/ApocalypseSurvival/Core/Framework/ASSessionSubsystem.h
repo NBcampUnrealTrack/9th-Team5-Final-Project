@@ -60,6 +60,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void DestroySession();
+	UFUNCTION(BlueprintCallable, Category = "Session")
+	void LeaveRoom();
+	UPROPERTY(BlueprintReadOnly, Category = "Session")
+	FText ReturnToMenuMessage;
 
 	UFUNCTION(BlueprintCallable, Category = "Session|Travel")
 	bool HostTravelToMap(const FString& MapPath);
@@ -92,6 +96,8 @@ private:
 	void HandleMapLoaded(UWorld* World);
 	void HandleConnectionFailure(UWorld* World, const FString& Error);
 	bool bJoinTravelPending = false;
+	bool bLeavingRoom = false;
+	void FinishLeavingRoom(bool bSessionDestroyed);
 	// Server-owned choices survive non-seamless reconnects as well as normal map travel.
 	UPROPERTY(Transient)
 	TMap<FString, TObjectPtr<const UASCharacterDefinition>> MatchCharacters;

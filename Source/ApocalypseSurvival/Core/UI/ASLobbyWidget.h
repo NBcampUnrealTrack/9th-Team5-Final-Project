@@ -16,6 +16,8 @@ public:
 	void ToggleReady();
 	UFUNCTION(BlueprintCallable, Category = "Lobby")
 	void RequestStartGame();
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
+	void LeaveRoom();
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	AASLobbyGameState* GetLobbyState() const;
 	UFUNCTION(BlueprintPure, Category = "Lobby")
@@ -30,6 +32,8 @@ protected:
 	TObjectPtr<UButton> ReadyButton;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> StartGameButton;
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LeaveRoomButton;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> PlayerListText;
 	UPROPERTY(meta = (BindWidgetOptional))

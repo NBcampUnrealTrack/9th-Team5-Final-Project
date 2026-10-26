@@ -2,6 +2,7 @@
 
 #include "Core/Framework/ASSessionSubsystem.h"
 #include "Engine/GameInstance.h"
+#include "Components/TextBlock.h"
 
 void UASMainMenuWidget::NativeConstruct()
 {
@@ -12,6 +13,10 @@ void UASMainMenuWidget::NativeConstruct()
 	if (SessionSubsystem)
 	{
 		SessionSubsystem->OnSessionCreated.AddUniqueDynamic(this, &ThisClass::HandleSessionCreated);
+		if (ConnectionStatusText)
+		{
+			ConnectionStatusText->SetText(SessionSubsystem->ReturnToMenuMessage);
+		}
 	}
 }
 
