@@ -14,6 +14,7 @@
 #include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualFragment.h"
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Core/Framework/ASGameMode.h"
+#include "Core/Combat/ASCombatImpactSettings.h"
 #include "StructUtils/StructView.h"
 #include "TimerManager.h"
 
@@ -643,6 +644,64 @@ bool UASMassMonsterSubsystem::GetAliveMonsterTargetByNetworkId(
 	return false;
 }
 
+void UASMassMonsterSubsystem::ApplyImpactReactionToMonster(
+	FMassEntityManager& EntityManager,
+	const FMassEntityHandle Entity,
+	const FASMassMonsterConfigFragment& Config,
+	const FASCombatImpactContext& ImpactContext,
+	const double CurrentTimeSeconds)
+{
+	FASMassMonsterHitReactionFragment* HitReaction =
+		EntityManager.GetFragmentDataPtr<FASMassMonsterHitReactionFragment>(Entity);
+	FASMassMonsterCombatFragment* Combat =
+		EntityManager.GetFragmentDataPtr<FASMassMonsterCombatFragment>(Entity);
+	const UASCombatImpactSettings* ImpactSettings = GetDefault<UASCombatImpactSettings>();
+	if (!HitReaction || !Combat || !ImpactSettings)
+	{
+		return;
+	}
+
+	const EASResolvedHitReaction Reaction = ImpactSettings->ResolveMonsterReaction(
+		ImpactContext.Preset, Config.StaggerResistance);
+	if (Reaction != EASResolvedHitReaction::WeakStagger
+		&& Reaction != EASResolvedHitReaction::StrongStagger
+		&& Reaction != EASResolvedHitReaction::Knockdown)
+	{
+		return;
+	}
+
+	if (ImpactContext.Preset == EASImpactPreset::Rapid)
+	{
+		if (CurrentTimeSeconds < HitReaction->NextRapidReactionTimeSeconds)
+		{
+			return;
+		}
+		HitReaction->NextRapidReactionTimeSeconds = CurrentTimeSeconds
+			+ ImpactSettings->RapidReapplyInterval;
+	}
+
+	const double ReactionEndTime = CurrentTimeSeconds
+		+ ImpactSettings->GetMonsterReactionDuration(Reaction);
+	if (ReactionEndTime <= CurrentTimeSeconds)
+	{
+		return;
+	}
+
+	const bool bWasControlActive = HitReaction->IsControlActive(CurrentTimeSeconds);
+	HitReaction->ReactionEndTimeSeconds = FMath::Max(HitReaction->ReactionEndTimeSeconds, ReactionEndTime);
+	if (!bWasControlActive
+		|| static_cast<uint8>(Reaction) >= static_cast<uint8>(HitReaction->Reaction))
+	{
+		HitReaction->Reaction = Reaction;
+	}
+	++HitReaction->ReactionSequence;
+
+	// 진행 중인 패턴은 즉시 끝내고, 반응 종료 뒤에 AI가 현재 상황을 다시 판단하게 한다.
+	Combat->AttackState = EASMassMonsterAttackState::Ready;
+	Combat->PhaseEndTimeSeconds = 0.0;
+	Combat->bPrimaryEffectApplied = false;
+}
+
 int32 UASMassMonsterSubsystem::ApplyDamageInRadius(
 	const FVector& Center,
 	const float Radius,
@@ -650,8 +709,20 @@ int32 UASMassMonsterSubsystem::ApplyDamageInRadius(
 	AActor* DamageInstigator,
 	const int32 MaxTargets)
 {
+	return ApplyDamageInRadiusWithImpact(Center, Radius, Damage, DamageInstigator, MaxTargets,
+		FASCombatImpactContext());
+}
+
+int32 UASMassMonsterSubsystem::ApplyDamageInRadiusWithImpact(
+	const FVector& Center,
+	const float Radius,
+	const float Damage,
+	AActor* DamageInstigator,
+	const int32 MaxTargets,
+	const FASCombatImpactContext& ImpactContext)
+{
 	const float SafeRadius = FMath::Max(0.0f, Radius);
-	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets,
+	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets, ImpactContext,
 		[Center, SafeRadius](FMassEntityHandle, const FVector& Location,
 			const FASMassMonsterConfigFragment& Config)
 		{
@@ -662,7 +733,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageInRadius(
 int32 UASMassMonsterSubsystem::ApplyDamageToTarget(
 	const uint64 TargetId,
 	const float Damage,
-	AActor* DamageInstigator)
+	AActor* DamageInstigator,
+	const FASCombatImpactContext& ImpactContext)
 {
 	if (TargetId == 0)
 	{
@@ -670,7 +742,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageToTarget(
 	}
 
 	const FMassEntityHandle RequestedEntity = FMassEntityHandle::FromNumber(TargetId);
-	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, 1,
+	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, 1, ImpactContext,
 		[RequestedEntity](const FMassEntityHandle Entity, const FVector&,
 			const FASMassMonsterConfigFragment&)
 		{
@@ -687,11 +759,25 @@ int32 UASMassMonsterSubsystem::ApplyDamageInCone(
 	AActor* DamageInstigator,
 	const int32 MaxTargets)
 {
+	return ApplyDamageInConeWithImpact(Center, AimDirection, Radius, AngleDegrees, Damage,
+		DamageInstigator, MaxTargets, FASCombatImpactContext());
+}
+
+int32 UASMassMonsterSubsystem::ApplyDamageInConeWithImpact(
+	const FVector& Center,
+	const FVector& AimDirection,
+	const float Radius,
+	const float AngleDegrees,
+	const float Damage,
+	AActor* DamageInstigator,
+	const int32 MaxTargets,
+	const FASCombatImpactContext& ImpactContext)
+{
 	const float SafeRadius = FMath::Max(0.0f, Radius);
 	const float SafeAngle = FMath::Clamp(AngleDegrees, 1.0f, 360.0f);
 	const FVector SafeAim = AimDirection.GetSafeNormal2D();
 	const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(SafeAngle * 0.5f));
-	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets,
+	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets, ImpactContext,
 		[Center, SafeRadius, SafeAngle, SafeAim, CosHalfAngle](FMassEntityHandle,
 			const FVector& Location, const FASMassMonsterConfigFragment& Config)
 		{
@@ -717,10 +803,23 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegment(
 	AActor* DamageInstigator,
 	const int32 MaxTargets)
 {
+	return ApplyDamageAlongSegmentWithImpact(Start, End, SweepRadius, Damage, DamageInstigator, MaxTargets,
+		FASCombatImpactContext());
+}
+
+int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentWithImpact(
+	const FVector& Start,
+	const FVector& End,
+	const float SweepRadius,
+	const float Damage,
+	AActor* DamageInstigator,
+	const int32 MaxTargets,
+	const FASCombatImpactContext& ImpactContext)
+{
 	const FVector Start2D(Start.X, Start.Y, 0.0f);
 	const FVector End2D(End.X, End.Y, 0.0f);
 	const float SafeSweepRadius = FMath::Max(0.0f, SweepRadius);
-	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets,
+	return ApplyDamageToMatchingMonsters(Damage, DamageInstigator, MaxTargets, ImpactContext,
 		[Start2D, End2D, SafeSweepRadius](FMassEntityHandle, const FVector& Location,
 			const FASMassMonsterConfigFragment& Config)
 		{
@@ -737,7 +836,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 	const float Damage,
 	AActor* DamageInstigator,
 	TSet<int32>& InOutHitEntityIndices,
-	const int32 MaxTargets)
+	const int32 MaxTargets,
+	const FASCombatImpactContext& ImpactContext)
 {
 	FString MutationError;
 	if (!CanMutateEntities(MutationError) || bMutationInProgress || Damage <= 0.0f)
@@ -754,6 +854,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
 	CompactManagedEntities();
 	FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	const double CurrentTime = GetWorld()->GetTimeSeconds();
 	const FVector Start2D(Start.X, Start.Y, 0.0f);
 	const FVector End2D(End.X, End.Y, 0.0f);
 	const FVector Segment = End2D - Start2D;
@@ -822,6 +923,10 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 		{
 			TemporaryVisual->HitFlashTimeRemaining = TemporaryVisualHitFlashDuration;
 		}
+		if (Health->CurrentHealth > 0.0f)
+		{
+			ApplyImpactReactionToMonster(EntityManager, Candidate.Entity, *Config, ImpactContext, CurrentTime);
+		}
 		if (bHasInstigatorSnapshot)
 		{
 			if (FASMassMonsterThreatFragment* Threats =
@@ -854,6 +959,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 	const float Damage,
 	AActor* DamageInstigator,
 	const int32 MaxTargets,
+	const FASCombatImpactContext& ImpactContext,
 	TFunctionRef<bool(FMassEntityHandle, const FVector&, const FASMassMonsterConfigFragment&)> Predicate)
 {
 	FString MutationError;
@@ -865,6 +971,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
 	CompactManagedEntities();
 	FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	const double CurrentTime = GetWorld()->GetTimeSeconds();
 	FASTargetSnapshot InstigatorSnapshot;
 	const bool bHasInstigatorSnapshot = FindDamageInstigatorSnapshot(GetWorld(), DamageInstigator, InstigatorSnapshot);
 
@@ -892,6 +999,10 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Entity))
 		{
 			TemporaryVisual->HitFlashTimeRemaining = TemporaryVisualHitFlashDuration;
+		}
+		if (Health->CurrentHealth > 0.0f)
+		{
+			ApplyImpactReactionToMonster(EntityManager, Entity, *Config, ImpactContext, CurrentTime);
 		}
 		if (bHasInstigatorSnapshot)
 		{

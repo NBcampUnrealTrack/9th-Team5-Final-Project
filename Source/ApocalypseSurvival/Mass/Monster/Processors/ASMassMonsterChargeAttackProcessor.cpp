@@ -70,6 +70,7 @@ void UASMassMonsterChargeAttackProcessor::ConfigureQueries(const TSharedRef<FMas
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterHitReactionFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterDeadTag>(EMassFragmentPresence::None);
@@ -109,6 +110,7 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TArrayView<FASMassMonsterCombatFragment> Combats = Context.GetMutableFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterHitReactionFragment> HitReactions = Context.GetFragmentView<FASMassMonsterHitReactionFragment>();
 		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
@@ -121,6 +123,12 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 			FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
 			FTransform& Transform = Transforms[EntityIt].GetMutableTransform();
 			const FMassEntityHandle Entity = Context.GetEntity(EntityIt);
+			if (HitReactions[EntityIt].IsControlActive(CurrentTime))
+			{
+				Combat.AttackState = EASMassMonsterAttackState::Ready;
+				HitTargetsByEntity.Remove(Entity);
+				continue;
+			}
 
 			switch (Combat.AttackState)
 			{
@@ -200,8 +208,12 @@ void UASMassMonsterChargeAttackProcessor::Execute(FMassEntityManager& EntityMana
 						continue;
 					}
 
+					FASCombatImpactContext ImpactContext;
+					ImpactContext.Preset = Config.AttackImpactPreset;
+					ImpactContext.HitLocation = Snapshot.Location;
+					ImpactContext.HitDirection = Combat.LockedDirection;
 					ASMassMonsterDamage::ApplyToActor(Snapshot.Actor.Get(), RuntimeStats[EntityIt].AttackPower,
-						Start, Snapshot.Location);
+						Start, Snapshot.Location, nullptr, ImpactContext);
 					HitTargets.Add(Snapshot.Handle);
 					Combat.bPrimaryEffectApplied = true;
 				}

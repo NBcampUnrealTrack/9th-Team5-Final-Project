@@ -457,7 +457,7 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
 	if (MassMonsters && Damage > 0.0f)
 	{
 		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
-			BestTarget.GetMassTargetId(), Damage, const_cast<AActor*>(Query.Instigator));
+			BestTarget.GetMassTargetId(), Damage, const_cast<AActor*>(Query.Instigator), ImpactContext);
 	}
 	return Result;
 }
@@ -502,7 +502,7 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
 	if (MassMonsters && Damage > 0.0f)
 	{
 		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
-			RefreshedTarget.GetMassTargetId(), Damage, Instigator);
+			RefreshedTarget.GetMassTargetId(), Damage, Instigator, ImpactContext);
 	}
 	return Result;
 }
@@ -660,26 +660,28 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
 	switch (Query.Shape)
 	{
 	case EASCombatTargetShape::Radius:
-		Result.NonActorHitCount = MassMonsters->ApplyDamageInRadius(
-			Query.SearchOrigin, Query.SearchRadius, Damage, const_cast<AActor*>(Query.Instigator), RemainingTargets);
+		Result.NonActorHitCount = MassMonsters->ApplyDamageInRadiusWithImpact(
+			Query.SearchOrigin, Query.SearchRadius, Damage, const_cast<AActor*>(Query.Instigator), RemainingTargets,
+			ImpactContext);
 		break;
 	case EASCombatTargetShape::Cone:
-		Result.NonActorHitCount = MassMonsters->ApplyDamageInCone(
+		Result.NonActorHitCount = MassMonsters->ApplyDamageInConeWithImpact(
 			Query.SearchOrigin, Query.Direction, Query.SearchRadius, Query.AngleDegrees,
-			Damage, const_cast<AActor*>(Query.Instigator), RemainingTargets);
+			Damage, const_cast<AActor*>(Query.Instigator), RemainingTargets, ImpactContext);
 		break;
 	case EASCombatTargetShape::Segment:
 		if (InOutHitTargets)
 		{
 			Result.NonActorHitCount = MassMonsters->ApplyDamageAlongSegmentUnique(
 				Query.SearchOrigin, Query.EndLocation, Query.SearchRadius, Damage,
-				const_cast<AActor*>(Query.Instigator), InOutHitTargets->NonActorTargetIds, RemainingTargets);
+				const_cast<AActor*>(Query.Instigator), InOutHitTargets->NonActorTargetIds, RemainingTargets,
+				ImpactContext);
 		}
 		else
 		{
-			Result.NonActorHitCount = MassMonsters->ApplyDamageAlongSegment(
+			Result.NonActorHitCount = MassMonsters->ApplyDamageAlongSegmentWithImpact(
 				Query.SearchOrigin, Query.EndLocation, Query.SearchRadius, Damage,
-				const_cast<AActor*>(Query.Instigator), RemainingTargets);
+				const_cast<AActor*>(Query.Instigator), RemainingTargets, ImpactContext);
 		}
 		break;
 	default:

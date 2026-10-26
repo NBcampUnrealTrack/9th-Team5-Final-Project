@@ -3,6 +3,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 #include "GAS/ASAbilityTags.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffect.h"
@@ -15,7 +16,8 @@ ASMassMonsterDamage::EApplyResult ASMassMonsterDamage::ApplyToActor(
 	const float Damage,
 	const FVector& SourceLocation,
 	const FVector& HitLocation,
-	AActor* DamageCauser)
+	AActor* DamageCauser,
+	const FASCombatImpactContext& ImpactContext)
 {
 	if (!IsValid(TargetActor) || !TargetActor->HasAuthority() || Damage <= 0.0f)
 	{
@@ -44,6 +46,10 @@ ASMassMonsterDamage::EApplyResult ASMassMonsterDamage::ApplyToActor(
 		DamageSpec.SetSetByCallerMagnitude(ASGameplayTags::Data_Damage, -FMath::Max(0.0f, Damage));
 		DamageSpec.AddDynamicAssetTag(ASGameplayTags::Effect_Damage);
 		TargetASC->ApplyGameplayEffectSpecToSelf(DamageSpec);
+		if (AASPlayerCharacter* Player = Cast<AASPlayerCharacter>(TargetActor))
+		{
+			Player->ApplyImpactReaction(ImpactContext);
+		}
 		return EApplyResult::Applied;
 	}
 

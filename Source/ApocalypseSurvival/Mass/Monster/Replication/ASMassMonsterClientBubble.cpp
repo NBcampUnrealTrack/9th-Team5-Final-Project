@@ -157,7 +157,13 @@ void FASMassMonsterClientBubbleHandler::ApplyVisualData(const FMassEntityView& E
 		EntityView.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>())
 	{
 		TemporaryVisual->SpawnWorldBehavior = VisualData.WorldBehavior;
-		if (bReceivedDamage)
+		const bool bReceivedControlImpact = !bIsInitialState
+			&& VisualData.ImpactReactionSequence != TemporaryVisual->LastImpactReactionSequence
+			&& VisualData.ImpactReaction != EASResolvedHitReaction::VisualOnly
+			&& VisualData.ImpactReaction != EASResolvedHitReaction::None;
+		TemporaryVisual->LastImpactReaction = VisualData.ImpactReaction;
+		TemporaryVisual->LastImpactReactionSequence = VisualData.ImpactReactionSequence;
+		if (bReceivedDamage || bReceivedControlImpact)
 		{
 			TemporaryVisual->HitFlashTimeRemaining = ClientHitFlashDuration;
 		}
