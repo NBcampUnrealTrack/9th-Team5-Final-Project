@@ -3,9 +3,18 @@
 #include "Characters/Player/Data/ASCharacterRoster.h"
 #include "Core/Framework/ASCharacterSelectSubsystem.h"
 #include "Engine/GameInstance.h"
+#include "Core/Framework/ASLobbyGameState.h"
+#include "Core/Framework/ASLobbyPlayerController.h"
+#include "Components/TextBlock.h"
+#include "Components/Button.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerState.h"
+#include "TimerManager.h"
 
 void UASCharacterSelectWidget::NativeConstruct()
 {
+	const AASLobbyGameState* LobbyState = GetWorld() ? GetWorld()->GetGameState<AASLobbyGameState>() : nullptr;
+	if (LobbyState && LobbyState->CharacterRoster) Roster = LobbyState->CharacterRoster;
 	Super::NativeConstruct();
 	
 	// ESC 를 받으려면 포커스가 있어야 한다
@@ -20,6 +29,19 @@ void UASCharacterSelectWidget::NativeConstruct()
 	
 	// 열릴 때 이전 선택을 미리 골라 둔다 (없으면 0번)
 	SelectCharacter(FindPreviousSelectionIndex());
+	if (GetOwningPlayer<AASLobbyPlayerController>())
+	{
+		if (CharacterReadyButton) CharacterReadyButton->OnClicked.AddUniqueDynamic(this, &ThisClass::RequestConfirm);
+		GetWorld()->GetTimerManager().SetTimer(SelectionDisplayTimer, this, &ThisClass::UpdateNetworkSelectionDisplay, 0.2f, true);
+		UpdateNetworkSelectionDisplay();
+	}
+}
+
+void UASCharacterSelectWidget::NativeDestruct()
+{
+	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(SelectionDisplayTimer);
+	if (CharacterReadyButton) CharacterReadyButton->OnClicked.RemoveDynamic(this, &ThisClass::RequestConfirm);
+	Super::NativeDestruct();
 }
 
 FReply UASCharacterSelectWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -61,6 +83,8 @@ bool UASCharacterSelectWidget::GetCharacterInfo(int32 Index, FASCharacterDisplay
 
 void UASCharacterSelectWidget::SelectCharacter(int32 Index)
 {
+	AASLobbyPlayerController* LobbyController = GetOwningPlayer<AASLobbyPlayerController>();
+	if (LobbyController && (IsCharacterConfirmed() || GetSelectionTimeRemaining() <= 0.0f)) return;
 	FASCharacterDisplayInfo Info;
 	if (!GetCharacterInfo(Index, Info))
 	{
@@ -69,10 +93,23 @@ void UASCharacterSelectWidget::SelectCharacter(int32 Index)
 	
 	SelectedIndex = Index;
 	OnSelectionChanged(SelectedIndex, Info);
+	if (LobbyController)
+	{
+		LobbyController->SelectLobbyCharacter(Index);
+	}
 }
 
 void UASCharacterSelectWidget::RequestConfirm()
 {
+	if (AASLobbyPlayerController* LobbyController = GetOwningPlayer<AASLobbyPlayerController>())
+	{
+		if (GetSelectionTimeRemaining() > 0.0f && !IsCharacterConfirmed())
+		{
+			LobbyController->SelectLobbyCharacter(SelectedIndex);
+			LobbyController->SetCharacterReady(true);
+		}
+		return;
+	}
 	if (ConfirmSelection())
 	{
 		OnConfirmed.Broadcast();
@@ -81,6 +118,7 @@ void UASCharacterSelectWidget::RequestConfirm()
 
 void UASCharacterSelectWidget::RequestBack()
 {
+	if (GetOwningPlayer<AASLobbyPlayerController>()) return;
 	OnBackRequested.Broadcast();
 }
 
@@ -105,6 +143,18 @@ const UASCharacterDefinition* UASCharacterSelectWidget::GetDefinitionAt(int32 In
 
 int32 UASCharacterSelectWidget::FindPreviousSelectionIndex() const
 {
+	if (const AASLobbyPlayerController* Controller = GetOwningPlayer<AASLobbyPlayerController>())
+	{
+		const AASLobbyGameState* State = GetWorld()->GetGameState<AASLobbyGameState>();
+		if (State && Controller->PlayerState)
+		{
+			const int32 LocalId = Controller->PlayerState->GetPlayerId();
+			const FASLobbyPlayerInfo* Info = State->LobbyPlayers.FindByPredicate([LocalId](const FASLobbyPlayerInfo& Player)
+				{ return Player.PlayerId == LocalId; });
+			if (Info && GetDefinitionAt(Info->CharacterIndex)) return Info->CharacterIndex;
+		}
+		return 0;
+	}
 	const UGameInstance* GameInstance = GetGameInstance();
 	const UASCharacterSelectSubsystem* SelectSubsystem = GameInstance ? GameInstance->GetSubsystem<UASCharacterSelectSubsystem>() : nullptr;
 	const UASCharacterDefinition* Previous = SelectSubsystem ? SelectSubsystem->GetSelectedCharacter() : nullptr;
@@ -115,4 +165,37 @@ int32 UASCharacterSelectWidget::FindPreviousSelectionIndex() const
 	
 	const int32 Found = Roster->Characters.IndexOfByKey(Previous);
 	return Found != INDEX_NONE ? Found : 0;
+}
+
+float UASCharacterSelectWidget::GetSelectionTimeRemaining() const
+{
+	const AASLobbyGameState* State = GetWorld() ? GetWorld()->GetGameState<AASLobbyGameState>() : nullptr;
+	return State ? State->GetCharacterSelectionTimeRemaining() : 0.0f;
+}
+
+bool UASCharacterSelectWidget::IsCharacterConfirmed() const
+{
+	const APlayerController* Controller = GetOwningPlayer();
+	const AASLobbyGameState* State = GetWorld() ? GetWorld()->GetGameState<AASLobbyGameState>() : nullptr;
+	if (!Controller || !Controller->PlayerState || !State) return false;
+	const int32 LocalId = Controller->PlayerState->GetPlayerId();
+	const FASLobbyPlayerInfo* Info = State->LobbyPlayers.FindByPredicate([LocalId](const FASLobbyPlayerInfo& Player)
+		{ return Player.PlayerId == LocalId; });
+	return Info && Info->bCharacterReady;
+}
+
+void UASCharacterSelectWidget::UpdateNetworkSelectionDisplay()
+{
+	if (CharacterSelectionTimeText)
+	{
+		CharacterSelectionTimeText->SetText(FText::AsNumber(FMath::CeilToInt(GetSelectionTimeRemaining())));
+	}
+	const bool bConfirmed = IsCharacterConfirmed();
+	if (CharacterReadyButton) CharacterReadyButton->SetIsEnabled(!bConfirmed && GetSelectionTimeRemaining() > 0.0f);
+	if (CharacterSelectionStatusText)
+	{
+		CharacterSelectionStatusText->SetText(FText::FromString(bConfirmed
+			? TEXT("준비 완료. 다른 플레이어를 기다리고 있습니다.")
+			: TEXT("캐릭터를 선택하고 준비를 눌러 주세요.")));
+	}
 }

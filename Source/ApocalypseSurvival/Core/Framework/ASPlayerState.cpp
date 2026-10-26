@@ -10,6 +10,8 @@
 #include "Core/Input/ASInputTags.h"
 #include "Core/Framework/ASCharacterSelectSubsystem.h"
 #include "Core/Framework/ASGameMode.h"
+#include "Core/Framework/ASLobbyPlayerController.h"
+#include "Core/Framework/ASLobbyGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
@@ -48,7 +50,7 @@ void AASPlayerState::ClientInitialize(AController* C)
 	Super::ClientInitialize(C);
 
 	// 리슨 서버 호스트는 게임모드가 로컬 선택을 직접 읽는다.
-	if (HasAuthority() || bCharacterSelectionSent)
+	if (HasAuthority() || bCharacterSelectionSent || Cast<AASLobbyPlayerController>(C))
 	{
 		return;
 	}
@@ -69,7 +71,7 @@ void AASPlayerState::ClientInitialize(AController* C)
 
 void AASPlayerState::ServerSubmitCharacterSelection_Implementation(const UASCharacterDefinition* InDefinition)
 {
-	if (bCharacterSelectionReceived)
+	if (bCharacterSelectionReceived || (GetWorld() && GetWorld()->GetAuthGameMode<AASLobbyGameMode>()))
 	{
 		return;
 	}
@@ -89,6 +91,16 @@ void AASPlayerState::ServerSubmitCharacterSelection_Implementation(const UASChar
 	if (AASGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AASGameMode>() : nullptr)
 	{
 		GameMode->NotifyCharacterSelectionReceived(GetPlayerController());
+	}
+}
+
+void AASPlayerState::CopyProperties(APlayerState* PlayerState)
+{
+	Super::CopyProperties(PlayerState);
+	if (AASPlayerState* Destination = Cast<AASPlayerState>(PlayerState))
+	{
+		Destination->SetCharacterDefinition(CharacterDefinition);
+		if (bCharacterSelectionReceived) Destination->MarkCharacterSelectionReceived();
 	}
 }
 

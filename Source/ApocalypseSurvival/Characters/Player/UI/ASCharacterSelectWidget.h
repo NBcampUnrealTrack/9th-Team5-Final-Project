@@ -8,6 +8,9 @@
 
 class UASCharacterRoster;
 class UTexture2D;
+class UTextBlock;
+class UButton;
+class AASLobbyGameState;
 
 /* 선택 화면에 표시할 캐릭터 정보 (정의 DA 의 표시용 값만 모은 것) */
 USTRUCT(BlueprintType)
@@ -83,6 +86,10 @@ public:
 	// 닫기 (ESC 또는 닫기 버튼) → OnBackRequested 를 알린다
 	UFUNCTION(BlueprintCallable, Category = "CharacterSelect")
 	void RequestBack();
+	UFUNCTION(BlueprintPure, Category = "CharacterSelect")
+	float GetSelectionTimeRemaining() const;
+	UFUNCTION(BlueprintPure, Category = "CharacterSelect")
+	bool IsCharacterConfirmed() const;
 	
 	// 확정 완료 → 메인메뉴가 받아서 다음 화면(지금은 게임 맵)으로 이동
 	UPROPERTY(BlueprintAssignable, Category = "CharacterSelect")
@@ -94,6 +101,7 @@ public:
 	
 protected:
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	
 	// 고르는 중인 캐릭터가 바뀌었을 때 (화면이 열릴 때도 한 번 호출). BP 에서 표시 갱신
@@ -107,6 +115,12 @@ protected:
 	// 닫기 키
 	UPROPERTY(EditDefaultsOnly, Category = "CharacterSelect|Input")
 	FKey BackKey = EKeys::Escape;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CharacterSelectionTimeText;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CharacterSelectionStatusText;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> CharacterReadyButton;
 	
 private:
 	// 선택 서브시스템에 저장. 성공하면 true
@@ -118,4 +132,6 @@ private:
 	int32 FindPreviousSelectionIndex() const;
 	
 	int32 SelectedIndex = 0;
+	void UpdateNetworkSelectionDisplay();
+	FTimerHandle SelectionDisplayTimer;
 };
