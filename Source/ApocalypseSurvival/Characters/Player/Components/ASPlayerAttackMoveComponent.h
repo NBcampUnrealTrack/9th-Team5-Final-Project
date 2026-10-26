@@ -21,6 +21,9 @@ struct FASPrimaryAttackRequest
 
 	/** 클릭한 월드 위치. 타깃이 없을 때 발사 방향을 계산하는 기준이다. */
 	FVector TargetLocation = FVector::ZeroVector;
+
+	/** Client Bubble과 서버가 공유하는 Mass replication ID. 0이면 Actor/비타겟 요청이다. */
+	uint32 MassTargetNetworkId = 0;
 };
 
 UENUM()

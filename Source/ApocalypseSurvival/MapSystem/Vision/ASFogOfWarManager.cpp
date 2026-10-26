@@ -11,6 +11,8 @@
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "MapSystem/Vision/ASVisionSourceComponent.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
+#include "MapSystem/Zone/Core/ASMapDefinition.h"
+#include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -199,7 +201,10 @@ bool AASFogOfWarManager::EnsureConfigured(bool bLogMissingDefinition)
 		SetWallOcclusionEnabled(VisionDefinition->Settings.bWallOcclusionByDefault);
 	}
 	VisionEvaluatorComponent->Configure(VisionDefinition);
-	FogDisplayComponent->Configure(VisionDefinition);
+	if (const UASMapDefinition* MapDefinition = UASMapFunctionLibrary::GetMapDefinition(this))
+	{
+		FogDisplayComponent->Configure(VisionDefinition, MapDefinition->MapWorldMin, MapDefinition->MapWorldMax);
+	}
 
 	const float WantedInterval = 1.0f / FMath::Clamp(VisionDefinition->Settings.UpdateHz, 1.0f, 60.0f);
 	if (!FMath::IsNearlyEqual(WantedInterval, ActiveInterval))

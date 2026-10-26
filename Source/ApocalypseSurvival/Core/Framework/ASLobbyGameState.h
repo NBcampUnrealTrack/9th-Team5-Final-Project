@@ -3,6 +3,16 @@
 #include "GameFramework/GameStateBase.h"
 #include "ASLobbyGameState.generated.h"
 
+class UASCharacterRoster;
+
+UENUM(BlueprintType)
+enum class EASLobbyPhase : uint8
+{
+	Waiting,
+	CharacterSelection,
+	Travelling
+};
+
 USTRUCT(BlueprintType)
 struct FASLobbyPlayerInfo
 {
@@ -15,6 +25,10 @@ struct FASLobbyPlayerInfo
 	bool bIsHost = false;
 	UPROPERTY(BlueprintReadOnly)
 	bool bIsReady = false;
+	UPROPERTY(BlueprintReadOnly)
+	int32 CharacterIndex = INDEX_NONE;
+	UPROPERTY(BlueprintReadOnly)
+	bool bCharacterReady = false;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASLobbyStateChanged);
@@ -26,6 +40,16 @@ class APOCALYPSESURVIVAL_API AASLobbyGameState : public AGameStateBase
 public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	void UpdateLobby(const TArray<FASLobbyPlayerInfo>& Players, bool bCanStart, bool bStarting);
+	void BeginCharacterSelection(const UASCharacterRoster* Roster, float Duration);
+	void MarkTravelling();
+	UFUNCTION(BlueprintPure, Category = "CharacterSelect")
+	float GetCharacterSelectionTimeRemaining() const;
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Lobby, Category = "CharacterSelect")
+	EASLobbyPhase LobbyPhase = EASLobbyPhase::Waiting;
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Lobby, Category = "CharacterSelect")
+	TObjectPtr<const UASCharacterRoster> CharacterRoster;
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Lobby, Category = "CharacterSelect")
+	float CharacterSelectionEndTime = 0.0f;
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Lobby, Category = "Lobby")
 	TArray<FASLobbyPlayerInfo> LobbyPlayers;
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Lobby, Category = "Lobby")

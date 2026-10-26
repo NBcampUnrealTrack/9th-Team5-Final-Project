@@ -9,7 +9,9 @@ UASMonsterPatternAbility::UASMonsterPatternAbility()
 	bCanHitPlayers = true;
 	bAimAtCursor = false;
 	bFaceAimDirection = true;
-	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
+	FGameplayTagContainer AssetTagsToSet = GetAssetTags();
+	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack);
+	SetAssetTags(AssetTagsToSet);
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Attacking);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_Dead);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_HitReact);

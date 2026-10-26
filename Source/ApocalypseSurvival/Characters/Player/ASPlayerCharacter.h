@@ -3,10 +3,12 @@
 #include "CoreMinimal.h"
 #include "Characters/ASCharacterBase.h"
 #include "GameplayTagContainer.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetable.h"
 #include "ASPlayerCharacter.generated.h"
 
 class UASAbilitySet;
 class UASEquipmentComponent;
+class UASMonsterTargetableComponent;
 class UASCharacterDefinition;
 class UASCharacterRoster;
 class UNiagaraSystem;
@@ -32,7 +34,7 @@ struct FGameplayEventData;
  * 한다. 리스폰은 FinishDeath 가 AASGameMode 에 알린 뒤 게임모드가 맡는다.
  */
 UCLASS(Abstract)
-class APOCALYPSESURVIVAL_API AASPlayerCharacter : public AASCharacterBase
+class APOCALYPSESURVIVAL_API AASPlayerCharacter : public AASCharacterBase, public IASMonsterTargetable
 {
 	GENERATED_BODY()
 
@@ -48,6 +50,12 @@ public:
 	/** 죽어 있는가. 모든 머신에서 같은 답을 준다. */
 	UFUNCTION(BlueprintPure, Category = "Death")
 	bool IsDead() const;
+
+	virtual bool IsMonsterTargetable_Implementation() const override;
+	virtual FVector GetMonsterTargetLocation_Implementation() const override;
+	virtual float GetMonsterTargetRadius_Implementation() const override;
+	virtual EASMonsterTargetCapability GetMonsterTargetCapabilities_Implementation() const override;
+	virtual float GetMonsterTargetBaseScore_Implementation() const override;
 
 	/**
 	 * 사망 1단계. 서버 전용. 사망 어빌리티가 부른다.
@@ -93,6 +101,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	UASEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Mass|Monster|Targeting")
+	UASMonsterTargetableComponent* GetMonsterTargetableComponent() const { return MonsterTargetableComponent; }
+
 	/** Listen-server debug visualization for the normal weapon attack. */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastDrawWeaponAttackDebug(
@@ -101,6 +112,10 @@ public:
 		float Radius,
 		bool bIsMelee,
 		bool bHit);
+	
+	/** 근접 평타 부채꼴 판정 디버그 표시 (모든 머신) */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastDrawMeleeConeDebug(FVector Origin, FVector Direction, float Radius, float AngleDegrees, bool bHit);
 	
 	UFUNCTION(Exec)
 	void DebugAddExp(int32 Amount);
@@ -202,6 +217,9 @@ private:
 	/** 쓰러짐 태그가 붙거나 떨어졌을 때. 모든 머신에서 불린다. */
 	void HandleDownedTagChanged(const FGameplayTag Tag, int32 NewCount);
 
+	/** 서버에서만 Monster Target Registry 등록 상태를 사망/쓰러짐 상태와 맞춘다. */
+	void RefreshMonsterTargetingRegistration();
+
 	FDelegateHandle DownedTagChangedHandle;
 	FTimerHandle BleedOutTimerHandle;
 
@@ -263,6 +281,10 @@ void StartRevive(AASPlayerCharacter* Reviver);
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASEquipmentComponent> EquipmentComponent;
+
+	/** 서버 Target Registry에 이 Pawn을 범용 몬스터 Primary 타깃으로 등록한다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mass|Monster|Targeting", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASMonsterTargetableComponent> MonsterTargetableComponent;
 
 	/**
 	 * 이 캐릭터가 처음부터 갖는 어빌리티(회피, 스킬). BP 자식에서 지정한다.

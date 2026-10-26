@@ -10,6 +10,62 @@
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
 
+namespace ASMapFunctionLibraryPrivate
+{
+	TArray<FASZoneSpawnPoint> GetZonePoints(const UObject* WorldContextObject, FName ZoneId, bool bRespawn)
+	{
+		TArray<FASZoneSpawnPoint> Result;
+		const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(WorldContextObject);
+		if (!Subsystem)
+		{
+			return Result;
+		}
+
+		const UASMapStateComponent* MapState = UASMapFunctionLibrary::GetMapStateComponent(WorldContextObject);
+		const FASMapStateSnapshot* Snapshot = MapState ? &MapState->GetSnapshot() : nullptr;
+		const auto AppendZonePoints = [&](const AASMapZone* Zone)
+		{
+			if (!IsValid(Zone))
+			{
+				return;
+			}
+
+			// 구역 정보는 한 번만 조회하고 각 월드 공간 지점에 복사한다.
+			FASZoneSpawnPoint Info;
+			Info.ZoneId = Zone->GetZoneId();
+			Info.DisplayName = Zone->GetDisplayName();
+			if (Snapshot && Snapshot->bMapReady)
+			{
+				if (const FASZoneRuntimeState* State = Snapshot->FindZone(Info.ZoneId))
+				{
+					Info.DangerLevel = State->DangerLevel;
+				}
+			}
+
+			const TArray<FTransform> Transforms = bRespawn ? Zone->GetRespawnTransforms() : Zone->GetSpawnTransforms();
+			Result.Reserve(Result.Num() + Transforms.Num());
+			for (const FTransform& Transform : Transforms)
+			{
+				Info.Transform = Transform;
+				Result.Add(Info);
+			}
+		};
+
+		if (ZoneId.IsNone())
+		{
+			for (const AASMapZone* Zone : Subsystem->GetZones())
+			{
+				AppendZonePoints(Zone);
+			}
+		}
+		else
+		{
+			AppendZonePoints(Subsystem->FindZone(ZoneId));
+		}
+		return Result;
+	}
+}
+
 bool UASMapFunctionLibrary::LevelHasMapZones(const UObject* WorldContextObject)
 {
 	UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
@@ -35,18 +91,14 @@ FName UASMapFunctionLibrary::FindZoneIdAtLocation(const UObject* WorldContextObj
 	return Subsystem ? Subsystem->FindZoneIdAtLocation(Location) : NAME_None;
 }
 
-TArray<FTransform> UASMapFunctionLibrary::GetZoneSpawnTransforms(const UObject* WorldContextObject, FName ZoneId)
+TArray<FASZoneSpawnPoint> UASMapFunctionLibrary::GetZoneSpawnPoints(const UObject* WorldContextObject, FName ZoneId)
 {
-	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(WorldContextObject);
-	const AASMapZone* Zone = Subsystem ? Subsystem->FindZone(ZoneId) : nullptr;
-	return Zone ? Zone->GetSpawnTransforms() : TArray<FTransform>();
+	return ASMapFunctionLibraryPrivate::GetZonePoints(WorldContextObject, ZoneId, false);
 }
 
-TArray<FTransform> UASMapFunctionLibrary::GetZoneRespawnTransforms(const UObject* WorldContextObject, FName ZoneId)
+TArray<FASZoneSpawnPoint> UASMapFunctionLibrary::GetZoneRespawnPoints(const UObject* WorldContextObject, FName ZoneId)
 {
-	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(WorldContextObject);
-	const AASMapZone* Zone = Subsystem ? Subsystem->FindZone(ZoneId) : nullptr;
-	return Zone ? Zone->GetRespawnTransforms() : TArray<FTransform>();
+	return ASMapFunctionLibraryPrivate::GetZonePoints(WorldContextObject, ZoneId, true);
 }
 
 FText UASMapFunctionLibrary::GetZoneDisplayName(const UObject* WorldContextObject, FName ZoneId)

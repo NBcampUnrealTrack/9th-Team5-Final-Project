@@ -38,6 +38,7 @@ public:
 
 	// 클라이언트에서 컨트롤러와 연결될 때 호출된다. 여기서 고른 캐릭터를 서버로 보낸다.
 	virtual void ClientInitialize(AController* C) override;
+	virtual void CopyProperties(APlayerState* PlayerState) override;
 
 	// 서버 전용. 이 플레이어의 캐릭터 선택을 받았는가 (선택 없음을 받은 것도 포함)
 	bool HasReceivedCharacterSelection() const { return bCharacterSelectionReceived; }

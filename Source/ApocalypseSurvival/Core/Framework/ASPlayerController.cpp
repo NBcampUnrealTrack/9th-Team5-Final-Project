@@ -5,10 +5,13 @@
 #include "AbilitySystemGlobals.h"
 #include "ApocalypseSurvival.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/UserWidget.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
+#include "Core/Settings/ASLocalSettingsSubsystem.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
 #include "Skills/ASSkillTags.h"
@@ -25,6 +28,20 @@
 #include "NavigationSystem.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Items/Interaction/ASItemInteractionComponent.h"
+
+void AASPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (IsLocalController())
+	{
+		TArray<UUserWidget*> Widgets;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Widgets, UUserWidget::StaticClass(), true);
+		for (UUserWidget* Widget : Widgets)
+		{
+			if (Widget->GetOwningPlayer() == this) Widget->RemoveFromParent();
+		}
+	}
+	Super::EndPlay(EndPlayReason);
+}
 
 AASPlayerController::AASPlayerController()
 {
@@ -80,7 +97,8 @@ void AASPlayerController::SetupInputComponent()
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
-		Subsystem->AddMappingContext(DefaultMappingContext, 0);
+		UASLocalSettingsSubsystem* Settings = GetLocalPlayer()->GetSubsystem<UASLocalSettingsSubsystem>();
+		Subsystem->AddMappingContext(Settings ? Settings->GetRuntimeMappingContext(DefaultMappingContext) : DefaultMappingContext.Get(), 0);
 	}
 
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
@@ -123,29 +141,26 @@ void AASPlayerController::SetupInputComponent()
 
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
-	// 스킬·공격 입력은 이전 우클릭 이동 명령을 이어받지 않는다.
-	// 누르고 있는 이동 입력은 다음 Triggered 이벤트에서 새 명령으로 다시 처리된다.
-	StopMovement();
-
 	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
-	// 스킬 조준 중에는 기존 조준 상태와 충돌하지 않도록 무시한다.
+	// 준비가 실제로 시작된 뒤에만 공격 이동 상태를 바꾼다. 발동 실패(쿨타임·비용 등)는
+	// 이전 이동/공격 이동 명령을 그대로 유지해야 한다.
 	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Prepare))
 	{
 		if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
 		{
-			if (AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+			const bool bWasTargeting = AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting);
+			AbilitySystemComponent->AbilityInputTagPressed(InputTag);
+
+			if (bWasTargeting)
 			{
 				// A를 다시 누르는 것은 현재 조준/공격 이동 명령 취소다.
 				AttackMoveComponent->CancelAttackMove();
 			}
-			else
+			else if (AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
 			{
+				// Primary Attack이 실제로 조준 상태에 들어간 경우에만 준비 상태를 만든다.
 				AttackMoveComponent->ArmAttackMove();
 			}
-
-			// 기존 Primary Attack Ability를 반드시 활성화한다. BP의
-			// OnAttackTargetingStarted/Ended가 사거리 인디케이터를 맡고 있다.
-			AbilitySystemComponent->AbilityInputTagPressed(InputTag);
 		}
 		return;
 	}
@@ -179,11 +194,6 @@ void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 		// 진행 중인 공격 이동에 다시 좌클릭하면 허공 공격으로 새지 않고 명령을 취소한다.
 		AttackMoveComponent->CancelAttackMove();
 		return;
-	}
-
-	if (!InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary))
-	{
-		AttackMoveComponent->CancelAttackMove();
 	}
 
 	if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
@@ -232,15 +242,30 @@ UASAbilitySystemComponent* AASPlayerController::GetPawnAbilitySystemComponent() 
 	return Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetPawn()));
 }
 
+void AASPlayerController::CancelMovementForCommittedAbility()
+{
+	// 이 컨트롤러가 실제로 움직임을 지시한 로컬 폰에서만 기존 명령을 정리한다.
+	// 원격 플레이어의 서버 컨트롤러까지 멈추게 하면 클라이언트 예측 이동과 경쟁할 수 있다.
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	AttackMoveComponent->CancelAttackMove();
+	StopMovement();
+}
+
 void AASPlayerController::HandleAttackMoveRequest(const FASPrimaryAttackRequest& Request)
 {
 	PendingAttackMoveTarget = Request.Target;
 	PendingAttackMoveTargetLocation = Request.TargetLocation;
+	PendingAttackMoveMassTargetNetworkId = Request.MassTargetNetworkId;
 	bHasPendingAttackMoveRequest = true;
 	TryActivatePrimaryAttack();
 }
 
-bool AASPlayerController::ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation)
+bool AASPlayerController::ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation,
+	uint32& OutMassTargetNetworkId)
 {
 	if (!bHasPendingAttackMoveRequest)
 	{
@@ -249,8 +274,10 @@ bool AASPlayerController::ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& 
 
 	OutTarget = PendingAttackMoveTarget.Get();
 	OutTargetLocation = PendingAttackMoveTargetLocation;
+	OutMassTargetNetworkId = PendingAttackMoveMassTargetNetworkId;
 	PendingAttackMoveTarget.Reset();
 	PendingAttackMoveTargetLocation = FVector::ZeroVector;
+	PendingAttackMoveMassTargetNetworkId = 0;
 	bHasPendingAttackMoveRequest = false;
 	return true;
 }

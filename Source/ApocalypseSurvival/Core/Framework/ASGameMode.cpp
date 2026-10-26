@@ -4,6 +4,7 @@
 #include "Core/Framework/ASPlayerRecordComponent.h"
 #include "Core/Framework/ASRespawnPoint.h"
 #include "Core/Framework/ASCharacterSelectSubsystem.h"
+#include "Core/Framework/ASSessionSubsystem.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Items/Loot/ASLootDaySpawnSubsystem.h"
@@ -14,6 +15,8 @@
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/PlayerStart.h"
+#include "Engine/PlayerStartPIE.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "EngineUtils.h"
@@ -32,6 +35,20 @@ AASGameMode::AASGameMode()
 	MapFlow = CreateDefaultSubobject<UASMapGameFlowComponent>(TEXT("MapFlow"));
 	VisionSetup = CreateDefaultSubobject<UASVisionSetupComponent>(TEXT("VisionSetup"));
 	ZoneEffects = CreateDefaultSubobject<UASZoneEffectComponent>(TEXT("ZoneEffects"));
+}
+
+bool AASGameMode::ReturnToLobby()
+{
+	if (!HasAuthority() || !IsGameEnded() || LobbyMapPath.IsEmpty()) return false;
+	const bool bPreviousSeamlessTravel = bUseSeamlessTravel;
+	bUseSeamlessTravel = true;
+	if (!GetWorld()->ServerTravel(LobbyMapPath + TEXT("?listen"), true))
+	{
+		bUseSeamlessTravel = bPreviousSeamlessTravel;
+		return false;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Session] Returning all players to the existing lobby."));
+	return true;
 }
 
 // 규칙 조회
@@ -351,6 +368,22 @@ void AASGameMode::OnBossDefeated()
 	TryEndNightEarly();
 }
 
+FString AASGameMode::InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId,
+	const FString& Options, const FString& Portal)
+{
+	const FString Error = Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
+	if (!Error.IsEmpty()) return Error;
+	const UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>();
+	AASPlayerState* PlayerState = NewPlayerController ? NewPlayerController->GetPlayerState<AASPlayerState>() : nullptr;
+	const UASCharacterDefinition* Definition = Sessions ? Sessions->FindMatchCharacter(UniqueId) : nullptr;
+	if (PlayerState && Definition)
+	{
+		PlayerState->SetCharacterDefinition(Definition);
+		PlayerState->MarkCharacterSelectionReceived();
+	}
+	return Error;
+}
+
 UClass* AASGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
 {
 	AASPlayerState* PlayerState = InController ? InController->GetPlayerState<AASPlayerState>() : nullptr;
@@ -359,7 +392,7 @@ UClass* AASGameMode::GetDefaultPawnClassForController_Implementation(AController
 		// 리스폰: 이미 정해진 캐릭터로 다시 스폰
 		const UASCharacterDefinition* Definition = PlayerState->GetCharacterDefinition();
 		
-		// 첫 스폰: 캐릭터 선택에서 고른 캐릭터 (로컬 플레이어만. 멀티 로비는 선택을 서버로 보내는 단계가 따로 필요)
+		// 로비를 거치지 않은 로컬 실행은 기존 선택을 사용한다.
 		if (!Definition && InController->IsLocalController())
 		{
 			const UGameInstance* GameInstance = GetGameInstance();
@@ -424,6 +457,132 @@ bool AASGameMode::PlayerCanRestart_Implementation(APlayerController* Player)
 	}
 	
 	return Super::PlayerCanRestart_Implementation(Player);
+}
+
+void AASGameMode::RestartPlayer(AController* NewPlayer)
+{
+	if (!NewPlayer || NewPlayer->IsPendingKillPending())
+	{
+		return;
+	}
+
+	FTransform SpawnTransform;
+	bool bUsedAdjustedLocation = false;
+	if (APlayerStart* PlayerStart = FindAvailablePlayerStart(NewPlayer, SpawnTransform, bUsedAdjustedLocation))
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[PlayerSpawn] Controller=%s PlayerId=%d Start=%s Adjusted=%d Location=%s"),
+			*GetNameSafe(NewPlayer),
+			NewPlayer->GetPlayerState<APlayerState>() ? NewPlayer->GetPlayerState<APlayerState>()->GetPlayerId() : INDEX_NONE,
+			*GetNameSafe(PlayerStart), bUsedAdjustedLocation, *SpawnTransform.GetLocation().ToString());
+
+		if (!bUsedAdjustedLocation)
+		{
+			Super::RestartPlayerAtPlayerStart(NewPlayer, PlayerStart);
+		}
+		else
+		{
+			Super::RestartPlayerAtTransform(NewPlayer, SpawnTransform);
+			if (NewPlayer->GetPawn())
+			{
+				NewPlayer->StartSpot = PlayerStart;
+				InitStartSpot(PlayerStart, NewPlayer);
+			}
+		}
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[PlayerSpawn] No usable regular PlayerStart for %s; falling back to the engine spawn path."),
+		*GetNameSafe(NewPlayer));
+	Super::RestartPlayer(NewPlayer);
+}
+
+APlayerStart* AASGameMode::FindAvailablePlayerStart(AController* Controller, FTransform& OutSpawnTransform,
+	bool& bOutUsedAdjustedLocation)
+{
+	bOutUsedAdjustedLocation = false;
+	UWorld* World = GetWorld();
+	UClass* PawnClass = GetDefaultPawnClassForController(Controller);
+	APawn* PawnToFit = PawnClass ? PawnClass->GetDefaultObject<APawn>() : nullptr;
+	if (!World || !PawnToFit)
+	{
+		return nullptr;
+	}
+
+	TArray<APlayerStart*> PlayerStarts;
+	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	{
+		APlayerStart* PlayerStart = *It;
+		if (PlayerStart && !PlayerStart->IsA<APlayerStartPIE>())
+		{
+			PlayerStarts.Add(PlayerStart);
+		}
+	}
+
+	PlayerStarts.Sort([](const APlayerStart& Left, const APlayerStart& Right)
+	{
+		return Left.GetName() < Right.GetName();
+	});
+	if (PlayerStarts.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	const int32 StartIndex = GetPlayerStartIndex(Controller, PlayerStarts.Num());
+	for (int32 Offset = 0; Offset < PlayerStarts.Num(); ++Offset)
+	{
+		APlayerStart* PlayerStart = PlayerStarts[(StartIndex + Offset) % PlayerStarts.Num()];
+		const FVector Location = PlayerStart->GetActorLocation();
+		const FRotator Rotation = PlayerStart->GetActorRotation();
+		if (!World->EncroachingBlockingGeometry(PawnToFit, Location, Rotation))
+		{
+			OutSpawnTransform = FTransform(Rotation, Location);
+			return PlayerStart;
+		}
+	}
+
+	for (int32 Offset = 0; Offset < PlayerStarts.Num(); ++Offset)
+	{
+		APlayerStart* PlayerStart = PlayerStarts[(StartIndex + Offset) % PlayerStarts.Num()];
+		FVector AdjustedLocation = PlayerStart->GetActorLocation();
+		const FRotator Rotation = PlayerStart->GetActorRotation();
+		if (World->FindTeleportSpot(PawnToFit, AdjustedLocation, Rotation))
+		{
+			OutSpawnTransform = FTransform(Rotation, AdjustedLocation);
+			bOutUsedAdjustedLocation = true;
+			return PlayerStart;
+		}
+	}
+
+	return nullptr;
+}
+
+int32 AASGameMode::GetPlayerStartIndex(const AController* Controller, const int32 StartCount)
+{
+	if (StartCount <= 0)
+	{
+		return 0;
+	}
+
+	if (const APlayerState* PlayerState = Controller ? Controller->GetPlayerState<APlayerState>() : nullptr)
+	{
+		if (PlayerState->GetPlayerId() >= 0)
+		{
+			return PlayerState->GetPlayerId() % StartCount;
+		}
+	}
+
+	int32 ConnectionIndex = 0;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It, ++ConnectionIndex)
+	{
+		if (It->Get() == Controller)
+		{
+			return ConnectionIndex % StartCount;
+		}
+	}
+
+	return 0;
 }
 
 void AASGameMode::NotifyCharacterSelectionReceived(APlayerController* PlayerController)

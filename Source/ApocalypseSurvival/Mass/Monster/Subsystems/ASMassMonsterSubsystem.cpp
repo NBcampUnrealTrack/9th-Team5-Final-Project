@@ -1,16 +1,18 @@
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 
+#include "ApocalypseSurvival.h"
 #include "Engine/World.h"
 #include "MassCommonFragments.h"
 #include "MassEntityConfigAsset.h"
 #include "MassEntityManager.h"
 #include "MassEntityTemplate.h"
+#include "MassReplicationFragments.h"
 #include "MassSpawnLocationProcessor.h"
 #include "MassSpawnerSubsystem.h"
 #include "MassSpawnerTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualFragment.h"
-#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Core/Framework/ASGameMode.h"
 #include "StructUtils/StructView.h"
 #include "TimerManager.h"
@@ -21,6 +23,24 @@ namespace
 {
 	constexpr int32 MaxMassMonsterSpawnBatchSize = 10000;
 	constexpr float TemporaryVisualHitFlashDuration = 0.12f;
+
+	bool FindDamageInstigatorSnapshot(UWorld* World, const AActor* DamageInstigator,
+		FASTargetSnapshot& OutSnapshot)
+	{
+		OutSnapshot = FASTargetSnapshot();
+		const UASMonsterTargetSubsystem* TargetSubsystem = World
+			? World->GetSubsystem<UASMonsterTargetSubsystem>()
+			: nullptr;
+		if (!TargetSubsystem)
+		{
+			return false;
+		}
+
+		const FASTargetHandle Handle = TargetSubsystem->FindTargetForActor(DamageInstigator);
+		return TargetSubsystem->ResolveTarget(Handle, OutSnapshot)
+			&& OutSnapshot.bAlive
+			&& ASHasAllTargetCapabilities(OutSnapshot.Capabilities, EASMonsterTargetCapability::ThreatSource);
+	}
 }
 
 bool UASMassMonsterSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -54,7 +74,7 @@ void UASMassMonsterSubsystem::Deinitialize()
 bool UASMassMonsterSubsystem::QueueMonsterSpawns(UMassEntityConfigAsset* EntityConfig,
 	const TConstArrayView<FTransform> SpawnTransforms,
 	const EASMassMonsterWorldBehavior WorldBehavior,
-	const int32 InitialTargetId,
+	const FASTargetHandle InitialPrimaryTarget,
 	const FVector& InitialTargetLocation,
 	const bool bCountTowardWave)
 {
@@ -69,7 +89,7 @@ bool UASMassMonsterSubsystem::QueueMonsterSpawns(UMassEntityConfigAsset* EntityC
 	Request.EntityConfig = EntityConfig;
 	Request.SpawnTransforms.Append(SpawnTransforms);
 	Request.WorldBehavior = WorldBehavior;
-	Request.InitialTargetId = InitialTargetId;
+	Request.InitialPrimaryTarget = InitialPrimaryTarget;
 	Request.InitialTargetLocation = InitialTargetLocation;
 	Request.bCountTowardWave = bCountTowardWave;
 	ScheduleQueuedMonsterSpawnFlush();
@@ -257,7 +277,7 @@ void UASMassMonsterSubsystem::FlushQueuedMonsterSpawns()
 			continue;
 		}
 
-		ConfigureInitialTargets(SpawnedEntities, Request.InitialTargetId, Request.InitialTargetLocation);
+		ConfigureInitialTargets(SpawnedEntities, Request.InitialPrimaryTarget, Request.InitialTargetLocation);
 		if (Request.bCountTowardWave)
 		{
 			if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
@@ -269,9 +289,9 @@ void UASMassMonsterSubsystem::FlushQueuedMonsterSpawns()
 }
 
 void UASMassMonsterSubsystem::ConfigureInitialTargets(const TConstArrayView<FMassEntityHandle> Entities,
-	const int32 TargetId, const FVector& TargetLocation)
+	const FASTargetHandle PrimaryTarget, const FVector& TargetLocation)
 {
-	if (!SpawnerSubsystem || TargetId == INDEX_NONE)
+	if (!SpawnerSubsystem || !PrimaryTarget.IsValid())
 	{
 		return;
 	}
@@ -286,8 +306,13 @@ void UASMassMonsterSubsystem::ConfigureInitialTargets(const TConstArrayView<FMas
 
 		if (FASMassMonsterTargetFragment* Target = EntityManager.GetFragmentDataPtr<FASMassMonsterTargetFragment>(Entity))
 		{
-			Target->TargetId = TargetId;
-			Target->CachedTargetLocation = TargetLocation;
+			Target->PrimaryTarget = PrimaryTarget;
+			Target->CachedPrimaryTargetLocation = TargetLocation;
+			if (const FASMassMonsterConfigFragment* Config =
+				EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity))
+			{
+				Target->TargetLockTimeRemaining = Config->MinTargetLockSeconds;
+			}
 			Target->RefreshTimeRemaining = 0.0f;
 		}
 	}
@@ -359,15 +384,12 @@ int32 UASMassMonsterSubsystem::SetManagedMonsterWorldBehavior(
 
 		FASMassMonsterHealthFragment* Health = EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
 		FASMassMonsterBehaviorFragment* Behavior = EntityManager.GetFragmentDataPtr<FASMassMonsterBehaviorFragment>(Entity);
-		FASMassMonsterTargetFragment* Target = EntityManager.GetFragmentDataPtr<FASMassMonsterTargetFragment>(Entity);
-		if (!Health || Health->CurrentHealth <= 0.0f || !Behavior || !Target)
+		if (!Health || Health->CurrentHealth <= 0.0f || !Behavior)
 		{
 			continue;
 		}
 
 		Behavior->WorldBehavior = WorldBehavior;
-		Behavior->State = EASMassMonsterState::Idle;
-		Target->Reset();
 		++UpdatedCount;
 	}
 	return UpdatedCount;
@@ -572,6 +594,55 @@ bool UASMassMonsterSubsystem::GetAliveMonsterTarget(
 	return true;
 }
 
+bool UASMassMonsterSubsystem::GetAliveMonsterTargetByNetworkId(
+	const uint32 MassNetworkId,
+	uint64& OutTargetId,
+	FVector& OutLocation,
+	float& OutHitRadius) const
+{
+	OutTargetId = 0;
+	OutLocation = FVector::ZeroVector;
+	OutHitRadius = 0.0f;
+	if (!SpawnerSubsystem || MassNetworkId == 0)
+	{
+		return false;
+	}
+
+	const FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	for (const FMassEntityHandle Entity : ManagedEntities)
+	{
+		if (!EntityManager.IsEntityValid(Entity))
+		{
+			continue;
+		}
+
+		const FMassNetworkIDFragment* NetworkId =
+			EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+		if (!NetworkId || !NetworkId->NetID.IsValid()
+			|| NetworkId->NetID.GetValue() != MassNetworkId)
+		{
+			continue;
+		}
+
+		const FASMassMonsterHealthFragment* Health =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+		const FASMassMonsterConfigFragment* Config =
+			EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
+		if (!Health || Health->CurrentHealth <= 0.0f || !Transform || !Config)
+		{
+			return false;
+		}
+
+		OutTargetId = Entity.AsNumber();
+		OutLocation = Transform->GetTransform().GetLocation();
+		OutHitRadius = FMath::Max(0.0f, Config->HitRadius);
+		return true;
+	}
+
+	return false;
+}
+
 int32 UASMassMonsterSubsystem::ApplyDamageInRadius(
 	const FVector& Center,
 	const float Radius,
@@ -725,10 +796,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 		return Left.SegmentAlpha < Right.SegmentAlpha;
 	});
 
-	const UASMassPlayerTargetSubsystem* TargetSubsystem = GetWorld()->GetSubsystem<UASMassPlayerTargetSubsystem>();
-	const FASMassPlayerTargetSnapshot* InstigatorSnapshot = TargetSubsystem
-		? TargetSubsystem->FindTargetForActor(DamageInstigator)
-		: nullptr;
+	FASTargetSnapshot InstigatorSnapshot;
+	const bool bHasInstigatorSnapshot = FindDamageInstigatorSnapshot(GetWorld(), DamageInstigator, InstigatorSnapshot);
 	int32 DamagedCount = 0;
 	for (const FCandidate& Candidate : Candidates)
 	{
@@ -747,21 +816,30 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 		}
 
 		Health->CurrentHealth = FMath::Max(0.0f, Health->CurrentHealth - Damage);
-		Health->LastDamageInstigatorTargetId = InstigatorSnapshot && InstigatorSnapshot->bAlive
-			? InstigatorSnapshot->TargetId : INDEX_NONE;
+		Health->LastDamageInstigator = bHasInstigatorSnapshot ? InstigatorSnapshot.Handle : FASTargetHandle();
 		if (FASMassMonsterTemporaryVisualFragment* TemporaryVisual =
 			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Candidate.Entity))
 		{
 			TemporaryVisual->HitFlashTimeRemaining = TemporaryVisualHitFlashDuration;
 		}
-		if (InstigatorSnapshot && InstigatorSnapshot->bAlive)
+		if (bHasInstigatorSnapshot)
 		{
+			if (FASMassMonsterThreatFragment* Threats =
+				EntityManager.GetFragmentDataPtr<FASMassMonsterThreatFragment>(Candidate.Entity))
+			{
+				Threats->AddThreat(InstigatorSnapshot.Handle, Config->DirectHitAggro,
+					GetWorld()->GetTimeSeconds(), Config->AggroDecayPerSecond);
+#if !UE_BUILD_SHIPPING
+				UE_LOG(LogApocalypseSurvival, Log,
+					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f"),
+					Candidate.Entity.Index, static_cast<unsigned long long>(Candidate.Entity.AsNumber()),
+					InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
+					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro);
+#endif
+			}
 			if (FASMassMonsterTargetFragment* Target =
 				EntityManager.GetFragmentDataPtr<FASMassMonsterTargetFragment>(Candidate.Entity))
 			{
-				Target->TargetId = InstigatorSnapshot->TargetId;
-				Target->CachedTargetLocation = InstigatorSnapshot->Location;
-				Target->Aggro = FMath::Max(Target->Aggro, Config->DirectHitAggro);
 				Target->RefreshTimeRemaining = 0.0f;
 			}
 		}
@@ -787,10 +865,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
 	CompactManagedEntities();
 	FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
-	const UASMassPlayerTargetSubsystem* TargetSubsystem = GetWorld()->GetSubsystem<UASMassPlayerTargetSubsystem>();
-	const FASMassPlayerTargetSnapshot* InstigatorSnapshot = TargetSubsystem
-		? TargetSubsystem->FindTargetForActor(DamageInstigator)
-		: nullptr;
+	FASTargetSnapshot InstigatorSnapshot;
+	const bool bHasInstigatorSnapshot = FindDamageInstigatorSnapshot(GetWorld(), DamageInstigator, InstigatorSnapshot);
 
 	int32 DamagedCount = 0;
 	for (const FMassEntityHandle Entity : ManagedEntities)
@@ -811,21 +887,35 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 		}
 
 		Health->CurrentHealth = FMath::Max(0.0f, Health->CurrentHealth - Damage);
-		Health->LastDamageInstigatorTargetId = InstigatorSnapshot && InstigatorSnapshot->bAlive
-			? InstigatorSnapshot->TargetId : INDEX_NONE;
+		Health->LastDamageInstigator = bHasInstigatorSnapshot ? InstigatorSnapshot.Handle : FASTargetHandle();
 		if (FASMassMonsterTemporaryVisualFragment* TemporaryVisual =
 			EntityManager.GetFragmentDataPtr<FASMassMonsterTemporaryVisualFragment>(Entity))
 		{
 			TemporaryVisual->HitFlashTimeRemaining = TemporaryVisualHitFlashDuration;
 		}
-		if (InstigatorSnapshot && InstigatorSnapshot->bAlive)
+		if (bHasInstigatorSnapshot)
 		{
+			if (FASMassMonsterThreatFragment* Threats =
+				EntityManager.GetFragmentDataPtr<FASMassMonsterThreatFragment>(Entity))
+			{
+				Threats->AddThreat(InstigatorSnapshot.Handle, Config->DirectHitAggro,
+					GetWorld()->GetTimeSeconds(), Config->AggroDecayPerSecond);
+#if !UE_BUILD_SHIPPING
+				const FMassNetworkIDFragment* NetworkId =
+					EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+				const uint32 MassNetworkId = NetworkId && NetworkId->NetID.IsValid()
+					? NetworkId->NetID.GetValue()
+					: 0;
+				UE_LOG(LogApocalypseSurvival, Log,
+					TEXT("[MassMonsterTarget] DamageThreat Entity=%d TargetId=%llu Instigator=%d:%d Actor=%s Threat=%.2f MassNetworkId=%u"),
+					Entity.Index, static_cast<unsigned long long>(Entity.AsNumber()),
+					InstigatorSnapshot.Handle.Id, InstigatorSnapshot.Handle.Generation,
+					*GetNameSafe(InstigatorSnapshot.Actor.Get()), Config->DirectHitAggro, MassNetworkId);
+#endif
+			}
 			if (FASMassMonsterTargetFragment* Target =
 				EntityManager.GetFragmentDataPtr<FASMassMonsterTargetFragment>(Entity))
 			{
-				Target->TargetId = InstigatorSnapshot->TargetId;
-				Target->CachedTargetLocation = InstigatorSnapshot->Location;
-				Target->Aggro = FMath::Max(Target->Aggro, Config->DirectHitAggro);
 				Target->RefreshTimeRemaining = 0.0f;
 			}
 		}

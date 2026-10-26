@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Mass/EntityHandle.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "ASMassMonsterSubsystem.generated.h"
 
@@ -120,7 +121,7 @@ public:
 	bool QueueMonsterSpawns(UMassEntityConfigAsset* EntityConfig,
 		TConstArrayView<FTransform> SpawnTransforms,
 		EASMassMonsterWorldBehavior WorldBehavior,
-		int32 InitialTargetId,
+		FASTargetHandle InitialPrimaryTarget,
 		const FVector& InitialTargetLocation,
 		bool bCountTowardWave);
 
@@ -152,6 +153,10 @@ public:
 
 	/** 익명 Target Id가 아직 살아 있는 관리 몬스터인지 확인하고 최신 위치를 반환한다. */
 	bool GetAliveMonsterTarget(uint64 TargetId, FVector& OutLocation, float& OutHitRadius) const;
+
+	/** Mass replication ID를 살아 있는 서버 Entity로 해석한다. */
+	bool GetAliveMonsterTargetByNetworkId(uint32 MassNetworkId, uint64& OutTargetId,
+		FVector& OutLocation, float& OutHitRadius) const;
 
 	/** Target Id로 지정한 살아 있는 Mass 몬스터 하나에 서버 피해를 적용한다. */
 	int32 ApplyDamageToTarget(uint64 TargetId, float Damage, AActor* DamageInstigator);
@@ -185,7 +190,7 @@ private:
 		TWeakObjectPtr<UMassEntityConfigAsset> EntityConfig;
 		TArray<FTransform> SpawnTransforms;
 		EASMassMonsterWorldBehavior WorldBehavior = EASMassMonsterWorldBehavior::DayTerritory;
-		int32 InitialTargetId = INDEX_NONE;
+		FASTargetHandle InitialPrimaryTarget;
 		FVector InitialTargetLocation = FVector::ZeroVector;
 		bool bCountTowardWave = false;
 	};
@@ -196,7 +201,7 @@ private:
 			const struct FASMassMonsterConfigFragment&)> Predicate);
 	void FlushQueuedMonsterSpawns();
 	void ScheduleQueuedMonsterSpawnFlush();
-	void ConfigureInitialTargets(TConstArrayView<FMassEntityHandle> Entities, int32 TargetId,
+	void ConfigureInitialTargets(TConstArrayView<FMassEntityHandle> Entities, FASTargetHandle PrimaryTarget,
 		const FVector& TargetLocation);
 	void CompactManagedEntities();
 

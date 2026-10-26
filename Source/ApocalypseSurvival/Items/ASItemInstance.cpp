@@ -23,6 +23,7 @@ void UASItemInstance::PostNetReceive()
 	Super::PostNetReceive();
 	if (UASInventoryComponent* Inventory = GetTypedOuter<UASInventoryComponent>())
 	{
+		Inventory->PreloadItemAssets();
 		Inventory->OnInventoryChanged.Broadcast();
 	}
 }

@@ -4,6 +4,8 @@
 #include "Core/Framework/ASLobbyPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
+#include "Core/Framework/ASSessionSubsystem.h"
+#include "Engine/GameInstance.h"
 
 void UASLobbyWidget::NativeConstruct()
 {
@@ -12,6 +14,7 @@ void UASLobbyWidget::NativeConstruct()
 	HandleGameStateSet(GetLobbyState());
 	if (ReadyButton) ReadyButton->OnClicked.AddUniqueDynamic(this, &ThisClass::ToggleReady);
 	if (StartGameButton) StartGameButton->OnClicked.AddUniqueDynamic(this, &ThisClass::RequestStartGame);
+	if (LeaveRoomButton) LeaveRoomButton->OnClicked.AddUniqueDynamic(this, &ThisClass::LeaveRoom);
 	HandleLobbyUpdated();
 }
 
@@ -21,6 +24,7 @@ void UASLobbyWidget::NativeDestruct()
 	if (BoundState) BoundState->OnLobbyStateChanged.RemoveDynamic(this, &ThisClass::HandleLobbyUpdated);
 	if (ReadyButton) ReadyButton->OnClicked.RemoveDynamic(this, &ThisClass::ToggleReady);
 	if (StartGameButton) StartGameButton->OnClicked.RemoveDynamic(this, &ThisClass::RequestStartGame);
+	if (LeaveRoomButton) LeaveRoomButton->OnClicked.RemoveDynamic(this, &ThisClass::LeaveRoom);
 	Super::NativeDestruct();
 }
 
@@ -59,6 +63,18 @@ void UASLobbyWidget::RequestStartGame()
 	if (AASLobbyPlayerController* Controller = GetOwningPlayer<AASLobbyPlayerController>())
 	{
 		Controller->StartLobbyGame();
+	}
+}
+
+void UASLobbyWidget::LeaveRoom()
+{
+	if (UGameInstance* Instance = GetGameInstance())
+	{
+		if (UASSessionSubsystem* Sessions = Instance->GetSubsystem<UASSessionSubsystem>())
+		{
+			if (LeaveRoomButton) LeaveRoomButton->SetIsEnabled(false);
+			Sessions->LeaveRoom();
+		}
 	}
 }
 

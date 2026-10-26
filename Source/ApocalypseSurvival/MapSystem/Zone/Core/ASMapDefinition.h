@@ -17,7 +17,10 @@ class APOCALYPSESURVIVAL_API UASMapDefinition : public UPrimaryDataAsset
 public:
 	UASMapDefinition();
 
-	/** 날짜별 낮/밤 위험도 증가 한도와 몬스터 우선·확률 규칙. */
+	/**
+	 * 날짜별 낮/밤 위험도 증가 한도와 몬스터 우선·확률 규칙. 행 이름 대신 Day로 조회한다.
+	 * 현재 날짜 이하의 가장 큰 Day 행을 사용하므로 Day 1 행 하나면 모든 날짜에 적용된다.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules", meta = (RequiredAssetDataTags = "RowStructure=/Script/ApocalypseSurvival.ASZoneDangerScheduleRow"))
 	TObjectPtr<UDataTable> DangerScheduleTable;
 
@@ -25,7 +28,7 @@ public:
 	const FASZoneDangerScheduleRow* FindDangerScheduleRow(int32 Day) const;
 
 	/**
-	 * 맵 텍스처가 덮는 월드 XY 사각형.
+	 * 맵 위젯과 전장의 안개가 공유하는 월드 XY 사각형. 안개 텍스처도 이 영역을 덮는다.
 	 * 맵 U는 월드 +Y 방향, 맵 V는 월드 -X 방향으로 증가한다 (맵 위쪽은 +X).
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation", meta = (Units = "cm"))

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/DataTable.h"
+#include "Items/Data/ASItemAssetLoading.h"
 #include "ASInventoryComponent.generated.h"
 
 class UASItemDefinition;
@@ -57,9 +58,11 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	AASDroppedItem* DropOneFromSlot(int32 SlotIndex, FGuid ExpectedItem, APawn* Avatar);
 
-	/** Authority-only gameplay operations. Clients request these through ASPlayerController. */
+	/** Authority-only request. True also accepts one pending async use; clients go through ASPlayerController. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
 	bool UseItem(FGuid InstanceId, APawn* Avatar);
+	/** Refreshes the inventory's asynchronous asset cache on authority and replicated clients. */
+	void PreloadItemAssets();
 
 	/** Entire quantity or no mutation. Server-only, including when called from C++. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
@@ -68,7 +71,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool TryConsumeItemInstance(UASItemInstance* ItemInstance, int32 Quantity);
 
-	/** Compatibility request bridge. Equipment interface implementation owns actual equipping. */
+	/** True accepts an async equip request or completes immediately. Equipment owns actual equipping. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|GAS")
 	bool EquipItem(FGuid InstanceId, APawn* Avatar);
 
@@ -150,6 +153,8 @@ private:
 	bool HasInventoryAuthority() const;
 	void NotifyInventoryChanged();
 	void SyncReplicatedItems();
+	bool PrepareItemAction(FGuid InstanceId, APawn* Avatar, bool bEquipOnly, bool& bOutQueued);
+	void CancelPendingItemAction();
 
 	UFUNCTION()
 	void OnRep_Items();
@@ -180,4 +185,10 @@ private:
 
 	bool bChangingEquipment = false;
 	bool bInitialItemsGranted = false;
+	FASItemAssetRequest InventoryAssetRequest;
+	FASItemAssetRequest ActionAssetRequest;
+	uint64 PendingActionSerial = 0;
+	FGuid PendingActionItem;
+	TWeakObjectPtr<APawn> PendingActionAvatar;
+	bool bPendingEquipOnly = false;
 };

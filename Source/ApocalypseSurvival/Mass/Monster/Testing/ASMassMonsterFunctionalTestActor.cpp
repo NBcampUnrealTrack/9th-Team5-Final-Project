@@ -47,6 +47,52 @@ void AASMassMonsterFunctionalTestActor::Tick(const float DeltaSeconds)
 	SampleVisibilityStress();
 }
 
+bool AASMassMonsterFunctionalTestActor::ApplyTargetingTestDamage(
+	const int32 InstigatorPlayerIndex, const float Damage)
+{
+	UWorld* World = GetWorld();
+	UASMassMonsterSubsystem* MonsterSubsystem = World ? World->GetSubsystem<UASMassMonsterSubsystem>() : nullptr;
+	if (!HasAuthority() || !MonsterSubsystem || InstigatorPlayerIndex < 0 || Damage <= 0.0f)
+	{
+		return false;
+	}
+
+	int32 PlayerIndex = 0;
+	APawn* InstigatorPawn = nullptr;
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It, ++PlayerIndex)
+	{
+		if (PlayerIndex == InstigatorPlayerIndex)
+		{
+			const APlayerController* PlayerController = It->Get();
+			InstigatorPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+			break;
+		}
+	}
+
+	if (!IsValid(InstigatorPawn))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[MassFunctionalTest] Targeting damage failed: PlayerIndex=%d has no Pawn."), InstigatorPlayerIndex);
+		return false;
+	}
+
+	uint64 TargetId = 0;
+	FVector TargetLocation = FVector::ZeroVector;
+	float TargetRadius = 0.0f;
+	if (!MonsterSubsystem->FindBestAliveMonsterTarget(InstigatorPawn->GetActorLocation(),
+		TNumericLimits<float>::Max(), InstigatorPawn->GetActorLocation(), TargetId, TargetLocation, TargetRadius))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[MassFunctionalTest] Targeting damage failed: no alive Mass monster."));
+		return false;
+	}
+
+	const int32 AppliedCount = MonsterSubsystem->ApplyDamageToTarget(TargetId, Damage, InstigatorPawn);
+	UE_LOG(LogTemp, Display,
+		TEXT("[MassFunctionalTest] Targeting damage PlayerIndex=%d Pawn=%s Entity=%llu Damage=%.2f Applied=%d"),
+		InstigatorPlayerIndex, *GetNameSafe(InstigatorPawn), TargetId, Damage, AppliedCount);
+	return AppliedCount == 1;
+}
+
 void AASMassMonsterFunctionalTestActor::BeginPlay()
 {
 	Super::BeginPlay();

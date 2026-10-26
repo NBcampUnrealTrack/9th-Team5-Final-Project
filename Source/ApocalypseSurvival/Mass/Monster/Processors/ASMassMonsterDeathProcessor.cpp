@@ -8,9 +8,10 @@
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/Pawn.h"
 #include "Items/Loot/ASMonsterDropSubsystem.h"
 #include "MassCommonFragments.h"
-#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
 #include "MassExecutionContext.h"
@@ -66,10 +67,10 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 	int32 NewlyDeadCount = 0;
 	TMap<TWeakObjectPtr<AController>, int32> ExperienceByController;
 	TArray<FASPendingMonsterDrop> PendingDrops;
-	const UASMassPlayerTargetSubsystem* PlayerTargets = GetWorld()
-		? GetWorld()->GetSubsystem<UASMassPlayerTargetSubsystem>()
+	const UASMonsterTargetSubsystem* MonsterTargets = GetWorld()
+		? GetWorld()->GetSubsystem<UASMonsterTargetSubsystem>()
 		: nullptr;
-	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount, &ExperienceByController, &PendingDrops, PlayerTargets](FMassExecutionContext& Context)
+	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount, &ExperienceByController, &PendingDrops, MonsterTargets](FMassExecutionContext& Context)
 	{
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
@@ -88,12 +89,13 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 			Health.CurrentHealth = 0.0f;
 			Health.DeathTimeRemaining = Config.DeathDespawnDelay;
 			Health.bDeathTimerStarted = true;
-			if (PlayerTargets)
+			if (MonsterTargets)
 			{
-				if (const FASMassPlayerTargetSnapshot* KillerSnapshot =
-					PlayerTargets->FindTarget(Health.LastDamageInstigatorTargetId))
+				FASTargetSnapshot KillerSnapshot;
+				if (MonsterTargets->ResolveTarget(Health.LastDamageInstigator, KillerSnapshot))
 				{
-					if (AController* KillerController = KillerSnapshot->Controller.Get())
+					APawn* KillerPawn = Cast<APawn>(KillerSnapshot.Actor.Get());
+					if (AController* KillerController = KillerPawn ? KillerPawn->GetController() : nullptr)
 					{
 						if (Config.ExperienceReward > 0)
 						{

@@ -33,7 +33,7 @@ bool UASItemUseComponent::UseItem(UASInventoryComponent* Inventory, const FGuid 
 	if (Definition->ItemType != EASItemType::Consumable || Definition->UseQuantity <= 0
 		|| Item->GetQuantity() < Definition->UseQuantity) return false;
 	UClass* AbilityClass = Definition->UseAbility.IsNull()
-		? UASItemUseAbility::StaticClass() : Definition->UseAbility.LoadSynchronous();
+		? UASItemUseAbility::StaticClass() : Definition->UseAbility.Get();
 	if (!AbilityClass || AbilityClass->HasAnyClassFlags(CLASS_Abstract)
 		|| !AbilityClass->IsChildOf(UASItemUseAbility::StaticClass())) return false;
 	// Prevent two delayed uses of the same stack from competing for its last unit.

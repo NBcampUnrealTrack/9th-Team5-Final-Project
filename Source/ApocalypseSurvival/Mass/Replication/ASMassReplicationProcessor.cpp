@@ -1,10 +1,12 @@
 #include "Mass/Replication/ASMassReplicationProcessor.h"
 
+#include "ApocalypseSurvival.h"
 #include "HAL/IConsoleManager.h"
 #include "MassCommonFragments.h"
 #include "MassEntityUtils.h"
 #include "MassExecutionContext.h"
 #include "MassLODSubsystem.h"
+#include "Mass/Monster/Replication/ASMassMonsterClientBubble.h"
 #include "Mass/Monster/Replication/ASMassMonsterReplicator.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassReplicationProcessor)
@@ -286,6 +288,16 @@ void UASMassReplicationProcessor::Execute(
 
 		ClientReplicationInfo.HandledEntities = MoveTemp(EntitiesHandledThisFrame);
 
+		// Entity가 이미 파괴돼 이번 프레임의 Collection에서 빠지면 CalculateClientReplication의
+		// RemoveEntityCallback까지 도달하지 못한다. 해당 Agent는 여전히 Bubble에 남아 있고,
+		// 다음 정리 assert가 발생한다. 이 Processor는 UASMassMonsterReplicator 전용이므로
+		// 같은 Client Bubble에서 남은 Handle을 명시적으로 제거할 수 있다.
+		const FMassBubbleInfoClassHandle MonsterBubbleClassHandle =
+			ReplicationSubsystem->GetBubbleInfoClassHandle(AASMassMonsterClientBubbleInfo::StaticClass());
+		AASMassMonsterClientBubbleInfo* MonsterBubbleInfo =
+			ReplicationSubsystem->GetTypedClientBubble<AASMassMonsterClientBubbleInfo>(
+				MonsterBubbleClassHandle, ClientHandle);
+
 		for (FMassReplicationAgentDataMap::TIterator It =
 				ClientReplicationInfo.AgentsData.CreateIterator();
 			It;
@@ -294,9 +306,18 @@ void UASMassReplicationProcessor::Execute(
 			FMassReplicatedAgentData& AgentData = It.Value();
 			if (AgentData.bPendingDestruction || AgentData.LOD == EMassLOD::Off)
 			{
-				checkf(
-					!AgentData.Handle.IsValid(),
-					TEXT("This replicated agent should have been removed from this client and was not"));
+				if (AgentData.Handle.IsValid())
+				{
+					if (ensureMsgf(MonsterBubbleInfo,
+						TEXT("[MassMonsterReplication] Missing client bubble while cleaning a stale replicated agent.")))
+					{
+						const bool bRemoved = MonsterBubbleInfo->GetMonsterSerializer().GetBubble().RemoveAgent(AgentData.Handle);
+						UE_LOG(LogApocalypseSurvival, Warning,
+							TEXT("[MassMonsterReplication] Fallback cleanup Entity=%d PendingDestroy=%d LOD=%d Removed=%d"),
+							It.Key().Index, AgentData.bPendingDestruction, static_cast<int32>(AgentData.LOD), bRemoved);
+					}
+					AgentData.Invalidate();
+				}
 				It.RemoveCurrent();
 			}
 		}

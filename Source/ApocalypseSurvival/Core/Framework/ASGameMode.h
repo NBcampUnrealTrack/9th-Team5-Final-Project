@@ -15,6 +15,7 @@ class UDataTable;
 class UGameplayEffect;
 class AASPlayerCharacter;
 class AASLootChest;
+class APlayerStart;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -23,6 +24,12 @@ class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
 	
 public:
 	AASGameMode();
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
+	bool ReturnToLobby();
+	UPROPERTY(EditDefaultsOnly, Category = "Lobby")
+	FString LobbyMapPath = TEXT("/Game/ApocalypseSurvival/Maps/Lobby_Proto");
+	virtual FString InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId,
+		const FString& Options, const FString& Portal = TEXT("")) override;
 	
 	// 스폰할 캐릭터 BP: PlayerState에 정해진 캐릭터(리스폰) -> 캐릭터 선택 -> DefaultPawnClass 순
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
@@ -103,6 +110,7 @@ bool IsMultiplayerRules() const;
 protected:
 	virtual void HandleMatchHasStarted() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void RestartPlayer(AController* NewPlayer) override;
 	
 	// 원격 클라이언트는 캐릭터 선택이 도착할 때까지 스폰하지 않는다.
 	virtual bool PlayerCanRestart_Implementation(APlayerController* Player) override;
@@ -196,6 +204,9 @@ protected:
 	
 	// 리스폰 시 바닥에 박히지 않도록 높이 보간 (캡슐 절반 높이, 없으면 100cm)
 	float GetSpawnHeightOffset(AController* Controller);
+	APlayerStart* FindAvailablePlayerStart(AController* Controller, FTransform& OutSpawnTransform,
+		bool& bOutUsedAdjustedLocation);
+	int32 GetPlayerStartIndex(const AController* Controller, int32 StartCount);
 	
 	bool IsGameEnded() const;
 	FWaveResult BuildWaveResult() const;

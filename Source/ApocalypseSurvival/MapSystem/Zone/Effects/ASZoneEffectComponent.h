@@ -3,15 +3,13 @@
 #include "CoreMinimal.h"
 #include "ActiveGameplayEffectHandle.h"
 #include "Components/ActorComponent.h"
+#include "MapSystem/Zone/Effects/ASZoneEffectDefinition.h"
 #include "ASZoneEffectComponent.generated.h"
 
 class APawn;
 class UAbilitySystemComponent;
 class UASMapStateComponent;
-class UASZoneEffectDefinition;
 class UGameplayEffect;
-struct FASZoneEffectMagnitude;
-struct FASZoneEffectRow;
 
 /** GameMode에 추가하는 서버 전용 구역 효과 컴포넌트. */
 UCLASS(ClassGroup = (AS), meta = (BlueprintSpawnableComponent))
@@ -44,9 +42,9 @@ private:
 	/** 각 효과의 대상과 핸들을 독립적으로 보관한다. */
 	struct FEffectSlot
 	{
-		// 선택된 행의 키. 기본 효과는 ZoneId가 NAME_None이다.
+		// 선택된 그룹의 키. 기본 효과는 ZoneId가 NAME_None이다.
 		FName ZoneId;
-		uint8 TeamId = 255;
+		EASZoneEffectTarget Target = EASZoneEffectTarget::All;
 		int32 DangerLevel = 0;
 		TSubclassOf<UGameplayEffect> Effect;
 		FActiveGameplayEffectHandle Handle;
@@ -62,9 +60,10 @@ private:
 	void UpdateEffects();
 	void BindMapState(UASMapStateComponent* NewMapState);
 	void WarnUnknownZoneRows();
-	FActiveGameplayEffectHandle ApplyEffect(UAbilitySystemComponent* ASC, TSubclassOf<UGameplayEffect> Effect,
-		const TArray<FASZoneEffectMagnitude>& Magnitudes, int32 DangerLevel);
-	void SyncSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot, const FASZoneEffectRow* Row, int32 DangerLevel);
+	FActiveGameplayEffectHandle ApplyEffect(UAbilitySystemComponent* ASC,
+		const TArray<const FASZoneEffectRow*>& Rows, int32 DangerLevel);
+	void SyncSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot,
+		const TArray<const FASZoneEffectRow*>& Rows, int32 DangerLevel);
 	void RemoveSlot(UAbilitySystemComponent* ASC, FEffectSlot& Slot);
 	void ReleaseEntry(UAbilitySystemComponent* ASC, FEntry& Entry);
 	void RemoveEntry(UAbilitySystemComponent* ASC);

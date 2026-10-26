@@ -10,10 +10,15 @@
 #include "OnlineSubsystem.h"
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystemUtils.h"
+#include "Characters/Player/Data/ASCharacterDefinition.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameMapsSettings.h"
+#include "TimerManager.h"
 
 namespace
 {
 	const FName RoomNameKey(TEXT("RoomName"));
+	const FName RequiresPasswordKey(TEXT("RequiresPassword"));
 }
 
 void UASSessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -64,8 +69,28 @@ FUniqueNetIdRepl UASSessionSubsystem::GetLocalUserId() const
 	return LocalPlayer ? LocalPlayer->GetPreferredUniqueNetId() : FUniqueNetIdRepl();
 }
 
-void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FString& RoomName)
+bool UASSessionSubsystem::IsValidRoomPassword(const FString& Password)
 {
+	if (Password.Len() != 4) return false;
+	for (const TCHAR Character : Password)
+	{
+		if (Character < TEXT('0') || Character > TEXT('9')) return false;
+	}
+	return true;
+}
+
+bool UASSessionSubsystem::ValidateRoomPassword(const FString& Password) const
+{
+	return HostPassword.IsEmpty() || (IsValidRoomPassword(Password) && Password == HostPassword);
+}
+
+void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FString& RoomName, const bool bUsePassword, const FString& Password)
+{
+	if (bUsePassword && !IsValidRoomPassword(Password))
+	{
+		OnSessionCreated.Broadcast(false);
+		return;
+	}
 	if (!SessionInterface.IsValid())
 	{
 		OnSessionCreated.Broadcast(false);
@@ -88,6 +113,10 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 	}
 
 	FOnlineSessionSettings SessionSettings;
+	HostPassword = bUsePassword ? Password : FString();
+	ReturnToMenuMessage = FText::GetEmpty();
+	SessionSettings.Set(RequiresPasswordKey, bUsePassword, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	ClearMatchCharacters();
 	SessionSettings.NumPublicConnections = FMath::Max(2, PublicConnections);
 	SessionSettings.bIsLANMatch = true;
 	SessionSettings.bShouldAdvertise = true;
@@ -144,7 +173,7 @@ void UASSessionSubsystem::FindSessions(const int32 MaxResults)
 	}
 }
 
-void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex)
+void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FString& Password)
 {
 	if (SessionInterface.IsValid() && SessionInterface->GetNamedSession(NAME_GameSession))
 	{
@@ -165,6 +194,14 @@ void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex)
 		return;
 	}
 
+	bool bRequiresPassword = false;
+	SessionSearch->SearchResults[ResultIndex].Session.SessionSettings.Get(RequiresPasswordKey, bRequiresPassword);
+	if (bRequiresPassword && !IsValidRoomPassword(Password))
+	{
+		OnSessionJoined.Broadcast(false, TEXT("비밀번호는 숫자 4자리로 입력해 주세요."));
+		return;
+	}
+	PendingJoinPassword = bRequiresPassword ? Password : FString();
 	SessionInterface->OnJoinSessionCompleteDelegates.RemoveAll(this);
 	SessionInterface->OnJoinSessionCompleteDelegates.AddUObject(
 		this,
@@ -185,12 +222,14 @@ void UASSessionSubsystem::DestroySession()
 	if (!SessionInterface.IsValid())
 	{
 		OnSessionDestroyed.Broadcast(false);
+		FinishLeavingRoom(false);
 		return;
 	}
 
 	if (SessionInterface->GetNamedSession(NAME_GameSession) == nullptr)
 	{
 		OnSessionDestroyed.Broadcast(true);
+		FinishLeavingRoom(true);
 		return;
 	}
 
@@ -203,7 +242,37 @@ void UASSessionSubsystem::DestroySession()
 	{
 		SessionInterface->OnDestroySessionCompleteDelegates.RemoveAll(this);
 		OnSessionDestroyed.Broadcast(false);
+		FinishLeavingRoom(false);
 	}
+}
+
+void UASSessionSubsystem::LeaveRoom()
+{
+	if (bLeavingRoom || !GetWorld()) return;
+	bLeavingRoom = true;
+	bJoinTravelPending = false;
+	ReturnToMenuMessage = FText::GetEmpty();
+	if (GetWorld()->GetNetMode() == NM_ListenServer) SetLobbyOpen(false);
+	DestroySession();
+}
+
+void UASSessionSubsystem::FinishLeavingRoom(const bool bSessionDestroyed)
+{
+	if (!bLeavingRoom) return;
+	if (!bSessionDestroyed && SessionInterface.IsValid())
+	{
+		// Do not leave a stale local session blocking the next create/join attempt.
+		SessionInterface->RemoveNamedSession(NAME_GameSession);
+	}
+	ClearMatchCharacters();
+	SessionSearch.Reset();
+	HostPassword.Reset();
+	PendingJoinPassword.Reset();
+	// Network failure callbacks may still be processing their own travel this frame.
+	GetGameInstance()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		UGameplayStatics::OpenLevel(GetGameInstance(), FName(*UGameMapsSettings::GetGameDefaultMap()), true);
+	}));
 }
 
 bool UASSessionSubsystem::HostTravelToMap(const FString& MapPath)
@@ -241,6 +310,22 @@ void UASSessionSubsystem::SetLobbyOpen(const bool bOpen)
 	}
 }
 
+void UASSessionSubsystem::SaveMatchCharacter(const FUniqueNetIdRepl& PlayerId, const UASCharacterDefinition* Definition)
+{
+	if (PlayerId.IsValid() && Definition) MatchCharacters.Add(PlayerId.ToString(), Definition);
+}
+
+const UASCharacterDefinition* UASSessionSubsystem::FindMatchCharacter(const FUniqueNetIdRepl& PlayerId) const
+{
+	const TObjectPtr<const UASCharacterDefinition>* Definition = PlayerId.IsValid() ? MatchCharacters.Find(PlayerId.ToString()) : nullptr;
+	return Definition ? Definition->Get() : nullptr;
+}
+
+void UASSessionSubsystem::ClearMatchCharacters()
+{
+	MatchCharacters.Reset();
+}
+
 void UASSessionSubsystem::HandleCreateSessionComplete(
 	const FName SessionName,
 	const bool bWasSuccessful)
@@ -272,6 +357,7 @@ void UASSessionSubsystem::HandleFindSessionsComplete(const bool bWasSuccessful)
 			Result.RoomName = SearchResult.Session.OwningUserName;
 			SearchResult.Session.SessionSettings.Get(RoomNameKey, Result.RoomName);
 			Result.MaxPlayers = SearchResult.Session.SessionSettings.NumPublicConnections;
+			SearchResult.Session.SessionSettings.Get(RequiresPasswordKey, Result.bRequiresPassword);
 			Result.CurrentPlayers = Result.MaxPlayers - SearchResult.Session.NumOpenPublicConnections;
 			Results.Add(Result);
 		}
@@ -313,6 +399,8 @@ void UASSessionSubsystem::HandleJoinSessionComplete(
 	}
 
 	bJoinTravelPending = true;
+	if (!PendingJoinPassword.IsEmpty()) ConnectString += TEXT("?RoomPassword=") + PendingJoinPassword;
+	PendingJoinPassword.Reset();
 	PlayerController->ClientTravel(ConnectString, TRAVEL_Absolute);
 	OnSessionJoined.Broadcast(true, FString());
 }
@@ -328,6 +416,7 @@ void UASSessionSubsystem::HandleDestroySessionComplete(
 
 	UE_LOG(LogTemp, Log, TEXT("[Session] 세션 종료: %s"), bWasSuccessful ? TEXT("성공") : TEXT("실패"));
 	OnSessionDestroyed.Broadcast(bWasSuccessful);
+	FinishLeavingRoom(bWasSuccessful);
 }
 
 void UASSessionSubsystem::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& Error)
@@ -342,6 +431,10 @@ void UASSessionSubsystem::HandleTravelFailure(UWorld* World, ETravelFailure::Typ
 
 void UASSessionSubsystem::HandleMapLoaded(UWorld* World)
 {
+	if (World && World->GetGameInstance() == GetGameInstance() && World->GetNetMode() == NM_Standalone)
+	{
+		bLeavingRoom = false;
+	}
 	if (World && World->GetGameInstance() == GetGameInstance() && World->GetNetMode() == NM_Client)
 	{
 		bJoinTravelPending = false;
@@ -351,9 +444,18 @@ void UASSessionSubsystem::HandleMapLoaded(UWorld* World)
 void UASSessionSubsystem::HandleConnectionFailure(UWorld* World, const FString& Error)
 {
 	if (!World || World->GetGameInstance() != GetGameInstance()) return;
+	if (bLeavingRoom) return;
 	UE_LOG(LogTemp, Warning, TEXT("[Session] %s"), *Error);
 	const bool bWasJoining = bJoinTravelPending;
 	bJoinTravelPending = false;
+	const bool bWasConnected = World->GetNetMode() == NM_Client;
+	if (bWasConnected || bWasJoining)
+	{
+		bLeavingRoom = true;
+		ReturnToMenuMessage = FText::FromString(bWasJoining && Error.Contains(TEXT("AS_WRONG_PASSWORD"))
+			? TEXT("비밀번호가 일치하지 않습니다. 방을 다시 선택해 주세요.")
+			: TEXT("서버와 연결이 종료되었습니다. 방장이 나갔거나 연결이 끊겼습니다."));
+	}
 	DestroySession();
 	if (bWasJoining) OnSessionJoined.Broadcast(false, Error);
 }

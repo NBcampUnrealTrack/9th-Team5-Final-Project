@@ -10,6 +10,7 @@
 #include "GameFramework/Pawn.h"
 #include "GenericTeamAgentInterface.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMassMonsterTargetQuerySubsystem.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "Skills/ASSkillTags.h"
 
@@ -33,6 +34,7 @@ namespace
 			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Target));
 		return TargetASC
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed)
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead);
 	}
 }
@@ -66,6 +68,7 @@ void FASCombatTargetRef::Reset()
 {
 	Actor.Reset();
 	MassTargetId = 0;
+	MassNetworkId = 0;
 	Location = FVector::ZeroVector;
 	HitRadius = 0.0f;
 }
@@ -132,7 +135,11 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActor(
 	}
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target);
-	if (!TargetASC || TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Invulnerable))
+	if (!TargetASC
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed)
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead)
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Invulnerable))
 	{
 		return 0;
 	}
@@ -294,23 +301,54 @@ bool UASCombatTargetSubsystem::FindBestTarget(
 
 	if (Query.Domain != EASCombatTargetDomain::ActorOnly)
 	{
-		const UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
+		const UASMassMonsterTargetQuerySubsystem* MassTargets =
+			World->GetSubsystem<UASMassMonsterTargetQuerySubsystem>();
 		uint64 MassTargetId = 0;
 		FVector MassLocation;
 		float MassHitRadius = 0.0f;
-		if (MassMonsters && MassMonsters->FindBestAliveMonsterTarget(
-			Query.SearchOrigin, Query.SearchRadius, SortOrigin,
+		if (MassTargets && MassTargets->FindBestAliveMonsterTarget(
+			Query.SearchOrigin, Query.SearchRadius, SortOrigin, Query.bRequireVisibleToLocalTeam,
 			MassTargetId, MassLocation, MassHitRadius)
 			&& IsBetterCandidate(MassLocation))
 		{
 			OutTarget.Reset();
 			OutTarget.MassTargetId = MassTargetId;
+			MassTargets->GetMassNetworkId(MassTargetId, OutTarget.MassNetworkId);
 			OutTarget.Location = MassLocation;
 			OutTarget.HitRadius = MassHitRadius;
 		}
 	}
 
 	return OutTarget.IsValid();
+}
+
+bool UASCombatTargetSubsystem::GetMassTargetByNetworkId(
+	const uint32 MassNetworkId,
+	FASCombatTargetRef& OutTarget) const
+{
+	OutTarget.Reset();
+	const UWorld* World = GetWorld();
+	if (!World || MassNetworkId == 0)
+	{
+		return false;
+	}
+
+	const UASMassMonsterTargetQuerySubsystem* MassTargets =
+		World->GetSubsystem<UASMassMonsterTargetQuerySubsystem>();
+	uint64 MassTargetId = 0;
+	FVector Location;
+	float HitRadius = 0.0f;
+	if (!MassTargets || !MassTargets->GetAliveMonsterTargetByNetworkId(
+		MassNetworkId, MassTargetId, Location, HitRadius))
+	{
+		return false;
+	}
+
+	OutTarget.MassTargetId = MassTargetId;
+	OutTarget.MassNetworkId = MassNetworkId;
+	OutTarget.Location = Location;
+	OutTarget.HitRadius = HitRadius;
+	return true;
 }
 
 bool UASCombatTargetSubsystem::RefreshTarget(
@@ -340,10 +378,11 @@ bool UASCombatTargetSubsystem::RefreshTarget(
 	}
 	else if (InOutTarget.IsMass())
 	{
-		const UASMassMonsterSubsystem* MassMonsters = World->GetSubsystem<UASMassMonsterSubsystem>();
-		if (Query.Domain != EASCombatTargetDomain::ActorOnly && MassMonsters
-			&& MassMonsters->GetAliveMonsterTarget(
-				InOutTarget.MassTargetId, InOutTarget.Location, InOutTarget.HitRadius))
+		const UASMassMonsterTargetQuerySubsystem* MassTargets =
+			World->GetSubsystem<UASMassMonsterTargetQuerySubsystem>();
+		if (Query.Domain != EASCombatTargetDomain::ActorOnly && MassTargets
+			&& MassTargets->GetAliveMonsterTarget(InOutTarget.MassTargetId,
+				Query.bRequireVisibleToLocalTeam, InOutTarget.Location, InOutTarget.HitRadius))
 		{
 			return true;
 		}
@@ -379,6 +418,42 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
 	{
 		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
 			BestTarget.GetMassTargetId(), Damage, const_cast<AActor*>(Query.Instigator));
+	}
+	return Result;
+}
+
+FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
+	const FASCombatTargetRef& Target,
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+	AActor* Instigator)
+{
+	FASCombatApplyResult Result;
+	FASCombatTargetRef RefreshedTarget = Target;
+	FASCombatTargetQuery ValidationQuery;
+	ValidationQuery.Instigator = Instigator;
+	ValidationQuery.MaxTargets = 1;
+	if (!RefreshTarget(ValidationQuery, RefreshedTarget))
+	{
+		return Result;
+	}
+
+	if (AActor* Actor = RefreshedTarget.GetActor())
+	{
+		if (ApplyEffectSpecsToActor(EffectSpecs, Actor) > 0)
+		{
+			Result.ActorTargets.Add(Actor);
+		}
+		return Result;
+	}
+
+	const float Damage = CalculateDamageMagnitude(EffectSpecs);
+	UASMassMonsterSubsystem* MassMonsters = GetWorld()
+		? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>()
+		: nullptr;
+	if (MassMonsters && Damage > 0.0f)
+	{
+		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
+			RefreshedTarget.GetMassTargetId(), Damage, Instigator);
 	}
 	return Result;
 }
