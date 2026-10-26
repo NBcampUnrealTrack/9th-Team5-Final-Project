@@ -11,7 +11,6 @@
 #include "Components/WidgetComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
@@ -24,23 +23,6 @@
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Rendering/DrawElements.h"
 #include "UObject/ConstructorHelpers.h"
-
-void UASDroppedItemNameComponent::SetRaised(const bool bRaised)
-{
-	const FName NextLayer = bRaised ? FName(TEXT("DroppedItemHoveredNameLayer")) : FName(TEXT("WidgetComponentScreenLayer"));
-	if (SharedLayerName == NextLayer) return;
-	if (UUserWidget* NameWidget = GetUserWidgetObject()) TransitionWidget = NameWidget->TakeWidget();
-	// Remove from the previous layer before changing its name, so it cannot leave a duplicate behind.
-	RemoveWidgetFromScreen();
-	SetInitialSharedLayerName(NextLayer);
-	SetInitialLayerZOrder(bRaised ? -99 : -100);
-}
-
-void UASDroppedItemNameComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	if (bAddedToScreen) TransitionWidget.Reset();
-}
 
 TSharedRef<SWidget> UASDroppedItemNameWidget::RebuildWidget()
 {
@@ -109,9 +91,6 @@ void UASDroppedItemNameWidget::SetWorldHovered(const bool bHovered)
 
 void UASDroppedItemNameWidget::RefreshHoverAppearance()
 {
-	if (AASDroppedItem* Item = ItemActor.Get())
-		if (UASDroppedItemNameComponent* NameComponent = Item->FindComponentByClass<UASDroppedItemNameComponent>())
-			NameComponent->SetRaised(bPointerHovered || bWorldHovered);
 	if (NameBackground)
 		NameBackground->SetBrushColor(FLinearColor(0.015f, 0.018f, 0.022f, bPointerHovered || bWorldHovered ? 0.68f : 0.3f));
 	InvalidateLayoutAndVolatility();
@@ -177,7 +156,6 @@ AASDroppedItem::AASDroppedItem()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
-	SetReplicateMovement(true);
 	bReplicateUsingRegisteredSubObjectList = true;
 	InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
 	SetRootComponent(InteractionCollision);
@@ -203,7 +181,7 @@ AASDroppedItem::AASDroppedItem()
 	LegendaryBeam->SetCanEverAffectNavigation(false);
 	LegendaryBeam->SetCastShadow(false);
 	LegendaryBeam->SetVisibility(false);
-	NameLabel = CreateDefaultSubobject<UASDroppedItemNameComponent>(TEXT("NameLabel"));
+	NameLabel = CreateDefaultSubobject<UWidgetComponent>(TEXT("NameLabel"));
 	NameLabel->SetupAttachment(InteractionCollision);
 	NameLabel->SetRelativeLocation(FVector(0, 0, 55));
 	NameLabel->SetWidgetSpace(EWidgetSpace::Screen);
@@ -268,82 +246,6 @@ int32 AASDroppedItem::Pickup(APawn* Interactor, UASInventoryComponent* TargetInv
 	return DroppedInventory->TransferItemTo(TargetInventory, Item, Item->GetQuantity());
 }
 
-float AASDroppedItem::GetDropFootprintRadius() const
-{
-	float Radius = FMath::Max(30.0f, MinimumDropSpacing) * 0.5f;
-	if (const UStaticMesh* Mesh = ItemMesh->GetStaticMesh())
-	{
-		const FBox Bounds = Mesh->GetBoundingBox().TransformBy(ItemMesh->GetRelativeTransform());
-		// Include any pivot offset so two long weapons cannot cross even when their pivots are apart.
-		const FVector Reach = Bounds.GetCenter().GetAbs() + Bounds.GetExtent();
-		Radius = FMath::Max(Radius, FVector2D(Reach.X, Reach.Y).Size() + 10.0f);
-	}
-	return Radius;
-}
-
-void AASDroppedItem::SeparateFromNearbyDrops()
-{
-	UWorld* World = GetWorld();
-	if (!HasAuthority() || !World || !GetDroppedItem()) return;
-	const FVector Origin = GetActorLocation();
-	const float Radius = GetDropFootprintRadius();
-	struct FNearbyDrop
-	{
-		FVector Location;
-		float RequiredDistance;
-	};
-	TArray<FNearbyDrop> Neighbours;
-	for (TActorIterator<AASDroppedItem> It(World); It; ++It)
-	{
-		const AASDroppedItem* Other = *It;
-		if (Other == this || Other->IsActorBeingDestroyed() || !Other->GetDroppedItem()) continue;
-		Neighbours.Add({Other->GetActorLocation(), Radius + Other->GetDropFootprintRadius()});
-	}
-	auto IsFree = [&Neighbours](const FVector& Location)
-	{
-		for (const FNearbyDrop& Other : Neighbours)
-		{
-			// Items on separate floors do not occupy the same patch of ground.
-			if (FMath::Abs(Location.Z - Other.Location.Z) < 150.0f
-				&& FVector::DistSquared2D(Location, Other.Location) < FMath::Square(Other.RequiredDistance))
-				return false;
-		}
-		return true;
-	};
-	if (IsFree(Origin)) return;
-
-	// Test nearby rings first. Static-world traces ignore pawns, corpses and the other loot actors.
-	FCollisionQueryParams Query(SCENE_QUERY_STAT(DroppedItemPlacement), false, this);
-	const FCollisionObjectQueryParams GroundObjects(ECC_WorldStatic);
-	const float Step = FMath::Max(30.0f, MinimumDropSpacing * 0.5f);
-	const int32 RingCount = FMath::CeilToInt(FMath::Max(Step, DropSearchRadius) / Step);
-	for (int32 Ring = 1; Ring <= RingCount; ++Ring)
-	{
-		const float Distance = FMath::Min(Ring * Step, FMath::Max(Step, DropSearchRadius));
-		const int32 PointCount = FMath::Max(8, FMath::CeilToInt(2.0f * PI * Distance / Step));
-		for (int32 Point = 0; Point < PointCount; ++Point)
-		{
-			const float Angle = 2.0f * PI * Point / PointCount;
-			FVector Candidate = Origin + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f) * Distance;
-			if (!IsFree(Candidate)) continue;
-			FHitResult Ground;
-			if (!World->LineTraceSingleByObjectType(Ground, Candidate + FVector(0, 0, 100),
-				Candidate - FVector(0, 0, 300), GroundObjects, Query)
-				|| Ground.ImpactNormal.Z < 0.65f) continue;
-			Candidate = Ground.ImpactPoint + FVector(0, 0, 30);
-			if (FMath::Abs(Candidate.Z - Origin.Z) > 100.0f || !IsFree(Candidate)) continue;
-			FHitResult Obstacle;
-			if (World->LineTraceSingleByObjectType(Obstacle, Origin + FVector(0, 0, 20),
-				Candidate + FVector(0, 0, 20), GroundObjects, Query)) continue;
-			SetActorLocation(Candidate);
-			ForceNetUpdate();
-			return;
-		}
-	}
-	// Keep the item rather than lose its contents if the surrounding map has no usable ground.
-	UE_LOG(LogTemp, Warning, TEXT("[DroppedItem] No free ground within %.0f cm of %s."), DropSearchRadius, *Origin.ToString());
-}
-
 void AASDroppedItem::HandleInventoryChanged()
 {
 	UASItemInstance* Item = GetDroppedItem();
@@ -369,7 +271,6 @@ void AASDroppedItem::HandleInventoryChanged()
 		ItemMesh->SetStaticMesh(WorldMesh);
 		ItemMesh->SetRelativeScale3D(FVector(2.0f));
 	}
-	SeparateFromNearbyDrops();
 	if (UASDroppedItemNameWidget* Label = Cast<UASDroppedItemNameWidget>(NameLabel->GetUserWidgetObject()))
 	{
 		Label->SetItem(this);

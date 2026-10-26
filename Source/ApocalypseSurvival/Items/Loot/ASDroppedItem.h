@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Blueprint/UserWidget.h"
-#include "Components/WidgetComponent.h"
 #include "Interaction/ASInteractable.h"
 #include "Items/Data/ASItemAssetLoading.h"
 #include "ASDroppedItem.generated.h"
@@ -17,19 +16,6 @@ class UWidgetComponent;
 class UTextBlock;
 class UBorder;
 class UASItemInteractionComponent;
-
-/** Moves a hovered nameplate above other world labels while preserving the same widget and input. */
-UCLASS()
-class APOCALYPSESURVIVAL_API UASDroppedItemNameComponent : public UWidgetComponent
-{
-	GENERATED_BODY()
-public:
-	void SetRaised(bool bRaised);
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-private:
-	// Keep the Slate widget alive until the component joins its new layer on the next tick.
-	TSharedPtr<SWidget> TransitionWidget;
-};
 
 /** Screen-facing item name; the only mouse pickup target for a dropped item. */
 UCLASS()
@@ -81,14 +67,6 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
-	/** Server placement shared by inventory, chest and monster drops, including late mesh loads. */
-	void SeparateFromNearbyDrops();
-	float GetDropFootprintRadius() const;
-	/** Minimum centre-to-centre distance. Larger meshes also reserve their actual footprint. */
-	UPROPERTY(EditDefaultsOnly, Category = "Item|Drop", meta = (ClampMin = "30.0", Units = "cm"))
-	float MinimumDropSpacing = 100.0f;
-	UPROPERTY(EditDefaultsOnly, Category = "Item|Drop", meta = (ClampMin = "150.0", Units = "cm"))
-	float DropSearchRadius = 1500.0f;
 	UFUNCTION()
 	void HandleInventoryChanged();
 	UPROPERTY(VisibleAnywhere)
