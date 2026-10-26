@@ -190,6 +190,7 @@ void AASSkillAreaActor::DoDamageTick()
 	}
 
 	BP_OnAreaTick(ApplyResult.ActorTargets);
+	OnAreaTick(ApplyResult, Center);
 
 	if (TicksRemaining <= 0)
 	{
@@ -199,7 +200,12 @@ void AASSkillAreaActor::DoDamageTick()
 
 void AASSkillAreaActor::ExecutePulseCue(const FVector& Center) const
 {
-	if (!PulseCueTag.IsValid())
+	ExecuteCueAt(PulseCueTag, Center, Radius);
+}
+
+void AASSkillAreaActor::ExecuteCueAt(const FGameplayTag& CueTag, const FVector& Location, float Magnitude) const
+{
+	if (!CueTag.IsValid())
 	{
 		return;
 	}
@@ -212,11 +218,11 @@ void AASSkillAreaActor::ExecutePulseCue(const FVector& Center) const
 	}
 
 	FGameplayCueParameters CueParams;
-	CueParams.Location = Center;
-	CueParams.RawMagnitude = Radius;
+	CueParams.Location = Location;
+	CueParams.RawMagnitude = Magnitude;
 	CueParams.Instigator = InstigatorAvatar.Get();
 	CueParams.EffectCauser = const_cast<AASSkillAreaActor*>(this);
 	CueParams.SourceObject = this;
 	CueParams.NormalizedMagnitude = TickInterval;
-	InstigatorASC->ExecuteGameplayCue(PulseCueTag, CueParams);
+	InstigatorASC->ExecuteGameplayCue(CueTag, CueParams);
 }

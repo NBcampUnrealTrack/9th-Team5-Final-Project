@@ -28,6 +28,9 @@ protected:
 	//범위 액터 생성 + 초기화 (서버). FollowTarget이 있으면 그 타겟을 따라다님
 	AASSkillAreaActor* SpawnArea(const FVector& Location, const FVector& Aim, const FASCombatTargetRef* FollowTarget = nullptr);
 
+	//범위 액터 생성 직후(FinishSpawning 전)에 호출. 자식 스킬이 자기 장판 액터에 추가 값을 넘길 때 오버라이드
+	virtual void ConfigureArea(AASSkillAreaActor* Area) {}
+
 	//AdditionalEffects로 만든 Spec 목록
 	TArray<FGameplayEffectSpecHandle> MakeAdditionalEffectSpecs() const;
 

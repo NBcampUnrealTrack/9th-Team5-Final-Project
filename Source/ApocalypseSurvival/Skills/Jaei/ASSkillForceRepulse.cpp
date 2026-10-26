@@ -13,6 +13,9 @@ UASSkillForceRepulse::UASSkillForceRepulse()
 {
 	//기본값: 전방 부채꼴
 	Angle = 90.0f;
+
+	//밀쳐내는 스킬이라 강한 경직 (일반 몹 강한 경직, 엘리트 약한 경직, 보스 이펙트만)
+	ImpactPreset = EASImpactPreset::Heavy;
 	Radius = 500.0f;
 	ForwardOffset = 0.0f;
 
@@ -103,7 +106,11 @@ void UASSkillForceRepulse::TickWave()
 	Query.Domain = EASCombatTargetDomain::ActorOnly;
 
 	//이번 틱에 새로 닿은 대상만 피해 (이미 맞은 대상은 HitSet이 걸러냄)
-	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, EffectSpecs, &WaveHitTargets);
+	FASCombatImpactContext ImpactContext;
+	ImpactContext.Preset = ImpactPreset;
+	ImpactContext.HitLocation = WaveOrigin;
+	ImpactContext.HitDirection = WaveDirection;
+	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext, &WaveHitTargets);
 	ASSkillDamageDebug::Report(this, EffectSpecs, Result, WaveOrigin);
 	for (AActor* Target : Result.ActorTargets)
 	{
@@ -147,7 +154,11 @@ void UASSkillForceRepulse::ApplyMassDamageOnce() const
 	Query.Domain = EASCombatTargetDomain::MassOnly;
 
 	const TArray<FGameplayEffectSpecHandle> EffectSpecs = { WaveDamageSpec };
-	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, EffectSpecs);
+	FASCombatImpactContext ImpactContext;
+	ImpactContext.Preset = ImpactPreset;
+	ImpactContext.HitLocation = WaveOrigin;
+	ImpactContext.HitDirection = WaveDirection;
+	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext);
 	ASSkillDamageDebug::Report(this, EffectSpecs, Result, WaveOrigin);
 }
 

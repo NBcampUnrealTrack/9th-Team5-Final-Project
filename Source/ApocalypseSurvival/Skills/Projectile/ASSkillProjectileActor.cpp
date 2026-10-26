@@ -141,7 +141,7 @@ void AASSkillProjectileActor::Tick(const float DeltaSeconds)
 
 void AASSkillProjectileActor::ResolveHitsAlongSegment(const FVector& CurrentLocation)
 {
-	if (bEnded)
+	if (bEnded || !bResolveSegmentHits)
 	{
 		return;
 	}
@@ -167,6 +167,11 @@ void AASSkillProjectileActor::ResolveHitsAlongSegment(const FVector& CurrentLoca
 		Query.MaxTargets = PierceCount >= 0 ? RemainingHits : 0;
 		const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext, &HitTargets);
 		ASSkillDamageDebug::Report(this, DamageSpecs, Result, CurrentLocation);
+
+		if (Result.HasAnyHit())
+		{
+			OnTargetsHit(Result, CurrentLocation);
+		}
 	}
 
 	PreviousLocation = CurrentLocation;

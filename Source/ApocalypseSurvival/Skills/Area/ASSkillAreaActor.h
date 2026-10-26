@@ -57,6 +57,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area|Cue", meta = (Categories = "GameplayCue"))
 	FGameplayTag PulseCueTag;
 
+	//데미지 줄 때마다 호출 (서버, C++ 자식 클래스 확장용)
+	virtual void OnAreaTick(const FASCombatApplyResult& Result, const FVector& Center) {}
+
+	//시전자 ASC로 GameplayCue 실행 (서버에서 부르면 모든 화면에 복제). RawMagnitude = Magnitude
+	void ExecuteCueAt(const FGameplayTag& CueTag, const FVector& Location, float Magnitude) const;
+
+	AActor* GetInstigatorAvatar() const { return InstigatorAvatar.Get(); }
+	const FGameplayEffectSpecHandle& GetDamageSpec() const { return DamageSpec; }
+	bool CanHitPlayers() const { return bCanHitPlayers; }
+	bool ShouldDrawDebug() const { return bDrawDebug; }
+
 private:
 	void DoDamageTick();
 

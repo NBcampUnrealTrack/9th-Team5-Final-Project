@@ -83,6 +83,8 @@ AASSkillAreaActor* UASSkillArea::SpawnArea(const FVector& Location, const FVecto
 		Area->SetFollowTarget(*FollowTarget);
 	}
 
+	ConfigureArea(Area);
+
 	Area->FinishSpawning(SpawnTransform);
 	return Area;
 }

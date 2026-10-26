@@ -39,6 +39,7 @@ namespace ASGameplayTags
 	//재이 스킬 쿨타임 태그
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_ForceRepulse);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_CatchSling);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_SpreadOrb);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_ZeroGravity);
 
 	//강태오 레드라인 버프 중 (나중에 적중 시 충격파 등 조건에 사용)
