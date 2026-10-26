@@ -37,3 +37,17 @@ bool FASMonsterTargetInAttackRangeCondition::TestCondition(FStateTreeExecutionCo
 
 	return Combat->CanRequestAttack(Target) != InstanceData.bInvert;
 }
+
+bool FASMonsterHealthCondition::TestCondition(FStateTreeExecutionContext& Context) const
+{
+	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	const UASMonsterCombatComponent* Combat = InstanceData.CombatComponent;
+
+	if (!IsValid(Combat) || !Combat->GetOwner() || !Combat->GetOwner()->HasAuthority())
+	{
+		return false;
+	}
+
+	const bool bIsBelowThreshold = (Combat->GetHealthPercent() <= InstanceData.HealthThreshold);
+	return bIsBelowThreshold != InstanceData.bInvert;
+}
