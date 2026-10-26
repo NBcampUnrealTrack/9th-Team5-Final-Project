@@ -113,6 +113,7 @@ void UASLootEntryWidget::NativeConstruct()
 
 void UASLootEntryWidget::NativeDestruct()
 {
+	IconAssetRequest.Reset();
 	if (IsValid(ItemButton))
 	{
 		ItemButton->OnClicked.RemoveDynamic(this, &UASLootEntryWidget::HandleItemButtonClicked);
@@ -131,6 +132,8 @@ void UASLootEntryWidget::RefreshEntry()
 {
 	const UASItemDefinition* Definition = IsValid(ItemInstance) && ItemInstance->IsValidItemInstance()
 		? ItemInstance->GetItemDefinition() : nullptr;
+	IconAssetRequest.Request(Definition ? Definition->Icon.ToSoftObjectPath() : FSoftObjectPath(),
+		FStreamableDelegate::CreateWeakLambda(this, [this] { RefreshEntry(); }));
 	if (RarityBackground)
 	{
 		if (Definition) RarityBackground->SetRarity(Definition->Rarity);
@@ -163,7 +166,7 @@ void UASLootEntryWidget::RefreshEntry()
 		ItemIcon->SetColorAndOpacity(FLinearColor::White);
 	}
 
-	if (!IsValid(ItemInstance) || !IsValid(ItemInstance->GetItemDefinition()))
+	if (!Definition)
 	{
 		if (ItemIcon) ItemIcon->SetBrushFromTexture(nullptr);
 		if (ItemNameText) ItemNameText->SetText(FText::GetEmpty());
@@ -171,7 +174,7 @@ void UASLootEntryWidget::RefreshEntry()
 		return;
 	}
 
-	UASItemDefinition* ItemDefinition = ItemInstance->GetItemDefinition();
+	const UASItemDefinition* ItemDefinition = Definition;
 
 	if (IsValid(ItemNameText))
 	{
@@ -186,8 +189,11 @@ void UASLootEntryWidget::RefreshEntry()
 
 	if (IsValid(ItemIcon))
 	{
-		ItemIcon->SetBrushFromTexture(ItemDefinition->Icon.LoadSynchronous(), false);
+		UTexture2D* Icon = ItemDefinition->Icon.Get();
+		ItemIcon->SetBrushFromTexture(Icon, false);
+		ItemIcon->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		ItemIcon->SetColorAndOpacity(FLinearColor::White);
+		if (ItemNameText) ItemNameText->SetVisibility(Icon ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 }
 
