@@ -51,10 +51,11 @@ void UASMainMenuWidget::HostRoom(const FString& RoomName, const bool bUsePasswor
 		{
 			bValidPassword &= Character >= TEXT('0') && Character <= TEXT('9');
 		}
-		FailHosting(FText::FromString(bValidPassword
-			? TEXT("비밀번호 방의 서버 검증은 아직 구현되지 않았습니다.")
-			: TEXT("비밀번호는 숫자 4자리로 입력해 주세요.")));
-		return;
+		if (!bValidPassword)
+		{
+			FailHosting(FText::FromString(TEXT("비밀번호는 숫자 4자리로 입력해 주세요.")));
+			return;
+		}
 	}
 
 	if (!SessionSubsystem || LobbyMapPath.IsEmpty())
@@ -64,7 +65,7 @@ void UASMainMenuWidget::HostRoom(const FString& RoomName, const bool bUsePasswor
 	}
 
 	bIsHosting = true;
-	SessionSubsystem->CreateSession(PublicConnections, TrimmedRoomName);
+	SessionSubsystem->CreateSession(PublicConnections, TrimmedRoomName, bUsePassword, Password);
 }
 
 void UASMainMenuWidget::HandleSessionCreated(const bool bSuccess)
