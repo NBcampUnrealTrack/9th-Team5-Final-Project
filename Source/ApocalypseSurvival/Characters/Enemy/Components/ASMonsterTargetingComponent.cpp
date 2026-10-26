@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GenericTeamAgentInterface.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetable.h"
 #include "Net/UnrealNetwork.h"
 
 UASMonsterTargetingComponent::UASMonsterTargetingComponent()
@@ -184,12 +185,19 @@ bool UASMonsterTargetingComponent::IsLivingPlayerTarget(const APawn* Pawn) const
 
 	const IAbilitySystemInterface* AbilitySystemOwner = Cast<IAbilitySystemInterface>(Pawn);
 	const UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemOwner ? AbilitySystemOwner->GetAbilitySystemComponent() : nullptr;
-	return AbilitySystemComponent && AbilitySystemComponent->GetNumericAttribute(UASHealthAttributeSet::GetHealthAttribute()) > 0.0f;
+	if (!AbilitySystemComponent || AbilitySystemComponent->GetNumericAttribute(UASHealthAttributeSet::GetHealthAttribute()) <= 0.0f)
+	{
+		return false;
+	}
+
+	// 플레이어가 제공하는 동적 타깃 가능 상태를 우선한다. 다운/사망은 체력값과 별개로 즉시 제외한다.
+	return !Pawn->GetClass()->ImplementsInterface(UASMonsterTargetable::StaticClass())
+		|| IASMonsterTargetable::Execute_IsMonsterTargetable(const_cast<APawn*>(Pawn));
 }
 
 bool UASMonsterTargetingComponent::HasValidTarget() const
 {
-	return IsValid(TargetActor) && !TargetActor->IsActorBeingDestroyed();
+	return IsLivingPlayerTarget(Cast<APawn>(TargetActor));
 }
 
 void UASMonsterTargetingComponent::SetTargetActor(AActor* NewTarget)

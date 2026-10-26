@@ -25,7 +25,8 @@ ASMassMonsterDamage::EApplyResult ASMassMonsterDamage::ApplyToActor(
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
 	if (IsValid(TargetASC))
 	{
-		if (TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
+		if (TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+			|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed))
 		{
 			return EApplyResult::InvalidTarget;
 		}

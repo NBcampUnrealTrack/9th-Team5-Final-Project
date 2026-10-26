@@ -34,6 +34,7 @@ namespace
 			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Target));
 		return TargetASC
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed)
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead);
 	}
 }
@@ -134,7 +135,11 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActor(
 	}
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target);
-	if (!TargetASC || TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Invulnerable))
+	if (!TargetASC
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed)
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead)
+		|| TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Invulnerable))
 	{
 		return 0;
 	}
