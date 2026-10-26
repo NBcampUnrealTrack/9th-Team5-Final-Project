@@ -34,6 +34,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void RequestLoot(AASLootChest* Chest, FGuid InstanceId, int32 Quantity);
 
+	/** Drop the current whole loot stack without requiring a free player-inventory slot. */
+	UFUNCTION(BlueprintCallable, Category = "Loot")
+	void RequestDropLoot(AASLootChest* Chest, FGuid InstanceId);
+
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void RequestUseItem(FGuid InstanceId);
 
@@ -85,6 +89,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerTakeLoot(AASLootChest* Chest, FGuid InstanceId, int32 Quantity);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropLoot(AASLootChest* Chest, FGuid InstanceId);
 
 	UFUNCTION(Server, Reliable)
 	void ServerUseItem(FGuid InstanceId);

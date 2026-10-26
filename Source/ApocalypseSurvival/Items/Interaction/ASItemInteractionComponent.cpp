@@ -186,6 +186,21 @@ void UASItemInteractionComponent::ServerTakeLoot_Implementation(AASLootChest* Ch
 	Chest->TakeLoot(GetASController()->GetPawn(), Inventory, InstanceId, Quantity);
 }
 
+void UASItemInteractionComponent::RequestDropLoot(AASLootChest* Chest, const FGuid InstanceId)
+{
+	AASPlayerController* PC = GetASController();
+	if (PC && PC->IsLocalController() && IsLootOpen() && IsValid(Chest)
+		&& Chest == OpenChest.Get() && InstanceId.IsValid()) ServerDropLoot(Chest, InstanceId);
+}
+
+void UASItemInteractionComponent::ServerDropLoot_Implementation(AASLootChest* Chest, const FGuid InstanceId)
+{
+	AASPlayerController* PC = GetASController();
+	if (!PC || !GetPlayerInventory() || !IsValid(Chest) || !InstanceId.IsValid()
+		|| Chest != ServerOpenChest.Get() || ServerLootPawn.Get() != PC->GetPawn() || !CanReachTarget(Chest)) return;
+	Chest->DropLoot(PC->GetPawn(), InstanceId);
+}
+
 void UASItemInteractionComponent::RequestUseItem(const FGuid InstanceId)
 {
 	if (GetASController() && GetASController()->IsLocalController() && InstanceId.IsValid()) ServerUseItem(InstanceId);
