@@ -21,6 +21,8 @@ struct FGameplayEffectSpec;
 struct FActiveGameplayEffectHandle;
 struct FGameplayTag;
 class UAbilitySystemComponent;
+struct FASCombatImpactContext;
+enum class EASResolvedHitReaction : uint8;
 
 /** 스폰 출처에 따른 낮 시간 탐지 정책. AI 판단은 서버에서만 사용한다. */
 UENUM()
@@ -33,7 +35,6 @@ enum class EASMonsterDayBehavior : uint8
 /**
  * 일반 몬스터 공통 Character.
  * 공격 종류는 자식 클래스가 아니라 MonsterDefinition, StateTree, GAS Ability 조합으로 결정한다.
- * 
  * 두뇌(StateTree)는 이 클래스가 아니라 AASMonsterAIController 가 소유한다.
  * 이 클래스는 Definition 적용과 GAS 초기화를 끝낸 뒤 OnMonsterInitialized 로 알리기만 한다.
  */
@@ -64,6 +65,9 @@ public:
     /** State.Monster.HitReact 태그로 판정한다. 경직 중에는 AI 이동과 공격을 멈춘다. */
     UFUNCTION(BlueprintPure, Category = "Enemy")
     bool IsHitReacting() const;
+
+    /** 서버 전용. 공격이 명시적으로 전달한 충격 프리셋으로 실제 경직 여부를 판정한다. */
+    void ApplyImpactReaction(const FASCombatImpactContext& ImpactContext);
 
     /** SpawnSubsystem이 FinishSpawning 전에 설정하는 낮 시간 행동 정책. */
     void SetDayBehavior(EASMonsterDayBehavior InDayBehavior) { DayBehavior = InDayBehavior; }
@@ -145,15 +149,14 @@ protected:
 
     /**
      * 죽음 처리에서 이동과 AI 를 멈추는 진입점. 자식에서 늘릴 수 있다.
-     * 
      * 죽음은 StateTree 가 아니라 Character/GAS 생명주기가 처리한다. 체력이 0 이 되면 여기서
      * AIController 의 StopLogic 으로 트리를 끝낸다. 그러므로 초기 StateTree 에는 Dead 상태를
      * 만들지 않는다. 만들어도 트리가 먼저 멈추기 때문에 실행되지 않는다.
      */
     virtual void StopMovementAndAI();
 
-    /** 서버 전용. Definition의 HitReactEffect를 자신에게 적용하고 진행 중인 공격을 취소한다. */
-    void ApplyHitReact();
+    /** 서버 전용. Definition의 HitReactEffect에 전역 지속 시간을 주입하고 진행 중인 공격을 취소한다. */
+    bool ApplyHitReact(EASResolvedHitReaction Reaction);
 
     /** 사망을 GameMode에 보고한다. 기본 몬스터는 처치 수를 올리고, 엘리트 BP는 보스 처치로 오버라이드한다. */
     UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Death")
@@ -188,16 +191,19 @@ private:
     void UnbindTargetedAttackTagDelegate();
     void HandleTargetedAttackTagChanged(const FGameplayTag Tag, int32 NewCount);
     void SetTargetedAttackMaterialTint(bool bActive);
+    
     /** 인접 몬스터의 피격 알림. 전파가 다시 전파되지 않도록 자기 자신만 어그로 처리한다. */
     void NotifyAllyDamagedBy(AActor* InstigatorActor, float AggroAmount);
+    
     void UnbindHealthDelegate();
     void HandleHealthChanged(const FOnAttributeChangeData& Data);
     void UnbindDamageEffectDelegate();
+    
     void HandleGameplayEffectApplied(UAbilitySystemComponent* TargetAbilitySystemComponent,
        const FGameplayEffectSpec& AppliedEffect, FActiveGameplayEffectHandle ActiveEffectHandle);
+       
     void QueueDeathHandling();
     void RecordDamageInstigator(AActor* InstigatorActor);
-
     void AwardExperienceToKiller() const;
 
     bool bMonsterInitialized = false;
@@ -214,6 +220,9 @@ private:
     bool bHealthBarEnabled = false;
     bool bHealthBarVisibleRequested = false;
     bool bDeathHandlingQueued = false;
+    
+    /** Rapid 프리셋의 다음 실제 경직 허용 시각. 피해와 피격 플래시는 이 제한을 받지 않는다. */
+    double NextRapidImpactReactionTime = 0.0;
     TWeakObjectPtr<AController> LastDamageKillerController;
 
     /** bHealthBarEnabled && bHealthBarVisibleRequested일 때만 지연 생성한다. */

@@ -1,6 +1,8 @@
 ﻿#include "Skills/Area/ASSkillArea.h"
 
 #include "Engine/World.h"
+#include "GameplayEffect.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "GameFramework/Pawn.h"
 #include "Skills/Data/ASSkillData.h"
 #include "Skills/Area/ASSkillAreaActor.h"
@@ -41,6 +43,22 @@ void UASSkillArea::OnSkillEffect_Implementation()
 			: Location + Aim * ForwardOffset;
 	}
 
+	AASSkillAreaActor* Area = SpawnArea(Location, Aim);
+	if (Area && bAttachToOwner)
+	{
+		Area->AttachToActor(Avatar, FAttachmentTransformRules::KeepWorldTransform);
+	}
+}
+
+AASSkillAreaActor* UASSkillArea::SpawnArea(const FVector& Location, const FVector& Aim, const FASCombatTargetRef* FollowTarget)
+{
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
+	if (!World || !HasSkillAuthority())
+	{
+		return nullptr;
+	}
+
 	const FTransform SpawnTransform(Aim.Rotation(), Location);
 	UClass* ClassToSpawn = AreaClass ? AreaClass.Get() : AASSkillAreaActor::StaticClass();
 
@@ -49,16 +67,45 @@ void UASSkillArea::OnSkillEffect_Implementation()
 
 	if (!Area)
 	{
-		return;
+		return nullptr;
 	}
 
-	Area->InitArea(MakeDamageSpec(), Avatar, Radius, Duration, TickInterval, bDamageOnSpawn, bCanHitPlayers, bDrawDebug);
-	Area->FinishSpawning(SpawnTransform);
+	FASCombatImpactContext ImpactContext;
+	ImpactContext.Preset = ImpactPreset;
+	ImpactContext.HitLocation = Location;
+	ImpactContext.HitDirection = Aim;
+	Area->InitArea(MakeDamageSpec(), Avatar, Radius, Duration, TickInterval,
+		bDamageOnSpawn, bCanHitPlayers, bDrawDebug, ImpactContext);
+	Area->SetExtraEffectSpecs(MakeAdditionalEffectSpecs());
 
-	if (bAttachToOwner)
+	if (FollowTarget && FollowTarget->IsValid())
 	{
-		Area->AttachToActor(Avatar, FAttachmentTransformRules::KeepWorldTransform);
+		Area->SetFollowTarget(*FollowTarget);
 	}
+
+	ConfigureArea(Area);
+
+	Area->FinishSpawning(SpawnTransform);
+	return Area;
+}
+
+TArray<FGameplayEffectSpecHandle> UASSkillArea::MakeAdditionalEffectSpecs() const
+{
+	TArray<FGameplayEffectSpecHandle> Specs;
+	for (const TSubclassOf<UGameplayEffect>& EffectClass : AdditionalEffects)
+	{
+		if (!EffectClass)
+		{
+			continue;
+		}
+
+		FGameplayEffectSpecHandle Spec = MakeOutgoingGameplayEffectSpec(EffectClass, GetAbilityLevel());
+		if (Spec.IsValid())
+		{
+			Specs.Add(Spec);
+		}
+	}
+	return Specs;
 }
 
 void UASSkillArea::ApplySkillStats(const FASSkillStatsRow& Stats)

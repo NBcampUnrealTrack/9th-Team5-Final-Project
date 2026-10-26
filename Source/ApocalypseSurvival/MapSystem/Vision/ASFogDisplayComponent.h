@@ -12,6 +12,18 @@ class UASVisionWorldSubsystem;
 class UMaterialInstanceDynamic;
 class UTexture2D;
 
+/** FogTexture를 다른 렌더링 시스템에 바인딩할 때 필요한 월드별 상태다. */
+struct FASFogMaterialState
+{
+	UTexture2D* FogTexture = nullptr;
+	FVector2D MapWorldMin = FVector2D::ZeroVector;
+	FVector2D MapWorldSize = FVector2D(1.0, 1.0);
+	FVector2D LocalVisionCenter = FVector2D::ZeroVector;
+	float LocalVisionRadius = 0.0f;
+	float LocalVisionSoftness = 90.0f;
+	bool bHasLocalVisionMask = false;
+};
+
 /** 로컬 CPU 시야/탐색 마스크, 안개 텍스처, 월드 포스트 프로세스. */
 UCLASS(ClassGroup = (AS))
 class APOCALYPSESURVIVAL_API UASFogDisplayComponent : public UActorComponent
@@ -25,14 +37,11 @@ public:
 
 	void Configure(UASVisionDefinition* Definition, const FVector2D& WorldMin, const FVector2D& WorldMax);
 	UTexture2D* GetFogTexture() const { return FogTexture; }
+	FASFogMaterialState GetMaterialState() const;
 	/** 로컬 팀 시야 마스크가 적어도 한 번 갱신됐는지 반환한다. */
 	bool HasLocalVisionMask() const { return bHasLocalVisionMask; }
 	bool IsLocationExplored(const FVector& Location) const;
 	bool IsLocationVisibleLocally(const FVector& Location) const;
-	/** 보이던 Mass 적을 계속 표시할 수 있는, 밝은 시야 경계보다 안쪽으로 침식된 영역인지 반환한다. */
-	bool IsLocationInLocalVisionExitRegion(const FVector& Location) const;
-	/** 숨겨진 Mass 적의 재표시를 허용하는, 밝은 시야 경계보다 안쪽으로 침식된 영역인지 반환한다. */
-	bool IsLocationInLocalVisionReentryRegion(const FVector& Location) const;
 	/** 현재 로컬 팀 시야 주변의 Mass ISM 유지 Buffer에 위치하는지 반환한다. */
 	bool IsLocationInLocalVisionBuffer(const FVector& Location) const;
 	void ResetExplored();
@@ -51,9 +60,13 @@ private:
 		FVector2D WorldSize;
 		int32 BlurRadius;
 		const UASVisionSourceComponent* LocalSource;
+		FVector LocalOrigin = FVector::ZeroVector;
+		FVector2D LocalCenter = FVector2D::ZeroVector;
+		float LocalRadius = 0.0f;
 	};
 	void AdvancePendingFade();
 	void ClearPreviousVisibleCells();
+	bool NeedsImmediateLocalMaskRefresh() const;
 	void TraceSource(const UASVisionEvaluatorComponent& Evaluator, const UASVisionSourceComponent* Source,
 		const FVector& Origin, float Radius, float DisplayRadius, const UASVisionSourceComponent* LocalSource);
 	FIntRect RasterizeTeamSources(const UASVisionWorldSubsystem& Subsystem,
@@ -63,6 +76,8 @@ private:
 		const TArray<uint8>& Alpha, const FIntRect& Region, const FIntRect& Excluded);
 	void BlurLocalAlpha(const FIntRect& Region, int32 BlurRadius);
 	void BlurChangedRegions(bool bFullRecompute, bool bLocalRegionChanged, int32 BlurRadius);
+	void CommitLocalMaterialChannels(const FIntRect& Region);
+	void ResolveExitedLocalRegion(const FIntRect& PreviousLocalRegion, TArray<FIntRect>& OutUploadRegions);
 	void StartLocalFade(float FadeSeconds);
 
 	FVector2D GetFogWorldSize() const { return (FogWorldMax - FogWorldMin).ComponentMax(FVector2D(1.0, 1.0)); }
@@ -93,10 +108,6 @@ private:
 	TObjectPtr<APostProcessVolume> WorldFogVolume;
 
 	TArray<uint8> VisibleCells;
-	/** VisibleCells를 MassVisibilityExitInsetDistance만큼 침식한 표시 유지 영역. */
-	TArray<uint8> MassVisibilityExitCells;
-	/** VisibleCells를 MassVisibilityReentryInsetDistance만큼 침식한 재진입 허용 영역. */
-	TArray<uint8> MassVisibilityReentryCells;
 	/** VisibleCells를 MassVisibilityBufferDistance만큼 확장한 로컬 표현 유지 영역. */
 	TArray<uint8> MassVisibilityBufferCells;
 	/** Mass Visibility Buffer를 선형 시간에 확장하기 위한 3-4 chamfer 거리 필드. */
@@ -138,6 +149,9 @@ private:
 	int32 ResolutionY = 0;
 	FVector2D FogWorldMin = FVector2D::ZeroVector;
 	FVector2D FogWorldMax = FVector2D::ZeroVector;
+	FVector2D LocalVisionCenter = FVector2D::ZeroVector;
+	float LocalVisionRadius = 0.0f;
+	float LocalVisionSoftness = 90.0f;
 	bool bMaskDirty = true;
 	/** 첫 RasterizeTeamSources 전에는 VisibleCells가 모두 0이므로 표현 컬링에 사용하면 안 된다. */
 	bool bHasLocalVisionMask = false;

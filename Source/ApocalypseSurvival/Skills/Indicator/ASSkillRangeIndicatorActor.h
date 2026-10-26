@@ -43,10 +43,22 @@ public:
 	//목표 지점을 사거리 안으로 제한하고 바닥 높이에 맞춤 (스킬·인디케이터 공용)
 	static FVector ResolveTargetLocation(const AActor* Caster, const FVector& DesiredLocation, float MaxCastRange);
 
+	//커서 근처에서 달라붙을 Actor 적 (스킬·인디케이터 공용, Mass 제외). bRequireInRange면 사거리 밖 적은 제외
+	static AActor* FindSnapActor(const AActor* Caster, const FVector& CursorLocation, float SnapRadius,
+		float MaxCastRange, bool bRequireInRange, bool bCanHitPlayers);
+
+	//지금 효과 원이 달라붙어 있는 적 (없으면 nullptr)
+	UFUNCTION(BlueprintPure, Category = "AS|Skill|Indicator")
+	AActor* GetSnapTarget() const { return SnapTarget.Get(); }
+
 protected:
 	//초기화 직후 호출. BP에서 색 등 머티리얼 파라미터 추가 설정
 	UFUNCTION(BlueprintImplementableEvent, Category = "AS|Skill|Indicator")
 	void BP_OnIndicatorInitialized();
+
+	//달라붙는 적이 바뀔 때 호출 (nullptr = 바닥). BP에서 데칼 색 바꾸기 등
+	UFUNCTION(BlueprintImplementableEvent, Category = "AS|Skill|Indicator")
+	void BP_OnSnapTargetChanged(AActor* NewSnapTarget);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -123,5 +135,7 @@ private:
 
 	//커서가 UI 위 등으로 안 잡힐 때 쓰는 마지막 위치
 	FVector LastCursorLocation = FVector::ZeroVector;
+
+	TWeakObjectPtr<AActor> SnapTarget;
 	bool bHasCursorLocation = false;
 };

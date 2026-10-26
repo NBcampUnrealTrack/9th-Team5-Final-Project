@@ -9,6 +9,7 @@ class UASVisionDefinition;
 class UASFogDisplayComponent;
 class UASVisionEvaluatorComponent;
 class UTexture2D;
+struct FASFogMaterialState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASOnWallOcclusionChangedSignature, bool, bEnabled);
 
@@ -71,23 +72,21 @@ public:
 	void ResetExploredForAllPlayers();
 
 	/**
-	 * 로컬 팀이 현재 보는 곳은 투명, 탐색한 곳은 시야 정의의 ExploredAlpha,
-	 * 그 외는 시야 정의의 UnexploredAlpha이다. RGB는 검정이다. 맵 정의의 MapWorldMin..Max를 덮는다.
+	 * B는 현재 로컬 팀 논리 시야(0: 시야 밖, 255: 현재 시야)다.
+	 * G/R/A는 로컬 팀이 현재 보는 곳은 투명, 탐색한 곳은 시야 정의의 ExploredAlpha,
+	 * 그 외는 시야 정의의 UnexploredAlpha인 기존 안개 표현이다. 맵 정의의 MapWorldMin..Max를 덮는다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	UTexture2D* GetFogTexture() const;
+
+	/** FogTexture와 맵 좌표계, 로컬 마스크 준비 상태를 렌더링 시스템에 제공한다. */
+	FASFogMaterialState GetFogMaterialState() const;
 
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	bool IsLocationExplored(const FVector& Location) const;
 
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	bool IsLocationVisibleLocally(const FVector& Location) const;
-
-	/** 보이던 Mass 적을 계속 표시할 수 있는, 밝은 시야 경계보다 안쪽 영역인지 반환한다. */
-	bool IsLocationInLocalVisionExitRegion(const FVector& Location) const;
-
-	/** 숨겨진 Mass 적의 재표시를 허용하는, 밝은 시야 경계보다 안쪽 영역인지 반환한다. */
-	bool IsLocationInLocalVisionReentryRegion(const FVector& Location) const;
 
 	/** 현재 로컬 팀 시야 주변의 Mass ISM 유지 Buffer에 위치하는지 반환한다. */
 	bool IsLocationInLocalVisionBuffer(const FVector& Location) const;

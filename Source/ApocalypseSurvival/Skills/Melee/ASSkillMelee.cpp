@@ -1,9 +1,16 @@
 ﻿#include "Skills/Melee/ASSkillMelee.h"
 
+#include "Skills/Debug/ASSkillDamageDebug.h"
+
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "Skills/Data/ASSkillData.h"
 #include "Engine/World.h"
+
+UASSkillMelee::UASSkillMelee()
+{
+	ImpactPreset = EASImpactPreset::Standard;
+}
 
 void UASSkillMelee::OnSkillEffect_Implementation()
 {
@@ -45,8 +52,16 @@ void UASSkillMelee::OnSkillEffect_Implementation()
 		Query.AngleDegrees = Angle;
 		Query.Instigator = Avatar;
 		Query.bCanHitPlayers = bCanHitPlayers;
-		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs);
+
+		FASCombatImpactContext ImpactContext;
+		ImpactContext.Preset = ImpactPreset;
+		ImpactContext.HitLocation = Center;
+		ImpactContext.HitDirection = Aim;
+		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext);
 	}
+
+	//AS.Debug.SkillDamage 1
+	ASSkillDamageDebug::Report(this, EffectSpecs, ApplyResult, Center);
 
 	if (bDrawDebug)
 	{

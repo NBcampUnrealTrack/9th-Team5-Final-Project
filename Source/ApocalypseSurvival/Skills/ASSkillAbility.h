@@ -4,6 +4,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "AITypes.h"
 #include "AttributeSet.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Engine/TimerHandle.h"
 #include "Skills/Indicator/ASSkillIndicatorTypes.h"
 #include "ASSkillAbility.generated.h"
@@ -159,6 +160,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Damage")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
+	/** 이 스킬의 명중이 대상에게 전달하는 경직 프리셋. 지속 피해 스킬의 기본값은 None이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Impact")
+	EASImpactPreset ImpactPreset = EASImpactPreset::None;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Damage", meta = (ClampMin = "0.0"))
 	float BaseDamage = 50.0f;
 
@@ -182,6 +187,14 @@ protected:
 	//위치형 최대 사거리 (커서가 밖이면 사거리 끝에 시전)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Aim", meta = (ClampMin = "0.0", Units = "cm"))
 	float MaxCastRange = 800.0f;
+
+	//위치형: 커서 근처의 Actor 적(엘리트·보스)에게 목표 지점이 달라붙음 (Mass는 대상 아님)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Aim")
+	bool bSnapToActorTarget = false;
+
+	//커서에서 이 거리 안의 Actor 적에게 달라붙음
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Aim", meta = (ClampMin = "0.0", Units = "cm", EditCondition = "bSnapToActorTarget"))
+	float SnapRadius = 150.0f;
 
 	//범위 표시 사용 (끄면 시전 방식 설정과 상관없이 누르는 즉시 시전)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Indicator")
@@ -262,6 +275,9 @@ private:
 
 	//걸어가서 시전 설정이 켜져 있는지 (본인 화면 기준)
 	bool ShouldWalkToCast() const;
+
+	//bSnapToActorTarget이면 커서 근처 Actor 적 위치로 바꿔서 반환 (없거나 사거리 밖이면 그대로)
+	FVector ApplyActorSnap(const FVector& CursorLocation) const;
 
 	//위치형에서 커서가 사거리 밖이고 걸어가기 모드면 목표 지점 반환
 	bool GetOutOfRangeWalkTarget(FVector& OutTargetLocation) const;

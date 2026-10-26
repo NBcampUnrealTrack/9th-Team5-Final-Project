@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 
 class AActor;
 
@@ -18,5 +19,6 @@ namespace ASMassMonsterDamage
 	 * ASC가 없으면 IASMonsterDamageable 인터페이스로 전달한다.
 	 */
 	APOCALYPSESURVIVAL_API EApplyResult ApplyToActor(AActor* TargetActor, float Damage,
-		const FVector& SourceLocation, const FVector& HitLocation = FVector::ZeroVector, AActor* DamageCauser = nullptr);
+		const FVector& SourceLocation, const FVector& HitLocation = FVector::ZeroVector, AActor* DamageCauser = nullptr,
+		const FASCombatImpactContext& ImpactContext = FASCombatImpactContext());
 }

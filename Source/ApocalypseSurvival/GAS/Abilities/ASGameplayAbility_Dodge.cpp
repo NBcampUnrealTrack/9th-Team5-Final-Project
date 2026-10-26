@@ -18,6 +18,7 @@ UASGameplayAbility_Dodge::UASGameplayAbility_Dodge()
 	// 실행 중에는 State.Dodging 을 갖고, 그 태그가 있으면 다시 발동하지 못한다(연타 방지).
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Dodging);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Dodging);
+	ActivationBlockedTags.AddTag(ASGameplayTags::State_Staggered);
 }
 
 void UASGameplayAbility_Dodge::ActivateAbility(

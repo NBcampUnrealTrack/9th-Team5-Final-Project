@@ -5,6 +5,7 @@
 #include "Engine/DataTable.h"
 #include "MassEntityTypes.h"
 #include "MassLODTypes.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "Mass/Monster/Targeting/ASMonsterTargetTypes.h"
 #include "ASMassMonsterFragments.generated.h"
@@ -136,6 +137,26 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterCombatFragment : public FMassFragmen
 	bool bUseFallbackMelee = false;
 };
 
+/**
+ * Mass 몬스터의 피격 제어 상태. Entity마다 타이머를 만들지 않고 종료 시각만 비교한다.
+ * 실제 이동·공격 Processor는 IsControlActive()일 때 해당 Entity를 건너뛴다.
+ */
+USTRUCT()
+struct APOCALYPSESURVIVAL_API FASMassMonsterHitReactionFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	double ReactionEndTimeSeconds = 0.0;
+	double NextRapidReactionTimeSeconds = 0.0;
+	EASResolvedHitReaction Reaction = EASResolvedHitReaction::None;
+	uint8 ReactionSequence = 0;
+
+	bool IsControlActive(const double CurrentTimeSeconds) const
+	{
+		return CurrentTimeSeconds < ReactionEndTimeSeconds;
+	}
+};
+
 /** 일시적인 일반 몬스터 강화 상태. 종류별 기본 수치는 Shared Config에 유지한다. */
 USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterModifierFragment : public FMassFragment
@@ -195,9 +216,9 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterNavigationFragment : public FMassFra
 
 /**
  * 각 머신의 전장의 안개 표시 상태. 네트워크 게임 상태가 아니라 로컬 Representation 전용 데이터다.
- * 밝은 시야 안쪽의 표시 영역에서는 표시하고, 숨김선 바깥과 시야 경계 Buffer에서는 ISM을 유지한 채 숨긴다.
+ * 현재 시야 여부는 게임플레이/UI에만 사용하고, 실제 픽셀 표시는 FogTexture 기반 Material이 결정한다.
+ * 시야 경계 Buffer에서는 ISM을 유지하고, Buffer 바깥에 일정 시간 머문 뒤에만 ISM을 제거한다.
  * Buffer 바깥에 일정 시간 머문 뒤에만 ISM을 제거해 경계에서의 재등록을 줄인다.
- * 숨김과 재표시 Fade는 Transform이 아니라 ISM Per Instance Custom Data 0번(0..1 표시 알파)으로 전달한다.
  */
 USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterFogVisibilityFragment : public FMassFragment
@@ -207,8 +228,6 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterFogVisibilityFragment : public FMass
 	bool bInitialized = false;
 	bool bVisibleToLocalTeam = false;
 	bool bRetainedInFogBuffer = false;
-	/** Material의 Per Instance Custom Data 0번으로 전달되는 현재 표시 알파. */
-	float RenderVisibilityAlpha = 0.0f;
 	float SecondsOutsideFogBuffer = 0.0f;
 	bool bTemporarilyForcedOff = false;
 	TEnumAsByte<EMassLOD::Type> SavedLOD = EMassLOD::Off;
@@ -256,6 +275,14 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSh
 
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	EASMassMonsterAttackPattern AttackPattern = EASMassMonsterAttackPattern::Melee;
+
+	/** 이 종류의 Mass 몬스터가 플레이어에게 전달하는 피격 프리셋. Entity Config/BP에서 패턴별로 지정한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Impact")
+	EASImpactPreset AttackImpactPreset = EASImpactPreset::Standard;
+
+	/** 플레이어 공격 프리셋을 받았을 때 적용할 경직 저항. Actor 몬스터 Definition을 쓰면 그 값을 우선한다. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Impact")
+	EASStaggerResistance StaggerResistance = EASStaggerResistance::Normal;
 
 	/** 소환 횟수를 모두 쓴 사이렌이 사용할 약한 근접 공격 설정. */
 	UPROPERTY(EditAnywhere, Category = "Combat|Fallback", meta = (ClampMin = "0.0", Units = "cm"))

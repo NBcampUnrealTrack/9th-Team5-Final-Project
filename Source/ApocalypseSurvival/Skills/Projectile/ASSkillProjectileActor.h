@@ -28,7 +28,8 @@ public:
 		float Speed,
 		float MaxRange,
 		int32 InPierceCount,
-		bool bInCanHitPlayers);
+		bool bInCanHitPlayers,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 	/** 여러 무기 피해 효과를 하나의 투사체에 실을 때 쓰는 초기화 경로. */
 	void InitProjectile(
@@ -38,7 +39,8 @@ public:
 		float Speed,
 		float MaxRange,
 		int32 InPierceCount,
-		bool bInCanHitPlayers);
+		bool bInCanHitPlayers,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 protected:
 	virtual void BeginPlay() override;
@@ -57,8 +59,23 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
+	//적을 맞힌 순간 (서버). 자식 클래스에서 퍼짐·폭발 등 확장용. HitLocation = 맞힌 순간 투사체 위치
+	virtual void OnTargetsHit(const FASCombatApplyResult& Result, const FVector& HitLocation) {}
+
+	bool CanHitPlayers() const { return bCanHitPlayers; }
+
+	//false = 지나가는 길의 적 판정을 안 함 (유도 구체처럼 자식 클래스가 직접 피해를 줄 때)
+	bool bResolveSegmentHits = true;
+
+	//사라짐 처리 (자식 클래스에서도 호출)
+	void EndProjectile();
+
 	TArray<FGameplayEffectSpecHandle> DamageSpecs;
 	TWeakObjectPtr<AActor> InstigatorAvatar;
+	FASCombatImpactContext ImpactContext;
+
+	// Actor/Mass 등 실제 Backend 종류와 관계없는 중복 피격 기록.
+	FASCombatTargetHitSet HitTargets;
 
 private:
 	UFUNCTION()
@@ -72,17 +89,12 @@ private:
 	void ConfigureProjectileCollision();
 	void ResolveHitsAlongSegment(const FVector& CurrentLocation);
 
-	void EndProjectile();
-
 	//0 = 첫 적에서 사라짐, -1 = 무한 관통
 	int32 PierceCount = 0;
 	bool bCanHitPlayers = false;
 	bool bEnded = false;
 	float FlightTime = 1.0f;
 	FVector PreviousLocation = FVector::ZeroVector;
-
-	// Actor/Mass 등 실제 Backend 종류와 관계없는 중복 피격 기록.
-	FASCombatTargetHitSet HitTargets;
 
 	FTimerHandle RangeTimerHandle;
 };

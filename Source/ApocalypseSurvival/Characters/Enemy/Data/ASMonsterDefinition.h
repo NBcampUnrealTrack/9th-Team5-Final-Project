@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Engine/DataAsset.h"
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
@@ -49,7 +50,6 @@ struct FASMonsterAttackPattern
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "s"))
     float Cooldown = 1.0f;
 
-    // --- 장판(Telegraph) 관련 설정 속성 추가 완료 ---
     /** 장판 인디케이터의 모양 종류. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Telegraph")
     ETelegraphShape ShapeType = ETelegraphShape::Rectangle;
@@ -85,7 +85,7 @@ struct FASMonsterInitialAttributes
 
 /**
  * 근접형, 원거리형 등의 차이를 Character 상속 대신 데이터로 정의한다.
- * StateTree 는 이 자산을 읽어 타깃 거리와 활성화할 공격 Ability를 결정한다.
+ * StateTree는 이 자산을 읽어 타깃 거리와 활성화할 공격 Ability를 결정한다.
  */
 UCLASS(BlueprintType, Const)
 class APOCALYPSESURVIVAL_API UASMonsterDefinition : public UDataAsset
@@ -108,8 +108,12 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster")
     FASMonsterInitialAttributes InitialAttributes;
 
+    /** 이 몬스터가 받는 공격 프리셋을 어떤 최종 경직으로 바꿀지 결정한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reaction")
+    EASStaggerResistance StaggerResistance = EASStaggerResistance::Normal;
+
     /**
-     * Actor 와 Mass가 공유하는 스탯 원본. 비어 있으면 InitialAttributes를 사용해 기존 에셋을 호환한다.
+     * Actor와 Mass가 공유하는 스탯 원본. 비어 있으면 InitialAttributes를 사용해 기존 에셋을 호환한다.
      * 새 몬스터는 이 자산을 지정해 라운드 성장과 공통 계산 규칙을 사용한다.
      */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster|Stats")
@@ -185,13 +189,13 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (TitleProperty = "PatternId"))
     TArray<FASMonsterAttackPattern> AttackPatterns;
 
-    /** 피해를 입고 살아남았을 때 자신에게 적용할 짧은 경직 GameplayEffect. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reaction")
-    TSubclassOf<UGameplayEffect> HitReactEffect;
-
     /** 사망 시 충돌을 끈 뒤 월드에 남겨 둘 시간. 0이면 즉시 제거한다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
     float DeathDespawnDelay = 1.5f;
+
+    /** 실제 경직 때 적용할 Duration GameplayEffect. 지속 시간은 Combat Impact 전역 설정이 덮어쓴다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reaction")
+    TSubclassOf<UGameplayEffect> HitReactEffect;
 
     /** 이 몬스터 원형이 머리 위 월드 체력바를 사용할지 결정한다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")

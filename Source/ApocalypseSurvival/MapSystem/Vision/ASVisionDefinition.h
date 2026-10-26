@@ -39,7 +39,7 @@ public:
 
 	/**
 	 * 팀 시야 밖의 게임 화면을 어둡게 하는 선택적 포스트 프로세스 머티리얼. 비우면 월드 안개를 끄며 미니맵 안개는 유지한다.
-	 * 텍스처 "FogTexture"를 받는다 (알파: 보이는 곳은 0, 나머지는 탐색/미탐색 어둡기).
+	 * 텍스처 "FogTexture"를 받는다 (B: 현재 로컬 팀 논리 시야, A: 보이는 곳은 0·나머지는 탐색/미탐색 어둡기).
 	 * 벡터 "MapWorldMin" / "MapWorldSize" (XY, cm)는 맵 정의의 영역(UASMapDefinition::MapWorldMin..Max)에서 가져와 월드 위치를 안개 UV에 대응시킨다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vision|Fog")

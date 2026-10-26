@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "MassEntityTypes.h"
 #include "MassRepresentationTypes.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "ASMassMonsterTemporaryVisualFragment.generated.h"
 
@@ -27,6 +28,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterTemporaryVisualFragment : public FMa
 
 	EASMassMonsterWorldBehavior SpawnWorldBehavior = EASMassMonsterWorldBehavior::DayTerritory;
 	float HitFlashTimeRemaining = 0.0f;
+	EASResolvedHitReaction LastImpactReaction = EASResolvedHitReaction::VisualOnly;
+	uint8 LastImpactReactionSequence = 0;
 	EASMassMonsterTemporaryVisualState AppliedState = EASMassMonsterTemporaryVisualState::DaySpawn;
 	bool bHasAppliedState = false;
 

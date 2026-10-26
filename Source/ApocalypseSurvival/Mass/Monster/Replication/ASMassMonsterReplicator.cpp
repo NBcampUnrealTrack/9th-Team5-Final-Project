@@ -31,6 +31,7 @@ void UASMassMonsterReplicator::AddRequirements(FMassEntityQuery& EntityQuery)
 	EntityQuery.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterHitReactionFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 }
 
@@ -52,10 +53,12 @@ void UASMassMonsterReplicator::ProcessClientReplication(FMassExecutionContext& C
 	TConstArrayView<FASMassMonsterHealthFragment> Healths;
 	TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats;
 	TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors;
+	TConstArrayView<FASMassMonsterHitReactionFragment> HitReactions;
 	TArrayView<FMassReplicatedAgentFragment> ReplicatedAgents;
 	const FASMassMonsterConfigFragment* MonsterConfig = nullptr;
 
-	auto BuildVisualData = [&Healths, &RuntimeStats, &Behaviors, &MonsterConfig](const int32 EntityIndex)
+	const double CurrentTime = ReplicationContext.World.GetTimeSeconds();
+	auto BuildVisualData = [&Healths, &RuntimeStats, &Behaviors, &HitReactions, &MonsterConfig, CurrentTime](const int32 EntityIndex)
 	{
 		FASReplicatedMonsterVisualData VisualData;
 		const FASMassMonsterRuntimeStatsFragment& RuntimeStat = RuntimeStats[EntityIndex];
@@ -64,11 +67,15 @@ void UASMassMonsterReplicator::ProcessClientReplication(FMassExecutionContext& C
 			: MonsterConfig->MaxHealth;
 		VisualData.HealthRatio = QuantizeHealthRatio(Healths[EntityIndex].CurrentHealth, MaxHealth);
 		VisualData.WorldBehavior = Behaviors[EntityIndex].WorldBehavior;
+		VisualData.ImpactReaction = HitReactions[EntityIndex].IsControlActive(CurrentTime)
+			? HitReactions[EntityIndex].Reaction
+			: EASResolvedHitReaction::VisualOnly;
+		VisualData.ImpactReactionSequence = HitReactions[EntityIndex].ReactionSequence;
 		return VisualData;
 	};
 
 	auto CacheViewsCallback = [&PositionYawHandler, &ReplicationSharedFragment,
-		&ReplicationParameters, &Healths, &RuntimeStats, &Behaviors, &ReplicatedAgents, &MonsterConfig](
+		&ReplicationParameters, &Healths, &RuntimeStats, &Behaviors, &HitReactions, &ReplicatedAgents, &MonsterConfig](
 		FMassExecutionContext& ExecutionContext)
 	{
 		PositionYawHandler.CacheFragmentViews(ExecutionContext);
@@ -77,6 +84,7 @@ void UASMassMonsterReplicator::ProcessClientReplication(FMassExecutionContext& C
 		Healths = ExecutionContext.GetFragmentView<FASMassMonsterHealthFragment>();
 		RuntimeStats = ExecutionContext.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		Behaviors = ExecutionContext.GetFragmentView<FASMassMonsterBehaviorFragment>();
+		HitReactions = ExecutionContext.GetFragmentView<FASMassMonsterHitReactionFragment>();
 		ReplicatedAgents = ExecutionContext.GetMutableFragmentView<FMassReplicatedAgentFragment>();
 		MonsterConfig = &ExecutionContext.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 		check(ReplicationSharedFragment);
