@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
 #include "Skills/Projectile/ASSkillProjectileActor.h"
@@ -33,6 +34,10 @@ public:
 	/** Single damages one best target; Area damages every valid target in the attack area. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
 	EASAttackTargetMode TargetMode = EASAttackTargetMode::Single;
+
+	/** 이 공격이 명중한 대상에게 전달할 경직 프리셋. 피해량과 독립적으로 선택한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Impact")
+	EASImpactPreset ImpactPreset = EASImpactPreset::None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Animation")
 	TObjectPtr<UAnimMontage> AttackMontage;

@@ -183,7 +183,11 @@ void UASSkillDash::CheckDashHit()
 			EffectSpecs.Add(DamageSpec);
 		}
 
-		bHitTarget = CombatTargets->ResolveAndApply(Query, EffectSpecs, &DashHitTargets).HasAnyHit();
+		FASCombatImpactContext ImpactContext;
+		ImpactContext.Preset = ImpactPreset;
+		ImpactContext.HitLocation = CurrentLocation;
+		ImpactContext.HitDirection = (CurrentLocation - SweepStart).GetSafeNormal2D();
+		bHitTarget = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext, &DashHitTargets).HasAnyHit();
 	}
 	else
 	{

@@ -40,6 +40,16 @@ namespace ASWeaponAttackExecutionPrivate
 		return UASItemAbilityLibrary::MakeWeaponHitEffectSpecs(Context.Weapon, Context.AbilitySystem);
 	}
 
+	FASCombatImpactContext MakeImpactContext(const FASWeaponAttackExecutionContext& Context,
+		const FVector& HitLocation, const FVector& HitDirection)
+	{
+		FASCombatImpactContext Result;
+		Result.Preset = Context.Profile ? Context.Profile->ImpactPreset : EASImpactPreset::None;
+		Result.HitLocation = HitLocation;
+		Result.HitDirection = HitDirection.GetSafeNormal();
+		return Result;
+	}
+
 	void SpawnDirectionalProjectile(const FASWeaponAttackExecutionContext& Context, const UASRangedAttackProfile& Profile)
 	{
 		UWorld* World = Context.Avatar ? Context.Avatar->GetWorld() : nullptr;
@@ -85,8 +95,9 @@ namespace ASWeaponAttackExecutionPrivate
 		}
 
 		const TArray<FGameplayEffectSpecHandle> DamageSpecs = MakeDamageSpecs(Context);
+		const FASCombatImpactContext ImpactContext = MakeImpactContext(Context, SpawnLocation, Direction);
 		Projectile->InitProjectile(DamageSpecs, Context.Avatar,
-			Direction, Profile.ProjectileSpeed, Context.Definition->AttackRange, Profile.ProjectilePierceCount, false);
+			Direction, Profile.ProjectileSpeed, Context.Definition->AttackRange, Profile.ProjectilePierceCount, false, ImpactContext);
 		Projectile->FinishSpawning(SpawnTransform);
 	}
 	
@@ -129,7 +140,8 @@ namespace ASWeaponAttackExecutionPrivate
 			return;
 		}
 
-		Projectile->InitHoming(MakeDamageSpecs(Context), Context.Avatar, Target, Profile.HomingProjectileSpeed);
+		const FASCombatImpactContext ImpactContext = MakeImpactContext(Context, SpawnLocation, Direction);
+		Projectile->InitHoming(MakeDamageSpecs(Context), Context.Avatar, Target, Profile.HomingProjectileSpeed, ImpactContext);
 		Projectile->FinishSpawning(SpawnTransform);
 	}
 }
@@ -205,7 +217,8 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 
 	// 부채꼴 안의 적 전부 (일반 몬스터 + Mass 몬스터)
 	const TArray<FGameplayEffectSpecHandle> DamageSpecs = ASWeaponAttackExecutionPrivate::MakeDamageSpecs(Context);
-	const FASCombatApplyResult ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
+	const FASCombatImpactContext ImpactContext = ASWeaponAttackExecutionPrivate::MakeImpactContext(Context, Origin, Direction);
+	const FASCombatApplyResult ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext);
 
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
@@ -244,6 +257,8 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		return;
 	}
 	const TArray<FGameplayEffectSpecHandle> DamageSpecs = ASWeaponAttackExecutionPrivate::MakeDamageSpecs(Context);
+	FASCombatImpactContext ImpactContext = ASWeaponAttackExecutionPrivate::MakeImpactContext(
+		Context, Start, Context.AimDirection);
 	UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
 	if (!CombatTargets)
 	{
@@ -342,7 +357,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		}
 
 		// 기존 즉시 판정 (투사체 클래스가 없는 무기)
-		const FASCombatApplyResult ApplyResult = CombatTargets->ResolveAndApplyBestTarget(Query, DamageSpecs);
+		const FASCombatApplyResult ApplyResult = CombatTargets->ResolveAndApplyBestTarget(Query, DamageSpecs, ImpactContext);
 		if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 		{
 			Character->MulticastDrawWeaponAttackDebug(Start, DebugEnd, TraceRadius, false, ApplyResult.HasAnyHit());
@@ -379,7 +394,8 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			const FVector ImpactCenter = Start + (End - Start) * FirstHitTime;
 			Query.SearchOrigin = ImpactCenter;
 			Query.SearchRadius = FMath::Max(0.0f, Profile->AreaRadius);
-			ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
+			ImpactContext.HitLocation = ImpactCenter;
+			ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext);
 			if (!ApplyResult.ActorTargets.Contains(FirstTarget))
 			{
 				FASCombatTargetQuery DirectQuery;
@@ -389,7 +405,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 				DirectQuery.Domain = EASCombatTargetDomain::ActorOnly;
 				DirectQuery.ExplicitActor = FirstTarget;
 				DirectQuery.MaxTargets = 1;
-				ApplyResult.ActorTargets.Append(CombatTargets->ResolveAndApply(DirectQuery, DamageSpecs).ActorTargets);
+				ApplyResult.ActorTargets.Append(CombatTargets->ResolveAndApply(DirectQuery, DamageSpecs, ImpactContext).ActorTargets);
 			}
 		}
 		else
@@ -399,7 +415,8 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			Query.Domain = EASCombatTargetDomain::ActorOnly;
 			Query.ExplicitActor = FirstTarget;
 			Query.MaxTargets = 1;
-			ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs);
+			ImpactContext.HitLocation = FirstTarget->GetActorLocation();
+			ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext);
 		}
 	}
 	else
@@ -413,7 +430,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		Query.Instigator = Context.Avatar;
 		Query.Domain = EASCombatTargetDomain::MassOnly;
 		Query.MaxTargets = 1;
-		ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs, &HitTargets);
+		ApplyResult = CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext, &HitTargets);
 	}
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{

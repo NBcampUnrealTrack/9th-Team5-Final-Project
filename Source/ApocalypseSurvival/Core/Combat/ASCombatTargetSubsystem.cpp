@@ -4,6 +4,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -163,6 +164,30 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecToActor(
 	AActor* Target)
 {
 	return ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle>(&EffectSpec, 1), Target);
+}
+
+int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActor(
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+	AActor* Target,
+	const FASCombatImpactContext& ImpactContext)
+{
+	const int32 AppliedSpecCount = ApplyEffectSpecsToActor(EffectSpecs, Target);
+	if (AppliedSpecCount > 0)
+	{
+		if (AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(Target))
+		{
+			Monster->ApplyImpactReaction(ImpactContext);
+		}
+	}
+	return AppliedSpecCount;
+}
+
+int32 UASCombatTargetSubsystem::ApplyEffectSpecToActor(
+	const FGameplayEffectSpecHandle& EffectSpec,
+	AActor* Target,
+	const FASCombatImpactContext& ImpactContext)
+{
+	return ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle>(&EffectSpec, 1), Target, ImpactContext);
 }
 
 TArray<AActor*> UASCombatTargetSubsystem::FindActorTargetsInRadius(
@@ -396,6 +421,14 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
 	const FASCombatTargetQuery& Query,
 	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs)
 {
+	return ResolveAndApplyBestTarget(Query, EffectSpecs, FASCombatImpactContext());
+}
+
+FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
+	const FASCombatTargetQuery& Query,
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+	const FASCombatImpactContext& ImpactContext)
+{
 	FASCombatApplyResult Result;
 	FASCombatTargetRef BestTarget;
 	if (!FindBestTarget(Query, BestTarget))
@@ -405,8 +438,10 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
 
 	if (AActor* Actor = BestTarget.GetActor())
 	{
-		ApplyEffectSpecsToActor(EffectSpecs, Actor);
-		Result.ActorTargets.Add(Actor);
+		if (ApplyEffectSpecsToActor(EffectSpecs, Actor, ImpactContext) > 0)
+		{
+			Result.ActorTargets.Add(Actor);
+		}
 		return Result;
 	}
 
@@ -427,6 +462,15 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
 	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 	AActor* Instigator)
 {
+	return ApplyEffectSpecsToTarget(Target, EffectSpecs, Instigator, FASCombatImpactContext());
+}
+
+FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
+	const FASCombatTargetRef& Target,
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+	AActor* Instigator,
+	const FASCombatImpactContext& ImpactContext)
+{
 	FASCombatApplyResult Result;
 	FASCombatTargetRef RefreshedTarget = Target;
 	FASCombatTargetQuery ValidationQuery;
@@ -439,7 +483,7 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
 
 	if (AActor* Actor = RefreshedTarget.GetActor())
 	{
-		if (ApplyEffectSpecsToActor(EffectSpecs, Actor) > 0)
+		if (ApplyEffectSpecsToActor(EffectSpecs, Actor, ImpactContext) > 0)
 		{
 			Result.ActorTargets.Add(Actor);
 		}
@@ -547,6 +591,15 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
 	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 	FASCombatTargetHitSet* InOutHitTargets)
 {
+	return ResolveAndApply(Query, EffectSpecs, FASCombatImpactContext(), InOutHitTargets);
+}
+
+FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
+	const FASCombatTargetQuery& Query,
+	const TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+	const FASCombatImpactContext& ImpactContext,
+	FASCombatTargetHitSet* InOutHitTargets)
+{
 	FASCombatApplyResult Result;
 	if (Query.SearchRadius < 0.0f)
 	{
@@ -566,11 +619,13 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
 				break;
 			}
 
-			ApplyEffectSpecsToActor(EffectSpecs, Actor);
-			Result.ActorTargets.Add(Actor);
-			if (InOutHitTargets)
+			if (ApplyEffectSpecsToActor(EffectSpecs, Actor, ImpactContext) > 0)
 			{
-				InOutHitTargets->AddActor(Actor);
+				Result.ActorTargets.Add(Actor);
+				if (InOutHitTargets)
+				{
+					InOutHitTargets->AddActor(Actor);
+				}
 			}
 		}
 	}

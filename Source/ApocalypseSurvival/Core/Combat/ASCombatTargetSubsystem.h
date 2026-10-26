@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "GameplayEffectTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "ASCombatTargetSubsystem.generated.h"
@@ -122,7 +123,11 @@ class APOCALYPSESURVIVAL_API UASCombatTargetSubsystem : public UWorldSubsystem
 public:
 	static bool IsValidActorTarget(const AActor* Target, const AActor* Instigator, bool bCanHitPlayers);
 	static int32 ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Target);
+	static int32 ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Target,
+		const FASCombatImpactContext& ImpactContext);
 	static int32 ApplyEffectSpecToActor(const FGameplayEffectSpecHandle& EffectSpec, AActor* Target);
+	static int32 ApplyEffectSpecToActor(const FGameplayEffectSpecHandle& EffectSpec, AActor* Target,
+		const FASCombatImpactContext& ImpactContext);
 
 	/** Query의 공간·생존·진영 규칙으로 Actor 후보만 찾는다. */
 	TArray<AActor*> FindActorTargets(const FASCombatTargetQuery& Query) const;
@@ -135,13 +140,27 @@ public:
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
 		FASCombatTargetHitSet* InOutHitTargets = nullptr);
 
+	/** 위와 같지만, Actor 대상에게 공격의 명시적 피격 경직 의도도 전달한다. */
+	FASCombatApplyResult ResolveAndApply(const FASCombatTargetQuery& Query,
+		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+		const FASCombatImpactContext& ImpactContext,
+		FASCombatTargetHitSet* InOutHitTargets = nullptr);
+
 	/** Query 정렬 정책으로 고른 단일 Actor/Mass 타깃 하나에만 EffectSpec을 적용한다. */
 	FASCombatApplyResult ResolveAndApplyBestTarget(const FASCombatTargetQuery& Query,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs);
 
+	FASCombatApplyResult ResolveAndApplyBestTarget(const FASCombatTargetQuery& Query,
+		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs,
+		const FASCombatImpactContext& ImpactContext);
+
 	/** 이미 확정된 Actor/Mass 타깃을 다른 후보로 재선택하지 않고 검증·적용한다. */
 	FASCombatApplyResult ApplyEffectSpecsToTarget(const FASCombatTargetRef& Target,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator);
+
+	FASCombatApplyResult ApplyEffectSpecsToTarget(const FASCombatTargetRef& Target,
+		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator,
+		const FASCombatImpactContext& ImpactContext);
 
 	UE_DEPRECATED(5.8, "Use FindActorTargets with FASCombatTargetQuery instead.")
 	TArray<AActor*> FindActorTargetsInRadius(const FVector& Center, float Radius,

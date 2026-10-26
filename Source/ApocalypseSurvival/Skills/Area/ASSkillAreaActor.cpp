@@ -31,9 +31,11 @@ void AASSkillAreaActor::InitArea(
 	float InTickInterval,
 	bool bInDamageOnSpawn,
 	bool bInCanHitPlayers,
-	bool bInDrawDebug)
+	bool bInDrawDebug,
+	const FASCombatImpactContext& InImpactContext)
 {
 	DamageSpec = InDamageSpec;
+	ImpactContext = InImpactContext;
 	InstigatorAvatar = InInstigatorAvatar;
 	Radius = InRadius;
 	Duration = FMath::Max(0.05f, InDuration);
@@ -94,7 +96,8 @@ void AASSkillAreaActor::DoDamageTick()
 		Query.SearchRadius = Radius;
 		Query.Instigator = InstigatorAvatar.Get();
 		Query.bCanHitPlayers = bCanHitPlayers;
-		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs);
+		ImpactContext.HitLocation = Center;
+		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext);
 	}
 	
 	//GameplayCue로 충격파 이펙트 (모든 화면)
