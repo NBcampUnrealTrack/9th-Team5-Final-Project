@@ -5,6 +5,7 @@
 #include "ASMainMenuWidget.generated.h"
 
 class UASSessionSubsystem;
+class UTextBlock;
 
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API UASMainMenuWidget : public UUserWidget
@@ -19,6 +20,8 @@ public:
 	bool bIsHosting = false;
 
 protected:
+	UPROPERTY(BlueprintReadOnly, Category = "Session", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ConnectionStatusText;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
