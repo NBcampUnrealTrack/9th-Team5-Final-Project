@@ -14,6 +14,10 @@
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/UI/ASItemRarityBackground.h"
+#include "Items/UI/ASLootWidget.h"
+#include "Items/Inventory/ASInventoryComponent.h"
+#include "Items/Loot/ASLootChest.h"
+#include "InputCoreTypes.h"
 
 TSharedRef<SWidget> UASLootEntryWidget::RebuildWidget()
 {
@@ -113,6 +117,7 @@ void UASLootEntryWidget::NativeConstruct()
 
 void UASLootEntryWidget::NativeDestruct()
 {
+	bPressed = false;
 	IconAssetRequest.Reset();
 	if (IsValid(ItemButton))
 	{
@@ -124,8 +129,77 @@ void UASLootEntryWidget::NativeDestruct()
 
 void UASLootEntryWidget::SetItemInstance(UASItemInstance* InItemInstance)
 {
+	if (ItemInstance != InItemInstance) bPressed = false;
 	ItemInstance = InItemInstance;
 	RefreshEntry();
+}
+
+void UASLootEntryWidget::SetLootSource(UASLootWidget* InLootWidget)
+{
+	LootSource = InLootWidget;
+}
+
+FReply UASLootEntryWidget::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !LootSource.IsValid()
+		|| !IsValid(ItemInstance) || !ItemInstance->IsValidItemInstance())
+		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
+	// Intercept before the child button captures the mouse, preserving click-on-release below.
+	bPressed = true;
+	PressedItem = ItemInstance->GetInstanceId();
+	return FReply::Handled().CaptureMouse(TakeWidget()).DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
+}
+
+FReply UASLootEntryWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
+{
+	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !bPressed)
+		return Super::NativeOnMouseButtonUp(Geometry, Event);
+	bPressed = false;
+	if (IsValid(ItemInstance) && ItemInstance->GetInstanceId() == PressedItem
+		&& Geometry.IsUnderLocation(Event.GetScreenSpacePosition())) HandleItemButtonClicked();
+	return FReply::Handled().ReleaseMouseCapture();
+}
+
+void UASLootEntryWidget::NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation)
+{
+	bPressed = false;
+	UASInventoryComponent* Inventory = IsValid(ItemInstance) ? ItemInstance->GetTypedOuter<UASInventoryComponent>() : nullptr;
+	AASLootChest* Chest = Inventory ? Cast<AASLootChest>(Inventory->GetOwner()) : nullptr;
+	if (!LootSource.IsValid() || !LootSource->IsInViewport() || !IsValid(Chest)
+		|| !ItemInstance->IsValidItemInstance() || ItemInstance->GetInstanceId() != PressedItem
+		|| Inventory->FindItemById(PressedItem) != ItemInstance) return;
+	UASLootItemDragDrop* Drag = NewObject<UASLootItemDragDrop>();
+	Drag->SourceLoot = LootSource;
+	Drag->Chest = Chest;
+	Drag->ItemId = PressedItem;
+	USizeBox* Size = NewObject<USizeBox>(Drag);
+	Size->SetWidthOverride(80.0f);
+	Size->SetHeightOverride(80.0f);
+	Size->SetVisibility(ESlateVisibility::HitTestInvisible);
+	UOverlay* Overlay = NewObject<UOverlay>(Drag);
+	UASItemRarityBackground* Background = NewObject<UASItemRarityBackground>(Drag);
+	Background->SetRarity(ItemInstance->GetItemDefinition()->Rarity);
+	UOverlaySlot* BackgroundSlot = Overlay->AddChildToOverlay(Background);
+	BackgroundSlot->SetHorizontalAlignment(HAlign_Fill);
+	BackgroundSlot->SetVerticalAlignment(VAlign_Fill);
+	if (UTexture2D* Icon = ItemInstance->GetItemDefinition()->Icon.Get())
+	{
+		UImage* Image = NewObject<UImage>(Drag);
+		Image->SetBrushFromTexture(Icon);
+		UOverlaySlot* IconSlot = Overlay->AddChildToOverlay(Image);
+		IconSlot->SetHorizontalAlignment(HAlign_Fill);
+		IconSlot->SetVerticalAlignment(VAlign_Fill);
+	}
+	else
+	{
+		UTextBlock* Name = NewObject<UTextBlock>(Drag);
+		Name->SetText(ItemInstance->GetItemDefinition()->DisplayName);
+		Overlay->AddChildToOverlay(Name);
+	}
+	Size->SetContent(Overlay);
+	Drag->DefaultDragVisual = Size;
+	Drag->Pivot = EDragPivot::CenterCenter;
+	Operation = Drag;
 }
 
 void UASLootEntryWidget::RefreshEntry()
