@@ -160,9 +160,9 @@ AASDroppedItem::AASDroppedItem()
 	InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
 	SetRootComponent(InteractionCollision);
 	InteractionCollision->SetBoxExtent(FVector(30));
-	InteractionCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	// Pickup is handled by the screen-space nameplate; world traces pass through this item.
+	InteractionCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	InteractionCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-	InteractionCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 	InteractionCollision->SetGenerateOverlapEvents(false);
 	ItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ItemMesh"));
 	ItemMesh->SetupAttachment(InteractionCollision);
@@ -269,10 +269,7 @@ void AASDroppedItem::HandleInventoryChanged()
 	if (WorldMesh)
 	{
 		ItemMesh->SetStaticMesh(WorldMesh);
-		ItemMesh->SetRelativeScale3D(FVector::OneVector);
-		// Include the actual item's mesh bounds in the cursor hit area.
-		const FBox RotatedBounds = WorldMesh->GetBoundingBox().TransformBy(ItemMesh->GetRelativeTransform());
-		InteractionCollision->SetBoxExtent(RotatedBounds.GetExtent().ComponentMax(FVector(30)));
+		ItemMesh->SetRelativeScale3D(FVector(2.0f));
 	}
 	if (UASDroppedItemNameWidget* Label = Cast<UASDroppedItemNameWidget>(NameLabel->GetUserWidgetObject()))
 	{

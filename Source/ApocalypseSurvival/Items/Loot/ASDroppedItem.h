@@ -17,7 +17,7 @@ class UTextBlock;
 class UBorder;
 class UASItemInteractionComponent;
 
-/** Screen-facing item name; right-clicking the name uses the same pickup request as the mesh. */
+/** Screen-facing item name; the only mouse pickup target for a dropped item. */
 UCLASS()
 class APOCALYPSESURVIVAL_API UASDroppedItemNameWidget : public UUserWidget
 {

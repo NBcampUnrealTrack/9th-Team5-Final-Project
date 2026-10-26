@@ -110,15 +110,6 @@ void UASItemInteractionComponent::HandleWorldRightClick()
 	{
 		ASC->LocalInputCancel();
 	}
-	FHitResult Hit;
-	if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit))
-	{
-		if (AASDroppedItem* Item = Cast<AASDroppedItem>(Hit.GetActor()))
-		{
-			RequestPickupDroppedItem(Item);
-			return;
-		}
-	}
 	CancelPendingInteraction();
 	FVector Destination;
 	if (PC->GetCursorWorldLocation(Destination)) PC->RequestMoveTo(Destination);
@@ -145,12 +136,6 @@ void UASItemInteractionComponent::UpdateDroppedItemHover()
 	{
 		if (HoveredDroppedItemLabel.IsValid() && HoveredDroppedItemLabel->GetDroppedItem())
 			Next = HoveredDroppedItemLabel.Get();
-		else
-		{
-			FHitResult Hit;
-			if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit)) Next = Cast<AASDroppedItem>(Hit.GetActor());
-			if (Next && !Next->GetDroppedItem()) Next = nullptr;
-		}
 	}
 	if (HoveredDroppedItem.Get() != Next)
 	{

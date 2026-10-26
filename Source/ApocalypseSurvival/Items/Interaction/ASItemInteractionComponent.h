@@ -27,7 +27,7 @@ public:
 	bool HasPendingInteraction() const { return PendingTarget.IsValid(); }
 	bool IsLootOpen() const;
 	bool IsCursorOverInventory() const;
-	/** Prefer the nameplate over the world underneath it when choosing a local hover target. */
+	/** Only the nameplate can select a dropped item as a local hover target. */
 	void SetHoveredDroppedItemLabel(AASDroppedItem* Item, bool bHovered);
 
 	UFUNCTION(BlueprintPure, Category = "Item")
