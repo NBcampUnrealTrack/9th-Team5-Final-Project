@@ -6,6 +6,8 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "ASSessionSubsystem.generated.h"
 
+class UASCharacterDefinition;
+
 USTRUCT(BlueprintType)
 struct FASSessionSearchResult
 {
@@ -62,6 +64,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Session|Travel")
 	bool HostTravelToMap(const FString& MapPath);
 	void SetLobbyOpen(bool bOpen);
+	void SaveMatchCharacter(const FUniqueNetIdRepl& PlayerId, const UASCharacterDefinition* Definition);
+	const UASCharacterDefinition* FindMatchCharacter(const FUniqueNetIdRepl& PlayerId) const;
+	void ClearMatchCharacters();
 
 	UPROPERTY(BlueprintAssignable, Category = "Session")
 	FASSessionOperationCompleted OnSessionCreated;
@@ -87,6 +92,9 @@ private:
 	void HandleMapLoaded(UWorld* World);
 	void HandleConnectionFailure(UWorld* World, const FString& Error);
 	bool bJoinTravelPending = false;
+	// Server-owned choices survive non-seamless reconnects as well as normal map travel.
+	UPROPERTY(Transient)
+	TMap<FString, TObjectPtr<const UASCharacterDefinition>> MatchCharacters;
 
 	IOnlineSessionPtr SessionInterface;
 	TSharedPtr<FOnlineSessionSearch> SessionSearch;
