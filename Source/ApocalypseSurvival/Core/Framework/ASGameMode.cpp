@@ -15,6 +15,8 @@
 #include "TimerManager.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/PlayerStart.h"
+#include "Engine/PlayerStartPIE.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "EngineUtils.h"
@@ -441,6 +443,132 @@ bool AASGameMode::PlayerCanRestart_Implementation(APlayerController* Player)
 	}
 	
 	return Super::PlayerCanRestart_Implementation(Player);
+}
+
+void AASGameMode::RestartPlayer(AController* NewPlayer)
+{
+	if (!NewPlayer || NewPlayer->IsPendingKillPending())
+	{
+		return;
+	}
+
+	FTransform SpawnTransform;
+	bool bUsedAdjustedLocation = false;
+	if (APlayerStart* PlayerStart = FindAvailablePlayerStart(NewPlayer, SpawnTransform, bUsedAdjustedLocation))
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[PlayerSpawn] Controller=%s PlayerId=%d Start=%s Adjusted=%d Location=%s"),
+			*GetNameSafe(NewPlayer),
+			NewPlayer->GetPlayerState<APlayerState>() ? NewPlayer->GetPlayerState<APlayerState>()->GetPlayerId() : INDEX_NONE,
+			*GetNameSafe(PlayerStart), bUsedAdjustedLocation, *SpawnTransform.GetLocation().ToString());
+
+		if (!bUsedAdjustedLocation)
+		{
+			Super::RestartPlayerAtPlayerStart(NewPlayer, PlayerStart);
+		}
+		else
+		{
+			Super::RestartPlayerAtTransform(NewPlayer, SpawnTransform);
+			if (NewPlayer->GetPawn())
+			{
+				NewPlayer->StartSpot = PlayerStart;
+				InitStartSpot(PlayerStart, NewPlayer);
+			}
+		}
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[PlayerSpawn] No usable regular PlayerStart for %s; falling back to the engine spawn path."),
+		*GetNameSafe(NewPlayer));
+	Super::RestartPlayer(NewPlayer);
+}
+
+APlayerStart* AASGameMode::FindAvailablePlayerStart(AController* Controller, FTransform& OutSpawnTransform,
+	bool& bOutUsedAdjustedLocation)
+{
+	bOutUsedAdjustedLocation = false;
+	UWorld* World = GetWorld();
+	UClass* PawnClass = GetDefaultPawnClassForController(Controller);
+	APawn* PawnToFit = PawnClass ? PawnClass->GetDefaultObject<APawn>() : nullptr;
+	if (!World || !PawnToFit)
+	{
+		return nullptr;
+	}
+
+	TArray<APlayerStart*> PlayerStarts;
+	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	{
+		APlayerStart* PlayerStart = *It;
+		if (PlayerStart && !PlayerStart->IsA<APlayerStartPIE>())
+		{
+			PlayerStarts.Add(PlayerStart);
+		}
+	}
+
+	PlayerStarts.Sort([](const APlayerStart& Left, const APlayerStart& Right)
+	{
+		return Left.GetName() < Right.GetName();
+	});
+	if (PlayerStarts.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	const int32 StartIndex = GetPlayerStartIndex(Controller, PlayerStarts.Num());
+	for (int32 Offset = 0; Offset < PlayerStarts.Num(); ++Offset)
+	{
+		APlayerStart* PlayerStart = PlayerStarts[(StartIndex + Offset) % PlayerStarts.Num()];
+		const FVector Location = PlayerStart->GetActorLocation();
+		const FRotator Rotation = PlayerStart->GetActorRotation();
+		if (!World->EncroachingBlockingGeometry(PawnToFit, Location, Rotation))
+		{
+			OutSpawnTransform = FTransform(Rotation, Location);
+			return PlayerStart;
+		}
+	}
+
+	for (int32 Offset = 0; Offset < PlayerStarts.Num(); ++Offset)
+	{
+		APlayerStart* PlayerStart = PlayerStarts[(StartIndex + Offset) % PlayerStarts.Num()];
+		FVector AdjustedLocation = PlayerStart->GetActorLocation();
+		const FRotator Rotation = PlayerStart->GetActorRotation();
+		if (World->FindTeleportSpot(PawnToFit, AdjustedLocation, Rotation))
+		{
+			OutSpawnTransform = FTransform(Rotation, AdjustedLocation);
+			bOutUsedAdjustedLocation = true;
+			return PlayerStart;
+		}
+	}
+
+	return nullptr;
+}
+
+int32 AASGameMode::GetPlayerStartIndex(const AController* Controller, const int32 StartCount)
+{
+	if (StartCount <= 0)
+	{
+		return 0;
+	}
+
+	if (const APlayerState* PlayerState = Controller ? Controller->GetPlayerState<APlayerState>() : nullptr)
+	{
+		if (PlayerState->GetPlayerId() >= 0)
+		{
+			return PlayerState->GetPlayerId() % StartCount;
+		}
+	}
+
+	int32 ConnectionIndex = 0;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It, ++ConnectionIndex)
+	{
+		if (It->Get() == Controller)
+		{
+			return ConnectionIndex % StartCount;
+		}
+	}
+
+	return 0;
 }
 
 void AASGameMode::NotifyCharacterSelectionReceived(APlayerController* PlayerController)
