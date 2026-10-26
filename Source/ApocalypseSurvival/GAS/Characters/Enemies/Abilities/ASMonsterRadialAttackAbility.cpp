@@ -12,7 +12,9 @@ UASMonsterRadialAttackAbility::UASMonsterRadialAttackAbility()
 	ForwardOffset = 0.0f;
 	Angle = 360.0f;
 	IndicatorClass = AASMonsterAttackIndicatorActor::StaticClass();
-	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack_Radial);
+	FGameplayTagContainer AssetTagsToSet = GetAssetTags();
+	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack_Radial);
+	SetAssetTags(AssetTagsToSet);
 }
 
 void UASMonsterRadialAttackAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,

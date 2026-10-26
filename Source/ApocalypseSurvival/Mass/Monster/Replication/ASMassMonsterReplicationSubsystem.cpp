@@ -13,7 +13,9 @@
 bool UASMassMonsterReplicationSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
-	return World && World->IsGameWorld() && World->GetNetMode() != NM_Standalone;
+	// 월드 서브시스템 생성 시점에는 아직 NetDriver가 붙지 않아, 나중에 Listen Server가 될 월드도
+	// NM_Standalone으로 보일 수 있다. BubbleInfoClass는 클라이언트가 동기화되기 전에 등록해야 한다.
+	return World && World->IsGameWorld();
 }
 
 void UASMassMonsterReplicationSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -43,13 +45,23 @@ void UASMassMonsterReplicationSubsystem::PostInitialize()
 		*GetNameSafe(AASMassMonsterClientBubbleInfo::StaticClass()));
 	ReplicationSubsystem->RegisterBubbleInfoClass(AASMassMonsterClientBubbleInfo::StaticClass());
 
+	// PendingNetGame이 이미 설정된 클라이언트 월드는 이 시점에 미리 준비한다.
+	RegisterClientEntityTemplates();
+}
+
+void UASMassMonsterReplicationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+
+	// 일부 travel 경로에서는 PostInitialize 뒤에 NetDriver가 연결된다. 최종 NetMode에서 한 번 더
+	// 확인해 클라이언트 Entity Template 사전 생성을 보장한다.
 	RegisterClientEntityTemplates();
 }
 
 void UASMassMonsterReplicationSubsystem::RegisterClientEntityTemplates()
 {
 	UWorld* World = GetWorld();
-	if (!World || World->GetNetMode() != NM_Client)
+	if (bClientEntityTemplatesRegistered || !World || World->GetNetMode() != NM_Client)
 	{
 		return;
 	}
@@ -88,4 +100,5 @@ void UASMassMonsterReplicationSubsystem::RegisterClientEntityTemplates()
 	UE_LOG(LogApocalypseSurvival, Log,
 		TEXT("[MassMonsterReplication] Registered client Entity Templates: World=%s Count=%d"),
 		*GetNameSafe(World), RegisteredTemplateCount);
+	bClientEntityTemplatesRegistered = true;
 }
