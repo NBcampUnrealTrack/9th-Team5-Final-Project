@@ -14,8 +14,10 @@ UASMonsterProjectileAbility::UASMonsterProjectileAbility()
 	BaseDamage = 0.0f;
 	AttackPowerScale = 1.0f;
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
-	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
-	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack_Ranged);
+	FGameplayTagContainer AssetTagsToSet = GetAssetTags();
+	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack);
+	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack_Ranged);
+	SetAssetTags(AssetTagsToSet);
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Attacking);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_Dead);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_HitReact);
