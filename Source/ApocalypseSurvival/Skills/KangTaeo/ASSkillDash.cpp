@@ -3,6 +3,8 @@
 
 #include "ASSkillDash.h"
 
+#include "Skills/Debug/ASSkillDamageDebug.h"
+
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionMoveToForce.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
@@ -187,7 +189,9 @@ void UASSkillDash::CheckDashHit()
 		ImpactContext.Preset = ImpactPreset;
 		ImpactContext.HitLocation = CurrentLocation;
 		ImpactContext.HitDirection = (CurrentLocation - SweepStart).GetSafeNormal2D();
-		bHitTarget = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext, &DashHitTargets).HasAnyHit();
+		const FASCombatApplyResult DashResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext, &DashHitTargets);
+		ASSkillDamageDebug::Report(this, EffectSpecs, DashResult, Query.SearchOrigin);
+		bHitTarget = DashResult.HasAnyHit();
 	}
 	else
 	{

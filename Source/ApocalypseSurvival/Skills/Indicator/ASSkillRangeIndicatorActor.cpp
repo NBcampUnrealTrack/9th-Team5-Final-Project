@@ -2,6 +2,7 @@
 
 #include "Components/DecalComponent.h"
 #include "Components/SceneComponent.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -148,9 +149,27 @@ void AASSkillRangeIndicatorActor::UpdateIndicator()
 	switch (Settings.TargetingType)
 	{
 	case EASSkillTargetingType::Location:
+	{
+		//커서 근처 Actor 적에게 달라붙기 (스킬의 조준 계산과 같은 규칙)
+		AActor* NewSnapTarget = nullptr;
+		if (Settings.bSnapToActorTarget && bHasCursorLocation)
+		{
+			NewSnapTarget = FindSnapActor(CasterPawn, Desired, Settings.SnapRadius,
+				Settings.MaxCastRange, Settings.bClampToRange, Settings.bSnapCanHitPlayers);
+		}
+
+		if (NewSnapTarget != SnapTarget.Get())
+		{
+			SnapTarget = NewSnapTarget;
+			BP_OnSnapTargetChanged(NewSnapTarget);
+		}
+
+		const FVector AreaDesired = NewSnapTarget ? NewSnapTarget->GetActorLocation() : Desired;
+
 		//걸어가서 시전 모드면 사거리 제한 없이 커서 위치 그대로 (바닥 높이만 맞춤)
-		TargetLocation = ResolveTargetLocation(CasterPawn, Desired, Settings.bClampToRange ? Settings.MaxCastRange : 0.0f);
+		TargetLocation = ResolveTargetLocation(CasterPawn, AreaDesired, Settings.bClampToRange ? Settings.MaxCastRange : 0.0f);
 		break;
+	}
 	case EASSkillTargetingType::Self:
 		TargetLocation = Origin;
 		break;
@@ -243,4 +262,46 @@ FVector AASSkillRangeIndicatorActor::ResolveTargetLocation(const AActor* InCaste
 	}
 
 	return Result;
+}
+
+AActor* AASSkillRangeIndicatorActor::FindSnapActor(const AActor* InCaster, const FVector& CursorLocation, float SnapRadius,
+	float MaxCastRange, bool bRequireInRange, bool bCanHitPlayers)
+{
+	const UWorld* World = InCaster ? InCaster->GetWorld() : nullptr;
+	const UASCombatTargetSubsystem* CombatTargets = World ? World->GetSubsystem<UASCombatTargetSubsystem>() : nullptr;
+	if (!CombatTargets || SnapRadius <= 0.0f)
+	{
+		return nullptr;
+	}
+
+	//커서에 가장 가까운 Actor 적 (Mass 제외)
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = CursorLocation;
+	Query.SearchRadius = SnapRadius;
+	Query.PriorityLocation = CursorLocation;
+	Query.SortPolicy = EASCombatTargetSortPolicy::NearestToPriorityLocation;
+	Query.Domain = EASCombatTargetDomain::ActorOnly;
+	Query.Instigator = InCaster;
+	Query.bCanHitPlayers = bCanHitPlayers;
+
+	FASCombatTargetRef Target;
+	if (!CombatTargets->FindBestTarget(Query, Target))
+	{
+		return nullptr;
+	}
+
+	AActor* TargetActor = Target.GetActor();
+	if (!TargetActor)
+	{
+		return nullptr;
+	}
+
+	//사거리 밖이면 달라붙지 않음 (걸어가서 시전 모드는 제외)
+	if (bRequireInRange
+		&& FVector::DistSquared2D(InCaster->GetActorLocation(), TargetActor->GetActorLocation()) > FMath::Square(MaxCastRange))
+	{
+		return nullptr;
+	}
+
+	return TargetActor;
 }

@@ -1,5 +1,7 @@
 ﻿#include "Skills/Projectile/ASSkillProjectileActor.h"
 
+#include "Skills/Debug/ASSkillDamageDebug.h"
+
 #include "Components/PrimitiveComponent.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -139,7 +141,7 @@ void AASSkillProjectileActor::Tick(const float DeltaSeconds)
 
 void AASSkillProjectileActor::ResolveHitsAlongSegment(const FVector& CurrentLocation)
 {
-	if (bEnded)
+	if (bEnded || !bResolveSegmentHits)
 	{
 		return;
 	}
@@ -163,7 +165,13 @@ void AASSkillProjectileActor::ResolveHitsAlongSegment(const FVector& CurrentLoca
 		Query.Instigator = InstigatorAvatar.Get();
 		Query.bCanHitPlayers = bCanHitPlayers;
 		Query.MaxTargets = PierceCount >= 0 ? RemainingHits : 0;
-		CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext, &HitTargets);
+		const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, DamageSpecs, ImpactContext, &HitTargets);
+		ASSkillDamageDebug::Report(this, DamageSpecs, Result, CurrentLocation);
+
+		if (Result.HasAnyHit())
+		{
+			OnTargetsHit(Result, CurrentLocation);
+		}
 	}
 
 	PreviousLocation = CurrentLocation;

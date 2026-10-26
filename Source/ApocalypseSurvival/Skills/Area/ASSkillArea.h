@@ -5,6 +5,8 @@
 #include "ASSkillArea.generated.h"
 
 class AASSkillAreaActor;
+class UGameplayEffect;
+struct FASCombatTargetRef;
 
 /**
  * 일정 시간 유지되는 범위(AASSkillAreaActor)를 만드는 스킬
@@ -23,9 +25,22 @@ protected:
 	virtual void ApplySkillStats(const FASSkillStatsRow& Stats) override;
 	virtual FASSkillIndicatorSettings GetIndicatorSettings_Implementation() const override;
 
+	//범위 액터 생성 + 초기화 (서버). FollowTarget이 있으면 그 타겟을 따라다님
+	AASSkillAreaActor* SpawnArea(const FVector& Location, const FVector& Aim, const FASCombatTargetRef* FollowTarget = nullptr);
+
+	//범위 액터 생성 직후(FinishSpawning 전)에 호출. 자식 스킬이 자기 장판 액터에 추가 값을 넘길 때 오버라이드
+	virtual void ConfigureArea(AASSkillAreaActor* Area) {}
+
+	//AdditionalEffects로 만든 Spec 목록
+	TArray<FGameplayEffectSpecHandle> MakeAdditionalEffectSpecs() const;
+
 	//생성할 범위 액터 (이펙트를 넣은 BP 자식 지정)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area")
 	TSubclassOf<AASSkillAreaActor> AreaClass;
+
+	//데미지와 같이 거는 추가 GE (예: 슬로우). Actor 몬스터만 적용, Mass는 GE를 못 받아서 데미지만 들어감
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area")
+	TArray<TSubclassOf<UGameplayEffect>> AdditionalEffects;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area", meta = (ClampMin = "0.0", Units = "cm"))
 	float Radius = 300.0f;

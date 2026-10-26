@@ -64,6 +64,18 @@ struct APOCALYPSESURVIVAL_API FASSkillIndicatorSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator")
 	bool bClampToRange = true;
 
+	//위치형: 커서 근처 Actor 적에게 효과 원이 달라붙음
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator")
+	bool bSnapToActorTarget = false;
+
+	//커서에서 이 거리 안의 Actor 적에게 달라붙음
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator", meta = (Units = "cm"))
+	float SnapRadius = 150.0f;
+
+	//플레이어에게도 달라붙음 (스킬의 bCanHitPlayers)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator")
+	bool bSnapCanHitPlayers = false;
+
 	//사거리 원 반지름 (0이면 숨김)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AS|Skill|Indicator", meta = (Units = "cm"))
 	float RangeRingRadius = 0.0f;

@@ -245,6 +245,11 @@ void UASSkillAbility::ComputeAim(FVector& OutAimDirection, FVector& OutTargetLoc
 	{
 		Desired = Avatar->GetActorLocation() + OutAimDirection * MaxCastRange;
 	}
+	else
+	{
+		//커서 근처 Actor 적에게 달라붙기 (인디케이터와 같은 규칙)
+		Desired = ApplyActorSnap(Desired);
+	}
 
 	OutTargetLocation = ResolveAimLocation(Desired);
 
@@ -289,6 +294,11 @@ FASSkillIndicatorSettings UASSkillAbility::GetIndicatorSettings_Implementation()
 	Settings.TargetingType = TargetingType;
 	Settings.MaxCastRange = MaxCastRange;
 	Settings.RangeRingRadius = TargetingType == EASSkillTargetingType::Location ? MaxCastRange : 0.0f;
+
+	//Actor 적에게 달라붙기
+	Settings.bSnapToActorTarget = bSnapToActorTarget && TargetingType == EASSkillTargetingType::Location;
+	Settings.SnapRadius = SnapRadius;
+	Settings.bSnapCanHitPlayers = bCanHitPlayers;
 
 	//걸어가서 시전 모드면 커서가 사거리 밖이어도 효과 원이 커서를 따라감
 	Settings.bClampToRange = !(TargetingType == EASSkillTargetingType::Location && ShouldWalkToCast());
@@ -486,6 +496,19 @@ bool UASSkillAbility::ShouldWalkToCast() const
 	return SkillSettings && SkillSettings->GetWalkToCastWhenOutOfRange();
 }
 
+FVector UASSkillAbility::ApplyActorSnap(const FVector& CursorLocation) const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (!bSnapToActorTarget || TargetingType != EASSkillTargetingType::Location || !Avatar)
+	{
+		return CursorLocation;
+	}
+
+	const AActor* SnapActor = AASSkillRangeIndicatorActor::FindSnapActor(
+		Avatar, CursorLocation, SnapRadius, MaxCastRange, !ShouldWalkToCast(), bCanHitPlayers);
+	return SnapActor ? SnapActor->GetActorLocation() : CursorLocation;
+}
+
 bool UASSkillAbility::GetOutOfRangeWalkTarget(FVector& OutTargetLocation) const
 {
 	if (TargetingType != EASSkillTargetingType::Location || !ShouldWalkToCast())
@@ -500,8 +523,8 @@ bool UASSkillAbility::GetOutOfRangeWalkTarget(FVector& OutTargetLocation) const
 		return false;
 	}
 
-	//사거리 제한 없이 바닥 높이만 맞춘 커서 위치
-	OutTargetLocation = AASSkillRangeIndicatorActor::ResolveTargetLocation(Avatar, CursorLocation, 0.0f);
+	//사거리 제한 없이 바닥 높이만 맞춘 커서 위치 (달라붙을 적이 있으면 그 적 위치)
+	OutTargetLocation = AASSkillRangeIndicatorActor::ResolveTargetLocation(Avatar, ApplyActorSnap(CursorLocation), 0.0f);
 	return FVector::DistSquared2D(Avatar->GetActorLocation(), OutTargetLocation) > FMath::Square(MaxCastRange);
 }
 

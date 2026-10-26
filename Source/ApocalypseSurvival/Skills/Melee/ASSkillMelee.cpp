@@ -1,5 +1,7 @@
 ﻿#include "Skills/Melee/ASSkillMelee.h"
 
+#include "Skills/Debug/ASSkillDamageDebug.h"
+
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "Skills/Data/ASSkillData.h"
@@ -57,6 +59,9 @@ void UASSkillMelee::OnSkillEffect_Implementation()
 		ImpactContext.HitDirection = Aim;
 		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext);
 	}
+
+	//AS.Debug.SkillDamage 1
+	ASSkillDamageDebug::Report(this, EffectSpecs, ApplyResult, Center);
 
 	if (bDrawDebug)
 	{
