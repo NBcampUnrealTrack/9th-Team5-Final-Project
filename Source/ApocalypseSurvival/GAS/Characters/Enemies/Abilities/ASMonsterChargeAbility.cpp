@@ -20,8 +20,10 @@ UASMonsterChargeAbility::UASMonsterChargeAbility()
 	AttackPowerScale = 1.0f;
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
 	IndicatorClass = AASMonsterAttackIndicatorActor::StaticClass();
-	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
-	AbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack_Charge);
+	FGameplayTagContainer AssetTagsToSet = GetAssetTags();
+	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack);
+	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack_Charge);
+	SetAssetTags(AssetTagsToSet);
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Attacking);
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Charging);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_Dead);
