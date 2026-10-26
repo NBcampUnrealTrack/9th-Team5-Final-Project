@@ -12,6 +12,7 @@
 #include "Mass/Monster/Processors/ASMassMonsterTemporaryVisualProcessor.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "Mass/Monster/Subsystems/ASMassMonsterFogMaterialSubsystem.h"
 #include "MassExecutionContext.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "ProfilingDebugging/CsvProfiler.h"
@@ -99,74 +100,6 @@ UASMassMonsterVisualizationProcessor::UASMassMonsterVisualizationProcessor()
 	bRequiresGameThreadExecution = true;
 }
 
-UASMassMonsterUpdateISMProcessor::UASMassMonsterUpdateISMProcessor()
-{
-	// 엔진 Processor는 DefaultMass.ini에서 자동 등록을 끈다. 부모 CDO의 Config 값을 물려받지 않도록 명시한다.
-	bAutoRegisterWithProcessingPhases = true;
-	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterTemporaryVisualProcessor::StaticClass()->GetFName());
-	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterVisualizationProcessor::StaticClass()->GetFName());
-	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterClientInterpolationProcessor::StaticClass()->GetFName());
-}
-
-void UASMassMonsterUpdateISMProcessor::ConfigureQueries(
-	const TSharedRef<FMassEntityManager>& EntityManager)
-{
-	Super::ConfigureQueries(EntityManager);
-	EntityQuery.AddRequirement<FASMassMonsterFogVisibilityFragment>(
-		EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
-}
-
-void UASMassMonsterUpdateISMProcessor::Execute(
-	FMassEntityManager& EntityManager,
-	FMassExecutionContext& Context)
-{
-	TRACE_CPUPROFILER_EVENT_SCOPE(ASMassMonsterUpdateISMProcessor);
-	EntityQuery.ForEachEntityChunk(Context, [](FMassExecutionContext& QueryContext)
-	{
-		UMassRepresentationSubsystem* RepresentationSubsystem =
-			QueryContext.GetSharedFragment<FMassRepresentationSubsystemSharedFragment>().RepresentationSubsystem;
-		check(RepresentationSubsystem);
-		FMassInstancedStaticMeshInfoArrayView ISMInfos = RepresentationSubsystem->GetMutableInstancedStaticMeshInfos();
-
-		const TConstArrayView<FTransformFragment> Transforms = QueryContext.GetFragmentView<FTransformFragment>();
-		const TArrayView<FMassRepresentationFragment> Representations =
-			QueryContext.GetMutableFragmentView<FMassRepresentationFragment>();
-		const TConstArrayView<FMassRepresentationLODFragment> LODs =
-			QueryContext.GetFragmentView<FMassRepresentationLODFragment>();
-		// 일반 몬스터가 아닌 Entity의 Chunk에서는 비어 있으며, 그때는 엔진과 동일하게 Transform만 쓴다.
-		const TConstArrayView<FASMassMonsterFogVisibilityFragment> FogVisibility =
-			QueryContext.GetFragmentView<FASMassMonsterFogVisibilityFragment>();
-
-		for (FMassExecutionContext::FEntityIterator EntityIt = QueryContext.CreateEntityIterator(); EntityIt; ++EntityIt)
-		{
-			FMassRepresentationFragment& Representation = Representations[EntityIt];
-			if (Representation.CurrentRepresentation != EMassRepresentationType::StaticMeshInstance)
-			{
-				continue;
-			}
-
-			const FTransform& Transform = Transforms[EntityIt].GetTransform();
-			const FMassRepresentationLODFragment& LOD = LODs[EntityIt];
-			const int32 ISMInfoIndex = Representation.StaticMeshDescHandle.ToIndex();
-			if (ensureMsgf(ISMInfos.IsValidIndex(ISMInfoIndex), TEXT("Invalid handle index %d for ISMInfosView"), ISMInfoIndex))
-			{
-				FMassInstancedStaticMeshInfo& ISMInfo = ISMInfos[ISMInfoIndex];
-				UpdateISMTransform(QueryContext.GetEntity(EntityIt), ISMInfo, Transform,
-					Representation.PrevTransform, LOD.LODSignificance, Representation.PrevLODSignificance);
-				if (!FogVisibility.IsEmpty())
-				{
-					// Transform Batch와 같은 LOD 범위·순서로 한 개의 float를 추가해 Instance와 1:1로 맞춘다.
-					const float Visibility = FogVisibility[EntityIt].RenderVisibilityAlpha;
-					ISMInfo.AddBatchedCustomData(Visibility, LOD.LODSignificance, Representation.PrevLODSignificance);
-				}
-			}
-
-			Representation.PrevTransform = Transform;
-			Representation.PrevLODSignificance = LOD.LODSignificance;
-		}
-	});
-}
-
 void UASMassMonsterVisualizationProcessor::ConfigureQueries(
 	const TSharedRef<FMassEntityManager>& EntityManager)
 {
@@ -190,6 +123,14 @@ void UASMassMonsterVisualizationProcessor::Execute(
 	UWorld* World = GetWorld();
 	const UASVisionWorldSubsystem* VisionSubsystem = UASVisionWorldSubsystem::Get(World);
 	const AASFogOfWarManager* FogManager = VisionSubsystem ? VisionSubsystem->GetFogOfWarManager() : nullptr;
+	if (World && World->GetNetMode() != NM_DedicatedServer)
+	{
+		if (UASMassMonsterFogMaterialSubsystem* FogMaterials =
+			World->GetSubsystem<UASMassMonsterFogMaterialSubsystem>())
+		{
+			FogMaterials->Refresh(FogManager);
+		}
+	}
 	const bool bUseFogCulling = World && World->GetNetMode() != NM_DedicatedServer
 		&& HasLocalPlayer(World) && FogManager && FogManager->HasLocalVisionMask();
 
@@ -205,7 +146,6 @@ void UASMassMonsterVisualizationProcessor::Execute(
 				FogState.bInitialized = true;
 				FogState.bVisibleToLocalTeam = bVisibleWithoutMask;
 				FogState.bRetainedInFogBuffer = bVisibleWithoutMask;
-				FogState.RenderVisibilityAlpha = bVisibleWithoutMask ? 1.0f : 0.0f;
 				FogState.SecondsOutsideFogBuffer = 0.0f;
 			}
 		});
@@ -217,10 +157,7 @@ void UASMassMonsterVisualizationProcessor::Execute(
 	const float CullDelaySeconds = FogManager->GetVisionDefinition()
 		? FogManager->GetVisionDefinition()->Settings.MassVisibilityCullDelaySeconds
 		: 0.2f;
-	const float FadeInSeconds = FogManager->GetVisionDefinition()
-		? FogManager->GetVisionDefinition()->Settings.MassVisibilityFadeInSeconds
-		: 0.12f;
-	FogVisibilityQuery.ForEachEntityChunk(Context, [FogManager, DeltaTime, CullDelaySeconds, FadeInSeconds](FMassExecutionContext& QueryContext)
+	FogVisibilityQuery.ForEachEntityChunk(Context, [FogManager, DeltaTime, CullDelaySeconds](FMassExecutionContext& QueryContext)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = QueryContext.GetFragmentView<FTransformFragment>();
 		const TArrayView<FMassRepresentationLODFragment> LODs =
@@ -233,29 +170,12 @@ void UASMassMonsterVisualizationProcessor::Execute(
 			FASMassMonsterFogVisibilityFragment& FogState = FogVisibility[EntityIt];
 			const FVector Location = Transforms[EntityIt].GetTransform().GetLocation();
 			const bool bInLocalTeamVision = FogManager->IsLocationVisibleLocally(Location);
-			const bool bInExitRegion = bInLocalTeamVision
-				&& FogManager->IsLocationInLocalVisionExitRegion(Location);
-			const bool bInReentryRegion = bInLocalTeamVision
-				&& FogManager->IsLocationInLocalVisionReentryRegion(Location);
 			const bool bInFogBuffer = FogManager->IsLocationInLocalVisionBuffer(Location);
 
 			if (bInLocalTeamVision)
 			{
 				FogState.bInitialized = true;
-				// 보이던 적은 안쪽 숨김선을 벗어나면 즉시 숨기고, 숨겨진 적은 더 안쪽 재진입선까지 들어와야 표시한다.
-				const bool bShouldBeVisible = FogState.bVisibleToLocalTeam ? bInExitRegion : bInReentryRegion;
-				if (bShouldBeVisible)
-				{
-					FogState.bVisibleToLocalTeam = true;
-					FogState.RenderVisibilityAlpha = FadeInSeconds <= 0.0f
-						? 1.0f
-						: FMath::Min(1.0f, FogState.RenderVisibilityAlpha + DeltaTime / FadeInSeconds);
-				}
-				else
-				{
-					FogState.bVisibleToLocalTeam = false;
-					FogState.RenderVisibilityAlpha = 0.0f;
-				}
+				FogState.bVisibleToLocalTeam = true;
 				FogState.bRetainedInFogBuffer = true;
 				FogState.SecondsOutsideFogBuffer = 0.0f;
 			}
@@ -264,7 +184,6 @@ void UASMassMonsterVisualizationProcessor::Execute(
 				// Buffer 안에서는 ISM을 유지하지만 적 위치가 노출되지 않도록 즉시 숨긴다.
 				FogState.bInitialized = true;
 				FogState.bVisibleToLocalTeam = false;
-				FogState.RenderVisibilityAlpha = 0.0f;
 				FogState.bRetainedInFogBuffer = true;
 				FogState.SecondsOutsideFogBuffer = 0.0f;
 			}
@@ -273,7 +192,6 @@ void UASMassMonsterVisualizationProcessor::Execute(
 				// Buffer 밖에서는 숨긴 상태를 유지한다. 한 번도 Buffer에 들어오지 않은 Spawn은
 				// 바로 Off로 두고, 이미 등록된 ISM만 제거 지연을 적용한다.
 				FogState.bVisibleToLocalTeam = false;
-				FogState.RenderVisibilityAlpha = 0.0f;
 				if (!FogState.bInitialized || !FogState.bRetainedInFogBuffer)
 				{
 					FogState.bInitialized = true;

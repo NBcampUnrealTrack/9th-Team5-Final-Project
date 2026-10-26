@@ -10,6 +10,7 @@
 #include "MassLODFragments.h"
 #include "MassRepresentationFragments.h"
 #include "MassRepresentationSubsystem.h"
+#include "MassUpdateISMProcessor.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ASMassMonsterTemporaryVisualProcessor)
 
@@ -24,7 +25,7 @@ UASMassMonsterTemporaryVisualProcessor::UASMassMonsterTemporaryVisualProcessor()
 		| EProcessorExecutionFlags::Server
 		| EProcessorExecutionFlags::Standalone);
 	ExecutionOrder.ExecuteAfter.Add(UASMassMonsterVisualizationProcessor::StaticClass()->GetFName());
-	ExecutionOrder.ExecuteBefore.Add(UASMassMonsterUpdateISMProcessor::StaticClass()->GetFName());
+	ExecutionOrder.ExecuteBefore.Add(UMassUpdateISMProcessor::StaticClass()->GetFName());
 }
 
 void UASMassMonsterTemporaryVisualProcessor::ConfigureQueries(

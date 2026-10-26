@@ -277,6 +277,11 @@ UTexture2D* AASFogOfWarManager::GetFogTexture() const
 	return FogDisplayComponent->GetFogTexture();
 }
 
+FASFogMaterialState AASFogOfWarManager::GetFogMaterialState() const
+{
+	return FogDisplayComponent ? FogDisplayComponent->GetMaterialState() : FASFogMaterialState();
+}
+
 bool AASFogOfWarManager::IsLocationExplored(const FVector& Location) const
 {
 	return FogDisplayComponent->IsLocationExplored(Location);
@@ -285,16 +290,6 @@ bool AASFogOfWarManager::IsLocationExplored(const FVector& Location) const
 bool AASFogOfWarManager::IsLocationVisibleLocally(const FVector& Location) const
 {
 	return FogDisplayComponent->IsLocationVisibleLocally(Location);
-}
-
-bool AASFogOfWarManager::IsLocationInLocalVisionExitRegion(const FVector& Location) const
-{
-	return FogDisplayComponent->IsLocationInLocalVisionExitRegion(Location);
-}
-
-bool AASFogOfWarManager::IsLocationInLocalVisionReentryRegion(const FVector& Location) const
-{
-	return FogDisplayComponent->IsLocationInLocalVisionReentryRegion(Location);
 }
 
 bool AASFogOfWarManager::IsLocationInLocalVisionBuffer(const FVector& Location) const
