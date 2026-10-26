@@ -48,6 +48,13 @@ void UASGameplayAbility_Dodge::ActivateAbility(
 			return;
 		}
 
+		// 회피가 비용·쿨타임 검사를 통과해 실제로 시작될 때만 기존 클릭 이동과
+		// 공격 이동을 중단한다. 실패 입력은 현재 행동을 유지한다.
+		if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo->PlayerController.Get()))
+		{
+			PlayerController->CancelMovementForCommittedAbility();
+		}
+
 		// 클라이언트면 방향을 서버로 보낸다. 호스트는 자기가 서버라 보낼 필요가 없다.
 		if (!ActorInfo->IsNetAuthority())
 		{

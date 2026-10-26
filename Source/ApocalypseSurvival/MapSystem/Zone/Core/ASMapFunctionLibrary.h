@@ -30,13 +30,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static FName FindZoneIdAtLocation(const UObject* WorldContextObject, const FVector& Location);
 
-	/** 월드 공간 스폰 지점. 알 수 없는 구역이면 빈 목록을 반환한다. */
+	/** 월드 공간 스폰 지점과 구역 정보. None이면 모든 등록 구역, 알 수 없는 ID면 빈 목록을 반환한다. */
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
-	static TArray<FTransform> GetZoneSpawnTransforms(const UObject* WorldContextObject, FName ZoneId);
+	static TArray<FASZoneSpawnPoint> GetZoneSpawnPoints(const UObject* WorldContextObject, FName ZoneId);
 
-	/** 월드 공간 리스폰 지점. 알 수 없는 구역이면 빈 목록을 반환한다. */
+	/** 월드 공간 리스폰 지점과 구역 정보. None이면 모든 등록 구역, 알 수 없는 ID면 빈 목록을 반환한다. */
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
-	static TArray<FTransform> GetZoneRespawnTransforms(const UObject* WorldContextObject, FName ZoneId);
+	static TArray<FASZoneSpawnPoint> GetZoneRespawnPoints(const UObject* WorldContextObject, FName ZoneId);
 
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static FText GetZoneDisplayName(const UObject* WorldContextObject, FName ZoneId);

@@ -7,7 +7,7 @@
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
 #include "Mass/Monster/Processors/ASMassMonsterBehaviorProcessor.h"
 #include "Mass/Monster/Processors/ASMassMonsterNavigationProcessor.h"
-#include "Mass/Monster/Subsystems/ASMassPlayerTargetSubsystem.h"
+#include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
 #include "MassEntityQuery.h"
@@ -70,14 +70,27 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 	CSV_SCOPED_TIMING_STAT_GLOBAL(ASMassMonsterSuicideAttackProcessor);
 
 	UWorld* World = GetWorld();
-	UASMassPlayerTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMassPlayerTargetSubsystem>() : nullptr;
+	UASMonsterTargetSubsystem* TargetSubsystem = World ? World->GetSubsystem<UASMonsterTargetSubsystem>() : nullptr;
 	if (!World || !TargetSubsystem)
 	{
 		return;
 	}
 
 	const double CurrentTime = World->GetTimeSeconds();
-	const TConstArrayView<FASMassPlayerTargetSnapshot> TargetSnapshots = TargetSubsystem->GetTargetSnapshots();
+	TArray<FASTargetSnapshot> TargetSnapshots;
+	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
+		EASMonsterTargetCapability::PrimaryTarget, TargetSnapshots);
+	TArray<FASTargetSnapshot> BlockingSnapshots;
+	TargetSubsystem->FindTargetsInRange(FVector::ZeroVector, TNumericLimits<float>::Max(),
+		EASMonsterTargetCapability::BlockingTarget, BlockingSnapshots);
+	for (const FASTargetSnapshot& Snapshot : BlockingSnapshots)
+	{
+		if (!TargetSnapshots.ContainsByPredicate([&Snapshot](const FASTargetSnapshot& Existing)
+			{ return Existing.Handle == Snapshot.Handle; }))
+		{
+			TargetSnapshots.Add(Snapshot);
+		}
+	}
 	EntityQuery.ForEachEntityChunk(Context, [World, CurrentTime, TargetSnapshots](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
@@ -123,15 +136,16 @@ void UASMassMonsterSuicideAttackProcessor::Execute(FMassEntityManager& EntityMan
 			}
 
 			const FVector ExplosionOrigin = Transforms[EntityIt].GetTransform().GetLocation();
-			for (const FASMassPlayerTargetSnapshot& Snapshot : TargetSnapshots)
+			for (const FASTargetSnapshot& Snapshot : TargetSnapshots)
 			{
-				if (!Snapshot.bAlive || !Snapshot.Pawn.IsValid()
+				if (!Snapshot.bAlive || !Snapshot.bAttackable || !Snapshot.Actor.IsValid()
 					|| FVector::DistSquared2D(ExplosionOrigin, Snapshot.Location) > FMath::Square(Config.SuicideRadius))
 				{
 					continue;
 				}
 
-				ASMassMonsterDamage::ApplyToActor(Snapshot.Pawn.Get(), RuntimeStats[EntityIt].AttackPower, ExplosionOrigin);
+				ASMassMonsterDamage::ApplyToActor(Snapshot.Actor.Get(), RuntimeStats[EntityIt].AttackPower,
+					ExplosionOrigin, Snapshot.Location);
 			}
 
 			Combat.bPrimaryEffectApplied = true;

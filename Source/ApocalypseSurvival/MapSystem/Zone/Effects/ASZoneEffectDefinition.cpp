@@ -1,26 +1,51 @@
 ﻿#include "MapSystem/Zone/Effects/ASZoneEffectDefinition.h"
 
+#include "Core/Team/ASTeamTypes.h"
 #include "GameplayEffect.h"
-#include "GenericTeamAgentInterface.h"
-#include "MapSystem/Zone/Core/ASMapTypes.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
 
-const FASZoneEffectRow* UASZoneEffectDefinition::FindBaseRow(uint8 TeamId) const
+bool FASZoneEffectRow::GetValueForLevel(int32 DangerLevel, float& OutValue) const
 {
-	return FindZoneRow(NAME_None, TeamId);
+	if (DangerLevel < ASMap::MinDangerLevel || DangerLevel > ASMap::MaxDangerLevel)
+	{
+		return false;
+	}
+	const float Values[] = { Level1, Level2, Level3, Level4, Level5 };
+	const float Value = Values[DangerLevel - ASMap::MinDangerLevel];
+	if (!FMath::IsFinite(Value))
+	{
+		return false;
+	}
+	OutValue = Value;
+	return true;
 }
 
-const FASZoneEffectRow* UASZoneEffectDefinition::FindZoneRow(FName ZoneId, uint8 TeamId) const
+EASZoneEffectTarget UASZoneEffectDefinition::GetTargetForTeam(uint8 TeamId)
 {
+	if (TeamId == ASTeam::PlayerTeamId)
+	{
+		return EASZoneEffectTarget::Players;
+	}
+	if (TeamId == ASTeam::MonsterTeamId)
+	{
+		return EASZoneEffectTarget::Monsters;
+	}
+	return EASZoneEffectTarget::All;
+}
+
+bool UASZoneEffectDefinition::FindRows(FName ZoneId, EASZoneEffectTarget Target,
+	TArray<const FASZoneEffectRow*>& OutRows) const
+{
+	OutRows.Reset();
 	if (!IsValid(ZoneEffectTable) || ZoneEffectTable->GetRowStruct() != FASZoneEffectRow::StaticStruct())
 	{
-		return nullptr;
+		return false;
 	}
 
-	const FASZoneEffectRow* Fallback = nullptr;
+	TArray<const FASZoneEffectRow*> FallbackRows;
 	for (const auto& Pair : ZoneEffectTable->GetRowMap())
 	{
 		const FASZoneEffectRow* Row = reinterpret_cast<const FASZoneEffectRow*>(Pair.Value);
@@ -28,41 +53,20 @@ const FASZoneEffectRow* UASZoneEffectDefinition::FindZoneRow(FName ZoneId, uint8
 		{
 			continue;
 		}
-		if (Row->TeamId == TeamId)
+		if (Row->Target == Target)
 		{
-			return Row;
+			OutRows.Add(Row);
 		}
-		if (Row->TeamId == FGenericTeamId::NoTeam.GetId())
+		else if (Row->Target == EASZoneEffectTarget::All)
 		{
-			Fallback = Row;
+			FallbackRows.Add(Row);
 		}
 	}
-	return Fallback;
-}
-
-void UASZoneEffectDefinition::ValidateMagnitudes(const TArray<FASZoneEffectMagnitude>& Magnitudes,
-	const FString& OwnerPath, TArray<FString>& OutErrors)
-{
-	for (int32 MagnitudeIndex = 0; MagnitudeIndex < Magnitudes.Num(); ++MagnitudeIndex)
+	if (OutRows.IsEmpty())
 	{
-		const FASZoneEffectMagnitude& Magnitude = Magnitudes[MagnitudeIndex];
-		const FString Path = FString::Printf(TEXT("%s.Magnitudes[%d]"), *OwnerPath, MagnitudeIndex);
-		if (!Magnitude.DataTag.IsValid())
-		{
-			OutErrors.Add(Path + TEXT(" has an invalid or empty DataTag."));
-		}
-		if (Magnitude.ValuesByDangerLevel.Num() != ASMap::MaxDangerLevel)
-		{
-			OutErrors.Add(FString::Printf(TEXT("%s.ValuesByDangerLevel needs %d entries."), *Path, ASMap::MaxDangerLevel));
-		}
-		for (int32 ValueIndex = 0; ValueIndex < Magnitude.ValuesByDangerLevel.Num(); ++ValueIndex)
-		{
-			if (!FMath::IsFinite(Magnitude.ValuesByDangerLevel[ValueIndex]))
-			{
-				OutErrors.Add(FString::Printf(TEXT("%s.ValuesByDangerLevel[%d] must be finite."), *Path, ValueIndex));
-			}
-		}
+		OutRows = MoveTemp(FallbackRows);
 	}
+	return !OutRows.IsEmpty();
 }
 
 bool UASZoneEffectDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
@@ -78,7 +82,15 @@ bool UASZoneEffectDefinition::ValidateDefinition(TArray<FString>& OutErrors) con
 		}
 		else
 		{
-			TMap<FName, TSet<uint8>> ZoneTeams;
+			// 같은 구역/대상의 행은 하나의 GE와 중복 없는 태그를 공유해야 한다.
+			struct FGroupValidation
+			{
+				const FASZoneEffectRow* FirstRow = nullptr;
+				TSet<FGameplayTag> DataTags;
+				int32 RowCount = 0;
+				bool bHasEmptyDataTag = false;
+			};
+			TMap<FName, TMap<EASZoneEffectTarget, FGroupValidation>> Groups;
 			for (const auto& Pair : ZoneEffectTable->GetRowMap())
 			{
 				const FString RowPath = FString::Printf(TEXT("%s: ZoneEffectTable[%s]"), *AssetName, *Pair.Key.ToString());
@@ -96,14 +108,47 @@ bool UASZoneEffectDefinition::ValidateDefinition(TArray<FString>& OutErrors) con
 				{
 					OutErrors.Add(RowPath + TEXT(" Effect must have Infinite duration (periodic effects are allowed)."));
 				}
-				TSet<uint8>& TeamsForZone = ZoneTeams.FindOrAdd(Row->ZoneId);
-				if (TeamsForZone.Contains(Row->TeamId))
+				FGroupValidation& Group = Groups.FindOrAdd(Row->ZoneId).FindOrAdd(Row->Target);
+				if (Group.FirstRow && Group.FirstRow->Effect != Row->Effect)
 				{
-					OutErrors.Add(FString::Printf(TEXT("%s has duplicate (ZoneId, TeamId) (%s, %u)."),
-						*RowPath, *Row->ZoneId.ToString(), Row->TeamId));
+					OutErrors.Add(RowPath + TEXT(" has different Effects in the same (ZoneId, Target) group."));
 				}
-				TeamsForZone.Add(Row->TeamId);
-				ValidateMagnitudes(Row->Magnitudes, RowPath, OutErrors);
+				if (!Group.FirstRow)
+				{
+					Group.FirstRow = Row;
+				}
+				++Group.RowCount;
+				if (Row->DataTag.IsValid())
+				{
+					if (Group.DataTags.Contains(Row->DataTag))
+					{
+						OutErrors.Add(RowPath + TEXT(" has duplicate DataTag in the same (ZoneId, Target) group."));
+					}
+					Group.DataTags.Add(Row->DataTag);
+				}
+				else
+				{
+					Group.bHasEmptyDataTag = true;
+				}
+				for (int32 Level = ASMap::MinDangerLevel; Level <= ASMap::MaxDangerLevel; ++Level)
+				{
+					float Value = 0.0f;
+					if (!Row->GetValueForLevel(Level, Value))
+					{
+						OutErrors.Add(FString::Printf(TEXT("%s.Level%d must be finite."), *RowPath, Level));
+					}
+				}
+			}
+			for (const auto& ZoneGroup : Groups)
+			{
+				for (const auto& TargetGroup : ZoneGroup.Value)
+				{
+					if (TargetGroup.Value.bHasEmptyDataTag && TargetGroup.Value.RowCount > 1)
+					{
+						OutErrors.Add(FString::Printf(TEXT("%s: ZoneEffectTable group (ZoneId=%s, Target=%s) has an empty DataTag with more than one row."),
+							*AssetName, *ZoneGroup.Key.ToString(), *StaticEnum<EASZoneEffectTarget>()->GetNameStringByValue(static_cast<int64>(TargetGroup.Key))));
+					}
+				}
 			}
 		}
 	}
@@ -112,21 +157,6 @@ bool UASZoneEffectDefinition::ValidateDefinition(TArray<FString>& OutErrors) con
 		OutErrors.Add(AssetName + TEXT(": UpdateInterval must be finite and greater than 0."));
 	}
 	return OutErrors.Num() == InitialErrorCount;
-}
-
-bool UASZoneEffectDefinition::GetMagnitudeForLevel(const FASZoneEffectMagnitude& Magnitude, int32 DangerLevel, float& OutValue)
-{
-	if (DangerLevel < ASMap::MinDangerLevel || DangerLevel > ASMap::MaxDangerLevel)
-	{
-		return false;
-	}
-	const int32 Index = DangerLevel - ASMap::MinDangerLevel;
-	if (!Magnitude.ValuesByDangerLevel.IsValidIndex(Index) || !FMath::IsFinite(Magnitude.ValuesByDangerLevel[Index]))
-	{
-		return false;
-	}
-	OutValue = Magnitude.ValuesByDangerLevel[Index];
-	return true;
 }
 
 #if WITH_EDITOR

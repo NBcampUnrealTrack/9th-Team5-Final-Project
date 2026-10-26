@@ -18,7 +18,6 @@
 #include "MapSystem/Zone/Core/ASMapWorldSubsystem.h"
 #include "MapSystem/Vision/ASFogOfWarManager.h"
 #include "MapSystem/Vision/ASVisibilityComponent.h"
-#include "MapSystem/Vision/ASVisionDefinition.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
@@ -298,11 +297,7 @@ int32 UASMapWidget::NativePaint(
 	const UASVisionDefinition* VisionDefinition = FogManager ? FogManager->GetVisionDefinition() : nullptr;
 	if (bShowFog && VisionDefinition && FogBrush.GetResourceObject())
 	{
-		const FVector2D A = Context.WorldToLocal(FVector(VisionDefinition->FogWorldMin, 0.0));
-		const FVector2D B = Context.WorldToLocal(FVector(VisionDefinition->FogWorldMax, 0.0));
-		const FVector2D FogTopLeft(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y));
-		const FVector2D FogSize(FMath::Abs(A.X - B.X), FMath::Abs(A.Y - B.Y));
-		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, FogTopLeft, FogSize, FLinearColor(0, 0, 0, 1));
+		DrawRect(OutDrawElements, ++Layer, AllottedGeometry, &FogBrush, MapTopLeft, MapSize, FLinearColor(0, 0, 0, 1));
 	}
 
 	// 3. 구역: 공유 위험도 채우기와 구역 액터의 이름.

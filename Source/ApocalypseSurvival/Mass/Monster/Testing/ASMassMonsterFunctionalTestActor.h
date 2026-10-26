@@ -21,6 +21,10 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
+	/** 지정한 플레이어 Pawn을 Instigator로 사용해 가장 가까운 살아 있는 몬스터 하나에 테스트 피해를 준다. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass Functional Test|Targeting", meta = (DevelopmentOnly))
+	bool ApplyTargetingTestDamage(int32 InstigatorPlayerIndex, float Damage = 1.0f);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

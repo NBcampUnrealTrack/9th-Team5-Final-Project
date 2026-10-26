@@ -4,6 +4,7 @@
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "Characters/Player/Data/ASCharacterRoster.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetableComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASPlayerState.h"
@@ -31,11 +32,29 @@
 #include "InputMappingContext.h"
 #include "EngineUtils.h"
 
+namespace ASPlayerCharacterTargeting
+{
+	constexpr float BaseScore = 10.0f;
+
+	EASMonsterTargetCapability GetCapabilities()
+	{
+		return static_cast<EASMonsterTargetCapability>(
+			static_cast<uint8>(EASMonsterTargetCapability::PrimaryTarget)
+			| static_cast<uint8>(EASMonsterTargetCapability::ThreatSource)
+			| static_cast<uint8>(EASMonsterTargetCapability::GlobalCandidate));
+	}
+}
+
 AASPlayerCharacter::AASPlayerCharacter()
 {
 	TeamId = ASTeam::Player();
 
 	EquipmentComponent = CreateDefaultSubobject<UASEquipmentComponent>(TEXT("EquipmentComponent"));
+	MonsterTargetableComponent = CreateDefaultSubobject<UASMonsterTargetableComponent>(TEXT("MonsterTargetableComponent"));
+	MonsterTargetableComponent->ConfigureTargetProfile(
+		ASPlayerCharacterTargeting::GetCapabilities(),
+		ASPlayerCharacterTargeting::BaseScore,
+		42.0f);
 
 	GetCapsuleComponent()->InitCapsuleSize(42.0f, 96.0f);
 
@@ -109,6 +128,38 @@ void AASPlayerCharacter::MulticastDrawWeaponAttackDebug_Implementation(
 	}
 }
 
+void AASPlayerCharacter::MulticastDrawMeleeConeDebug_Implementation(
+	const FVector Origin,
+	const FVector Direction,
+	const float Radius,
+	const float AngleDegrees,
+	const bool bHit)
+{
+	const UWorld* World = GetWorld();
+	if (!World || Direction.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FColor Color = bHit ? FColor::Red : FColor::Green;
+	const float HalfAngle = AngleDegrees * 0.5f;
+
+	// 부채꼴 테두리: 양쪽 직선 + 호를 선분으로 이어 그린다.
+	constexpr int32 ArcSegments = 12;
+	FVector PreviousPoint = Origin + Direction.RotateAngleAxis(-HalfAngle, FVector::UpVector) * Radius;
+	DrawDebugLine(World, Origin, PreviousPoint, Color, false, 1.0f, 0, 2.0f);
+
+	for (int32 Index = 1; Index <= ArcSegments; ++Index)
+	{
+		const float Angle = -HalfAngle + AngleDegrees * (static_cast<float>(Index) / ArcSegments);
+		const FVector Point = Origin + Direction.RotateAngleAxis(Angle, FVector::UpVector) * Radius;
+		DrawDebugLine(World, PreviousPoint, Point, Color, false, 1.0f, 0, 2.0f);
+		PreviousPoint = Point;
+	}
+
+	DrawDebugLine(World, Origin, PreviousPoint, Color, false, 1.0f, 0, 2.0f);
+}
+
 void AASPlayerCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -160,6 +211,31 @@ bool AASPlayerCharacter::IsDead() const
 {
 	const UASAbilitySystemComponent* ASC = Cast<UASAbilitySystemComponent>(GetAbilitySystemComponent());
 	return IsValid(ASC) && ASC->IsDead();
+}
+
+bool AASPlayerCharacter::IsMonsterTargetable_Implementation() const
+{
+	return !IsDead();
+}
+
+FVector AASPlayerCharacter::GetMonsterTargetLocation_Implementation() const
+{
+	return GetActorLocation();
+}
+
+float AASPlayerCharacter::GetMonsterTargetRadius_Implementation() const
+{
+	return GetCapsuleComponent()->GetScaledCapsuleRadius();
+}
+
+EASMonsterTargetCapability AASPlayerCharacter::GetMonsterTargetCapabilities_Implementation() const
+{
+	return ASPlayerCharacterTargeting::GetCapabilities();
+}
+
+float AASPlayerCharacter::GetMonsterTargetBaseScore_Implementation() const
+{
+	return ASPlayerCharacterTargeting::BaseScore;
 }
 
 void AASPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
