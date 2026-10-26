@@ -27,6 +27,8 @@ public:
 	bool HasPendingInteraction() const { return PendingTarget.IsValid(); }
 	bool IsLootOpen() const;
 	bool IsCursorOverInventory() const;
+	/** Prefer the nameplate over the world underneath it when choosing a local hover target. */
+	void SetHoveredDroppedItemLabel(AASDroppedItem* Item, bool bHovered);
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetPlayerInventory() const;
@@ -71,6 +73,7 @@ private:
 	bool CanReachTarget(AActor* Target) const;
 	void InitializeInventoryBar();
 	void ActivateSlotFromKey(int32 SlotIndex);
+	void UpdateDroppedItemHover();
 
 	UFUNCTION(Server, Reliable)
 	void ServerActivateSlot(int32 SlotIndex, FGuid ExpectedItem);
@@ -128,6 +131,8 @@ private:
 	TObjectPtr<UInputComponent> InventoryInput;
 
 	TWeakObjectPtr<AActor> PendingTarget;
+	TWeakObjectPtr<AASDroppedItem> HoveredDroppedItem;
+	TWeakObjectPtr<AASDroppedItem> HoveredDroppedItemLabel;
 	TWeakObjectPtr<AASLootChest> OpenChest;
 	TWeakObjectPtr<AASLootChest> ServerOpenChest;
 	TWeakObjectPtr<APawn> ServerLootPawn;

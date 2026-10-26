@@ -18,6 +18,7 @@
 #include "AbilitySystemComponent.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Skills/ASSkillTags.h"
+#include "Framework/Application/SlateApplication.h"
 
 namespace
 {
@@ -128,12 +129,44 @@ void UASItemInteractionComponent::CancelPendingInteraction()
 	PendingTarget.Reset();
 }
 
+void UASItemInteractionComponent::SetHoveredDroppedItemLabel(AASDroppedItem* Item, const bool bHovered)
+{
+	if (bHovered) HoveredDroppedItemLabel = Item;
+	else if (HoveredDroppedItemLabel.Get() == Item) HoveredDroppedItemLabel.Reset();
+}
+
+void UASItemInteractionComponent::UpdateDroppedItemHover()
+{
+	AASDroppedItem* Next = nullptr;
+	AASPlayerController* PC = GetASController();
+	if (PC && IsValid(PC->GetPawn()) && PC->bShowMouseCursor && !IsDeadPawn(PC)
+		&& !IsCursorOverInventory() && !IsLootOpen()
+		&& FSlateApplication::IsInitialized() && !FSlateApplication::Get().IsDragDropping())
+	{
+		if (HoveredDroppedItemLabel.IsValid() && HoveredDroppedItemLabel->GetDroppedItem())
+			Next = HoveredDroppedItemLabel.Get();
+		else
+		{
+			FHitResult Hit;
+			if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit)) Next = Cast<AASDroppedItem>(Hit.GetActor());
+			if (Next && !Next->GetDroppedItem()) Next = nullptr;
+		}
+	}
+	if (HoveredDroppedItem.Get() != Next)
+	{
+		if (HoveredDroppedItem.IsValid()) HoveredDroppedItem->SetWorldHovered(false);
+		HoveredDroppedItem = Next;
+		if (Next) Next->SetWorldHovered(true);
+	}
+}
+
 void UASItemInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	AASPlayerController* PC = GetASController();
 	if (!PC || !PC->IsLocalController()) return;
 	InitializeInventoryBar();
+	UpdateDroppedItemHover();
 	if (InventoryBar && InventoryBar->GetInventory() != GetPlayerInventory())
 		InventoryBar->SetInventory(GetPlayerInventory());
 	if (PendingTarget.IsValid())
@@ -392,6 +425,9 @@ void UASItemInteractionComponent::ServerCloseLoot_Implementation()
 
 void UASItemInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HoveredDroppedItem.IsValid()) HoveredDroppedItem->SetWorldHovered(false);
+	HoveredDroppedItem.Reset();
+	HoveredDroppedItemLabel.Reset();
 	if (InventoryInput)
 	{
 		if (AASPlayerController* PC = GetASController()) PC->PopInputComponent(InventoryInput);
