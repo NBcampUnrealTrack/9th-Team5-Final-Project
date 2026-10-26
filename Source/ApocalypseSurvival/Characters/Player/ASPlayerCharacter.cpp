@@ -9,6 +9,7 @@
 #include "Mass/Monster/Targeting/ASMonsterTargetableComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/Combat/ASCombatImpactSettings.h"
+#include "Core/Testing/ASCombatImpactTestLibrary.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
@@ -165,6 +166,14 @@ void AASPlayerCharacter::MulticastDrawMeleeConeDebug_Implementation(
 
 void AASPlayerCharacter::MulticastPlayMeleeHitStop_Implementation(const float Duration)
 {
+#if !UE_BUILD_SHIPPING
+	// 테스트 계측 전용. 서버 실행만 세면 Multicast 발송 1회당 정확히 1회 기록된다.
+	if (HasAuthority())
+	{
+		FASCombatImpactTestDiagnostics::RecordMeleeHitStopDispatch(this, Duration);
+	}
+#endif
+
 	if (!IsLocallyControlled() || Duration <= 0.0f)
 	{
 		return;
