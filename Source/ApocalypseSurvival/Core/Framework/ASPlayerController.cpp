@@ -9,6 +9,7 @@
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
+#include "Core/Settings/ASLocalSettingsSubsystem.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
 #include "Skills/ASSkillTags.h"
@@ -80,7 +81,8 @@ void AASPlayerController::SetupInputComponent()
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
-		Subsystem->AddMappingContext(DefaultMappingContext, 0);
+		UASLocalSettingsSubsystem* Settings = GetLocalPlayer()->GetSubsystem<UASLocalSettingsSubsystem>();
+		Subsystem->AddMappingContext(Settings ? Settings->GetRuntimeMappingContext(DefaultMappingContext) : DefaultMappingContext.Get(), 0);
 	}
 
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
