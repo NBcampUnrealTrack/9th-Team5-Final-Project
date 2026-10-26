@@ -60,9 +60,13 @@ private:
 		FVector2D WorldSize;
 		int32 BlurRadius;
 		const UASVisionSourceComponent* LocalSource;
+		FVector LocalOrigin = FVector::ZeroVector;
+		FVector2D LocalCenter = FVector2D::ZeroVector;
+		float LocalRadius = 0.0f;
 	};
 	void AdvancePendingFade();
 	void ClearPreviousVisibleCells();
+	bool NeedsImmediateLocalMaskRefresh() const;
 	void TraceSource(const UASVisionEvaluatorComponent& Evaluator, const UASVisionSourceComponent* Source,
 		const FVector& Origin, float Radius, float DisplayRadius, const UASVisionSourceComponent* LocalSource);
 	FIntRect RasterizeTeamSources(const UASVisionWorldSubsystem& Subsystem,
@@ -72,6 +76,8 @@ private:
 		const TArray<uint8>& Alpha, const FIntRect& Region, const FIntRect& Excluded);
 	void BlurLocalAlpha(const FIntRect& Region, int32 BlurRadius);
 	void BlurChangedRegions(bool bFullRecompute, bool bLocalRegionChanged, int32 BlurRadius);
+	void CommitLocalMaterialChannels(const FIntRect& Region);
+	void ResolveExitedLocalRegion(const FIntRect& PreviousLocalRegion, TArray<FIntRect>& OutUploadRegions);
 	void StartLocalFade(float FadeSeconds);
 
 	FVector2D GetFogWorldSize() const { return (FogWorldMax - FogWorldMin).ComponentMax(FVector2D(1.0, 1.0)); }

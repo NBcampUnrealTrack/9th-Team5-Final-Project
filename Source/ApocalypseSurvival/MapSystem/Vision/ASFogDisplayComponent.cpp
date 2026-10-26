@@ -57,21 +57,9 @@ const UASVisionSourceComponent* UASFogDisplayComponent::GetLocalVisionSource() c
 
 void UASFogDisplayComponent::UpdateLocalVisionParameters()
 {
-	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
-	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
-	const UASVisionSourceComponent* Source = GetLocalVisionSource();
-	LocalVisionCenter = FVector2D::ZeroVector;
-	LocalVisionRadius = 0.0f;
-	LocalVisionSoftness = VisionDefinition
-		? FMath::Max(1.0f, VisionDefinition->Settings.LocalVisionSoftness)
-		: 90.0f;
-	if (Source && Evaluator && Manager && VisionDefinition)
-	{
-		const FVector Center = Evaluator->GetTraceLocation(Source->GetOwner());
-		LocalVisionCenter = FVector2D(Center.X, Center.Y);
-		LocalVisionRadius = Source->GetVisionRadius(VisionDefinition->Settings, Manager->GetNightAlpha());
-	}
-
+	// FogTexture와 같은 UpdateLocalMask Snapshot만 렌더링에 공개한다.
+	// 여기서 현재 Pawn 위치나 낮/밤 반경을 다시 계산하면, 텍스처와 서로 다른 시점의
+	// 시야가 섞여 대시·반경 축소 때 밝은 잔상이 생긴다.
 	if (WorldFogMaterial)
 	{
 		WorldFogMaterial->SetVectorParameterValue(TEXT("LocalVisionCenter"),
@@ -91,7 +79,14 @@ void UASFogDisplayComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;
 	}
 
-	UpdateLocalVisionParameters();
+	if (NeedsImmediateLocalMaskRefresh())
+	{
+		// 대시나 시야 반경 급변은 다음 UpdateHz 타이머까지 기다리지 않는다.
+		// UpdateLocalMask가 FogTexture와 Material Snapshot을 한 번에 갱신한다.
+		UpdateLocalMask();
+		return;
+	}
+
 	AdvancePendingFade();
 }
 
@@ -308,11 +303,17 @@ void UASFogDisplayComponent::UpdateLocalMask()
 		return;
 	}
 
-	const FLocalMaskContext Context{
+	FLocalMaskContext Context{
 		Manager->IsWallOcclusionEnabled(), Manager->GetNightAlpha(),
 		UASVisionFunctionLibrary::GetLocalTeamId(this), GetFogWorldSize(),
 		FMath::Clamp(VisionDefinition->Settings.FogEdgeBlurTexels, 0, 8), GetLocalVisionSource()
 	};
+	if (Context.LocalSource)
+	{
+		Context.LocalOrigin = Evaluator->GetTraceLocation(Context.LocalSource->GetOwner());
+		Context.LocalCenter = FVector2D(Context.LocalOrigin.X, Context.LocalOrigin.Y);
+		Context.LocalRadius = Context.LocalSource->GetVisionRadius(VisionDefinition->Settings, Context.NightAlpha);
+	}
 	AdvancePendingFade();
 	ClearPreviousVisibleCells();
 	const FIntRect PreviousLocalRegion = RasterizeTeamSources(*Subsystem, *Evaluator, Context);
@@ -323,6 +324,11 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	const bool bFullRecompute = RebuildRawAlpha(PreviousLocalRegion, bLocalRegionChanged);
 	if (!bFullRecompute && RawChangedRegions.IsEmpty() && !bLocalRegionChanged)
 	{
+		// 래스터 결과가 동일한 경우에는 이 Snapshot도 같은 텍스처 상태로 취급할 수 있다.
+		LocalVisionCenter = Context.LocalCenter;
+		LocalVisionRadius = Context.LocalRadius;
+		LocalVisionSoftness = FMath::Max(1.0f, VisionDefinition->Settings.LocalVisionSoftness);
+		UpdateLocalVisionParameters();
 		return;
 	}
 	// B 채널은 페이드된 월드 안개가 아니라 현재 논리 시야 자체를 기록한다.
@@ -332,7 +338,30 @@ void UASFogDisplayComponent::UpdateLocalMask()
 		UploadTexture(RawChangedRegions);
 	}
 	BlurChangedRegions(bFullRecompute, bLocalRegionChanged, Context.BlurRadius);
+
+	// 현재 시야는 부드러운 탐색 안개와 달리 즉시 표시해야 한다. 이전 로컬 영역에서
+	// 빠져나온 셀은 A 채널에 남아 있던 밝은 Fade 값을 목표값으로 확정해 잔상을 제거한다.
+	TArray<FIntRect> ImmediateUploadRegions;
+	if (bLocalRegionChanged)
+	{
+		ResolveExitedLocalRegion(PreviousLocalRegion, ImmediateUploadRegions);
+	}
+	if (LocalRegion.Width() > 0 && LocalRegion.Height() > 0)
+	{
+		CommitLocalMaterialChannels(LocalRegion);
+		ImmediateUploadRegions.Add(LocalRegion);
+	}
+	if (!ImmediateUploadRegions.IsEmpty())
+	{
+		UploadTexture(ImmediateUploadRegions);
+	}
 	StartLocalFade(VisionDefinition->Settings.FogFadeSeconds);
+
+	// 위에서 업로드한 FogTexture와 완전히 같은 시점의 원점/반경만 Material에 전달한다.
+	LocalVisionCenter = Context.LocalCenter;
+	LocalVisionRadius = Context.LocalRadius;
+	LocalVisionSoftness = FMath::Max(1.0f, VisionDefinition->Settings.LocalVisionSoftness);
+	UpdateLocalVisionParameters();
 }
 
 void UASFogDisplayComponent::AdvancePendingFade()
@@ -364,6 +393,32 @@ void UASFogDisplayComponent::ClearPreviousVisibleCells()
 			FMemory::Memzero(OthersCells.GetData() + Start, Region.Width());
 		}
 	}
+}
+
+bool UASFogDisplayComponent::NeedsImmediateLocalMaskRefresh() const
+{
+	if (!bHasLocalVisionMask || !VisionDefinition || ResolutionX <= 0 || ResolutionY <= 0)
+	{
+		return false;
+	}
+
+	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
+	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
+	const UASVisionSourceComponent* Source = GetLocalVisionSource();
+	if (!Manager || !Evaluator || !Source)
+	{
+		return LocalVisionRadius > 0.0f;
+	}
+
+	const FVector Center = Evaluator->GetTraceLocation(Source->GetOwner());
+	const FVector2D CurrentCenter(Center.X, Center.Y);
+	const float CurrentRadius = Source->GetVisionRadius(VisionDefinition->Settings, Manager->GetNightAlpha());
+	const FVector2D WorldSize = GetFogWorldSize();
+	const float TexelWorldSize = FMath::Max(WorldSize.Y / ResolutionX, WorldSize.X / ResolutionY);
+	const float RefreshThreshold = FMath::Max(1.0f, TexelWorldSize);
+
+	return FVector2D::Distance(CurrentCenter, LocalVisionCenter) >= RefreshThreshold
+		|| FMath::Abs(CurrentRadius - LocalVisionRadius) >= RefreshThreshold;
 }
 
 void UASFogDisplayComponent::TraceSource(const UASVisionEvaluatorComponent& Evaluator, const UASVisionSourceComponent* Source,
@@ -427,8 +482,8 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 	FVector2D DisplayRadii = FVector2D::ZeroVector;
 	if (Context.LocalSource)
 	{
-		const FVector Origin = Evaluator.GetTraceLocation(Context.LocalSource->GetOwner());
-		const float Radius = Context.LocalSource->GetVisionRadius(Settings, Context.NightAlpha);
+		const FVector& Origin = Context.LocalOrigin;
+		const float Radius = Context.LocalRadius;
 		const float DisplayRadius = Radius + FMath::Max(0.0f, Settings.LocalVisionMargin);
 		LocalCenter = WorldToGrid(Origin);
 		LocalRadii = FVector2D(Radius / Context.WorldSize.Y * ResolutionX, Radius / Context.WorldSize.X * ResolutionY);
@@ -568,11 +623,6 @@ bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion
 		}
 		MarkPendingTiles(LocalRegion);
 		MarkPendingTiles(PreviousLocalRegion);
-		// 알파가 그대로여도 이전 영역의 G/R을 A로 되돌린다.
-		if (PreviousLocalRegion.Width() > 0 && PreviousLocalRegion.Height() > 0)
-		{
-			UploadTexture({ PreviousLocalRegion });
-		}
 	}
 	return bFullRecompute;
 }
@@ -645,6 +695,86 @@ void UASFogDisplayComponent::BlurChangedRegions(bool bFullRecompute, bool bLocal
 	if (!bFullRecompute && bLocalRegionChanged)
 	{
 		BlurLocalAlpha(LocalRegion, BlurRadius);
+	}
+}
+
+void UASFogDisplayComponent::CommitLocalMaterialChannels(const FIntRect& Region)
+{
+	const FIntRect Clamped(
+		FMath::Clamp(Region.Min.X, 0, ResolutionX), FMath::Clamp(Region.Min.Y, 0, ResolutionY),
+		FMath::Clamp(Region.Max.X, 0, ResolutionX), FMath::Clamp(Region.Max.Y, 0, ResolutionY));
+	if (Clamped.Width() <= 0 || Clamped.Height() <= 0)
+	{
+		return;
+	}
+
+	for (int32 Y = Clamped.Min.Y; Y < Clamped.Max.Y; ++Y)
+	{
+		const int32 Start = Y * ResolutionX + Clamped.Min.X;
+		const int32 Width = Clamped.Width();
+		FMemory::Memcpy(DisplayShownAlpha.GetData() + Start, DisplayTargetAlpha.GetData() + Start, Width);
+		FMemory::Memcpy(DisplayFadeFromAlpha.GetData() + Start, DisplayTargetAlpha.GetData() + Start, Width);
+		FMemory::Memcpy(OthersShownAlpha.GetData() + Start, OthersTargetAlpha.GetData() + Start, Width);
+		FMemory::Memcpy(OthersFadeFromAlpha.GetData() + Start, OthersTargetAlpha.GetData() + Start, Width);
+	}
+}
+
+void UASFogDisplayComponent::ResolveExitedLocalRegion(const FIntRect& PreviousLocalRegion,
+	TArray<FIntRect>& OutUploadRegions)
+{
+	const FIntRect Previous(
+		FMath::Clamp(PreviousLocalRegion.Min.X, 0, ResolutionX), FMath::Clamp(PreviousLocalRegion.Min.Y, 0, ResolutionY),
+		FMath::Clamp(PreviousLocalRegion.Max.X, 0, ResolutionX), FMath::Clamp(PreviousLocalRegion.Max.Y, 0, ResolutionY));
+	if (Previous.Width() <= 0 || Previous.Height() <= 0)
+	{
+		return;
+	}
+
+	const FIntRect Overlap(
+		FMath::Max(Previous.Min.X, LocalRegion.Min.X), FMath::Max(Previous.Min.Y, LocalRegion.Min.Y),
+		FMath::Min(Previous.Max.X, LocalRegion.Max.X), FMath::Min(Previous.Max.Y, LocalRegion.Max.Y));
+	TArray<FIntRect, TInlineAllocator<4>> ExitedRegions;
+	auto AddIfValid = [&ExitedRegions](const FIntRect& Region)
+	{
+		if (Region.Width() > 0 && Region.Height() > 0)
+		{
+			ExitedRegions.Add(Region);
+		}
+	};
+
+	if (Overlap.Width() <= 0 || Overlap.Height() <= 0)
+	{
+		AddIfValid(Previous);
+	}
+	else
+	{
+		AddIfValid(FIntRect(Previous.Min.X, Previous.Min.Y, Previous.Max.X, Overlap.Min.Y));
+		AddIfValid(FIntRect(Previous.Min.X, Overlap.Max.Y, Previous.Max.X, Previous.Max.Y));
+		AddIfValid(FIntRect(Previous.Min.X, Overlap.Min.Y, Overlap.Min.X, Overlap.Max.Y));
+		AddIfValid(FIntRect(Overlap.Max.X, Overlap.Min.Y, Previous.Max.X, Overlap.Max.Y));
+	}
+
+	for (const FIntRect& Region : ExitedRegions)
+	{
+		for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
+		{
+			const int32 Start = Y * ResolutionX + Region.Min.X;
+			const int32 Width = Region.Width();
+			FMemory::Memcpy(ShownAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(FadeFromAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+
+			// 이탈한 셀은 더 이상 G/R 전용 영역이 아니다. 다음 프레임에 재진입해도
+			// 이전 로컬 시야의 밝은 값이 재사용되지 않도록 전부 현재 A 목표값으로 정리한다.
+			FMemory::Memcpy(DisplayRawAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(DisplayTargetAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(DisplayShownAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(DisplayFadeFromAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(OthersRawAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(OthersTargetAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(OthersShownAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+			FMemory::Memcpy(OthersFadeFromAlpha.GetData() + Start, TargetAlpha.GetData() + Start, Width);
+		}
+		OutUploadRegions.Add(Region);
 	}
 }
 
