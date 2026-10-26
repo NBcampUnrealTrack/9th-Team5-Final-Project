@@ -215,7 +215,8 @@ bool AASPlayerCharacter::IsDead() const
 
 bool AASPlayerCharacter::IsMonsterTargetable_Implementation() const
 {
-	return !IsDead();
+	// 쓰러진 플레이어는 부활을 기다리는 중이므로 몬스터의 추적·공격 후보가 아니다.
+	return !IsDead() && !IsDowned();
 }
 
 FVector AASPlayerCharacter::GetMonsterTargetLocation_Implementation() const
@@ -291,6 +292,9 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 	{
 		HandleDownedTagChanged(ASGameplayTags::State_Downed, 1);
 	}
+
+	// 늦은 ASC 초기화나 리스폰 뒤에도 서버 Registry가 현재 상태와 일치해야 한다.
+	RefreshMonsterTargetingRegistration();
 	
 	BindProgressionDelegates();
 }
@@ -439,6 +443,8 @@ void AASPlayerCharacter::BleedOut()
 
 void AASPlayerCharacter::HandleDownedTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
+	RefreshMonsterTargetingRegistration();
+
 	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
 
 	if (NewCount > 0)
@@ -461,6 +467,17 @@ void AASPlayerCharacter::HandleDownedTagChanged(const FGameplayTag Tag, int32 Ne
 		}
 		OnDownedChanged(false);
 	}
+}
+
+void AASPlayerCharacter::RefreshMonsterTargetingRegistration()
+{
+	if (!HasAuthority() || !MonsterTargetableComponent)
+	{
+		return;
+	}
+
+	// 등록을 해제하면 이미 이 Handle을 보유한 Mass 몬스터도 다음 ResolveTarget부터 즉시 실패한다.
+	MonsterTargetableComponent->SetTargetingEnabled(!IsDead() && !IsDowned());
 }
 
 void AASPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -755,6 +772,8 @@ void AASPlayerCharacter::ServerRequestSpectateNext_Implementation()
 
 void AASPlayerCharacter::HandleDeadTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
+	RefreshMonsterTargetingRegistration();
+
 	if (NewCount > 0)
 	{
 		ApplyLocalDeath();

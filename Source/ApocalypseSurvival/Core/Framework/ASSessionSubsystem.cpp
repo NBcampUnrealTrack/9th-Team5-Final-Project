@@ -18,6 +18,7 @@
 namespace
 {
 	const FName RoomNameKey(TEXT("RoomName"));
+	const FName RequiresPasswordKey(TEXT("RequiresPassword"));
 }
 
 void UASSessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -68,8 +69,28 @@ FUniqueNetIdRepl UASSessionSubsystem::GetLocalUserId() const
 	return LocalPlayer ? LocalPlayer->GetPreferredUniqueNetId() : FUniqueNetIdRepl();
 }
 
-void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FString& RoomName)
+bool UASSessionSubsystem::IsValidRoomPassword(const FString& Password)
 {
+	if (Password.Len() != 4) return false;
+	for (const TCHAR Character : Password)
+	{
+		if (Character < TEXT('0') || Character > TEXT('9')) return false;
+	}
+	return true;
+}
+
+bool UASSessionSubsystem::ValidateRoomPassword(const FString& Password) const
+{
+	return HostPassword.IsEmpty() || (IsValidRoomPassword(Password) && Password == HostPassword);
+}
+
+void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FString& RoomName, const bool bUsePassword, const FString& Password)
+{
+	if (bUsePassword && !IsValidRoomPassword(Password))
+	{
+		OnSessionCreated.Broadcast(false);
+		return;
+	}
 	if (!SessionInterface.IsValid())
 	{
 		OnSessionCreated.Broadcast(false);
@@ -92,6 +113,9 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 	}
 
 	FOnlineSessionSettings SessionSettings;
+	HostPassword = bUsePassword ? Password : FString();
+	ReturnToMenuMessage = FText::GetEmpty();
+	SessionSettings.Set(RequiresPasswordKey, bUsePassword, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	ClearMatchCharacters();
 	SessionSettings.NumPublicConnections = FMath::Max(2, PublicConnections);
 	SessionSettings.bIsLANMatch = true;
@@ -149,7 +173,7 @@ void UASSessionSubsystem::FindSessions(const int32 MaxResults)
 	}
 }
 
-void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex)
+void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FString& Password)
 {
 	if (SessionInterface.IsValid() && SessionInterface->GetNamedSession(NAME_GameSession))
 	{
@@ -170,6 +194,14 @@ void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex)
 		return;
 	}
 
+	bool bRequiresPassword = false;
+	SessionSearch->SearchResults[ResultIndex].Session.SessionSettings.Get(RequiresPasswordKey, bRequiresPassword);
+	if (bRequiresPassword && !IsValidRoomPassword(Password))
+	{
+		OnSessionJoined.Broadcast(false, TEXT("비밀번호는 숫자 4자리로 입력해 주세요."));
+		return;
+	}
+	PendingJoinPassword = bRequiresPassword ? Password : FString();
 	SessionInterface->OnJoinSessionCompleteDelegates.RemoveAll(this);
 	SessionInterface->OnJoinSessionCompleteDelegates.AddUObject(
 		this,
@@ -234,6 +266,8 @@ void UASSessionSubsystem::FinishLeavingRoom(const bool bSessionDestroyed)
 	}
 	ClearMatchCharacters();
 	SessionSearch.Reset();
+	HostPassword.Reset();
+	PendingJoinPassword.Reset();
 	// Network failure callbacks may still be processing their own travel this frame.
 	GetGameInstance()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
@@ -323,6 +357,7 @@ void UASSessionSubsystem::HandleFindSessionsComplete(const bool bWasSuccessful)
 			Result.RoomName = SearchResult.Session.OwningUserName;
 			SearchResult.Session.SessionSettings.Get(RoomNameKey, Result.RoomName);
 			Result.MaxPlayers = SearchResult.Session.SessionSettings.NumPublicConnections;
+			SearchResult.Session.SessionSettings.Get(RequiresPasswordKey, Result.bRequiresPassword);
 			Result.CurrentPlayers = Result.MaxPlayers - SearchResult.Session.NumOpenPublicConnections;
 			Results.Add(Result);
 		}
@@ -364,6 +399,8 @@ void UASSessionSubsystem::HandleJoinSessionComplete(
 	}
 
 	bJoinTravelPending = true;
+	if (!PendingJoinPassword.IsEmpty()) ConnectString += TEXT("?RoomPassword=") + PendingJoinPassword;
+	PendingJoinPassword.Reset();
 	PlayerController->ClientTravel(ConnectString, TRAVEL_Absolute);
 	OnSessionJoined.Broadcast(true, FString());
 }
@@ -415,7 +452,9 @@ void UASSessionSubsystem::HandleConnectionFailure(UWorld* World, const FString& 
 	if (bWasConnected || bWasJoining)
 	{
 		bLeavingRoom = true;
-		ReturnToMenuMessage = FText::FromString(TEXT("서버와 연결이 종료되었습니다. 방장이 나갔거나 연결이 끊겼습니다."));
+		ReturnToMenuMessage = FText::FromString(bWasJoining && Error.Contains(TEXT("AS_WRONG_PASSWORD"))
+			? TEXT("비밀번호가 일치하지 않습니다. 방을 다시 선택해 주세요.")
+			: TEXT("서버와 연결이 종료되었습니다. 방장이 나갔거나 연결이 끊겼습니다."));
 	}
 	DestroySession();
 	if (bWasJoining) OnSessionJoined.Broadcast(false, Error);

@@ -43,6 +43,7 @@ class APOCALYPSESURVIVAL_API AASPlayerController : public APlayerController
 
 public:
 	AASPlayerController();
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** 커서 아래로 트레이스해서 맞은 월드 위치를 돌려준다. 맞은 곳이 없으면 false. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
