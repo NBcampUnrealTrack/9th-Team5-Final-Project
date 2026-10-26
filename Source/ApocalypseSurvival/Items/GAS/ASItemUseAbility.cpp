@@ -108,11 +108,11 @@ void UASItemUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Handle,
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-	// Load and build every effect before consuming the item.
+	// Inventory prepares these asynchronously; direct activations fail without consuming if not ready.
 	TArray<UClass*> Classes;
 	for (const TSoftClassPtr<UGameplayEffect>& SoftClass : Definition->UseEffects)
 	{
-		UClass* EffectClass = SoftClass.LoadSynchronous();
+		UClass* EffectClass = SoftClass.Get();
 		if (!EffectClass)
 		{
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);

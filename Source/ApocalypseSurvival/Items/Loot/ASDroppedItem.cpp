@@ -117,6 +117,7 @@ void AASDroppedItem::BeginPlay()
 
 void AASDroppedItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	MeshAssetRequest.Reset();
 	DroppedInventory->OnInventoryChanged.RemoveDynamic(this, &ThisClass::HandleInventoryChanged);
 	Super::EndPlay(EndPlayReason);
 }
@@ -159,10 +160,18 @@ void AASDroppedItem::HandleInventoryChanged()
 		&& Item->GetItemDefinition()->Rarity == EASLootRarity::Legendary);
 	if (!Item)
 	{
+		MeshAssetRequest.Reset();
+		ItemMesh->SetVisibility(false);
+		if (UASDroppedItemNameWidget* Label = Cast<UASDroppedItemNameWidget>(NameLabel->GetUserWidgetObject())) Label->SetItem(nullptr);
 		if (HasAuthority()) Destroy();
 		return;
 	}
-	if (UStaticMesh* WorldMesh = Item->GetItemDefinition()->WorldMesh.LoadSynchronous())
+	const UASItemDefinition* Definition = Item->GetItemDefinition();
+	MeshAssetRequest.Request(Definition->WorldMesh.ToSoftObjectPath(), FStreamableDelegate::CreateWeakLambda(this,
+		[this] { if (!IsActorBeingDestroyed()) HandleInventoryChanged(); }));
+	UStaticMesh* WorldMesh = Definition->WorldMesh.Get();
+	ItemMesh->SetVisibility(WorldMesh || Definition->WorldMesh.IsNull());
+	if (WorldMesh)
 	{
 		ItemMesh->SetStaticMesh(WorldMesh);
 		ItemMesh->SetRelativeScale3D(FVector::OneVector);

@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Blueprint/UserWidget.h"
 #include "Interaction/ASInteractable.h"
+#include "Items/Data/ASItemAssetLoading.h"
 #include "ASDroppedItem.generated.h"
 
 class AASDroppedItem;
@@ -63,4 +64,5 @@ private:
 	TObjectPtr<UWidgetComponent> NameLabel;
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UASInventoryComponent> DroppedInventory;
+	FASItemAssetRequest MeshAssetRequest;
 };

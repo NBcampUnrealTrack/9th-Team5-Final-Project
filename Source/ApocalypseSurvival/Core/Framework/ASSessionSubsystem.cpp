@@ -10,6 +10,7 @@
 #include "OnlineSubsystem.h"
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystemUtils.h"
+#include "Characters/Player/Data/ASCharacterDefinition.h"
 
 namespace
 {
@@ -88,6 +89,7 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 	}
 
 	FOnlineSessionSettings SessionSettings;
+	ClearMatchCharacters();
 	SessionSettings.NumPublicConnections = FMath::Max(2, PublicConnections);
 	SessionSettings.bIsLANMatch = true;
 	SessionSettings.bShouldAdvertise = true;
@@ -239,6 +241,22 @@ void UASSessionSubsystem::SetLobbyOpen(const bool bOpen)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Session] Failed to update lobby advertisement."));
 	}
+}
+
+void UASSessionSubsystem::SaveMatchCharacter(const FUniqueNetIdRepl& PlayerId, const UASCharacterDefinition* Definition)
+{
+	if (PlayerId.IsValid() && Definition) MatchCharacters.Add(PlayerId.ToString(), Definition);
+}
+
+const UASCharacterDefinition* UASSessionSubsystem::FindMatchCharacter(const FUniqueNetIdRepl& PlayerId) const
+{
+	const TObjectPtr<const UASCharacterDefinition>* Definition = PlayerId.IsValid() ? MatchCharacters.Find(PlayerId.ToString()) : nullptr;
+	return Definition ? Definition->Get() : nullptr;
+}
+
+void UASSessionSubsystem::ClearMatchCharacters()
+{
+	MatchCharacters.Reset();
 }
 
 void UASSessionSubsystem::HandleCreateSessionComplete(

@@ -23,6 +23,8 @@ class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
 	
 public:
 	AASGameMode();
+	virtual FString InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId,
+		const FString& Options, const FString& Portal = TEXT("")) override;
 	
 	// 스폰할 캐릭터 BP: PlayerState에 정해진 캐릭터(리스폰) -> 캐릭터 선택 -> DefaultPawnClass 순
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;

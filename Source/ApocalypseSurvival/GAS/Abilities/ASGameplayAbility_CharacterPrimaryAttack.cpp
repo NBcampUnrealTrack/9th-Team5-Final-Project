@@ -139,6 +139,17 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 
 void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 {
+	// 일반 공격은 별도 쿨타임 GE 대신 이 인스턴스의 공격 간격을 사용한다.
+	// A 입력이 쿨타임 중 조준 상태에 들어가면, 나중에 좌클릭해도 공격이 실패하고
+	// 준비 상태만 남을 수 있으므로 시작 단계에서 무시한다.
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
+	if (World && World->GetTimeSeconds() < NextAttackTime)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
 	FASWeaponAttackExecutionContext Context;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	if (!BuildExecutionContext(Context, Execution))
@@ -423,6 +434,8 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 	}
 
 	const UASRangedAttackProfile* RangedProfile = Cast<UASRangedAttackProfile>(Context.Profile);
+	const bool bUsesAttackMoveTargeting = Cast<UASMeleeAttackProfile>(Context.Profile) != nullptr
+		|| (RangedProfile && RangedProfile->bUseAttackMoveTargeting);
 	if (RangedProfile && !RangedProfile->bUseAttackMoveTargeting && IsValid(RequestedTarget))
 	{
 		// 방향성 투사체는 타깃 Actor를 받지 않는다. 클라이언트는 위치가 아니라 방향만 보낸다.
@@ -431,11 +444,12 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 
 	if (RequestedMassTargetNetworkId != 0)
 	{
-		if (!RangedProfile || !RangedProfile->bUseAttackMoveTargeting || IsValid(RequestedTarget))
+		if (!bUsesAttackMoveTargeting || IsValid(RequestedTarget))
 		{
 			return false;
 		}
 
+		FVector ValidatedTargetLocation = TargetLocation;
 		if (Context.Avatar->HasAuthority())
 		{
 			UASCombatTargetSubsystem* CombatTargets =
@@ -454,9 +468,11 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 			{
 				return false;
 			}
+			ValidatedTargetLocation = ServerTarget.GetLocation();
 		}
 
-		OutAimDirection = (TargetLocation - Context.Avatar->GetActorLocation()).GetSafeNormal2D();
+		// 근거리 공격은 이 방향으로 부채꼴 판정을 하므로 서버에서 확인한 Mass 위치를 사용한다.
+		OutAimDirection = (ValidatedTargetLocation - Context.Avatar->GetActorLocation()).GetSafeNormal2D();
 		if (OutAimDirection.IsNearlyZero())
 		{
 			OutAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();

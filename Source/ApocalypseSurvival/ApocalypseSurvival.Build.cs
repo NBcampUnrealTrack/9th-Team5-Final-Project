@@ -61,6 +61,7 @@ public class ApocalypseSurvival : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
+			"CoreOnline",
 			"SlateCore",
 			"NavCorridor"
 		});

@@ -4,6 +4,7 @@
 #include "Core/Framework/ASPlayerRecordComponent.h"
 #include "Core/Framework/ASRespawnPoint.h"
 #include "Core/Framework/ASCharacterSelectSubsystem.h"
+#include "Core/Framework/ASSessionSubsystem.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Items/Loot/ASLootDaySpawnSubsystem.h"
@@ -351,6 +352,22 @@ void AASGameMode::OnBossDefeated()
 	TryEndNightEarly();
 }
 
+FString AASGameMode::InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId,
+	const FString& Options, const FString& Portal)
+{
+	const FString Error = Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
+	if (!Error.IsEmpty()) return Error;
+	const UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>();
+	AASPlayerState* PlayerState = NewPlayerController ? NewPlayerController->GetPlayerState<AASPlayerState>() : nullptr;
+	const UASCharacterDefinition* Definition = Sessions ? Sessions->FindMatchCharacter(UniqueId) : nullptr;
+	if (PlayerState && Definition)
+	{
+		PlayerState->SetCharacterDefinition(Definition);
+		PlayerState->MarkCharacterSelectionReceived();
+	}
+	return Error;
+}
+
 UClass* AASGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
 {
 	AASPlayerState* PlayerState = InController ? InController->GetPlayerState<AASPlayerState>() : nullptr;
@@ -359,7 +376,7 @@ UClass* AASGameMode::GetDefaultPawnClassForController_Implementation(AController
 		// 리스폰: 이미 정해진 캐릭터로 다시 스폰
 		const UASCharacterDefinition* Definition = PlayerState->GetCharacterDefinition();
 		
-		// 첫 스폰: 캐릭터 선택에서 고른 캐릭터 (로컬 플레이어만. 멀티 로비는 선택을 서버로 보내는 단계가 따로 필요)
+		// 로비를 거치지 않은 로컬 실행은 기존 선택을 사용한다.
 		if (!Definition && InController->IsLocalController())
 		{
 			const UGameInstance* GameInstance = GetGameInstance();

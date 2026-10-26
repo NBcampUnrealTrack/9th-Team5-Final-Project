@@ -54,7 +54,7 @@ TArray<FGameplayEffectSpecHandle> UASItemAbilityLibrary::MakeWeaponHitEffectSpec
 		|| !IsValid(SourceASC->GetOwnerActor()) || !SourceASC->GetOwnerActor()->HasAuthority()
 		|| ResolveInventoryAbilitySystem(Inventory, Cast<APawn>(SourceASC->GetAvatarActor())) != SourceASC) return Result;
 	UClass* DamageClass = Definition->DamageEffectClass.IsNull()
-		? UASItemDamageEffect::StaticClass() : Definition->DamageEffectClass.LoadSynchronous();
+		? UASItemDamageEffect::StaticClass() : Definition->DamageEffectClass.Get();
 	if (!DamageClass) return Result;
 	FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
 	Context.AddSourceObject(SourceObject);

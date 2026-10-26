@@ -1,9 +1,11 @@
 #include "Core/Framework/ASLobbyPlayerController.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Core/Framework/ASLobbyGameMode.h"
 #include "Core/Framework/ASLobbyGameState.h"
 #include "Engine/World.h"
+#include "Characters/Player/UI/ASCharacterSelectWidget.h"
 
 void AASLobbyPlayerController::BeginPlay()
 {
@@ -14,24 +16,120 @@ void AASLobbyPlayerController::BeginPlay()
 		return;
 	}
 
-	if (!LobbyWidgetClass)
+	GetWorld()->GameStateSetEvent.AddUObject(this, &ThisClass::HandleGameStateSet);
+	if (LobbyWidgetClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Lobby] LobbyWidgetClass를 지정해 주세요."));
+		// Reuse the screen if an existing BP BeginPlay already created it.
+		TArray<UUserWidget*> ExistingWidgets;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, ExistingWidgets, LobbyWidgetClass, true);
+		for (UUserWidget* ExistingWidget : ExistingWidgets)
+		{
+			if (ExistingWidget->GetOwningPlayer() != this) continue;
+			if (!LobbyWidget) LobbyWidget = ExistingWidget;
+			else ExistingWidget->RemoveFromParent();
+		}
+		if (!LobbyWidget) LobbyWidget = CreateWidget<UUserWidget>(this, LobbyWidgetClass);
+		ShowWidget(LobbyWidget);
+	}
+	HandleGameStateSet(GetWorld()->GetGameState());
+}
+
+void AASLobbyPlayerController::ShowWidget(UUserWidget* Widget)
+{
+	if (!Widget)
+	{
 		return;
 	}
-
-	LobbyWidget = CreateWidget<UUserWidget>(this, LobbyWidgetClass);
-	if (!LobbyWidget)
-	{
-		return;
-	}
-
-	LobbyWidget->AddToViewport();
+	if (!Widget->IsInViewport()) Widget->AddToViewport();
 	FInputModeUIOnly InputMode;
-	if (LobbyWidget->IsFocusable()) InputMode.SetWidgetToFocus(LobbyWidget->TakeWidget());
+	if (Widget->IsFocusable()) InputMode.SetWidgetToFocus(Widget->TakeWidget());
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
+}
+
+void AASLobbyPlayerController::HandleGameStateSet(AGameStateBase* State)
+{
+	if (BoundLobbyState) BoundLobbyState->OnLobbyStateChanged.RemoveDynamic(this, &ThisClass::HandleLobbyPhaseChanged);
+	BoundLobbyState = Cast<AASLobbyGameState>(State);
+	if (BoundLobbyState) BoundLobbyState->OnLobbyStateChanged.AddUniqueDynamic(this, &ThisClass::HandleLobbyPhaseChanged);
+	HandleLobbyPhaseChanged();
+}
+
+void AASLobbyPlayerController::HandleLobbyPhaseChanged()
+{
+	if (!IsLocalController() || !BoundLobbyState
+		|| BoundLobbyState->LobbyPhase != EASLobbyPhase::CharacterSelection || !BoundLobbyState->CharacterRoster) return;
+	if (CharacterSelectWidget) return;
+	if (!CharacterSelectWidgetClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[CharacterSelect] Set CharacterSelectWidgetClass on the lobby PlayerController."));
+		return;
+	}
+	CharacterSelectWidget = CreateWidget<UASCharacterSelectWidget>(this, CharacterSelectWidgetClass);
+	if (!CharacterSelectWidget) return;
+	RemoveOwnedWidgets(LobbyWidgetClass);
+	LobbyWidget = nullptr;
+	ShowWidget(CharacterSelectWidget);
+}
+
+void AASLobbyPlayerController::RemoveOwnedWidgets(const TSubclassOf<UUserWidget> WidgetClass)
+{
+	if (!IsLocalController() || !WidgetClass) return;
+	TArray<UUserWidget*> Widgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Widgets, WidgetClass, true);
+	for (UUserWidget* Widget : Widgets)
+	{
+		if (Widget->GetOwningPlayer() == this) Widget->RemoveFromParent();
+	}
+}
+
+void AASLobbyPlayerController::ClearLobbyScreens()
+{
+	RemoveOwnedWidgets(LobbyWidgetClass);
+	RemoveOwnedWidgets(CharacterSelectWidgetClass);
+	if (LobbyWidget) LobbyWidget->RemoveFromParent();
+	if (CharacterSelectWidget) CharacterSelectWidget->RemoveFromParent();
+	LobbyWidget = nullptr;
+	CharacterSelectWidget = nullptr;
+}
+
+void AASLobbyPlayerController::PreClientTravel(const FString& PendingURL, const ETravelType TravelType, const bool bIsSeamlessTravel)
+{
+	ClearLobbyScreens();
+	Super::PreClientTravel(PendingURL, TravelType, bIsSeamlessTravel);
+}
+
+void AASLobbyPlayerController::SelectLobbyCharacter(const int32 Index)
+{
+	if (IsLocalController()) ServerSelectLobbyCharacter(Index);
+}
+
+void AASLobbyPlayerController::SetCharacterReady(const bool bReady)
+{
+	if (IsLocalController()) ServerSetCharacterReady(bReady);
+}
+
+void AASLobbyPlayerController::ServerSelectLobbyCharacter_Implementation(const int32 Index)
+{
+	if (AASLobbyGameMode* Mode = GetWorld()->GetAuthGameMode<AASLobbyGameMode>()) Mode->SelectCharacter(this, Index);
+}
+
+void AASLobbyPlayerController::ServerSetCharacterReady_Implementation(const bool bReady)
+{
+	if (AASLobbyGameMode* Mode = GetWorld()->GetAuthGameMode<AASLobbyGameMode>()) Mode->SetCharacterReady(this, bReady);
+}
+
+void AASLobbyPlayerController::InitializeCharacterSelection(const int32 DefaultIndex)
+{
+	if (HasAuthority()) SetCharacterSelectionOnServer(DefaultIndex, false);
+}
+
+void AASLobbyPlayerController::SetCharacterSelectionOnServer(const int32 Index, const bool bReady)
+{
+	if (!HasAuthority()) return;
+	CharacterIndexOnServer = Index;
+	bCharacterReadyOnServer = bReady;
 }
 
 void AASLobbyPlayerController::SetReady(const bool bReady)
@@ -64,11 +162,9 @@ void AASLobbyPlayerController::ServerStartLobbyGame_Implementation()
 
 void AASLobbyPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (LobbyWidget)
-	{
-		LobbyWidget->RemoveFromParent();
-		LobbyWidget = nullptr;
-	}
+	GetWorld()->GameStateSetEvent.RemoveAll(this);
+	if (BoundLobbyState) BoundLobbyState->OnLobbyStateChanged.RemoveDynamic(this, &ThisClass::HandleLobbyPhaseChanged);
+	ClearLobbyScreens();
 
 	Super::EndPlay(EndPlayReason);
 }
