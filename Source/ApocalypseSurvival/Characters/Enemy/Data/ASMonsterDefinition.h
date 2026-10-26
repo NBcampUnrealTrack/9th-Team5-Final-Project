@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Engine/DataAsset.h"
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
@@ -82,6 +83,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monster")
 	FASMonsterInitialAttributes InitialAttributes;
 
+	/** 이 몬스터가 받는 공격 프리셋을 어떤 최종 경직으로 바꿀지 결정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reaction")
+	EASStaggerResistance StaggerResistance = EASStaggerResistance::Normal;
+
 	/**
 	 * Actor와 Mass가 공유하는 스탯 원본. 비어 있으면 InitialAttributes를 사용해 기존 에셋을 호환한다.
 	 * 새 몬스터는 이 자산을 지정해 라운드 성장과 공통 계산 규칙을 사용한다.
@@ -161,7 +166,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (TitleProperty = "PatternId"))
 	TArray<FASMonsterAttackPattern> AttackPatterns;
 
-	/** 피해를 입고 살아남았을 때 자신에게 적용할 짧은 경직 GameplayEffect. */
+	/** 실제 경직 때 적용할 Duration GameplayEffect. 지속 시간은 Combat Impact 전역 설정이 덮어쓴다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reaction")
 	TSubclassOf<UGameplayEffect> HitReactEffect;
 

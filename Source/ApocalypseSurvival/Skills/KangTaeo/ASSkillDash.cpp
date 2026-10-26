@@ -185,7 +185,11 @@ void UASSkillDash::CheckDashHit()
 			EffectSpecs.Add(DamageSpec);
 		}
 
-		const FASCombatApplyResult DashResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, &DashHitTargets);
+		FASCombatImpactContext ImpactContext;
+		ImpactContext.Preset = ImpactPreset;
+		ImpactContext.HitLocation = CurrentLocation;
+		ImpactContext.HitDirection = (CurrentLocation - SweepStart).GetSafeNormal2D();
+		const FASCombatApplyResult DashResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext, &DashHitTargets);
 		ASSkillDamageDebug::Report(this, EffectSpecs, DashResult, Query.SearchOrigin);
 		bHitTarget = DashResult.HasAnyHit();
 	}

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/DragDropOperation.h"
 #include "Items/Data/ASItemAssetLoading.h"
 #include "ASLootEntryWidget.generated.h"
 
@@ -10,6 +11,19 @@ class UButton;
 class UImage;
 class UTextBlock;
 class UASItemRarityBackground;
+class UASLootWidget;
+class AASLootChest;
+
+/** A loot drag only requests a discard when an explicit world drop target accepts it. */
+UCLASS()
+class APOCALYPSESURVIVAL_API UASLootItemDragDrop : public UDragDropOperation
+{
+	GENERATED_BODY()
+public:
+	TWeakObjectPtr<UASLootWidget> SourceLoot;
+	TWeakObjectPtr<AASLootChest> Chest;
+	FGuid ItemId;
+};
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASLootItemClickedSignature, UASItemInstance*, ItemInstance);
 
@@ -22,6 +36,7 @@ class APOCALYPSESURVIVAL_API UASLootEntryWidget : public UUserWidget
 public:
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void SetItemInstance(UASItemInstance* InItemInstance);
+	void SetLootSource(UASLootWidget* InLootWidget);
 
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void RefreshEntry();
@@ -33,6 +48,9 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation) override;
 
 private:
 	void BuildDefaultWidgetTree();
@@ -58,4 +76,7 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> QuantityText;
 	FASItemAssetRequest IconAssetRequest;
+	TWeakObjectPtr<UASLootWidget> LootSource;
+	FGuid PressedItem;
+	bool bPressed = false;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "GameFramework/Actor.h"
 #include "ASMassMonsterProjectile.generated.h"
 
@@ -17,7 +18,8 @@ public:
 	AASMassMonsterProjectile();
 
 	void InitializeProjectile(float InDamage, const FVector& InSourceLocation,
-		const FVector& Direction, float Speed, float MaxRange);
+		const FVector& Direction, float Speed, float MaxRange,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 protected:
 	virtual void BeginPlay() override;
@@ -41,6 +43,7 @@ private:
 
 	float Damage = 0.0f;
 	FVector SourceLocation = FVector::ZeroVector;
+	FASCombatImpactContext ImpactContext;
 	float FlightTime = 1.0f;
 	bool bEnded = false;
 	FTimerHandle RangeTimerHandle;

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
@@ -29,7 +30,8 @@ public:
 		float InTickInterval,
 		bool bInDamageOnSpawn,
 		bool bInCanHitPlayers,
-		bool bInDrawDebug);
+		bool bInDrawDebug,
+		const FASCombatImpactContext& InImpactContext = FASCombatImpactContext());
 
 	//데미지와 같이 걸 추가 GE (슬로우 등, Actor만 적용 - Mass는 GE를 못 받음). FinishSpawning 전에 호출
 	void SetExtraEffectSpecs(const TArray<FGameplayEffectSpecHandle>& InEffectSpecs);
@@ -73,6 +75,7 @@ private:
 
 	FGameplayEffectSpecHandle DamageSpec;
 	TArray<FGameplayEffectSpecHandle> ExtraEffectSpecs;
+	FASCombatImpactContext ImpactContext;
 	TWeakObjectPtr<AActor> InstigatorAvatar;
 
 	//따라가는 타겟 (비어 있으면 고정 장판)

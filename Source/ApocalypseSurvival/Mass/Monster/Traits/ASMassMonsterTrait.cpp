@@ -30,6 +30,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 			Config.DropGroup = MonsterDefinition->DropGroup;
 		}
 		Config.AttackRange = MonsterDefinition->AttackRange;
+		Config.StaggerResistance = MonsterDefinition->StaggerResistance;
 		Config.DetectionRadius = MonsterDefinition->DetectionRadius;
 		Config.LoseTargetRadius = MonsterDefinition->LoseTargetRadius;
 		Config.AssistAggroRadius = MonsterDefinition->AssistAggroRadius;
@@ -66,6 +67,7 @@ void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildCo
 	BuildContext.AddFragment<FASMassMonsterTargetFragment>();
 	BuildContext.AddFragment<FASMassMonsterThreatFragment>();
 	BuildContext.AddFragment<FASMassMonsterCombatFragment>();
+	BuildContext.AddFragment<FASMassMonsterHitReactionFragment>();
 	BuildContext.AddFragment<FASMassMonsterModifierFragment>();
 	BuildContext.AddFragment<FASMassMonsterRuntimeStatsFragment>();
 	BuildContext.AddFragment<FASMassMonsterNavigationFragment>();

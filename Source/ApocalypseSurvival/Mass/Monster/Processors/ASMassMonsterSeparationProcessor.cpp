@@ -41,6 +41,7 @@ void UASMassMonsterSeparationProcessor::ConfigureQueries(const TSharedRef<FMassE
 	EntityQuery.AddRequirement<FAgentRadiusFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadOnly);
+	EntityQuery.AddRequirement<FASMassMonsterHitReactionFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
 }
@@ -50,12 +51,15 @@ void UASMassMonsterSeparationProcessor::Execute(FMassEntityManager& EntityManage
 	using namespace ASMassMonsterSeparation;
 
 	TArray<FAgent> Agents;
-	EntityQuery.ForEachEntityChunk(Context, [&Agents](FMassExecutionContext& Context)
+	const UWorld* World = GetWorld();
+	const double CurrentTime = World ? World->GetTimeSeconds() : 0.0;
+	EntityQuery.ForEachEntityChunk(Context, [&Agents, CurrentTime](FMassExecutionContext& Context)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
 		const TConstArrayView<FAgentRadiusFragment> Radii = Context.GetFragmentView<FAgentRadiusFragment>();
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterCombatFragment> Combats = Context.GetFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterHitReactionFragment> HitReactions = Context.GetFragmentView<FASMassMonsterHitReactionFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
 		Agents.Reserve(Agents.Num() + Context.GetNumEntities());
@@ -67,7 +71,7 @@ void UASMassMonsterSeparationProcessor::Execute(FMassEntityManager& EntityManage
 				|| (Config.AttackPattern == EASMassMonsterAttackPattern::Suicide
 					&& Combats[EntityIt].AttackState == EASMassMonsterAttackState::Windup);
 			if (Behaviors[EntityIt].State == EASMassMonsterState::Dead
-				|| bIgnoresSeparation)
+				|| bIgnoresSeparation || HitReactions[EntityIt].IsControlActive(CurrentTime))
 			{
 				continue;
 			}

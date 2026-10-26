@@ -27,12 +27,18 @@ public:
 	bool HasPendingInteraction() const { return PendingTarget.IsValid(); }
 	bool IsLootOpen() const;
 	bool IsCursorOverInventory() const;
+	/** Only the nameplate can select a dropped item as a local hover target. */
+	void SetHoveredDroppedItemLabel(AASDroppedItem* Item, bool bHovered);
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetPlayerInventory() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void RequestLoot(AASLootChest* Chest, FGuid InstanceId, int32 Quantity);
+
+	/** Drop the current whole loot stack without requiring a free player-inventory slot. */
+	UFUNCTION(BlueprintCallable, Category = "Loot")
+	void RequestDropLoot(AASLootChest* Chest, FGuid InstanceId);
 
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void RequestUseItem(FGuid InstanceId);
@@ -67,6 +73,7 @@ private:
 	bool CanReachTarget(AActor* Target) const;
 	void InitializeInventoryBar();
 	void ActivateSlotFromKey(int32 SlotIndex);
+	void UpdateDroppedItemHover();
 
 	UFUNCTION(Server, Reliable)
 	void ServerActivateSlot(int32 SlotIndex, FGuid ExpectedItem);
@@ -85,6 +92,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerTakeLoot(AASLootChest* Chest, FGuid InstanceId, int32 Quantity);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropLoot(AASLootChest* Chest, FGuid InstanceId);
 
 	UFUNCTION(Server, Reliable)
 	void ServerUseItem(FGuid InstanceId);
@@ -121,6 +131,8 @@ private:
 	TObjectPtr<UInputComponent> InventoryInput;
 
 	TWeakObjectPtr<AActor> PendingTarget;
+	TWeakObjectPtr<AASDroppedItem> HoveredDroppedItem;
+	TWeakObjectPtr<AASDroppedItem> HoveredDroppedItemLabel;
 	TWeakObjectPtr<AASLootChest> OpenChest;
 	TWeakObjectPtr<AASLootChest> ServerOpenChest;
 	TWeakObjectPtr<APawn> ServerLootPawn;

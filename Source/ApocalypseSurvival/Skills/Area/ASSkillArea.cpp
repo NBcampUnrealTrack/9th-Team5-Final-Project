@@ -70,7 +70,12 @@ AASSkillAreaActor* UASSkillArea::SpawnArea(const FVector& Location, const FVecto
 		return nullptr;
 	}
 
-	Area->InitArea(MakeDamageSpec(), Avatar, Radius, Duration, TickInterval, bDamageOnSpawn, bCanHitPlayers, bDrawDebug);
+	FASCombatImpactContext ImpactContext;
+	ImpactContext.Preset = ImpactPreset;
+	ImpactContext.HitLocation = Location;
+	ImpactContext.HitDirection = Aim;
+	Area->InitArea(MakeDamageSpec(), Avatar, Radius, Duration, TickInterval,
+		bDamageOnSpawn, bCanHitPlayers, bDrawDebug, ImpactContext);
 	Area->SetExtraEffectSpecs(MakeAdditionalEffectSpecs());
 
 	if (FollowTarget && FollowTarget->IsValid())

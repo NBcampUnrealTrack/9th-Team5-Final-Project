@@ -43,10 +43,12 @@ void AASMassMonsterProjectile::InitializeProjectile(
 	const FVector& InSourceLocation,
 	const FVector& Direction,
 	float Speed,
-	const float MaxRange)
+	const float MaxRange,
+	const FASCombatImpactContext& InImpactContext)
 {
 	Damage = FMath::Max(0.0f, InDamage);
 	SourceLocation = InSourceLocation;
+	ImpactContext = InImpactContext;
 	Speed = FMath::Max(1.0f, Speed);
 	FlightTime = FMath::Max(0.05f, FMath::Max(0.0f, MaxRange) / Speed);
 	ProjectileMovement->InitialSpeed = Speed;
@@ -87,7 +89,7 @@ void AASMassMonsterProjectile::HandleOverlap(
 
 	const ASMassMonsterDamage::EApplyResult Result =
 		ASMassMonsterDamage::ApplyToActor(OtherActor, Damage, SourceLocation,
-			SweepResult.ImpactPoint, this);
+			SweepResult.ImpactPoint, this, ImpactContext);
 	if (Result != ASMassMonsterDamage::EApplyResult::InvalidTarget)
 	{
 		EndProjectile();

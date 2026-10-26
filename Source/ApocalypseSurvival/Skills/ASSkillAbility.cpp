@@ -30,6 +30,7 @@ UASSkillAbility::UASSkillAbility()
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 
 	HitEventTag = ASGameplayTags::Event_Skill_Hit;
+	ActivationBlockedTags.AddTag(ASGameplayTags::State_Staggered);
 }
 
 void UASSkillAbility::ActivateAbility(

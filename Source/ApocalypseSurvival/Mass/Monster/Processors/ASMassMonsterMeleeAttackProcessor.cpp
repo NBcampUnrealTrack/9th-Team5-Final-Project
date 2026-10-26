@@ -30,6 +30,7 @@ void UASMassMonsterMeleeAttackProcessor::ConfigureQueries(const TSharedRef<FMass
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterHitReactionFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterDeadTag>(EMassFragmentPresence::None);
@@ -54,12 +55,18 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TArrayView<FASMassMonsterCombatFragment> Combats = Context.GetMutableFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterHitReactionFragment> HitReactions = Context.GetFragmentView<FASMassMonsterHitReactionFragment>();
 		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
 			FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
+			if (HitReactions[EntityIt].IsControlActive(CurrentTime))
+			{
+				Combat.AttackState = EASMassMonsterAttackState::Ready;
+				continue;
+			}
 			const bool bUsesMelee = Config.AttackPattern == EASMassMonsterAttackPattern::Melee
 				|| Combat.bUseFallbackMelee;
 			if (!bUsesMelee)
@@ -98,8 +105,12 @@ void UASMassMonsterMeleeAttackProcessor::Execute(FMassEntityManager& EntityManag
 				continue;
 			}
 
+			FASCombatImpactContext ImpactContext;
+			ImpactContext.Preset = Config.AttackImpactPreset;
+			ImpactContext.HitLocation = TargetSnapshot.Location;
+			ImpactContext.HitDirection = (TargetSnapshot.Location - SourceLocation).GetSafeNormal();
 			ASMassMonsterDamage::ApplyToActor(TargetSnapshot.Actor.Get(), EffectiveAttackPower,
-				SourceLocation, TargetSnapshot.Location);
+				SourceLocation, TargetSnapshot.Location, nullptr, ImpactContext);
 			Combat.NextAttackTimeSeconds = CurrentTime + EffectiveCooldown;
 			Combat.AttackState = EASMassMonsterAttackState::Recovering;
 		}

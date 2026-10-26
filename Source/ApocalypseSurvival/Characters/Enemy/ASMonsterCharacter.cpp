@@ -5,6 +5,7 @@
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
 #include "Characters/Enemy/Data/ASMonsterStatDefinition.h"
+#include "Core/Combat/ASCombatImpactSettings.h"
 #include "Core/Framework/ASGameState.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Characters/Enemy/UI/ASMonsterHealthBarWidget.h"
@@ -635,11 +636,50 @@ void AASMonsterCharacter::ReportDeathToGameMode_Implementation()
 	}
 }
 
-void AASMonsterCharacter::ApplyHitReact()
+void AASMonsterCharacter::ApplyImpactReaction(const FASCombatImpactContext& ImpactContext)
+{
+	if (!HasAuthority() || IsDead() || !MonsterDefinition)
+	{
+		return;
+	}
+
+	const UASCombatImpactSettings* ImpactSettings = GetDefault<UASCombatImpactSettings>();
+	if (!ImpactSettings)
+	{
+		return;
+	}
+
+	const EASResolvedHitReaction Reaction = ImpactSettings->ResolveMonsterReaction(
+		ImpactContext.Preset, MonsterDefinition->StaggerResistance);
+	if (Reaction == EASResolvedHitReaction::None || Reaction == EASResolvedHitReaction::VisualOnly)
+	{
+		return;
+	}
+
+	const double CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (ImpactContext.Preset == EASImpactPreset::Rapid && CurrentTime < NextRapidImpactReactionTime)
+	{
+		return;
+	}
+
+	if (ApplyHitReact(Reaction) && ImpactContext.Preset == EASImpactPreset::Rapid)
+	{
+		NextRapidImpactReactionTime = CurrentTime + FMath::Max(0.0f, ImpactSettings->RapidReapplyInterval);
+	}
+}
+
+bool AASMonsterCharacter::ApplyHitReact(const EASResolvedHitReaction Reaction)
 {
 	if (!HasAuthority() || IsDead() || !MonsterDefinition || !MonsterDefinition->HitReactEffect)
 	{
-		return;
+		return false;
+	}
+
+	const UASCombatImpactSettings* ImpactSettings = GetDefault<UASCombatImpactSettings>();
+	const float Duration = ImpactSettings ? ImpactSettings->GetMonsterReactionDuration(Reaction) : 0.0f;
+	if (Duration <= 0.0f)
+	{
+		return false;
 	}
 
 	FGameplayEffectContextHandle EffectContext = OwnedAbilitySystemComponent->MakeEffectContext();
@@ -648,8 +688,9 @@ void AASMonsterCharacter::ApplyHitReact()
 		MonsterDefinition->HitReactEffect, 1.0f, EffectContext);
 	if (!HitReactSpec.IsValid())
 	{
-		return;
+		return false;
 	}
+	HitReactSpec.Data->SetDuration(Duration, true);
 
 	OwnedAbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*HitReactSpec.Data.Get());
 
@@ -662,6 +703,8 @@ void AASMonsterCharacter::ApplyHitReact()
 	{
 		AIController->NotifyMonsterHitReact();
 	}
+
+	return true;
 }
 
 void AASMonsterCharacter::UnbindHealthDelegate()
@@ -724,7 +767,6 @@ void AASMonsterCharacter::HandleGameplayEffectApplied(UAbilitySystemComponent* T
 
 	// 투사체가 파괴된 뒤에도 Effect Context의 EffectCauser(발사한 플레이어)를 사용한다.
 	NotifyDamagedBy(InstigatorActor);
-	ApplyHitReact();
 }
 
 void AASMonsterCharacter::QueueDeathHandling()

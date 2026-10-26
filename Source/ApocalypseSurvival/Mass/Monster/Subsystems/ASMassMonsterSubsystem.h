@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Mass/EntityHandle.h"
 #include "Mass/Monster/Data/ASMassMonsterTypes.h"
 #include "Mass/Monster/Targeting/ASMonsterTargetTypes.h"
@@ -10,6 +11,7 @@
 class UMassEntityConfigAsset;
 class UMassSpawnerSubsystem;
 class AActor;
+struct FMassEntityManager;
 
 /** 낮 필드 스폰포인트가 Entity별 Home Fragment에 덮어쓸 설정. */
 USTRUCT(BlueprintType)
@@ -159,26 +161,35 @@ public:
 		FVector& OutLocation, float& OutHitRadius) const;
 
 	/** Target Id로 지정한 살아 있는 Mass 몬스터 하나에 서버 피해를 적용한다. */
-	int32 ApplyDamageToTarget(uint64 TargetId, float Damage, AActor* DamageInstigator);
+	int32 ApplyDamageToTarget(uint64 TargetId, float Damage, AActor* DamageInstigator,
+		const FASCombatImpactContext& ImpactContext = FASCombatImpactContext());
 
 	/** Actor 충돌체가 없는 Mass 몬스터에 원형 서버 피해를 적용한다. 반환값은 실제 피격 수다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
 	int32 ApplyDamageInRadius(const FVector& Center, float Radius, float Damage,
 		AActor* DamageInstigator, int32 MaxTargets = 0);
+	int32 ApplyDamageInRadiusWithImpact(const FVector& Center, float Radius, float Damage,
+		AActor* DamageInstigator, int32 MaxTargets, const FASCombatImpactContext& ImpactContext);
 
 	/** AimDirection을 중심으로 한 부채꼴 서버 피해. AngleDegrees가 360이면 원형 판정과 같다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
 	int32 ApplyDamageInCone(const FVector& Center, const FVector& AimDirection, float Radius,
 		float AngleDegrees, float Damage, AActor* DamageInstigator, int32 MaxTargets = 0);
+	int32 ApplyDamageInConeWithImpact(const FVector& Center, const FVector& AimDirection, float Radius,
+		float AngleDegrees, float Damage, AActor* DamageInstigator, int32 MaxTargets,
+		const FASCombatImpactContext& ImpactContext);
 
 	/** Start-End 선분 주위의 Mass 몬스터에 서버 피해를 적용한다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")
 	int32 ApplyDamageAlongSegment(const FVector& Start, const FVector& End, float SweepRadius,
 		float Damage, AActor* DamageInstigator, int32 MaxTargets = 1);
+	int32 ApplyDamageAlongSegmentWithImpact(const FVector& Start, const FVector& End, float SweepRadius,
+		float Damage, AActor* DamageInstigator, int32 MaxTargets, const FASCombatImpactContext& ImpactContext);
 
 	/** 투사체가 이미 맞힌 Entity Index를 건너뛰며 이동 선분 순서대로 피해를 적용하는 C++ 경로. */
 	int32 ApplyDamageAlongSegmentUnique(const FVector& Start, const FVector& End, float SweepRadius,
-		float Damage, AActor* DamageInstigator, TSet<int32>& InOutHitEntityIndices, int32 MaxTargets = 1);
+		float Damage, AActor* DamageInstigator, TSet<int32>& InOutHitEntityIndices, int32 MaxTargets = 1,
+		const FASCombatImpactContext& ImpactContext = FASCombatImpactContext());
 
 	/** 기능 검증과 벤치마크 로그에서 사용하는 현재 행동 상태 집계. */
 	UFUNCTION(BlueprintPure, Category = "Mass|Monster|Diagnostics")
@@ -196,7 +207,11 @@ private:
 	};
 
 	bool CanMutateEntities(FString& OutError) const;
+	static void ApplyImpactReactionToMonster(FMassEntityManager& EntityManager, FMassEntityHandle Entity,
+		const struct FASMassMonsterConfigFragment& Config, const FASCombatImpactContext& ImpactContext,
+		double CurrentTimeSeconds);
 	int32 ApplyDamageToMatchingMonsters(float Damage, AActor* DamageInstigator, int32 MaxTargets,
+		const FASCombatImpactContext& ImpactContext,
 		TFunctionRef<bool(FMassEntityHandle, const FVector&,
 			const struct FASMassMonsterConfigFragment&)> Predicate);
 	void FlushQueuedMonsterSpawns();

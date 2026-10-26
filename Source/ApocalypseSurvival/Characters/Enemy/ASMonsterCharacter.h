@@ -21,6 +21,8 @@ struct FGameplayEffectSpec;
 struct FActiveGameplayEffectHandle;
 struct FGameplayTag;
 class UAbilitySystemComponent;
+struct FASCombatImpactContext;
+enum class EASResolvedHitReaction : uint8;
 
 /** 스폰 출처에 따른 낮 시간 탐지 정책. AI 판단은 서버에서만 사용한다. */
 UENUM()
@@ -64,6 +66,9 @@ public:
 	/** State.Monster.HitReact 태그로 판정한다. 경직 중에는 AI 이동과 공격을 멈춘다. */
 	UFUNCTION(BlueprintPure, Category = "Enemy")
 	bool IsHitReacting() const;
+
+	/** 서버 전용. 공격이 명시적으로 전달한 충격 프리셋으로 실제 경직 여부를 판정한다. */
+	void ApplyImpactReaction(const FASCombatImpactContext& ImpactContext);
 
 	/** SpawnSubsystem이 FinishSpawning 전에 설정하는 낮 시간 행동 정책. */
 	void SetDayBehavior(EASMonsterDayBehavior InDayBehavior) { DayBehavior = InDayBehavior; }
@@ -152,8 +157,8 @@ protected:
 	 */
 	virtual void StopMovementAndAI();
 
-	/** 서버 전용. Definition의 HitReactEffect를 자신에게 적용하고 진행 중인 공격을 취소한다. */
-	void ApplyHitReact();
+	/** 서버 전용. Definition의 HitReactEffect에 전역 지속 시간을 주입하고 진행 중인 공격을 취소한다. */
+	bool ApplyHitReact(EASResolvedHitReaction Reaction);
 
 	/** 사망을 GameMode에 보고한다. 기본 몬스터는 처치 수를 올리고, 엘리트 BP는 보스 처치로 오버라이드한다. */
 	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Death")
@@ -213,6 +218,8 @@ private:
 	bool bHealthBarEnabled = false;
 	bool bHealthBarVisibleRequested = false;
 	bool bDeathHandlingQueued = false;
+	/** Rapid 프리셋의 다음 실제 경직 허용 시각. 피해와 피격 플래시는 이 제한을 받지 않는다. */
+	double NextRapidImpactReactionTime = 0.0;
 	TWeakObjectPtr<AController> LastDamageKillerController;
 
 	/** bHealthBarEnabled && bHealthBarVisibleRequested일 때만 지연 생성한다. */

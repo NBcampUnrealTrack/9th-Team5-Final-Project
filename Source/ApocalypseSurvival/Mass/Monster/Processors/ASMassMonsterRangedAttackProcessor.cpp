@@ -32,6 +32,7 @@ void UASMassMonsterRangedAttackProcessor::ConfigureQueries(const TSharedRef<FMas
 	EntityQuery.AddRequirement<FASMassMonsterBehaviorFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterTargetFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterCombatFragment>(EMassFragmentAccess::ReadWrite);
+	EntityQuery.AddRequirement<FASMassMonsterHitReactionFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FASMassMonsterRuntimeStatsFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FASMassMonsterConfigFragment>(EMassFragmentPresence::All);
 	EntityQuery.AddTagRequirement<FASMassMonsterDeadTag>(EMassFragmentPresence::None);
@@ -58,6 +59,7 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 		const TConstArrayView<FASMassMonsterBehaviorFragment> Behaviors = Context.GetFragmentView<FASMassMonsterBehaviorFragment>();
 		const TConstArrayView<FASMassMonsterTargetFragment> Targets = Context.GetFragmentView<FASMassMonsterTargetFragment>();
 		const TArrayView<FASMassMonsterCombatFragment> Combats = Context.GetMutableFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterHitReactionFragment> HitReactions = Context.GetFragmentView<FASMassMonsterHitReactionFragment>();
 		const TConstArrayView<FASMassMonsterRuntimeStatsFragment> RuntimeStats = Context.GetFragmentView<FASMassMonsterRuntimeStatsFragment>();
 		const FASMassMonsterConfigFragment& Config = Context.GetConstSharedFragment<FASMassMonsterConfigFragment>();
 
@@ -74,6 +76,11 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 			}
 
 			FASMassMonsterCombatFragment& Combat = Combats[EntityIt];
+			if (HitReactions[EntityIt].IsControlActive(CurrentTime))
+			{
+				Combat.AttackState = EASMassMonsterAttackState::Ready;
+				continue;
+			}
 			if (CurrentTime < Combat.NextAttackTimeSeconds)
 			{
 				Combat.AttackState = EASMassMonsterAttackState::Recovering;
@@ -114,8 +121,12 @@ void UASMassMonsterRangedAttackProcessor::Execute(FMassEntityManager& EntityMana
 				continue;
 			}
 
+			FASCombatImpactContext ImpactContext;
+			ImpactContext.Preset = Config.AttackImpactPreset;
+			ImpactContext.HitLocation = SpawnLocation;
+			ImpactContext.HitDirection = Direction;
 			Projectile->InitializeProjectile(RuntimeStats[EntityIt].AttackPower, EntityLocation, Direction,
-				Config.RangedProjectileSpeed, Config.RangedProjectileMaxRange);
+				Config.RangedProjectileSpeed, Config.RangedProjectileMaxRange, ImpactContext);
 			Projectile->FinishSpawning(SpawnTransform);
 			Combat.NextAttackTimeSeconds = CurrentTime + Config.AttackCooldown;
 			Combat.AttackState = EASMassMonsterAttackState::Recovering;

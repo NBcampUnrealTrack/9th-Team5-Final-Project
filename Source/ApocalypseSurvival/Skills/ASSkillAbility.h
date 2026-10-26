@@ -4,6 +4,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "AITypes.h"
 #include "AttributeSet.h"
+#include "Core/Combat/ASCombatImpactTypes.h"
 #include "Engine/TimerHandle.h"
 #include "Skills/Indicator/ASSkillIndicatorTypes.h"
 #include "ASSkillAbility.generated.h"
@@ -158,6 +159,10 @@ protected:
 	//Health Add, SetByCaller(Data.Damage)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Damage")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+	/** 이 스킬의 명중이 대상에게 전달하는 경직 프리셋. 지속 피해 스킬의 기본값은 None이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Impact")
+	EASImpactPreset ImpactPreset = EASImpactPreset::None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Damage", meta = (ClampMin = "0.0"))
 	float BaseDamage = 50.0f;
