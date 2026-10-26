@@ -18,6 +18,7 @@
 #include "AbilitySystemComponent.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Skills/ASSkillTags.h"
+#include "Framework/Application/SlateApplication.h"
 
 namespace
 {
@@ -109,15 +110,6 @@ void UASItemInteractionComponent::HandleWorldRightClick()
 	{
 		ASC->LocalInputCancel();
 	}
-	FHitResult Hit;
-	if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit))
-	{
-		if (AASDroppedItem* Item = Cast<AASDroppedItem>(Hit.GetActor()))
-		{
-			RequestPickupDroppedItem(Item);
-			return;
-		}
-	}
 	CancelPendingInteraction();
 	FVector Destination;
 	if (PC->GetCursorWorldLocation(Destination)) PC->RequestMoveTo(Destination);
@@ -128,12 +120,38 @@ void UASItemInteractionComponent::CancelPendingInteraction()
 	PendingTarget.Reset();
 }
 
+void UASItemInteractionComponent::SetHoveredDroppedItemLabel(AASDroppedItem* Item, const bool bHovered)
+{
+	if (bHovered) HoveredDroppedItemLabel = Item;
+	else if (HoveredDroppedItemLabel.Get() == Item) HoveredDroppedItemLabel.Reset();
+}
+
+void UASItemInteractionComponent::UpdateDroppedItemHover()
+{
+	AASDroppedItem* Next = nullptr;
+	AASPlayerController* PC = GetASController();
+	if (PC && IsValid(PC->GetPawn()) && PC->bShowMouseCursor && !IsDeadPawn(PC)
+		&& !IsCursorOverInventory() && !IsLootOpen()
+		&& FSlateApplication::IsInitialized() && !FSlateApplication::Get().IsDragDropping())
+	{
+		if (HoveredDroppedItemLabel.IsValid() && HoveredDroppedItemLabel->GetDroppedItem())
+			Next = HoveredDroppedItemLabel.Get();
+	}
+	if (HoveredDroppedItem.Get() != Next)
+	{
+		if (HoveredDroppedItem.IsValid()) HoveredDroppedItem->SetWorldHovered(false);
+		HoveredDroppedItem = Next;
+		if (Next) Next->SetWorldHovered(true);
+	}
+}
+
 void UASItemInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	AASPlayerController* PC = GetASController();
 	if (!PC || !PC->IsLocalController()) return;
 	InitializeInventoryBar();
+	UpdateDroppedItemHover();
 	if (InventoryBar && InventoryBar->GetInventory() != GetPlayerInventory())
 		InventoryBar->SetInventory(GetPlayerInventory());
 	if (PendingTarget.IsValid())
@@ -184,6 +202,21 @@ void UASItemInteractionComponent::ServerTakeLoot_Implementation(AASLootChest* Ch
 	if (!Inventory || Quantity <= 0 || !InstanceId.IsValid() || Chest != ServerOpenChest.Get()
 		|| ServerLootPawn.Get() != GetASController()->GetPawn() || !CanReachTarget(Chest)) return;
 	Chest->TakeLoot(GetASController()->GetPawn(), Inventory, InstanceId, Quantity);
+}
+
+void UASItemInteractionComponent::RequestDropLoot(AASLootChest* Chest, const FGuid InstanceId)
+{
+	AASPlayerController* PC = GetASController();
+	if (PC && PC->IsLocalController() && IsLootOpen() && IsValid(Chest)
+		&& Chest == OpenChest.Get() && InstanceId.IsValid()) ServerDropLoot(Chest, InstanceId);
+}
+
+void UASItemInteractionComponent::ServerDropLoot_Implementation(AASLootChest* Chest, const FGuid InstanceId)
+{
+	AASPlayerController* PC = GetASController();
+	if (!PC || !GetPlayerInventory() || !IsValid(Chest) || !InstanceId.IsValid()
+		|| Chest != ServerOpenChest.Get() || ServerLootPawn.Get() != PC->GetPawn() || !CanReachTarget(Chest)) return;
+	Chest->DropLoot(PC->GetPawn(), InstanceId);
 }
 
 void UASItemInteractionComponent::RequestUseItem(const FGuid InstanceId)
@@ -377,6 +410,9 @@ void UASItemInteractionComponent::ServerCloseLoot_Implementation()
 
 void UASItemInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HoveredDroppedItem.IsValid()) HoveredDroppedItem->SetWorldHovered(false);
+	HoveredDroppedItem.Reset();
+	HoveredDroppedItemLabel.Reset();
 	if (InventoryInput)
 	{
 		if (AASPlayerController* PC = GetASController()) PC->PopInputComponent(InventoryInput);

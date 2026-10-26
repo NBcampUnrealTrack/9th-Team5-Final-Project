@@ -211,6 +211,20 @@ void UASLootWidget::SetLootContext(
 	RefreshLoot();
 }
 
+bool UASLootWidget::NativeOnDrop(const FGeometry& Geometry, const FDragDropEvent& Event, UDragDropOperation* Operation)
+{
+	UASLootItemDragDrop* Drag = Cast<UASLootItemDragDrop>(Operation);
+	if (!Drag || Drag->SourceLoot.Get() != this) return Super::NativeOnDrop(Geometry, Event, Operation);
+	UWidget* Panel = WidgetTree ? WidgetTree->FindWidget(TEXT("LootPanel")) : nullptr;
+	// Gaps, empty slots, or the source entry inside the chest are never discard targets.
+	if (!IsInViewport() || !IsVisible() || !Panel || Drag->Chest != LootChest
+		|| Panel->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition())) return true;
+	APlayerController* PC = GetOwningPlayer();
+	UASItemInteractionComponent* Interaction = PC ? PC->FindComponentByClass<UASItemInteractionComponent>() : nullptr;
+	if (Interaction) Interaction->RequestDropLoot(Drag->Chest.Get(), Drag->ItemId);
+	return true;
+}
+
 void UASLootWidget::RefreshLootHeader()
 {
 	if (IsValid(LootTitleText))
@@ -279,6 +293,7 @@ void UASLootWidget::RefreshLoot()
 		}
 
 		EntryWidget->SetItemInstance(ItemInstance);
+		EntryWidget->SetLootSource(this);
 		EntryWidget->OnItemClicked.AddUniqueDynamic(this, &UASLootWidget::HandleItemClicked);
 		if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(ItemList))
 		{

@@ -15,6 +15,7 @@ class USceneComponent;
 class UStaticMeshComponent;
 class UMaterialInterface;
 class APawn;
+class AASDroppedItem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FASLootInteractionRequestedSignature,
@@ -68,6 +69,10 @@ public:
 	/** Server revalidates range, recipient ownership and remaining quantity for every pickup. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
 	int32 TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInventory, FGuid InstanceId, int32 Quantity);
+
+	/** Server-only: transfer a whole stack directly from this chest to a nearby replicated world drop. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot")
+	AASDroppedItem* DropLoot(APawn* Interactor, FGuid InstanceId);
 
 	virtual bool CanInteract_Implementation(AActor* Interactor) const override;
 	virtual void Interact_Implementation(AActor* Interactor) override;
