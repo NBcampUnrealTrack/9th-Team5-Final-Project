@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "ASSkillAreaActor.generated.h"
 
 //일정 시간 유지되며 주기적으로 원 범위 데미지를 주는 액터
@@ -17,6 +18,7 @@ public:
 	AASSkillAreaActor();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	//생성 직후(FinishSpawning 전)에 호출
 	void InitArea(
@@ -29,8 +31,17 @@ public:
 		bool bInCanHitPlayers,
 		bool bInDrawDebug);
 
+	//데미지와 같이 걸 추가 GE (슬로우 등, Actor만 적용 - Mass는 GE를 못 받음). FinishSpawning 전에 호출
+	void SetExtraEffectSpecs(const TArray<FGameplayEffectSpecHandle>& InEffectSpecs);
+
+	//이 타겟(Actor/Mass)을 따라다님. 타겟이 죽거나 사라지면 그 자리에 멈춤. FinishSpawning 전에 호출 (서버)
+	void SetFollowTarget(const FASCombatTargetRef& InTarget);
+
 	UFUNCTION(BlueprintPure, Category = "AS|Skill|Area")
 	float GetRadius() const { return Radius; }
+
+	UFUNCTION(BlueprintPure, Category = "AS|Skill|Area")
+	bool IsFollowingTarget() const { return FollowTarget.IsValid(); }
 
 protected:
 	virtual void BeginPlay() override;
@@ -47,6 +58,9 @@ protected:
 private:
 	void DoDamageTick();
 
+	//따라가는 타겟 위치로 이동 (서버). 타겟을 잃으면 따라가기 종료
+	void UpdateFollow();
+
 	//PulseCueTag 실행 (서버)
 	void ExecutePulseCue(const FVector& Center) const;
 
@@ -58,7 +72,11 @@ private:
 	float Radius = 300.0f;
 
 	FGameplayEffectSpecHandle DamageSpec;
+	TArray<FGameplayEffectSpecHandle> ExtraEffectSpecs;
 	TWeakObjectPtr<AActor> InstigatorAvatar;
+
+	//따라가는 타겟 (비어 있으면 고정 장판)
+	FASCombatTargetRef FollowTarget;
 
 	float Duration = 3.0f;
 	float TickInterval = 0.5f;

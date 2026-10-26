@@ -1,5 +1,7 @@
 ﻿#include "Skills/Area/ASSkillAreaActor.h"
 
+#include "Skills/Debug/ASSkillDamageDebug.h"
+
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
@@ -9,8 +11,11 @@
 
 AASSkillAreaActor::AASSkillAreaActor()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	//따라가기용 Tick (따라갈 타겟이 있을 때 서버에서만 켬)
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	bReplicates = true;
+	SetReplicatingMovement(true);
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -43,6 +48,59 @@ void AASSkillAreaActor::InitArea(
 	bDrawDebug = bInDrawDebug;
 }
 
+void AASSkillAreaActor::SetExtraEffectSpecs(const TArray<FGameplayEffectSpecHandle>& InEffectSpecs)
+{
+	ExtraEffectSpecs = InEffectSpecs;
+}
+
+void AASSkillAreaActor::SetFollowTarget(const FASCombatTargetRef& InTarget)
+{
+	FollowTarget = InTarget;
+}
+
+void AASSkillAreaActor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	UpdateFollow();
+}
+
+void AASSkillAreaActor::UpdateFollow()
+{
+	if (!HasAuthority() || !FollowTarget.IsValid())
+	{
+		return;
+	}
+
+	UASCombatTargetSubsystem* CombatTargets = GetWorld() ? GetWorld()->GetSubsystem<UASCombatTargetSubsystem>() : nullptr;
+	if (!CombatTargets)
+	{
+		return;
+	}
+
+	FASCombatTargetQuery Query;
+	Query.Instigator = InstigatorAvatar.Get();
+	Query.bCanHitPlayers = bCanHitPlayers;
+
+	//타겟이 죽었거나 사라짐 -> 그 자리에 남음
+	if (!CombatTargets->RefreshTarget(Query, FollowTarget))
+	{
+		FollowTarget.Reset();
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	FVector NewLocation = FollowTarget.GetLocation();
+
+	//Actor는 위치가 몸 중앙이라 발밑으로 내림 (Mass는 이미 발밑 기준)
+	if (const AActor* TargetActor = FollowTarget.GetActor())
+	{
+		NewLocation.Z -= TargetActor->GetSimpleCollisionHalfHeight();
+	}
+
+	SetActorLocation(NewLocation);
+}
+
 void AASSkillAreaActor::BeginPlay()
 {
 	Super::BeginPlay();
@@ -50,6 +108,13 @@ void AASSkillAreaActor::BeginPlay()
 	if (!HasAuthority())
 	{
 		return;
+	}
+
+	//따라갈 타겟이 있으면 첫 데미지 전에 위치를 맞추고 Tick 켜기
+	if (FollowTarget.IsValid())
+	{
+		UpdateFollow();
+		SetActorTickEnabled(FollowTarget.IsValid());
 	}
 
 	//예: 3초 / 0.5초 = 6번
@@ -79,11 +144,23 @@ void AASSkillAreaActor::DoDamageTick()
 
 	--TicksRemaining;
 
+	//타이머가 Tick보다 먼저 올 수 있어서 판정 직전에 위치 갱신
+	UpdateFollow();
+
 	const FVector Center = GetActorLocation();
 	TArray<FGameplayEffectSpecHandle> EffectSpecs;
 	if (DamageSpec.IsValid())
 	{
 		EffectSpecs.Add(DamageSpec);
+	}
+
+	//추가 GE (슬로우 등). 데미지 계산에는 영향 없음 (Data.Damage가 없는 GE)
+	for (const FGameplayEffectSpecHandle& ExtraSpec : ExtraEffectSpecs)
+	{
+		if (ExtraSpec.IsValid())
+		{
+			EffectSpecs.Add(ExtraSpec);
+		}
 	}
 
 	FASCombatApplyResult ApplyResult;
@@ -96,6 +173,9 @@ void AASSkillAreaActor::DoDamageTick()
 		Query.bCanHitPlayers = bCanHitPlayers;
 		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs);
 	}
+
+	//AS.Debug.SkillDamage 1
+	ASSkillDamageDebug::Report(this, EffectSpecs, ApplyResult, Center);
 	
 	//GameplayCue로 충격파 이펙트 (모든 화면)
 	ExecutePulseCue(Center);

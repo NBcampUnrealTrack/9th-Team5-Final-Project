@@ -3,6 +3,8 @@
 
 #include "ASSkillDash.h"
 
+#include "Skills/Debug/ASSkillDamageDebug.h"
+
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionMoveToForce.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
@@ -183,7 +185,9 @@ void UASSkillDash::CheckDashHit()
 			EffectSpecs.Add(DamageSpec);
 		}
 
-		bHitTarget = CombatTargets->ResolveAndApply(Query, EffectSpecs, &DashHitTargets).HasAnyHit();
+		const FASCombatApplyResult DashResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, &DashHitTargets);
+		ASSkillDamageDebug::Report(this, EffectSpecs, DashResult, Query.SearchOrigin);
+		bHitTarget = DashResult.HasAnyHit();
 	}
 	else
 	{

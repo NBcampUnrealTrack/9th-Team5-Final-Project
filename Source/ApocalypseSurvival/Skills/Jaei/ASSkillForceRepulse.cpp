@@ -1,5 +1,7 @@
 ﻿#include "Skills/Jaei/ASSkillForceRepulse.h"
 
+#include "Skills/Debug/ASSkillDamageDebug.h"
+
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -102,6 +104,7 @@ void UASSkillForceRepulse::TickWave()
 
 	//이번 틱에 새로 닿은 대상만 피해 (이미 맞은 대상은 HitSet이 걸러냄)
 	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, EffectSpecs, &WaveHitTargets);
+	ASSkillDamageDebug::Report(this, EffectSpecs, Result, WaveOrigin);
 	for (AActor* Target : Result.ActorTargets)
 	{
 		ApplyKnockback(Target);
@@ -144,7 +147,8 @@ void UASSkillForceRepulse::ApplyMassDamageOnce() const
 	Query.Domain = EASCombatTargetDomain::MassOnly;
 
 	const TArray<FGameplayEffectSpecHandle> EffectSpecs = { WaveDamageSpec };
-	CombatTargets->ResolveAndApply(Query, EffectSpecs);
+	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, EffectSpecs);
+	ASSkillDamageDebug::Report(this, EffectSpecs, Result, WaveOrigin);
 }
 
 void UASSkillForceRepulse::ApplyKnockback(AActor* Target) const
