@@ -10,12 +10,23 @@
 void AASLobbyPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	InitializeLobbyUI();
+}
 
+void AASLobbyPlayerController::ReceivedPlayer()
+{
+	Super::ReceivedPlayer();
+	if (HasActorBegunPlay()) InitializeLobbyUI();
+}
+
+void AASLobbyPlayerController::InitializeLobbyUI()
+{
 	if (!IsLocalController())
 	{
 		return;
 	}
 
+	GetWorld()->GameStateSetEvent.RemoveAll(this);
 	GetWorld()->GameStateSetEvent.AddUObject(this, &ThisClass::HandleGameStateSet);
 	if (LobbyWidgetClass)
 	{

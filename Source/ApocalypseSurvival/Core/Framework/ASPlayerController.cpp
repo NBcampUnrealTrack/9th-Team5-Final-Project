@@ -5,6 +5,8 @@
 #include "AbilitySystemGlobals.h"
 #include "ApocalypseSurvival.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/UserWidget.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
@@ -26,6 +28,20 @@
 #include "NavigationSystem.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Items/Interaction/ASItemInteractionComponent.h"
+
+void AASPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (IsLocalController())
+	{
+		TArray<UUserWidget*> Widgets;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Widgets, UUserWidget::StaticClass(), true);
+		for (UUserWidget* Widget : Widgets)
+		{
+			if (Widget->GetOwningPlayer() == this) Widget->RemoveFromParent();
+		}
+	}
+	Super::EndPlay(EndPlayReason);
+}
 
 AASPlayerController::AASPlayerController()
 {

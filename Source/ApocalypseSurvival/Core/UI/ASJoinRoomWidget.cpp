@@ -3,6 +3,7 @@
 #include "Components/ComboBoxString.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Components/EditableTextBox.h"
 
 void UASJoinRoomWidget::NativeConstruct()
 {
@@ -16,6 +17,14 @@ void UASJoinRoomWidget::NativeConstruct()
 	}
 	if (SearchRoomsButton) SearchRoomsButton->OnClicked.AddUniqueDynamic(this, &ThisClass::SearchRooms);
 	if (JoinRoomButton) JoinRoomButton->OnClicked.AddUniqueDynamic(this, &ThisClass::JoinSelectedRoom);
+	if (PasswordTextBox)
+	{
+		PasswordTextBox->SetIsPassword(true);
+		PasswordTextBox->SetHintText(FText::FromString(TEXT("비밀번호 방: 숫자 4자리")));
+		PasswordTextBox->SetText(FText::GetEmpty());
+		LastValidPassword.Reset();
+		PasswordTextBox->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandlePasswordChanged);
+	}
 	UpdateButtons();
 }
 
@@ -28,6 +37,7 @@ void UASJoinRoomWidget::NativeDestruct()
 	}
 	if (SearchRoomsButton) SearchRoomsButton->OnClicked.RemoveDynamic(this, &ThisClass::SearchRooms);
 	if (JoinRoomButton) JoinRoomButton->OnClicked.RemoveDynamic(this, &ThisClass::JoinSelectedRoom);
+	if (PasswordTextBox) PasswordTextBox->OnTextChanged.RemoveDynamic(this, &ThisClass::HandlePasswordChanged);
 	Super::NativeDestruct();
 }
 
@@ -57,7 +67,8 @@ void UASJoinRoomWidget::HandleSessionsFound(const bool bSuccess, const TArray<FA
 		RoomComboBox->ClearOptions();
 		for (const FASSessionSearchResult& Room : AvailableRooms)
 		{
-			RoomComboBox->AddOption(FString::Printf(TEXT("[%d] %s (%d/%d)"), Room.Index, *Room.RoomName, Room.CurrentPlayers, Room.MaxPlayers));
+			RoomComboBox->AddOption(FString::Printf(TEXT("[%d] %s%s (%d/%d)"), Room.Index,
+				Room.bRequiresPassword ? TEXT("[비밀번호] ") : TEXT(""), *Room.RoomName, Room.CurrentPlayers, Room.MaxPlayers));
 		}
 		if (!AvailableRooms.IsEmpty()) RoomComboBox->SetSelectedIndex(0);
 	}
@@ -75,11 +86,31 @@ void UASJoinRoomWidget::JoinSelectedRoom()
 void UASJoinRoomWidget::JoinRoom(const int32 ResultIndex)
 {
 	if (bSearching || bJoining || !SessionSubsystem) return;
-	if (!AvailableRooms.ContainsByPredicate([ResultIndex](const FASSessionSearchResult& Room) { return Room.Index == ResultIndex; })) return;
+	const FASSessionSearchResult* Room = AvailableRooms.FindByPredicate([ResultIndex](const FASSessionSearchResult& Entry) { return Entry.Index == ResultIndex; });
+	if (!Room) return;
+	const FString Password = PasswordTextBox ? PasswordTextBox->GetText().ToString() : FString();
+	if (Room->bRequiresPassword && !UASSessionSubsystem::IsValidRoomPassword(Password))
+	{
+		SetStatus(TEXT("비밀번호를 숫자 4자리로 입력한 후 참가해 주세요."));
+		if (PasswordTextBox) PasswordTextBox->SetKeyboardFocus();
+		return;
+	}
 	bJoining = true;
 	UpdateButtons();
 	SetStatus(TEXT("방 참가 중..."));
-	SessionSubsystem->JoinSessionByIndex(ResultIndex);
+	SessionSubsystem->JoinSessionByIndex(ResultIndex, Password);
+}
+
+void UASJoinRoomWidget::HandlePasswordChanged(const FText& Text)
+{
+	const FString Input = Text.ToString();
+	bool bValid = Input.Len() <= 4;
+	for (const TCHAR Character : Input)
+	{
+		bValid &= Character >= TEXT('0') && Character <= TEXT('9');
+	}
+	if (bValid) LastValidPassword = Input;
+	else PasswordTextBox->SetText(FText::FromString(LastValidPassword));
 }
 
 void UASJoinRoomWidget::HandleSessionJoined(const bool bSuccess, const FString& ErrorMessage)
