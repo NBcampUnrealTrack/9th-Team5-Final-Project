@@ -43,6 +43,10 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Fog", meta = (ClampMin = "0.0", Units = "cm"))
 	float LocalVisionMargin = 200.0f;
 
+	/** 로컬 시야 원과 텍스처 안개를 전환하는 화면 공간 경계 폭. 월드 안개와 몬스터 마스크가 같은 값을 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Fog", meta = (ClampMin = "1.0", Units = "cm"))
+	float LocalVisionSoftness = 90.0f;
+
 	/** 새 마스크로 넘어가는 보간 시간. 갱신 간격(1/UpdateHz)과 같으면 경계가 일정한 속도로 움직인다. 0이면 즉시 적용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Fog", meta = (ClampMin = "0", ClampMax = "2", Units = "s"))
 	float FogFadeSeconds = 0.1f;
@@ -50,18 +54,6 @@ struct APOCALYPSESURVIVAL_API FASVisionSettings
 	/** Mass 표현을 유지하는 시야 경계 바깥쪽 Buffer 폭. Buffer 안의 적은 숨기되 ISM은 유지한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Mass Visibility", meta = (ClampMin = "0.0", Units = "cm"))
 	float MassVisibilityBufferDistance = 200.0f;
-
-	/** 보이던 Mass 적이 밝은 시야 경계에 닿기 전에 숨도록 안쪽으로 당기는 거리. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Mass Visibility", meta = (ClampMin = "0.0", Units = "cm"))
-	float MassVisibilityExitInsetDistance = 50.0f;
-
-	/** 숨겨진 Mass 적이 다시 나타나려면 밝은 시야 경계에서 이 거리만큼 안쪽에 있어야 한다. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Mass Visibility", meta = (ClampMin = "0.0", Units = "cm"))
-	float MassVisibilityReentryInsetDistance = 50.0f;
-
-	/** Mass 적이 시야에 재진입할 때 Per Instance Custom Data 표시 알파를 올리는 시간. 이탈은 항상 즉시 숨긴다. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Mass Visibility", meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
-	float MassVisibilityFadeInSeconds = 0.12f;
 
 	/** Mass 적이 Buffer 바깥에 계속 있을 때 ISM 인스턴스를 제거하기까지의 지연 시간. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vision|Mass Visibility", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))

@@ -57,22 +57,28 @@ const UASVisionSourceComponent* UASFogDisplayComponent::GetLocalVisionSource() c
 
 void UASFogDisplayComponent::UpdateLocalVisionParameters()
 {
-	if (!WorldFogMaterial)
-	{
-		return;
-	}
 	const AASFogOfWarManager* Manager = Cast<AASFogOfWarManager>(GetOwner());
 	const UASVisionEvaluatorComponent* Evaluator = Manager ? Manager->GetVisionEvaluator() : nullptr;
 	const UASVisionSourceComponent* Source = GetLocalVisionSource();
-	FVector Center = FVector::ZeroVector;
-	float Radius = 0.0f;
-	if (Source && Evaluator)
+	LocalVisionCenter = FVector2D::ZeroVector;
+	LocalVisionRadius = 0.0f;
+	LocalVisionSoftness = VisionDefinition
+		? FMath::Max(1.0f, VisionDefinition->Settings.LocalVisionSoftness)
+		: 90.0f;
+	if (Source && Evaluator && Manager && VisionDefinition)
 	{
-		Center = Evaluator->GetTraceLocation(Source->GetOwner());
-		Radius = Source->GetVisionRadius(VisionDefinition->Settings, Manager->GetNightAlpha());
+		const FVector Center = Evaluator->GetTraceLocation(Source->GetOwner());
+		LocalVisionCenter = FVector2D(Center.X, Center.Y);
+		LocalVisionRadius = Source->GetVisionRadius(VisionDefinition->Settings, Manager->GetNightAlpha());
 	}
-	WorldFogMaterial->SetVectorParameterValue(TEXT("LocalVisionCenter"), FLinearColor(Center.X, Center.Y, 0.0f, 0.0f));
-	WorldFogMaterial->SetScalarParameterValue(TEXT("LocalVisionRadius"), Radius);
+
+	if (WorldFogMaterial)
+	{
+		WorldFogMaterial->SetVectorParameterValue(TEXT("LocalVisionCenter"),
+			FLinearColor(LocalVisionCenter.X, LocalVisionCenter.Y, 0.0f, 0.0f));
+		WorldFogMaterial->SetScalarParameterValue(TEXT("LocalVisionRadius"), LocalVisionRadius);
+		WorldFogMaterial->SetScalarParameterValue(TEXT("LocalVisionSoftness"), LocalVisionSoftness);
+	}
 }
 
 void UASFogDisplayComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -158,8 +164,6 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition, const FV
 
 		const int32 CellCount = ResolutionX * ResolutionY;
 		VisibleCells.Init(0, CellCount);
-		MassVisibilityExitCells.Init(0, CellCount);
-		MassVisibilityReentryCells.Init(0, CellCount);
 		MassVisibilityBufferCells.Init(0, CellCount);
 		MassVisibilityDistanceScratch.Reset();
 		DisplayCells.Init(0, CellCount);
@@ -209,6 +213,19 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition, const FV
 		}
 	}
 	SetComponentTickEnabled(HasLocalPlayer());
+}
+
+FASFogMaterialState UASFogDisplayComponent::GetMaterialState() const
+{
+	FASFogMaterialState State;
+	State.FogTexture = FogTexture;
+	State.MapWorldMin = FogWorldMin;
+	State.MapWorldSize = GetFogWorldSize();
+	State.LocalVisionCenter = LocalVisionCenter;
+	State.LocalVisionRadius = LocalVisionRadius;
+	State.LocalVisionSoftness = LocalVisionSoftness;
+	State.bHasLocalVisionMask = bHasLocalVisionMask;
+	return State;
 }
 
 void UASFogDisplayComponent::UpdateWorldFog()
@@ -307,6 +324,12 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	if (!bFullRecompute && RawChangedRegions.IsEmpty() && !bLocalRegionChanged)
 	{
 		return;
+	}
+	// B 채널은 페이드된 월드 안개가 아니라 현재 논리 시야 자체를 기록한다.
+	// 시야가 바뀐 타일은 다음 페이드 Tick을 기다리지 않고 즉시 반영한다.
+	if (!bFullRecompute && !RawChangedRegions.IsEmpty())
+	{
+		UploadTexture(RawChangedRegions);
 	}
 	BlurChangedRegions(bFullRecompute, bLocalRegionChanged, Context.BlurRadius);
 	StartLocalFade(VisionDefinition->Settings.FogFadeSeconds);
@@ -752,18 +775,6 @@ bool UASFogDisplayComponent::IsLocationVisibleLocally(const FVector& Location) c
 	return VisibleCells.IsValidIndex(Index) && VisibleCells[Index] != 0;
 }
 
-bool UASFogDisplayComponent::IsLocationInLocalVisionExitRegion(const FVector& Location) const
-{
-	const int32 Index = GridIndexAt(Location);
-	return MassVisibilityExitCells.IsValidIndex(Index) && MassVisibilityExitCells[Index] != 0;
-}
-
-bool UASFogDisplayComponent::IsLocationInLocalVisionReentryRegion(const FVector& Location) const
-{
-	const int32 Index = GridIndexAt(Location);
-	return MassVisibilityReentryCells.IsValidIndex(Index) && MassVisibilityReentryCells[Index] != 0;
-}
-
 bool UASFogDisplayComponent::IsLocationInLocalVisionBuffer(const FVector& Location) const
 {
 	const int32 Index = GridIndexAt(Location);
@@ -772,24 +783,6 @@ bool UASFogDisplayComponent::IsLocationInLocalVisionBuffer(const FVector& Locati
 
 void UASFogDisplayComponent::RebuildMassVisibilityBuffer()
 {
-	if (MassVisibilityExitCells.Num() != VisibleCells.Num())
-	{
-		MassVisibilityExitCells.Init(0, VisibleCells.Num());
-	}
-	else
-	{
-		FMemory::Memzero(MassVisibilityExitCells.GetData(), MassVisibilityExitCells.Num());
-	}
-
-	if (MassVisibilityReentryCells.Num() != VisibleCells.Num())
-	{
-		MassVisibilityReentryCells.Init(0, VisibleCells.Num());
-	}
-	else
-	{
-		FMemory::Memzero(MassVisibilityReentryCells.GetData(), MassVisibilityReentryCells.Num());
-	}
-
 	if (MassVisibilityBufferCells.Num() != VisibleCells.Num())
 	{
 		MassVisibilityBufferCells.Init(0, VisibleCells.Num());
@@ -808,14 +801,8 @@ void UASFogDisplayComponent::RebuildMassVisibilityBuffer()
 	const float CellSize = FMath::Max(1.0f, FMath::Max(WorldSize.Y / ResolutionX, WorldSize.X / ResolutionY));
 	const int32 BufferRadiusCells = FMath::CeilToInt(
 		FMath::Max(0.0f, VisionDefinition->Settings.MassVisibilityBufferDistance) / CellSize);
-	const int32 ExitInsetCells = FMath::CeilToInt(
-		FMath::Max(0.0f, VisionDefinition->Settings.MassVisibilityExitInsetDistance) / CellSize);
-	const int32 ReentryInsetCells = FMath::CeilToInt(
-		FMath::Max(VisionDefinition->Settings.MassVisibilityExitInsetDistance,
-			VisionDefinition->Settings.MassVisibilityReentryInsetDistance) / CellSize);
-
 	// 각 seed에서 반경만큼 원형을 반복 기록하지 않고 3-4 chamfer distance transform으로
-	// 바깥쪽 유지 Buffer와 안쪽 재진입 영역을 각각 O(전체 Grid)에 계산한다.
+	// 바깥쪽 ISM 유지 Buffer를 O(전체 Grid)에 계산한다.
 	constexpr int32 InfiniteDistance = MAX_int32 / 8;
 	auto BuildChamferDistance = [this, InfiniteDistance](const bool bDistanceFromVisible, const bool bTreatGridEdgeAsSeed)
 	{
@@ -895,18 +882,6 @@ void UASFogDisplayComponent::RebuildMassVisibilityBuffer()
 		MassVisibilityBufferCells[Index] = MassVisibilityDistanceScratch[Index] <= BufferDistanceThreshold ? 1 : 0;
 	}
 
-	BuildChamferDistance(false, true);
-	const int32 ExitDistanceThreshold = ExitInsetCells * 3;
-	const int32 ReentryDistanceThreshold = ReentryInsetCells * 3;
-	for (int32 Index = 0; Index < MassVisibilityReentryCells.Num(); ++Index)
-	{
-		MassVisibilityExitCells[Index] = ExitInsetCells <= 0
-			? VisibleCells[Index]
-			: (VisibleCells[Index] != 0 && MassVisibilityDistanceScratch[Index] > ExitDistanceThreshold ? 1 : 0);
-		MassVisibilityReentryCells[Index] = ReentryInsetCells <= 0
-			? VisibleCells[Index]
-			: (VisibleCells[Index] != 0 && MassVisibilityDistanceScratch[Index] > ReentryDistanceThreshold ? 1 : 0);
-	}
 }
 
 FIntRect UASFogDisplayComponent::TileRegion(int32 TileIndex) const
@@ -1034,10 +1009,13 @@ void UASFogDisplayComponent::UploadTexture(const TArray<FIntRect>& DirtyRegions)
 			for (int32 X = 0; X < Dirty.Width(); ++X)
 			{
 				uint8* Pixel = Pixels + ((SourceY + Y) * PitchWidth + X) * 4;
-				Pixel[0] = 0; // B
 				const int32 GridX = Dirty.Min.X + X;
 				const int32 GridY = Dirty.Min.Y + Y;
 				const int32 Index = GridY * ResolutionX + GridX;
+				// FogTexture는 PF_B8G8R8A8이다.
+				// B: 현재 로컬 팀 논리 시야 (0 = 시야 밖, 255 = 현재 시야).
+				// G/R/A: 기존 월드 안개와 미니맵의 페이드된 알파 표현.
+				Pixel[0] = VisibleCells.IsValidIndex(Index) && VisibleCells[Index] ? 255 : 0;
 				const bool bLocal = GridX >= LocalRegion.Min.X && GridX < LocalRegion.Max.X
 					&& GridY >= LocalRegion.Min.Y && GridY < LocalRegion.Max.Y;
 				Pixel[1] = bLocal ? DisplayShownAlpha[Index] : ShownAlpha[Index]; // G

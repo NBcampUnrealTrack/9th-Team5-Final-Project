@@ -216,9 +216,9 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterNavigationFragment : public FMassFra
 
 /**
  * 각 머신의 전장의 안개 표시 상태. 네트워크 게임 상태가 아니라 로컬 Representation 전용 데이터다.
- * 밝은 시야 안쪽의 표시 영역에서는 표시하고, 숨김선 바깥과 시야 경계 Buffer에서는 ISM을 유지한 채 숨긴다.
+ * 현재 시야 여부는 게임플레이/UI에만 사용하고, 실제 픽셀 표시는 FogTexture 기반 Material이 결정한다.
+ * 시야 경계 Buffer에서는 ISM을 유지하고, Buffer 바깥에 일정 시간 머문 뒤에만 ISM을 제거한다.
  * Buffer 바깥에 일정 시간 머문 뒤에만 ISM을 제거해 경계에서의 재등록을 줄인다.
- * 숨김과 재표시 Fade는 Transform이 아니라 ISM Per Instance Custom Data 0번(0..1 표시 알파)으로 전달한다.
  */
 USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterFogVisibilityFragment : public FMassFragment
@@ -228,8 +228,6 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterFogVisibilityFragment : public FMass
 	bool bInitialized = false;
 	bool bVisibleToLocalTeam = false;
 	bool bRetainedInFogBuffer = false;
-	/** Material의 Per Instance Custom Data 0번으로 전달되는 현재 표시 알파. */
-	float RenderVisibilityAlpha = 0.0f;
 	float SecondsOutsideFogBuffer = 0.0f;
 	bool bTemporarilyForcedOff = false;
 	TEnumAsByte<EMassLOD::Type> SavedLOD = EMassLOD::Off;
