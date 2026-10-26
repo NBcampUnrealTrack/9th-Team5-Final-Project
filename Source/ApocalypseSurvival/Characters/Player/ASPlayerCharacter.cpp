@@ -6,6 +6,7 @@
 #include "Characters/Player/Data/ASCharacterRoster.h"
 #include "Mass/Monster/Targeting/ASMonsterTargetableComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Core/Combat/ASCombatImpactSettings.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
@@ -241,6 +242,9 @@ float AASPlayerCharacter::GetMonsterTargetBaseScore_Implementation() const
 
 void AASPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(ImpactReactionTimerHandle);
+	GetWorldTimerManager().ClearTimer(StaggerProtectionTimerHandle);
+
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
 		if (AASPlayerState* ASPlayerState = Cast<AASPlayerState>(ASC->GetOwnerActor()))
@@ -281,6 +285,10 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 	->RegisterGameplayTagEvent(ASGameplayTags::State_Downed, EGameplayTagEventType::NewOrRemoved)
 	.AddUObject(this, &AASPlayerCharacter::HandleDownedTagChanged);
 
+	StaggeredTagChangedHandle = ASC
+		->RegisterGameplayTagEvent(ASGameplayTags::State_Staggered, EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(this, &AASPlayerCharacter::HandleStaggeredTagChanged);
+
 	// 늦게 접속한 클라이언트는 이미 죽어 있는 플레이어를 받을 수 있다. 태그 알림은 그때 오지 않는다.
 	if (IsDead())
 	{
@@ -291,6 +299,11 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 	if (IsDowned())
 	{
 		HandleDownedTagChanged(ASGameplayTags::State_Downed, 1);
+	}
+
+	if (IsStaggered())
+	{
+		HandleStaggeredTagChanged(ASGameplayTags::State_Staggered, 1);
 	}
 
 	// 늦은 ASC 초기화나 리스폰 뒤에도 서버 Registry가 현재 상태와 일치해야 한다.
@@ -335,11 +348,19 @@ void AASPlayerCharacter::UnbindDeathDelegates()
 				->RegisterGameplayTagEvent(ASGameplayTags::State_Downed, EGameplayTagEventType::NewOrRemoved)
 				.Remove(DownedTagChangedHandle);
 		}
+
+		if (StaggeredTagChangedHandle.IsValid())
+		{
+			ASC
+				->RegisterGameplayTagEvent(ASGameplayTags::State_Staggered, EGameplayTagEventType::NewOrRemoved)
+				.Remove(StaggeredTagChangedHandle);
+		}
 	}
 
 	HealthChangedHandle.Reset();
 	DeadTagChangedHandle.Reset();
 	DownedTagChangedHandle.Reset();
+	StaggeredTagChangedHandle.Reset();
 }
 
 void AASPlayerCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
@@ -396,6 +417,56 @@ bool AASPlayerCharacter::IsDowned() const
 {
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	return ASC && ASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed);
+}
+
+bool AASPlayerCharacter::IsStaggered() const
+{
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	return ASC && ASC->HasMatchingGameplayTag(ASGameplayTags::State_Staggered);
+}
+
+void AASPlayerCharacter::ApplyImpactReaction(const FASCombatImpactContext& ImpactContext)
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!HasAuthority() || !IsValid(ASC) || IsDead() || IsDowned())
+	{
+		return;
+	}
+
+	const UASCombatImpactSettings* ImpactSettings = GetDefault<UASCombatImpactSettings>();
+	if (!ImpactSettings)
+	{
+		return;
+	}
+
+	const EASResolvedHitReaction Reaction = ImpactSettings->ResolvePlayerReaction(
+		ImpactContext.Preset,
+		ASC->HasMatchingGameplayTag(ASGameplayTags::State_SuperArmor),
+		ASC->HasMatchingGameplayTag(ASGameplayTags::State_StaggerProtected));
+	if (Reaction != EASResolvedHitReaction::StrongStagger
+		&& Reaction != EASResolvedHitReaction::Knockdown)
+	{
+		return;
+	}
+
+	FGameplayTagContainer SurvivingTags;
+	SurvivingTags.AddTag(ASGameplayTags::Ability_Behavior_SurvivesDeath);
+	ASC->CancelAbilities(nullptr, &SurvivingTags);
+
+	if (Reaction == EASResolvedHitReaction::Knockdown)
+	{
+		ASC->AddLooseGameplayTag(ASGameplayTags::State_KnockedDown, 1,
+			EGameplayTagReplicationState::TagAndCountToAll);
+	}
+	ASC->AddLooseGameplayTag(ASGameplayTags::State_Staggered, 1,
+		EGameplayTagReplicationState::TagAndCountToAll);
+	ASC->AddLooseGameplayTag(ASGameplayTags::State_StaggerProtected, 1,
+		EGameplayTagReplicationState::TagAndCountToAll);
+
+	GetWorldTimerManager().SetTimer(ImpactReactionTimerHandle, this, &AASPlayerCharacter::ClearImpactReaction,
+		FMath::Max(KINDA_SMALL_NUMBER, ImpactSettings->GetPlayerReactionDuration(Reaction)), false);
+	GetWorldTimerManager().SetTimer(StaggerProtectionTimerHandle, this, &AASPlayerCharacter::ClearStaggerProtection,
+		FMath::Max(KINDA_SMALL_NUMBER, ImpactSettings->PlayerProtectionDuration), false);
 }
 
 void AASPlayerCharacter::EnterDowned()
@@ -461,11 +532,63 @@ void AASPlayerCharacter::HandleDownedTagChanged(const FGameplayTag Tag, int32 Ne
 	else
 	{
 		// 부활이면 다시 걷는다. 시간 초과로 사망하는 중이면 사망 처리가 이동을 맡는다.
-		if (!IsDead())
+		if (!IsDead() && !IsStaggered())
 		{
 			MoveComp->SetMovementMode(MOVE_Walking);
 		}
 		OnDownedChanged(false);
+	}
+}
+
+void AASPlayerCharacter::HandleStaggeredTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	if (!MoveComp)
+	{
+		return;
+	}
+
+	if (NewCount > 0)
+	{
+		if (AController* OwnController = GetController())
+		{
+			OwnController->StopMovement();
+		}
+		MoveComp->StopMovementImmediately();
+		MoveComp->DisableMovement();
+		OnStaggerChanged(true);
+	}
+	else
+	{
+		if (!IsDead() && !IsDowned())
+		{
+			MoveComp->SetMovementMode(MOVE_Walking);
+		}
+		OnStaggerChanged(false);
+	}
+}
+
+void AASPlayerCharacter::ClearImpactReaction()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!HasAuthority() || !IsValid(ASC))
+	{
+		return;
+	}
+
+	ASC->RemoveLooseGameplayTag(ASGameplayTags::State_KnockedDown, 1,
+		EGameplayTagReplicationState::TagAndCountToAll);
+	ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Staggered, 1,
+		EGameplayTagReplicationState::TagAndCountToAll);
+}
+
+void AASPlayerCharacter::ClearStaggerProtection()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (HasAuthority() && IsValid(ASC))
+	{
+		ASC->RemoveLooseGameplayTag(ASGameplayTags::State_StaggerProtected, 1,
+			EGameplayTagReplicationState::TagAndCountToAll);
 	}
 }
 

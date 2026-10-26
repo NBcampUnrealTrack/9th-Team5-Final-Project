@@ -5,6 +5,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -177,6 +178,10 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActor(
 		if (AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(Target))
 		{
 			Monster->ApplyImpactReaction(ImpactContext);
+		}
+		else if (AASPlayerCharacter* Player = Cast<AASPlayerCharacter>(Target))
+		{
+			Player->ApplyImpactReaction(ImpactContext);
 		}
 	}
 	return AppliedSpecCount;

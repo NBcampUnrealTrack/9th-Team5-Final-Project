@@ -11,6 +11,7 @@ UASMonsterProjectileAbility::UASMonsterProjectileAbility()
 	bCanHitPlayers = true;
 	bAimAtCursor = false;
 	bFaceAimDirection = true;
+	ImpactPreset = EASImpactPreset::Standard;
 	BaseDamage = 0.0f;
 	AttackPowerScale = 1.0f;
 	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();

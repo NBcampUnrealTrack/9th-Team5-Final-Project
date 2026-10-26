@@ -9,6 +9,7 @@ UASMonsterPatternAbility::UASMonsterPatternAbility()
 	bCanHitPlayers = true;
 	bAimAtCursor = false;
 	bFaceAimDirection = true;
+	ImpactPreset = EASImpactPreset::Standard;
 	FGameplayTagContainer AssetTagsToSet = GetAssetTags();
 	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack);
 	SetAssetTags(AssetTagsToSet);

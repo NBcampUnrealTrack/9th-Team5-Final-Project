@@ -30,6 +30,7 @@ UASGameplayAbility_CharacterPrimaryAttack::UASGameplayAbility_CharacterPrimaryAt
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Dodging);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Casting);
+	ActivationBlockedTags.AddTag(ASGameplayTags::State_Staggered);
 }
 
 float UASGameplayAbility_CharacterPrimaryAttack::GetCurrentAttackRange() const
