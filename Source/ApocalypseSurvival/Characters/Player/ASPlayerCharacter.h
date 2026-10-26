@@ -18,6 +18,8 @@ struct FOnAttributeChangeData;
 class UInputAction;
 class UInputMappingContext;
 class UGameplayAbility;
+class UAnimInstance;
+class UAnimMontage;
 struct FGameplayEventData;
 
 /**
@@ -124,6 +126,10 @@ public:
 	/** 근접 평타 부채꼴 판정 디버그 표시 (모든 머신) */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastDrawMeleeConeDebug(FVector Origin, FVector Direction, float Radius, float AngleDegrees, bool bHit);
+
+	/** 서버가 확인한 근접 명중의 로컬 공격자 몽타주만 잠시 멈춘다. 게임플레이 시간에는 영향을 주지 않는다. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayMeleeHitStop(float Duration);
 	
 	UFUNCTION(Exec)
 	void DebugAddExp(int32 Amount);
@@ -238,6 +244,9 @@ private:
 	/** 서버 전용. 연속 경직 보호 태그를 제거한다. */
 	void ClearStaggerProtection();
 
+	/** 로컬 타격 정지 타이머가 끝나면 멈췄던 공격 몽타주만 다시 재생한다. */
+	void ResumeMeleeHitStop();
+
 	/** 서버에서만 Monster Target Registry 등록 상태를 사망/쓰러짐 상태와 맞춘다. */
 	void RefreshMonsterTargetingRegistration();
 
@@ -246,6 +255,9 @@ private:
 	FTimerHandle BleedOutTimerHandle;
 	FTimerHandle ImpactReactionTimerHandle;
 	FTimerHandle StaggerProtectionTimerHandle;
+	FTimerHandle MeleeHitStopTimerHandle;
+	TWeakObjectPtr<UAnimInstance> HitStopAnimInstance;
+	TWeakObjectPtr<UAnimMontage> HitStopMontage;
 
 	/** 서버 전용. 부활 시작 / 취소 / 진행 확인 */
 void StartRevive(AASPlayerCharacter* Reviver);

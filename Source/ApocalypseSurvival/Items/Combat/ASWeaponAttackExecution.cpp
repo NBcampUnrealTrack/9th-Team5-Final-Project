@@ -4,6 +4,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "Core/Combat/ASCombatImpactSettings.h"
 #include "Engine/World.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
 #include "GameFramework/Character.h"
@@ -223,6 +224,14 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 	if (AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(Context.Avatar))
 	{
 		Character->MulticastDrawMeleeConeDebug(Origin, Direction, AttackRange, Profile->HitAngle, ApplyResult.HasAnyHit());
+		if (ApplyResult.HasAnyHit())
+		{
+			const UASCombatImpactSettings* ImpactSettings = GetDefault<UASCombatImpactSettings>();
+			const float HitStopDuration = ImpactSettings
+				? ImpactSettings->GetMeleeHitStopDuration(ImpactContext.Preset)
+				: 0.0f;
+			Character->MulticastPlayMeleeHitStop(HitStopDuration);
+		}
 	}
 }
 

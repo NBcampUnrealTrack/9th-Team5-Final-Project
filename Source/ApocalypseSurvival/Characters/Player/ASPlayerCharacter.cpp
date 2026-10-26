@@ -1,5 +1,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
@@ -161,6 +163,35 @@ void AASPlayerCharacter::MulticastDrawMeleeConeDebug_Implementation(
 	DrawDebugLine(World, Origin, PreviousPoint, Color, false, 1.0f, 0, 2.0f);
 }
 
+void AASPlayerCharacter::MulticastPlayMeleeHitStop_Implementation(const float Duration)
+{
+	if (!IsLocallyControlled() || Duration <= 0.0f)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* SkeletalMesh = GetMesh();
+	UAnimInstance* AnimInstance = SkeletalMesh ? SkeletalMesh->GetAnimInstance() : nullptr;
+	UAnimMontage* ActiveMontage = AnimInstance ? AnimInstance->GetCurrentActiveMontage() : nullptr;
+	if (!AnimInstance || !ActiveMontage)
+	{
+		return;
+	}
+
+	// 한 공격이 여러 대상을 맞혀도 ExecuteHit는 한 번만 호출되지만, 네트워크 재전송이나
+	// 연속 공격이 겹칠 때는 기존 타이머를 연장하는 형태로 유지한다.
+	if (HitStopAnimInstance.IsValid() && HitStopMontage.IsValid() && HitStopMontage != ActiveMontage)
+	{
+		ResumeMeleeHitStop();
+	}
+
+	HitStopAnimInstance = AnimInstance;
+	HitStopMontage = ActiveMontage;
+	AnimInstance->Montage_Pause(ActiveMontage);
+	GetWorldTimerManager().SetTimer(MeleeHitStopTimerHandle, this, &AASPlayerCharacter::ResumeMeleeHitStop,
+		Duration, false);
+}
+
 void AASPlayerCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -244,6 +275,7 @@ void AASPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(ImpactReactionTimerHandle);
 	GetWorldTimerManager().ClearTimer(StaggerProtectionTimerHandle);
+	GetWorldTimerManager().ClearTimer(MeleeHitStopTimerHandle);
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
@@ -590,6 +622,20 @@ void AASPlayerCharacter::ClearStaggerProtection()
 		ASC->RemoveLooseGameplayTag(ASGameplayTags::State_StaggerProtected, 1,
 			EGameplayTagReplicationState::TagAndCountToAll);
 	}
+}
+
+void AASPlayerCharacter::ResumeMeleeHitStop()
+{
+	if (UAnimInstance* AnimInstance = HitStopAnimInstance.Get())
+	{
+		if (UAnimMontage* Montage = HitStopMontage.Get(); Montage && AnimInstance->Montage_IsActive(Montage))
+		{
+			AnimInstance->Montage_Resume(Montage);
+		}
+	}
+
+	HitStopAnimInstance.Reset();
+	HitStopMontage.Reset();
 }
 
 void AASPlayerCharacter::RefreshMonsterTargetingRegistration()
