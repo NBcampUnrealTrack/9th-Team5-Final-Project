@@ -11,6 +11,10 @@ namespace ASSkillDamageDebug
 {
 	APOCALYPSESURVIVAL_API bool IsEnabled();
 
+	//스킬 디버그 선(Draw Debug 체크)을 그려도 되는지
+	//에디터(PIE)에서는 true, 패키징 빌드에서는 기본 false (콘솔 AS.Debug.SkillDraw 1로 켤 수 있음), Shipping은 항상 false
+	APOCALYPSESURVIVAL_API bool IsSkillDrawEnabled();
+
 	//Spec 목록에 들어 있는 1회 데미지 합계 (Data.Damage)
 	APOCALYPSESURVIVAL_API float GetDamageFromSpecs(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs);
 

@@ -84,7 +84,7 @@ void UASDeadAngleAbility::UpdateDeadAngle()
 		RemoveReductionEffect();
 	}
 
-	if (bDrawDebug)
+	if (ShouldDrawDebug())
 	{
 		if (const AActor* Avatar = GetAvatarActorFromActorInfo())
 		{
