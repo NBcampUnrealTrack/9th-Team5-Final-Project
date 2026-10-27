@@ -123,10 +123,6 @@ FASZoneHudInfo UASMapFunctionLibrary::GetZoneHudInfo(const UObject* WorldContext
 		return Info;
 	}
 
-	Info.bInZone = true;
-	Info.ZoneId = ZoneId;
-	Info.DisplayName = GetZoneDisplayName(WorldContextObject, ZoneId);
-
 	const UASMapStateComponent* MapState = GetMapStateComponent(WorldContextObject);
 	if (!MapState)
 	{
@@ -134,10 +130,20 @@ FASZoneHudInfo UASMapFunctionLibrary::GetZoneHudInfo(const UObject* WorldContext
 	}
 
 	const FASMapStateSnapshot& Snapshot = MapState->GetSnapshot();
-	if (const FASZoneRuntimeState* State = Snapshot.FindZone(ZoneId))
+	if (!Snapshot.bMapReady)
 	{
-		Info.DangerLevel = State->DangerLevel;
+		return Info;
 	}
+	const FASZoneRuntimeState* State = Snapshot.FindZone(ZoneId);
+	if (!State)
+	{
+		return Info;
+	}
+
+	Info.bInZone = true;
+	Info.ZoneId = ZoneId;
+	Info.DisplayName = GetZoneDisplayName(WorldContextObject, ZoneId);
+	Info.DangerLevel = State->DangerLevel;
 	Info.DangerColor = GetDangerColor(WorldContextObject, Info.DangerLevel);
 
 	return Info;
@@ -151,6 +157,15 @@ FASZoneHudInfo UASMapFunctionLibrary::GetZoneHudInfoAtLocation(const UObject* Wo
 APawn* UASMapFunctionLibrary::GetLocalPlayerPawn(const UObject* WorldContextObject)
 {
 	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
-	const APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
-	return PlayerController && PlayerController->IsLocalController() ? PlayerController->GetPawn() : nullptr;
+	if (World)
+	{
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (const APlayerController* Controller = It->Get(); Controller && Controller->IsLocalController())
+			{
+				return Controller->GetPawn();
+			}
+		}
+	}
+	return nullptr;
 }
