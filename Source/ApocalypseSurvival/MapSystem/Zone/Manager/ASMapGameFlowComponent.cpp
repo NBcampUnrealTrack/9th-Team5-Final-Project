@@ -49,9 +49,8 @@ void UASMapGameFlowComponent::BeginPlay()
 		return;
 	}
 
-	// OnMapReady를 동기적으로 브로드캐스트하는 초기화 전에 구독한다.
+	// 맵 초기화 전에 단계 변경을 구독한다.
 	GS->OnPhaseChanged.AddDynamic(this, &UASMapGameFlowComponent::HandlePhaseChanged);
-	HandlePhaseChanged(GS->GetCurrentPhase());
 
 	MapManager = World->SpawnActor<AASMapSystemManager>(
 		MapManagerClass ? MapManagerClass.Get() : AASMapSystemManager::StaticClass(),
