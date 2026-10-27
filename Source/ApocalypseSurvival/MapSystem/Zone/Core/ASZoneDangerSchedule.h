@@ -22,7 +22,10 @@ struct APOCALYPSESURVIVAL_API FASZoneDangerScheduleRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Danger Schedule", meta = (ClampMin = "0"))
 	int32 MaxRaisedZonesNight = 2;
 
-	/** 시작 시점의 생존 몬스터 수가 이 값 이상이면 우선 증가 후보가 된다. */
+	/**
+	 * 시작 시점의 생존 몬스터 수가 이 값 이상이면 우선 증가 후보가 된다.
+	 * 0이면 모든 증가 가능 구역을 몬스터 구역으로 보고, 추첨 확률 없이 몬스터 수 순으로 증가시킨다.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Danger Schedule", meta = (ClampMin = "0"))
 	int32 MonsterCountThreshold = 3;
 

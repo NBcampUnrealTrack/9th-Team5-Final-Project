@@ -931,87 +931,34 @@ void UASFogDisplayComponent::RebuildMassVisibilityBuffer()
 	const float CellSize = FMath::Max(1.0f, FMath::Max(WorldSize.Y / ResolutionX, WorldSize.X / ResolutionY));
 	const int32 BufferRadiusCells = FMath::CeilToInt(
 		FMath::Max(0.0f, VisionDefinition->Settings.MassVisibilityBufferDistance) / CellSize);
-	// 각 seed에서 반경만큼 원형을 반복 기록하지 않고 3-4 chamfer distance transform으로
-	// 바깥쪽 ISM 유지 Buffer를 O(전체 Grid)에 계산한다.
-	constexpr int32 InfiniteDistance = MAX_int32 / 8;
-	auto BuildChamferDistance = [this, InfiniteDistance](const bool bDistanceFromVisible, const bool bTreatGridEdgeAsSeed)
+	int32 MinTileX = TilesX;
+	int32 MinTileY = TilesY;
+	int32 MaxTileX = 0;
+	int32 MaxTileY = 0;
+	for (int32 TileIndex = 0; TileIndex < CurrentVisibleTiles.Num(); ++TileIndex)
 	{
-		MassVisibilityDistanceScratch.SetNumUninitialized(VisibleCells.Num());
-		for (int32 Y = 0; Y < ResolutionY; ++Y)
+		if (!CurrentVisibleTiles[TileIndex])
 		{
-			for (int32 X = 0; X < ResolutionX; ++X)
-			{
-				const int32 Index = Y * ResolutionX + X;
-				const bool bVisible = VisibleCells[Index] != 0;
-				const bool bGridEdge = X == 0 || Y == 0 || X + 1 == ResolutionX || Y + 1 == ResolutionY;
-				const bool bSeed = bDistanceFromVisible ? bVisible : !bVisible || (bTreatGridEdgeAsSeed && bGridEdge);
-				MassVisibilityDistanceScratch[Index] = bSeed ? 0 : InfiniteDistance;
-			}
+			continue;
 		}
-
-		auto RelaxDistance = [this](const int32 Index, const int32 NeighborIndex, const int32 Cost)
-		{
-			MassVisibilityDistanceScratch[Index] = FMath::Min(
-				MassVisibilityDistanceScratch[Index],
-				MassVisibilityDistanceScratch[NeighborIndex] + Cost);
-		};
-
-		for (int32 Y = 0; Y < ResolutionY; ++Y)
-		{
-			for (int32 X = 0; X < ResolutionX; ++X)
-			{
-				const int32 Index = Y * ResolutionX + X;
-				if (X > 0)
-				{
-					RelaxDistance(Index, Index - 1, 3);
-				}
-				if (Y > 0)
-				{
-					RelaxDistance(Index, Index - ResolutionX, 3);
-					if (X > 0)
-					{
-						RelaxDistance(Index, Index - ResolutionX - 1, 4);
-					}
-					if (X + 1 < ResolutionX)
-					{
-						RelaxDistance(Index, Index - ResolutionX + 1, 4);
-					}
-				}
-			}
-		}
-
-		for (int32 Y = ResolutionY - 1; Y >= 0; --Y)
-		{
-			for (int32 X = ResolutionX - 1; X >= 0; --X)
-			{
-				const int32 Index = Y * ResolutionX + X;
-				if (X + 1 < ResolutionX)
-				{
-					RelaxDistance(Index, Index + 1, 3);
-				}
-				if (Y + 1 < ResolutionY)
-				{
-					RelaxDistance(Index, Index + ResolutionX, 3);
-					if (X > 0)
-					{
-						RelaxDistance(Index, Index + ResolutionX - 1, 4);
-					}
-					if (X + 1 < ResolutionX)
-					{
-						RelaxDistance(Index, Index + ResolutionX + 1, 4);
-					}
-				}
-			}
-		}
-	};
-
-	BuildChamferDistance(true, false);
-	const int32 BufferDistanceThreshold = BufferRadiusCells * 3;
-	for (int32 Index = 0; Index < MassVisibilityBufferCells.Num(); ++Index)
+		const int32 TileX = TileIndex % TilesX;
+		const int32 TileY = TileIndex / TilesX;
+		MinTileX = FMath::Min(MinTileX, TileX);
+		MinTileY = FMath::Min(MinTileY, TileY);
+		MaxTileX = FMath::Max(MaxTileX, TileX + 1);
+		MaxTileY = FMath::Max(MaxTileY, TileY + 1);
+	}
+	if (MinTileX == TilesX)
 	{
-		MassVisibilityBufferCells[Index] = MassVisibilityDistanceScratch[Index] <= BufferDistanceThreshold ? 1 : 0;
+		return;
 	}
 
+	// 단계 비용이 3 이상이고 최단 경로는 양 끝의 경계 사각형 안에 있어 반경+1 확장 영역만으로 정확하다.
+	const int32 Padding = BufferRadiusCells + 1;
+	const FIntRect Region(FMath::Max(0, MinTileX * TileSize - Padding), FMath::Max(0, MinTileY * TileSize - Padding),
+		FMath::Min(ResolutionX, MaxTileX * TileSize + Padding), FMath::Min(ResolutionY, MaxTileY * TileSize + Padding));
+	ASFogMask::BuildDistanceBuffer(VisibleCells, MassVisibilityBufferCells, ResolutionX, ResolutionY,
+		BufferRadiusCells, Region, MassVisibilityDistanceScratch);
 }
 
 FIntRect UASFogDisplayComponent::TileRegion(int32 TileIndex) const

@@ -30,6 +30,7 @@
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Items/Loot/ASMonsterDropSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+#include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Skills/ASSkillTags.h"
@@ -169,6 +170,12 @@ void AASMonsterCharacter::ApplyHealthBarState()
        HealthBarWidget->SetHealthSource(this);
     }
     BindHealthBarToCameraZoom();
+
+    // 안개에 가려진 몬스터의 새 체력바도 숨김 규칙을 따르게 한다.
+    if (UASVisibilityComponent* Visibility = FindComponentByClass<UASVisibilityComponent>())
+    {
+       Visibility->RefreshLocalPresentation();
+    }
 }
 
 void AASMonsterCharacter::CreateHealthBarIfNeeded()

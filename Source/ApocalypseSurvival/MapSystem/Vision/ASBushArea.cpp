@@ -37,6 +37,7 @@ void AASBushArea::BeginPlay()
 	Super::BeginPlay();
 
 	ASMapShapeUtils::GatherAreaComponents(this, AreaShapes);
+	ASMapShapeUtils::DisableAreaShapeCollision(AreaShapes);
 	for (const TWeakObjectPtr<UPrimitiveComponent>& Component : AreaShapes)
 	{
 		if (const UASMapPolygonAreaComponent* Polygon = Cast<UASMapPolygonAreaComponent>(Component.Get()))

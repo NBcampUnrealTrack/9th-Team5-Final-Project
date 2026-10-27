@@ -81,12 +81,19 @@ bool AASMapZone::ValidateArea(TArray<FString>& OutErrors) const
 	const int32 InitialErrorCount = OutErrors.Num();
 	for (const TWeakObjectPtr<UPrimitiveComponent>& Component : CachedAreaShapes)
 	{
-		if (const UASMapPolygonAreaComponent* Polygon = Cast<UASMapPolygonAreaComponent>(Component.Get()))
+		const UPrimitiveComponent* AreaComponent = Component.Get();
+		if (!AreaComponent || AreaComponent->ComponentHasTag(TEXT("NotArea")))
 		{
-			if (Polygon->ComponentHasTag(TEXT("NotArea")))
-			{
-				continue;
-			}
+			continue;
+		}
+		const FRotator Rotation = AreaComponent->GetComponentRotation();
+		if (FMath::Abs(Rotation.Pitch) > 0.1 || FMath::Abs(Rotation.Roll) > 0.1)
+		{
+			OutErrors.Add(FString::Printf(TEXT("Zone '%s', component '%s': World Pitch and Roll must be within 0.1 degrees of zero."),
+				*ZoneId.ToString(), *AreaComponent->GetName()));
+		}
+		if (const UASMapPolygonAreaComponent* Polygon = Cast<UASMapPolygonAreaComponent>(AreaComponent))
+		{
 			FString Error;
 			if (!Polygon->ValidateArea(Error))
 			{
@@ -130,6 +137,7 @@ void AASMapZone::BeginPlay()
 
 	bAreaShapesCached = false;
 	RefreshAreaShapes();
+	ASMapShapeUtils::DisableAreaShapeCollision(CachedAreaShapes);
 	BuildBoundary();
 
 	if (UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this))

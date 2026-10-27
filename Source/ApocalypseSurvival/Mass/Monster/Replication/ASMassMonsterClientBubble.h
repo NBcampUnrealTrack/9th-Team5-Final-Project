@@ -34,7 +34,8 @@ public:
 		FASMassMonsterFastArrayItem& Item = GetAgentItem(Handle);
 		FASReplicatedMonsterVisualData& CurrentVisualData = Item.Agent.GetVisualDataMutable();
 		if (CurrentVisualData.HealthRatio == NewVisualData.HealthRatio
-			&& CurrentVisualData.WorldBehavior == NewVisualData.WorldBehavior)
+			&& CurrentVisualData.WorldBehavior == NewVisualData.WorldBehavior
+			&& CurrentVisualData.bCombatRevealed == NewVisualData.bCombatRevealed)
 		{
 			return false;
 		}

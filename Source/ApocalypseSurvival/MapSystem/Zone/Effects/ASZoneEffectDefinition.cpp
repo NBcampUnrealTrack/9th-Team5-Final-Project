@@ -108,6 +108,10 @@ bool UASZoneEffectDefinition::ValidateDefinition(TArray<FString>& OutErrors) con
 				{
 					OutErrors.Add(RowPath + TEXT(" Effect must have Infinite duration (periodic effects are allowed)."));
 				}
+				if (Row->Effect && Row->Effect.GetDefaultObject()->GetStackingType() != EGameplayEffectStackingType::None)
+				{
+					OutErrors.Add(RowPath + TEXT(" Effect must have no stacking (StackingType must be None)."));
+				}
 				FGroupValidation& Group = Groups.FindOrAdd(Row->ZoneId).FindOrAdd(Row->Target);
 				if (Group.FirstRow && Group.FirstRow->Effect != Row->Effect)
 				{

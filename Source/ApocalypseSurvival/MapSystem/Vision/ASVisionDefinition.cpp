@@ -47,6 +47,16 @@ bool UASVisionDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		OutErrors.Add(FString::Printf(TEXT("%s: AttackRevealSeconds must be non-negative."), *AssetName));
 	}
 
+	if (ExploredAlpha == 0)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: ExploredAlpha must be greater than 0 so vision changes reach the fog texture."), *AssetName));
+	}
+
+	if (UnexploredAlpha == 0)
+	{
+		OutErrors.Add(FString::Printf(TEXT("%s: UnexploredAlpha must be greater than 0 so vision changes reach the fog texture."), *AssetName));
+	}
+
 	if (Settings.FogEdgeBlurTexels < 0 || Settings.FogEdgeBlurTexels > 8)
 	{
 		OutErrors.Add(FString::Printf(TEXT("%s: FogEdgeBlurTexels must be in 0..8."), *AssetName));

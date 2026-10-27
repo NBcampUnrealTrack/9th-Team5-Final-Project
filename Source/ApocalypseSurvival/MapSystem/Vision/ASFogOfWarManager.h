@@ -88,6 +88,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	bool IsLocationVisibleLocally(const FVector& Location) const;
 
+	/** 수풀 안의 위치가 같은 수풀의 모든 로컬 팀 시야 소스 반경 밖이면 은폐된다. */
+	bool IsLocationConcealedByBushLocally(const FVector& Location) const;
+
 	/** 현재 로컬 팀 시야 주변의 Mass ISM 유지 Buffer에 위치하는지 반환한다. */
 	bool IsLocationInLocalVisionBuffer(const FVector& Location) const;
 
@@ -132,6 +135,14 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_ExploredResetCount)
 	int32 ExploredResetCount = 0;
 
+	struct FLocalTeamBushSource
+	{
+		FVector2D Location;
+		float Radius;
+	};
+
+	mutable TMap<FName, TArray<FLocalTeamBushSource>> LocalTeamBushSources;
+	mutable uint64 LocalTeamBushSourcesFrame = MAX_uint64;
 	bool bWallOcclusionInitialized = false;
 	bool bConfigurationErrorLogged = false;
 	bool bAutoAttachInitialized = false;

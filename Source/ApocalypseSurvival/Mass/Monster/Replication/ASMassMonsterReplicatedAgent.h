@@ -21,6 +21,9 @@ struct APOCALYPSESURVIVAL_API FASReplicatedMonsterVisualData
 	UPROPERTY(Transient)
 	uint16 HealthRatio = MAX_uint16;
 
+	UPROPERTY(Transient)
+	bool bCombatRevealed = false;
+
 	/** 낮/밤에 따라 선택되는 클라이언트 전용 외형 상태다. */
 	UPROPERTY(Transient)
 	EASMassMonsterWorldBehavior WorldBehavior = EASMassMonsterWorldBehavior::DayTerritory;
