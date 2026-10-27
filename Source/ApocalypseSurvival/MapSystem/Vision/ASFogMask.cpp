@@ -105,6 +105,97 @@ bool ASFogMask::TriangleRowSpan(const FVector2D& A, const FVector2D& B, const FV
 	return true;
 }
 
+void ASFogMask::BuildDistanceBuffer(const TArray<uint8>& Visible, TArray<uint8>& OutBuffer,
+	int32 Width, int32 Height, int32 RadiusCells, const FIntRect& Region, TArray<int32>& Scratch)
+{
+	if (Width <= 0 || Height <= 0 || static_cast<int64>(Width) * Height != Visible.Num() || Visible.Num() != OutBuffer.Num())
+	{
+		return;
+	}
+
+	const FIntRect Clipped(FMath::Clamp(Region.Min.X, 0, Width), FMath::Clamp(Region.Min.Y, 0, Height),
+		FMath::Clamp(Region.Max.X, 0, Width), FMath::Clamp(Region.Max.Y, 0, Height));
+	if (Clipped.Width() <= 0 || Clipped.Height() <= 0)
+	{
+		return;
+	}
+
+	const int32 ScratchWidth = Clipped.Width();
+	const int32 ScratchHeight = Clipped.Height();
+	constexpr int32 InfiniteDistance = MAX_int32 / 8;
+	Scratch.SetNumUninitialized(ScratchWidth * ScratchHeight, EAllowShrinking::No);
+	for (int32 Y = 0; Y < ScratchHeight; ++Y)
+	{
+		for (int32 X = 0; X < ScratchWidth; ++X)
+		{
+			Scratch[Y * ScratchWidth + X] = Visible[(Y + Clipped.Min.Y) * Width + X + Clipped.Min.X] != 0 ? 0 : InfiniteDistance;
+		}
+	}
+
+	auto RelaxDistance = [&Scratch](const int32 Index, const int32 NeighborIndex, const int32 Cost)
+	{
+		Scratch[Index] = FMath::Min(Scratch[Index], Scratch[NeighborIndex] + Cost);
+	};
+
+	for (int32 Y = 0; Y < ScratchHeight; ++Y)
+	{
+		for (int32 X = 0; X < ScratchWidth; ++X)
+		{
+			const int32 Index = Y * ScratchWidth + X;
+			if (X > 0)
+			{
+				RelaxDistance(Index, Index - 1, 3);
+			}
+			if (Y > 0)
+			{
+				RelaxDistance(Index, Index - ScratchWidth, 3);
+				if (X > 0)
+				{
+					RelaxDistance(Index, Index - ScratchWidth - 1, 4);
+				}
+				if (X + 1 < ScratchWidth)
+				{
+					RelaxDistance(Index, Index - ScratchWidth + 1, 4);
+				}
+			}
+		}
+	}
+
+	for (int32 Y = ScratchHeight - 1; Y >= 0; --Y)
+	{
+		for (int32 X = ScratchWidth - 1; X >= 0; --X)
+		{
+			const int32 Index = Y * ScratchWidth + X;
+			if (X + 1 < ScratchWidth)
+			{
+				RelaxDistance(Index, Index + 1, 3);
+			}
+			if (Y + 1 < ScratchHeight)
+			{
+				RelaxDistance(Index, Index + ScratchWidth, 3);
+				if (X > 0)
+				{
+					RelaxDistance(Index, Index + ScratchWidth - 1, 4);
+				}
+				if (X + 1 < ScratchWidth)
+				{
+					RelaxDistance(Index, Index + ScratchWidth + 1, 4);
+				}
+			}
+		}
+	}
+
+	const int64 BufferDistanceThreshold = static_cast<int64>(FMath::Max(0, RadiusCells)) * 3;
+	for (int32 Y = 0; Y < ScratchHeight; ++Y)
+	{
+		for (int32 X = 0; X < ScratchWidth; ++X)
+		{
+			const int32 Distance = Scratch[Y * ScratchWidth + X];
+			OutBuffer[(Y + Clipped.Min.Y) * Width + X + Clipped.Min.X] = Distance != InfiniteDistance && Distance <= BufferDistanceThreshold ? 1 : 0;
+		}
+	}
+}
+
 void ASFogMask::BlurAlphaRegion(const TArray<uint8>& Source, TArray<uint8>& Dest, int32 Width, int32 Height, int32 Radius, const FIntRect& Region, TArray<uint8>& Scratch)
 {
 	Radius = FMath::Clamp(Radius, 0, 8);
