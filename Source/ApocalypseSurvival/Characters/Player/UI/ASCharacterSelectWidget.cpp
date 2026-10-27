@@ -15,6 +15,8 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
+#include "Core/UI/ASLeaveRoomConfirmationWidget.h"
+#include "Core/Framework/ASSessionSubsystem.h"
 
 void UASCharacterSelectWidget::NativeConstruct()
 {
@@ -25,6 +27,11 @@ void UASCharacterSelectWidget::NativeConstruct()
 	// ESC 를 받으려면 포커스가 있어야 한다
 	SetIsFocusable(true);
 	SetKeyboardFocus();
+	if (GetOwningPlayer<AASLobbyPlayerController>())
+	{
+		CreateLeaveRoomButton();
+		if (LeaveRoomButton) LeaveRoomButton->OnClicked.AddUniqueDynamic(this, &ThisClass::LeaveRoom);
+	}
 	
 	if (!Roster || GetCharacterCount() == 0)
 	{
@@ -46,6 +53,8 @@ void UASCharacterSelectWidget::NativeConstruct()
 
 void UASCharacterSelectWidget::NativeDestruct()
 {
+	if (LeaveConfirmation) LeaveConfirmation->RemoveFromParent();
+	if (LeaveRoomButton) LeaveRoomButton->OnClicked.RemoveDynamic(this, &ThisClass::LeaveRoom);
 	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(SelectionDisplayTimer);
 	if (CharacterReadyButton) CharacterReadyButton->OnClicked.RemoveDynamic(this, &ThisClass::RequestConfirm);
 	Super::NativeDestruct();
@@ -128,7 +137,11 @@ void UASCharacterSelectWidget::RequestConfirm()
 
 void UASCharacterSelectWidget::RequestBack()
 {
-	if (GetOwningPlayer<AASLobbyPlayerController>()) return;
+	if (GetOwningPlayer<AASLobbyPlayerController>())
+	{
+		LeaveRoom();
+		return;
+	}
 	OnBackRequested.Broadcast();
 }
 
@@ -256,4 +269,45 @@ void UASCharacterSelectWidget::CreatePlayerListDisplay()
 	ListSlot->SetPosition(FVector2D(680.0f, 132.0f));
 	ListSlot->SetAutoSize(true);
 	ListSlot->SetZOrder(10);
+}
+
+void UASCharacterSelectWidget::CreateLeaveRoomButton()
+{
+	if (LeaveRoomButton) return;
+	UCanvasPanel* Canvas = Cast<UCanvasPanel>(GetRootWidget());
+	if (!Canvas) return;
+	LeaveRoomButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("LeaveRoomButton"));
+	UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>();
+	Label->SetText(FText::FromString(TEXT("방 나가기")));
+	Label->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
+	LeaveRoomButton->SetContent(Label);
+	UCanvasPanelSlot* ButtonSlot = Canvas->AddChildToCanvas(LeaveRoomButton);
+	ButtonSlot->SetAnchors(FAnchors(0.5f, 1.0f));
+	ButtonSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+	ButtonSlot->SetPosition(FVector2D(0.0f, -24.0f));
+	ButtonSlot->SetSize(FVector2D(200.0f, 48.0f));
+	ButtonSlot->SetZOrder(10);
+}
+
+void UASCharacterSelectWidget::LeaveRoom()
+{
+	const AASLobbyGameState* State = GetWorld() ? GetWorld()->GetGameState<AASLobbyGameState>() : nullptr;
+	if (State && State->LobbyPhase == EASLobbyPhase::Travelling) return;
+	if (LeaveConfirmation && LeaveConfirmation->IsInViewport()) return;
+	LeaveConfirmation = CreateWidget<UASLeaveRoomConfirmationWidget>(GetOwningPlayer());
+	if (!LeaveConfirmation) return;
+	LeaveConfirmation->SetReturnFocusWidget(this);
+	LeaveConfirmation->OnConfirmed.BindUObject(this, &ThisClass::ConfirmLeaveRoom);
+	LeaveConfirmation->AddToViewport(200);
+	SetIsEnabled(false);
+	LeaveConfirmation->SetKeyboardFocus();
+}
+
+void UASCharacterSelectWidget::ConfirmLeaveRoom()
+{
+	if (UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>())
+	{
+		if (LeaveRoomButton) LeaveRoomButton->SetIsEnabled(false);
+		Sessions->LeaveRoom();
+	}
 }

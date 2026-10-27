@@ -18,10 +18,10 @@ class APOCALYPSESURVIVAL_API UASLoadingScreenSubsystem : public UGameInstanceSub
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
-	void ShowLoadingScreen();
+	void ShowLoadingScreen(const FSimpleDelegate& OnCancel = FSimpleDelegate());
+	void HideLoadingScreen();
 
 private:
-	void HideLoadingScreen();
 	void HandlePreLoadMap(const FWorldContext& Context, const FString& MapName);
 	void HandleSeamlessTravelStart(UWorld* World, const FString& MapName);
 	void HandleWorldPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds);
