@@ -10,6 +10,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayEffect.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -89,6 +90,71 @@ void UASSkillAbility::ActivateAbility(
 	StartSkill(AimDirection, TargetLocation);
 }
 
+void UASSkillAbility::BeginCastMovementLock()
+{
+	ACharacter* Character = GetOwnerCharacter();
+	UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr;
+	if (!Movement || bCastMovementLocked)
+	{
+		return;
+	}
+
+	//진행 중인 클릭 이동은 본인 화면에서만 끊음 (서버가 원격 플레이어 이동을 끊으면 예측 이동과 충돌)
+	if (const APlayerController* PlayerController = Cast<APlayerController>(Character->GetController()))
+	{
+		if (PlayerController->IsLocalController())
+		{
+			Character->GetController()->StopMovement();
+		}
+	}
+
+	//서버·클라이언트 양쪽에서 같은 순간에 멈춤 (LocalPredicted라 양쪽에서 실행됨)
+	Movement->StopMovementImmediately();
+	Movement->DisableMovement();
+
+	//시전 중 태그 (기본 공격이 이 태그로 막힘)
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		ASC->AddLooseGameplayTag(ASGameplayTags::State_Casting);
+	}
+
+	bCastMovementLocked = true;
+}
+
+void UASSkillAbility::EndCastMovementLock()
+{
+	if (!bCastMovementLocked)
+	{
+		return;
+	}
+	bCastMovementLocked = false;
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (ASC)
+	{
+		ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Casting);
+	}
+
+	ACharacter* Character = GetOwnerCharacter();
+	UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr;
+	if (!Movement || Movement->MovementMode != MOVE_None)
+	{
+		return;
+	}
+
+	//경직·다운·사망 중이면 그쪽 처리가 이동을 맡으므로 건드리지 않음
+	FGameplayTagContainer BlockingTags;
+	BlockingTags.AddTag(ASGameplayTags::State_Staggered);
+	BlockingTags.AddTag(ASGameplayTags::State_Downed);
+	BlockingTags.AddTag(ASGameplayTags::State_Dead);
+	if (ASC && ASC->HasAnyMatchingGameplayTags(BlockingTags))
+	{
+		return;
+	}
+
+	Movement->SetMovementMode(MOVE_Walking);
+}
+
 void UASSkillAbility::StartSkill(const FVector& AimDirection, const FVector& TargetLocation)
 {
 	const bool bHasMontage = AnimMontage != nullptr;
@@ -100,6 +166,12 @@ void UASSkillAbility::StartSkill(const FVector& AimDirection, const FVector& Tar
 	CachedAimDirection = AimDirection;
 	CachedTargetLocation = TargetLocation;
 	bHasCachedAim = true;
+
+	//시전 중 이동 막기 (몽타주가 있을 때만, 끝나면 EndAbility에서 해제)
+	if (bStopMovementWhileCasting && bHasMontage)
+	{
+		BeginCastMovementLock();
+	}
 
 	if (bFaceAimDirection)
 	{
@@ -164,6 +236,7 @@ void UASSkillAbility::EndAbility(
 	bHasCachedAim = false;
 	bIsTargeting = false;
 	bIsWalkingToCast = false;
+	EndCastMovementLock();
 	StopTargetingInput();
 	StopPendingWatch();
 	DestroyRangeIndicator();
