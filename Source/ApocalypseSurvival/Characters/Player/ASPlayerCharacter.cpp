@@ -505,6 +505,20 @@ float AASPlayerCharacter::GetReviveProgress() const
 	return FMath::Clamp((GetServerTimeSeconds() - ReviveStartServerTime) / ReviveDuration, 0.f, 1.f);
 }
 
+AASPlayerCharacter* AASPlayerCharacter::GetCurrentReviveTarget() const
+{
+	// 파티원이 3명뿐이라 매번 훑어도 부담이 없다.
+	for (TActorIterator<AASPlayerCharacter> It(GetWorld()); It; ++It)
+	{
+		AASPlayerCharacter* Other = *It;
+		if (Other && Other != this && Other->IsBeingRevived() && Other->ReplicatedReviver == this)
+		{
+			return Other;
+		}
+	}
+	return nullptr;
+}
+
 bool AASPlayerCharacter::IsStaggered() const
 {
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
@@ -715,6 +729,7 @@ void AASPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME(AASPlayerCharacter, BleedOutEndServerTime);
 	DOREPLIFETIME(AASPlayerCharacter, BleedOutPausedRemaining);
 	DOREPLIFETIME(AASPlayerCharacter, ReviveStartServerTime);
+	DOREPLIFETIME(AASPlayerCharacter, ReplicatedReviver);
 }
 
 void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -824,6 +839,7 @@ void AASPlayerCharacter::StartRevive(AASPlayerCharacter* Reviver)
 	}
 
 	ActiveReviver = Reviver;
+	ReplicatedReviver = Reviver;
 	ReviveElapsed = 0.f;
 	bBeingRevived = true;
 	OnRep_BeingRevived(); // 서버는 OnRep 이 자동으로 불리지 않는다.
@@ -887,6 +903,8 @@ void AASPlayerCharacter::ClearReviver()
 	}
 
 	ReviverAbilitySystem.Reset();
+	ActiveReviver.Reset();
+	ReplicatedReviver = nullptr;
 	ReviverAbilityActivatedHandle.Reset();
 	ActiveReviver.Reset();
 }

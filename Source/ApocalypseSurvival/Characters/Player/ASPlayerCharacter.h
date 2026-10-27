@@ -111,6 +111,10 @@ public:
 	/** 부활 진행률 0~1. 부활받는 중이 아니면 0 (UI용, 모든 머신) */
 	UFUNCTION(BlueprintPure, Category = "Downed")
 	float GetReviveProgress() const;
+	
+	/** 내가 지금 부활시키고 있는 파티원. 없으면 None (UI용, 모든 머신) */
+	UFUNCTION(BlueprintPure, Category = "Downed")
+	AASPlayerCharacter* GetCurrentReviveTarget() const;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
@@ -295,6 +299,10 @@ void StartRevive(AASPlayerCharacter* Reviver);
 	/** 부활 시작 서버 시각 (진행률 계산용) */
 	UPROPERTY(Replicated)
 	float ReviveStartServerTime = 0.f;
+	
+	/** 지금 나를 부활시키는 파티원 (UI용으로 복제). 서버 판정은 ActiveReviver를 쓴다 */
+	UPROPERTY(Replicated)
+	TObjectPtr<AASPlayerCharacter> ReplicatedReviver;
 
 	/** 서버와 맞춘 현재 시각. 클라이언트도 서버 기준으로 계산하기 위해 쓴다 */
 	float GetServerTimeSeconds() const;
