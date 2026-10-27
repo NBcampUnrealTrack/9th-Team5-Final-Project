@@ -200,7 +200,14 @@ bool UASMonsterCombatComponent::IsPatternReady(int32 PatternIndex, double Curren
 
     const FASMonsterAttackPattern& Pattern = AttackPatterns[PatternIndex];
     const FPatternRuntime& Runtime = PatternRuntime[PatternIndex];
-    return Pattern.SelectionWeight > 0.0f && Runtime.AbilityHandle.IsValid() && CurrentTime >= Runtime.CooldownEndTime;
+    const float MinimumHealthPercent = FMath::Min(Pattern.MinOwnerHealthPercent, Pattern.MaxOwnerHealthPercent);
+    const float MaximumHealthPercent = FMath::Max(Pattern.MinOwnerHealthPercent, Pattern.MaxOwnerHealthPercent);
+    const float OwnerHealthPercent = GetHealthPercent();
+    return Pattern.SelectionWeight > 0.0f
+       && Runtime.AbilityHandle.IsValid()
+       && CurrentTime >= Runtime.CooldownEndTime
+       && OwnerHealthPercent >= MinimumHealthPercent
+       && OwnerHealthPercent <= MaximumHealthPercent;
 }
 
 bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)

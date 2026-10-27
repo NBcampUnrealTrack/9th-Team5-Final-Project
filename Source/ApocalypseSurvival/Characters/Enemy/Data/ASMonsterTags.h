@@ -10,7 +10,21 @@ namespace ASGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_Ranged);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_Targeted);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_Charge);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_Slam);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_Combo);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_HazardSequence);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_RadialVolley);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_RadialBurstCascade);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_Radial);
+
+	/** Combo GA가 각 단계의 정상 종료를 구분해 기다리는 이벤트다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_ChargeFinished);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_SlamFinished);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_TargetedFinished);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_RadialFinished);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_HazardSequenceFinished);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_RadialVolleyFinished);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_RadialBurstCascadeFinished);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_Dead);
 	/** 피격 연출 중. 이동 및 공격을 막는 짧은 경직 상태다. */

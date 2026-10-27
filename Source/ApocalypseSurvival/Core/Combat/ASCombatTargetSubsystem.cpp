@@ -249,8 +249,12 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTarget
 	else
 	{
 		TArray<FOverlapResult> Overlaps;
-		World->OverlapMultiByObjectType(Overlaps, Query.SearchOrigin, FQuat::Identity, ObjectParams,
-			FCollisionShape::MakeSphere(Query.SearchRadius), Params);
+		const bool bIsBox = Query.Shape == EASCombatTargetShape::Box;
+		const FQuat QueryRotation = bIsBox ? Query.Direction.GetSafeNormal2D().Rotation().Quaternion() : FQuat::Identity;
+		const FCollisionShape QueryShape = bIsBox
+			? FCollisionShape::MakeBox(Query.BoxHalfExtent)
+			: FCollisionShape::MakeSphere(Query.SearchRadius);
+		World->OverlapMultiByObjectType(Overlaps, Query.SearchOrigin, QueryRotation, ObjectParams, QueryShape, Params);
 		for (const FOverlapResult& Overlap : Overlaps)
 		{
 			AActor* Actor = Overlap.GetActor();
@@ -724,6 +728,21 @@ bool UASCombatTargetSubsystem::MatchesQueryShape(
 		const FVector End2D(Query.EndLocation.X, Query.EndLocation.Y, 0.0f);
 		const FVector Location2D(Location.X, Location.Y, 0.0f);
 		return FMath::PointDistToSegmentSquared(Location2D, Start2D, End2D) <= FMath::Square(SafeRadius);
+	}
+	case EASCombatTargetShape::Box:
+	{
+		const FVector Forward = Query.Direction.GetSafeNormal2D();
+		if (Forward.IsNearlyZero())
+		{
+			return false;
+		}
+
+		const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward);
+		const FVector Offset = Location - Query.SearchOrigin;
+		const float SafeHalfLength = FMath::Max(0.0f, Query.BoxHalfExtent.X) + FMath::Max(0.0f, HitRadius);
+		const float SafeHalfWidth = FMath::Max(0.0f, Query.BoxHalfExtent.Y) + FMath::Max(0.0f, HitRadius);
+		return FMath::Abs(FVector::DotProduct(Offset, Forward)) <= SafeHalfLength
+			&& FMath::Abs(FVector::DotProduct(Offset, Right)) <= SafeHalfWidth;
 	}
 	default:
 		return false;

@@ -50,6 +50,14 @@ struct FASMonsterAttackPattern
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "s"))
     float Cooldown = 1.0f;
 
+    /** 이 패턴을 선택할 수 있는 몬스터 체력 비율의 하한. 0이면 체력 조건이 없다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern|Phase", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float MinOwnerHealthPercent = 0.0f;
+
+    /** 이 패턴을 선택할 수 있는 몬스터 체력 비율의 상한. 1이면 체력 조건이 없다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern|Phase", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float MaxOwnerHealthPercent = 1.0f;
+
     /** 장판 인디케이터의 모양 종류. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Telegraph")
     ETelegraphShape ShapeType = ETelegraphShape::Rectangle;

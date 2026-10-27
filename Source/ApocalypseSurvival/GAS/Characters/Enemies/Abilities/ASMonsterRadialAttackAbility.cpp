@@ -2,19 +2,26 @@
 
 #include "Characters/Enemy/ASMonsterAttackIndicatorActor.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
+#include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Engine/World.h"
+#include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 UASMonsterRadialAttackAbility::UASMonsterRadialAttackAbility()
 {
-	Radius = 320.0f;
-	ForwardOffset = 0.0f;
-	Angle = 360.0f;
+	bCanHitPlayers = true;
+	bAimAtCursor = false;
+	bFaceAimDirection = false;
+	ImpactPreset = EASImpactPreset::Standard;
+	BaseDamage = 0.0f;
+	AttackPowerScale = 1.0f;
+	AttackPowerAttribute = UASCombatAttributeSet::GetAttackPowerAttribute();
 	IndicatorClass = AASMonsterAttackIndicatorActor::StaticClass();
 	FGameplayTagContainer AssetTagsToSet = GetAssetTags();
 	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack_Radial);
 	SetAssetTags(AssetTagsToSet);
+	CompletionEventTag = ASGameplayTags::Event_Monster_ComboStep_RadialFinished;
 }
 
 void UASMonsterRadialAttackAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -25,7 +32,7 @@ void UASMonsterRadialAttackAbility::ActivateAbility(const FGameplayAbilitySpecHa
 
 	if (!HasSkillAuthority() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		FinishComboStep(true);
 		return;
 	}
 
@@ -33,7 +40,7 @@ void UASMonsterRadialAttackAbility::ActivateAbility(const FGameplayAbilitySpecHa
 	UWorld* World = Character ? Character->GetWorld() : nullptr;
 	if (!IsValid(Character) || !World)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		FinishComboStep(true);
 		return;
 	}
 
@@ -85,11 +92,39 @@ void UASMonsterRadialAttackAbility::BeginRadialAttack()
 
 	DestroyIndicator();
 	OnSkillEffect();
+	FinishComboStep(false);
+}
 
-	if (IsActive())
+void UASMonsterRadialAttackAbility::OnSkillEffect_Implementation()
+{
+	if (!HasSkillAuthority())
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		return;
 	}
+
+	ACharacter* Character = GetOwnerCharacter();
+	UWorld* World = Character ? Character->GetWorld() : nullptr;
+	UASCombatTargetSubsystem* CombatTargets = World ? World->GetSubsystem<UASCombatTargetSubsystem>() : nullptr;
+	if (!Character || !CombatTargets)
+	{
+		return;
+	}
+
+	FASCombatTargetQuery Query;
+	Query.Shape = EASCombatTargetShape::Radius;
+	Query.SearchOrigin = Character->GetActorLocation();
+	Query.SearchRadius = FMath::Max(1.0f, Radius);
+	Query.Instigator = Character;
+	Query.Domain = EASCombatTargetDomain::ActorOnly;
+	Query.bCanHitPlayers = bCanHitPlayers;
+
+	FASCombatImpactContext ImpactContext;
+	ImpactContext.Preset = ImpactPreset;
+	ImpactContext.HitLocation = Character->GetActorLocation();
+	ImpactContext.HitDirection = Character->GetActorForwardVector().GetSafeNormal2D();
+
+	const FGameplayEffectSpecHandle DamageSpec = MakeDamageSpec();
+	CombatTargets->ResolveAndApply(Query, MakeArrayView(&DamageSpec, 1), ImpactContext);
 }
 
 void UASMonsterRadialAttackAbility::DestroyIndicator()
