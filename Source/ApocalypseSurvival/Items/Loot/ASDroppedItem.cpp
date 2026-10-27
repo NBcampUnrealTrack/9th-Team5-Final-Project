@@ -83,7 +83,7 @@ void UASDroppedItemNameWidget::SetItem(AASDroppedItem* InItem)
 	}
 	ItemActor = InItem;
 	UASItemInstance* Item = IsValid(InItem) ? InItem->GetDroppedItem() : nullptr;
-	SetVisibility(Item ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	RefreshVisibility();
 	if (!NameText) return;
 	FText Text = Item ? Item->GetItemDefinition()->DisplayName : FText::GetEmpty();
 	if (Item && Item->GetQuantity() > 1)
@@ -91,6 +91,21 @@ void UASDroppedItemNameWidget::SetItem(AASDroppedItem* InItem)
 	NameText->SetText(Text);
 	NameText->SetColorAndOpacity(Item ? GetLootRarityColor(Item->GetRarity()) : FLinearColor::White);
 	RefreshHoverAppearance();
+}
+
+void UASDroppedItemNameWidget::RefreshVisibility()
+{
+	UASItemInteractionComponent* Interaction = GetLocalInteraction();
+	const bool bVisible = ItemActor.IsValid() && ItemActor->GetDroppedItem()
+		&& (!Interaction || Interaction->AreDroppedItemNamesVisible());
+	if (!bVisible)
+	{
+		if (Interaction) Interaction->SetHoveredDroppedItemLabel(ItemActor.Get(), false);
+		bPointerHovered = false;
+		bWorldHovered = false;
+		RefreshHoverAppearance();
+	}
+	SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
 
 UASItemInteractionComponent* UASDroppedItemNameWidget::GetLocalInteraction() const
@@ -166,8 +181,7 @@ FReply UASDroppedItemNameWidget::NativeOnMouseButtonDown(const FGeometry& Geomet
 	{
 		if (UASItemInteractionComponent* Interaction = GetLocalInteraction())
 		{
-			Interaction->RequestPickupDroppedItem(ItemActor.Get());
-			return FReply::Handled();
+			if (Interaction->RequestPickupDroppedItem(ItemActor.Get())) return FReply::Handled();
 		}
 	}
 	return Super::NativeOnMouseButtonDown(Geometry, Event);
@@ -238,6 +252,14 @@ void AASDroppedItem::SetWorldHovered(const bool bHovered)
 		Label->SetWorldHovered(bHovered);
 }
 
+void AASDroppedItem::RefreshNameVisibility()
+{
+	if (UASDroppedItemNameWidget* Label = Cast<UASDroppedItemNameWidget>(NameLabel->GetUserWidgetObject()))
+	{
+		Label->RefreshVisibility();
+	}
+}
+
 UASItemInstance* AASDroppedItem::GetDroppedItem() const
 {
 	for (UASItemInstance* Item : DroppedInventory->GetItemInstances())
@@ -262,6 +284,9 @@ int32 AASDroppedItem::Pickup(APawn* Interactor, UASInventoryComponent* TargetInv
 {
 	if (!HasAuthority() || !IsValid(Interactor) || !IsValid(TargetInventory)
 		|| FVector::DistSquared(Interactor->GetActorLocation(), GetActorLocation()) > FMath::Square(GetInteractionRange_Implementation())) return 0;
+	const AController* Controller = Interactor->GetController();
+	const UASItemInteractionComponent* Interaction = Controller ? Controller->FindComponentByClass<UASItemInteractionComponent>() : nullptr;
+	if (Interaction && !Interaction->AreDroppedItemNamesVisible()) return 0;
 	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(TargetInventory, Interactor);
 	UASItemInstance* Item = GetDroppedItem();
 	if (!ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead) || !Item) return 0;

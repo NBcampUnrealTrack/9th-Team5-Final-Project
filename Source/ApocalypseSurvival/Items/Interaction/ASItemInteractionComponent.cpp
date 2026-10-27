@@ -14,6 +14,7 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
+#include "EngineUtils.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "AbilitySystemComponent.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
@@ -80,7 +81,7 @@ bool UASItemInteractionComponent::TryInteractWith(AActor* Target)
 bool UASItemInteractionComponent::RequestPickupDroppedItem(AASDroppedItem* Item)
 {
 	AASPlayerController* PC = GetASController();
-	if (!PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())
+	if (!bDroppedItemNamesVisible || !PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())
 		|| !IsValid(Item) || !Item->GetDroppedItem() || !GetPlayerInventory()) return false;
 	CloseLoot();
 	PendingTarget = Item;
@@ -122,15 +123,45 @@ void UASItemInteractionComponent::CancelPendingInteraction()
 
 void UASItemInteractionComponent::SetHoveredDroppedItemLabel(AASDroppedItem* Item, const bool bHovered)
 {
-	if (bHovered) HoveredDroppedItemLabel = Item;
+	if (bHovered && bDroppedItemNamesVisible) HoveredDroppedItemLabel = Item;
 	else if (HoveredDroppedItemLabel.Get() == Item) HoveredDroppedItemLabel.Reset();
+}
+
+void UASItemInteractionComponent::ToggleDroppedItemNames()
+{
+	AASPlayerController* PC = GetASController();
+	if (!PC || !PC->IsLocalController() || PC->IsInGameMenuOpen()) return;
+
+	bDroppedItemNamesVisible = !bDroppedItemNamesVisible;
+	if (!bDroppedItemNamesVisible)
+	{
+		if (PendingTarget.IsValid() && PendingTarget->IsA<AASDroppedItem>())
+		{
+			PC->StopMovement();
+			CancelPendingInteraction();
+		}
+		if (HoveredDroppedItem.IsValid()) HoveredDroppedItem->SetWorldHovered(false);
+		HoveredDroppedItem.Reset();
+		HoveredDroppedItemLabel.Reset();
+	}
+
+	for (TActorIterator<AASDroppedItem> It(GetWorld()); It; ++It)
+	{
+		It->RefreshNameVisibility();
+	}
+	ServerSetDroppedItemNamesVisible(bDroppedItemNamesVisible);
+}
+
+void UASItemInteractionComponent::ServerSetDroppedItemNamesVisible_Implementation(const bool bVisible)
+{
+	bDroppedItemNamesVisible = bVisible;
 }
 
 void UASItemInteractionComponent::UpdateDroppedItemHover()
 {
 	AASDroppedItem* Next = nullptr;
 	AASPlayerController* PC = GetASController();
-	if (PC && IsValid(PC->GetPawn()) && PC->bShowMouseCursor && !IsDeadPawn(PC)
+	if (bDroppedItemNamesVisible && PC && IsValid(PC->GetPawn()) && PC->bShowMouseCursor && !IsDeadPawn(PC)
 		&& !IsCursorOverInventory() && !IsLootOpen()
 		&& FSlateApplication::IsInitialized() && !FSlateApplication::Get().IsDragDropping())
 	{
@@ -173,6 +204,7 @@ void UASItemInteractionComponent::TickComponent(float DeltaTime, ELevelTick Tick
 void UASItemInteractionComponent::ServerInteract_Implementation(AActor* Target)
 {
 	AASPlayerController* PC = GetASController();
+	if (IsValid(Target) && Target->IsA<AASDroppedItem>() && !bDroppedItemNamesVisible) return;
 	if (!CanReachTarget(Target) || !IASInteractable::Execute_CanInteract(Target, PC->GetPawn())) return;
 	if (Target->IsA<AASDroppedItem>())
 	{
@@ -271,6 +303,10 @@ void UASItemInteractionComponent::InitializeInventoryBar()
 		RightClick.bConsumeInput = true;
 		RightClick.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::HandleWorldRightClick);
 		InventoryInput->KeyBindings.Add(RightClick);
+		FInputKeyBinding ToggleNames(FInputChord(EKeys::Z), IE_Pressed);
+		ToggleNames.bConsumeInput = true;
+		ToggleNames.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::ToggleDroppedItemNames);
+		InventoryInput->KeyBindings.Add(ToggleNames);
 		PC->PushInputComponent(InventoryInput);
 	}
 	if (!InventoryBar)

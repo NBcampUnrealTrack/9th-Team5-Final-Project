@@ -11,6 +11,8 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/WidgetSwitcher.h"
 #include "Core/UI/ASJoinRoomWidget.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 void UASMainMenuWidget::NativeConstruct()
 {
@@ -66,6 +68,7 @@ void UASMainMenuWidget::NativeConstruct()
 
 void UASMainMenuWidget::NativeDestruct()
 {
+	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(JoinRoomSearchTimer);
 	if (CreateRoomValidationButton) CreateRoomValidationButton->OnClicked.RemoveDynamic(this, &ThisClass::ValidateRoomInput);
 	if (ScreenSwitcher) ScreenSwitcher->RemoveAllFieldValueChangedDelegates(this);
 	if (SessionSubsystem)
@@ -78,8 +81,14 @@ void UASMainMenuWidget::NativeDestruct()
 
 void UASMainMenuWidget::SearchActiveJoinRoom()
 {
-	UASJoinRoomWidget* JoinPanel = ScreenSwitcher ? Cast<UASJoinRoomWidget>(ScreenSwitcher->GetActiveWidget()) : nullptr;
-	if (JoinPanel) JoinPanel->SearchRooms();
+	if (!GetWorld()) return;
+	GetWorld()->GetTimerManager().ClearTimer(JoinRoomSearchTimer);
+	// Field notification can run before the switcher's Slate child has changed.
+	JoinRoomSearchTimer = GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		UASJoinRoomWidget* JoinPanel = ScreenSwitcher ? Cast<UASJoinRoomWidget>(ScreenSwitcher->GetActiveWidget()) : nullptr;
+		if (JoinPanel) JoinPanel->SearchRooms();
+	}));
 }
 
 void UASMainMenuWidget::HostRoom(const FString& RoomName, const bool bUsePassword, const FString& Password)

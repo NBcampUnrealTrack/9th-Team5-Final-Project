@@ -125,6 +125,8 @@ protected:
 	TObjectPtr<UButton> ConfirmButton;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ConfirmText;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CharacterPlayerListText;
 	
 private:
 	// 선택 서브시스템에 저장. 성공하면 true
@@ -137,5 +139,8 @@ private:
 	
 	int32 SelectedIndex = 0;
 	void UpdateNetworkSelectionDisplay();
+	void CreatePlayerListDisplay();
+	bool bReadyRequestPending = false;
+	bool bRequestedReady = false;
 	FTimerHandle SelectionDisplayTimer;
 };

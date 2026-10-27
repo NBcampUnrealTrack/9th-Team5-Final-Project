@@ -14,6 +14,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameMapsSettings.h"
 #include "TimerManager.h"
+#include "Core/UI/ASLoadingScreenSubsystem.h"
 
 namespace
 {
@@ -401,6 +402,7 @@ void UASSessionSubsystem::HandleJoinSessionComplete(
 	bJoinTravelPending = true;
 	if (!PendingJoinPassword.IsEmpty()) ConnectString += TEXT("?RoomPassword=") + PendingJoinPassword;
 	PendingJoinPassword.Reset();
+	GetGameInstance()->GetSubsystem<UASLoadingScreenSubsystem>()->ShowLoadingScreen();
 	PlayerController->ClientTravel(ConnectString, TRAVEL_Absolute);
 	OnSessionJoined.Broadcast(true, FString());
 }

@@ -30,6 +30,13 @@ public:
 	/** Only the nameplate can select a dropped item as a local hover target. */
 	void SetHoveredDroppedItemLabel(AASDroppedItem* Item, bool bHovered);
 
+	/** 로컬 플레이어의 바닥 아이템 이름과 줍기를 함께 켜거나 끈다. */
+	UFUNCTION(BlueprintCallable, Category = "Item|Drop")
+	void ToggleDroppedItemNames();
+
+	UFUNCTION(BlueprintPure, Category = "Item|Drop")
+	bool AreDroppedItemNamesVisible() const { return bDroppedItemNamesVisible; }
+
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetPlayerInventory() const;
 
@@ -74,6 +81,9 @@ private:
 	void InitializeInventoryBar();
 	void ActivateSlotFromKey(int32 SlotIndex);
 	void UpdateDroppedItemHover();
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetDroppedItemNamesVisible(bool bVisible);
 
 	UFUNCTION(Server, Reliable)
 	void ServerActivateSlot(int32 SlotIndex, FGuid ExpectedItem);
@@ -138,4 +148,6 @@ private:
 	TWeakObjectPtr<APawn> ServerLootPawn;
 	TWeakObjectPtr<APawn> LootPawn;
 	double PendingStartedAt = 0.0;
+	/** 각 플레이어의 로컬 화면 및 해당 플레이어의 서버 줍기 허용 상태. */
+	bool bDroppedItemNamesVisible = true;
 };

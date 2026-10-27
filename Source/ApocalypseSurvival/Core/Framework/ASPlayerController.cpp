@@ -9,6 +9,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
+#include "Core/Cheats/ASCheatManager.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
@@ -54,6 +55,8 @@ AASPlayerController::AASPlayerController()
 	InventoryComponent = CreateDefaultSubobject<UASInventoryComponent>(TEXT("InventoryComponent"));
 	AttackMoveComponent = CreateDefaultSubobject<UASPlayerAttackMoveComponent>(TEXT("AttackMoveComponent"));
 	PlayerCameraManagerClass = AASPlayerCameraManager::StaticClass();
+	InGameMenuWidgetClass = UASInGameMenuWidget::StaticClass();
+	CheatClass = UASCheatManager::StaticClass();
 	InGameMenuWidgetClass = UASInGameMenuWidget::StaticClass();
 
 	bShowMouseCursor = true;
@@ -326,6 +329,11 @@ void AASPlayerController::ReceivedPlayer()
 		return;
 	}
 
+#if !UE_BUILD_SHIPPING
+	// 클라이언트에도 콘솔 명령 진입점을 만든다. 실제 상태 변경은 서버 RPC가 맡는다.
+	EnableCheats();
+#endif
+
 	// 커서가 보이는 채로 플레이하고, 커서는 창 밖으로 나가면 안 된다.
 	// 가장자리 스크롤은 커서가 테두리에서 멈춰야 동작하고,
 	// 전투 중에 다른 창을 클릭하면 게임이 포커스를 잃는다.
@@ -333,6 +341,27 @@ void AASPlayerController::ReceivedPlayer()
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
 	InputMode.SetHideCursorDuringCapture(false);
 	SetInputMode(InputMode);
+}
+
+void AASPlayerController::ServerDebugGod_Implementation()
+{
+#if !UE_BUILD_SHIPPING
+	if (AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->ToggleDebugInvulnerability();
+	}
+	else
+	{
+		ClientMessage(TEXT("[DebugGod] No player character is possessed."));
+	}
+#endif
+}
+
+void AASPlayerController::ServerDebugGiveWeapon_Implementation(FName WeaponName)
+{
+#if !UE_BUILD_SHIPPING
+	UASCheatManager::GiveWeaponToPlayer(this, WeaponName);
+#endif
 }
 
 void AASPlayerController::PlayerTick(const float DeltaTime)

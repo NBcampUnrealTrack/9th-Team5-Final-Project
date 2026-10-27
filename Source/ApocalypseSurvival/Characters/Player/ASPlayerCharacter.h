@@ -156,7 +156,10 @@ public:
 	
 	UFUNCTION(Server, Reliable)
 	void ServerDebugKillSelf();
-	
+
+	/** 서버 전용. CheatManager의 무적 명령에 따라 상태를 변경한다. Shipping에서는 동작하지 않는다. */
+	void ToggleDebugInvulnerability();
+
 	// 캐릭터 선택 테스트 (선택 화면 나오기 전까지). Index 는 DebugCharacterRoster 순서
 	UFUNCTION(Exec)
 	void DebugSelectCharacter(int32 Index);
@@ -222,6 +225,9 @@ protected:
 	void OnLevelUp(int32 NewLevel);
 
 private:
+	/** 서버에서 이 캐릭터가 추가한 무적 태그 한 개만 추적한다. */
+	bool bDebugGodEnabled = false;
+
 	void InitAbilitySystemFromPlayerState();
 	void UnbindDeathDelegates();
 
