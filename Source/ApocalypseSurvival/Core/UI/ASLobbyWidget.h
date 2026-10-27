@@ -6,6 +6,7 @@
 
 class UButton;
 class UTextBlock;
+class UASLeaveRoomConfirmationWidget;
 
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API UASLobbyWidget : public UUserWidget
@@ -40,6 +41,9 @@ protected:
 	TObjectPtr<UTextBlock> LobbyStatusText;
 
 private:
+	void ConfirmLeaveRoom();
+	UPROPERTY(Transient)
+	TObjectPtr<UASLeaveRoomConfirmationWidget> LeaveConfirmation;
 	UFUNCTION()
 	void HandleLobbyUpdated();
 	void HandleGameStateSet(AGameStateBase* State);
