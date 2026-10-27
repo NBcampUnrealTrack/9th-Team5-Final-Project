@@ -40,6 +40,7 @@ protected:
 
 private:
 	void SearchActiveJoinRoom();
+	FTimerHandle JoinRoomSearchTimer;
 	UFUNCTION()
 	void HandleSessionCreated(bool bSuccess);
 

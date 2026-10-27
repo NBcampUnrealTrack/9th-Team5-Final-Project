@@ -7,6 +7,11 @@
 #include "Core/Framework/ASLobbyPlayerController.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
@@ -31,6 +36,8 @@ void UASCharacterSelectWidget::NativeConstruct()
 	SelectCharacter(FindPreviousSelectionIndex());
 	if (GetOwningPlayer<AASLobbyPlayerController>())
 	{
+		bReadyRequestPending = false;
+		CreatePlayerListDisplay();
 		if (CharacterReadyButton) CharacterReadyButton->OnClicked.AddUniqueDynamic(this, &ThisClass::RequestConfirm);
 		GetWorld()->GetTimerManager().SetTimer(SelectionDisplayTimer, this, &ThisClass::UpdateNetworkSelectionDisplay, 0.2f, true);
 		UpdateNetworkSelectionDisplay();
@@ -84,7 +91,7 @@ bool UASCharacterSelectWidget::GetCharacterInfo(int32 Index, FASCharacterDisplay
 void UASCharacterSelectWidget::SelectCharacter(int32 Index)
 {
 	AASLobbyPlayerController* LobbyController = GetOwningPlayer<AASLobbyPlayerController>();
-	if (LobbyController && (IsCharacterConfirmed() || GetSelectionTimeRemaining() <= 0.0f)) return;
+	if (LobbyController && (bReadyRequestPending || IsCharacterConfirmed() || GetSelectionTimeRemaining() <= 0.0f)) return;
 	FASCharacterDisplayInfo Info;
 	if (!GetCharacterInfo(Index, Info))
 	{
@@ -103,10 +110,13 @@ void UASCharacterSelectWidget::RequestConfirm()
 {
 	if (AASLobbyPlayerController* LobbyController = GetOwningPlayer<AASLobbyPlayerController>())
 	{
-		if (GetSelectionTimeRemaining() > 0.0f && !IsCharacterConfirmed())
+		if (GetSelectionTimeRemaining() > 0.0f && !bReadyRequestPending)
 		{
-			LobbyController->SelectLobbyCharacter(SelectedIndex);
-			LobbyController->SetCharacterReady(true);
+			bRequestedReady = !IsCharacterConfirmed();
+			bReadyRequestPending = true;
+			if (bRequestedReady) LobbyController->SelectLobbyCharacter(SelectedIndex);
+			LobbyController->SetCharacterReady(bRequestedReady);
+			UpdateNetworkSelectionDisplay();
 		}
 		return;
 	}
@@ -191,13 +201,59 @@ void UASCharacterSelectWidget::UpdateNetworkSelectionDisplay()
 		CharacterSelectionTimeText->SetText(FText::AsNumber(FMath::CeilToInt(GetSelectionTimeRemaining())));
 	}
 	const bool bConfirmed = IsCharacterConfirmed();
-	if (CharacterReadyButton) CharacterReadyButton->SetIsEnabled(!bConfirmed && GetSelectionTimeRemaining() > 0.0f);
-	if (ConfirmButton) ConfirmButton->SetIsEnabled(!bConfirmed && GetSelectionTimeRemaining() > 0.0f);
-	if (ConfirmText) ConfirmText->SetText(FText::FromString(bConfirmed ? TEXT("확정 완료 · 다른 플레이어 대기 중") : TEXT("캐릭터 확정")));
+	if (bReadyRequestPending && bConfirmed == bRequestedReady) bReadyRequestPending = false;
+	const bool bCanToggleReady = !bReadyRequestPending && GetSelectionTimeRemaining() > 0.0f;
+	if (CharacterReadyButton) CharacterReadyButton->SetIsEnabled(bCanToggleReady);
+	if (ConfirmButton) ConfirmButton->SetIsEnabled(bCanToggleReady);
+	if (ConfirmText) ConfirmText->SetText(FText::FromString(bReadyRequestPending ? TEXT("처리 중...")
+		: bConfirmed ? TEXT("확정 취소") : TEXT("캐릭터 확정")));
 	if (CharacterSelectionStatusText)
 	{
 		CharacterSelectionStatusText->SetText(FText::FromString(bConfirmed
-			? TEXT("준비 완료. 다른 플레이어를 기다리고 있습니다.")
+			? TEXT("확정 완료. 게임 이동 전까지 확정을 취소할 수 있습니다.")
 			: TEXT("캐릭터를 선택하고 준비를 눌러 주세요.")));
 	}
+	if (CharacterPlayerListText)
+	{
+		FString List = TEXT("플레이어 선택 현황\n");
+		const APlayerController* Controller = GetOwningPlayer();
+		const AASLobbyGameState* State = GetWorld() ? GetWorld()->GetGameState<AASLobbyGameState>() : nullptr;
+		if (State)
+		{
+			for (const FASLobbyPlayerInfo& Player : State->LobbyPlayers)
+			{
+				const UASCharacterDefinition* Definition = State->CharacterRoster
+					? State->CharacterRoster->GetCharacterAt(Player.CharacterIndex) : nullptr;
+				const bool bLocal = Controller && Controller->PlayerState && Controller->PlayerState->GetPlayerId() == Player.PlayerId;
+				List += FString::Printf(TEXT("%s%s : %s · %s\n"), *Player.PlayerName, bLocal ? TEXT(" (나)") : TEXT(""),
+					Definition ? *Definition->DisplayName.ToString() : TEXT("선택 안 함"),
+					Player.bCharacterReady ? TEXT("확정 완료") : TEXT("선택 중"));
+			}
+		}
+		CharacterPlayerListText->SetText(FText::FromString(List));
+	}
+}
+
+void UASCharacterSelectWidget::CreatePlayerListDisplay()
+{
+	if (CharacterPlayerListText) return;
+	UCanvasPanel* Canvas = Cast<UCanvasPanel>(GetRootWidget());
+	if (!Canvas) return;
+	UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
+	Background->SetBrushColor(FLinearColor(0.03f, 0.03f, 0.03f, 0.9f));
+	Background->SetPadding(FMargin(12.0f));
+	Background->SetVisibility(ESlateVisibility::HitTestInvisible);
+	USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
+	Size->SetWidthOverride(400.0f);
+	Background->SetContent(Size);
+	CharacterPlayerListText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CharacterPlayerListText"));
+	CharacterPlayerListText->SetAutoWrapText(true);
+	FSlateFontInfo Font = CharacterPlayerListText->GetFont();
+	Font.Size = 18;
+	CharacterPlayerListText->SetFont(Font);
+	Size->SetContent(CharacterPlayerListText);
+	UCanvasPanelSlot* ListSlot = Canvas->AddChildToCanvas(Background);
+	ListSlot->SetPosition(FVector2D(680.0f, 132.0f));
+	ListSlot->SetAutoSize(true);
+	ListSlot->SetZOrder(10);
 }
