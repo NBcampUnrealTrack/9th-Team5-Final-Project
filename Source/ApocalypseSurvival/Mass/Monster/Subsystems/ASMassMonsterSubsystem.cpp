@@ -2,6 +2,9 @@
 
 #include "ApocalypseSurvival.h"
 #include "Engine/World.h"
+#include "MapSystem/Vision/ASFogOfWarManager.h"
+#include "MapSystem/Vision/ASVisionDefinition.h"
+#include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassEntityConfigAsset.h"
 #include "MassEntityManager.h"
@@ -24,6 +27,16 @@ namespace
 {
 	constexpr int32 MaxMassMonsterSpawnBatchSize = 10000;
 	constexpr float TemporaryVisualHitFlashDuration = 0.12f;
+
+	float GetPlayerDamageRevealSeconds(UWorld* World)
+	{
+		const UASVisionWorldSubsystem* VisionSubsystem = UASVisionWorldSubsystem::Get(World);
+		const AASFogOfWarManager* FogManager = VisionSubsystem ? VisionSubsystem->GetFogOfWarManager() : nullptr;
+		const UASVisionDefinition* VisionDefinition = FogManager ? FogManager->GetVisionDefinition() : nullptr;
+		return VisionDefinition
+			? VisionDefinition->Settings.AttackRevealSeconds
+			: FASVisionSettings().AttackRevealSeconds;
+	}
 
 	bool FindDamageInstigatorSnapshot(UWorld* World, const AActor* DamageInstigator,
 		FASTargetSnapshot& OutSnapshot)
@@ -899,6 +912,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 
 	FASTargetSnapshot InstigatorSnapshot;
 	const bool bHasInstigatorSnapshot = FindDamageInstigatorSnapshot(GetWorld(), DamageInstigator, InstigatorSnapshot);
+	const float RevealSeconds = GetPlayerDamageRevealSeconds(GetWorld());
 	int32 DamagedCount = 0;
 	for (const FCandidate& Candidate : Candidates)
 	{
@@ -929,6 +943,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 		}
 		if (bHasInstigatorSnapshot)
 		{
+			Health->PlayerDamageRevealEndTimeSeconds = FMath::Max(
+				Health->PlayerDamageRevealEndTimeSeconds, CurrentTime + RevealSeconds);
 			if (FASMassMonsterThreatFragment* Threats =
 				EntityManager.GetFragmentDataPtr<FASMassMonsterThreatFragment>(Candidate.Entity))
 			{
@@ -974,6 +990,7 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 	const double CurrentTime = GetWorld()->GetTimeSeconds();
 	FASTargetSnapshot InstigatorSnapshot;
 	const bool bHasInstigatorSnapshot = FindDamageInstigatorSnapshot(GetWorld(), DamageInstigator, InstigatorSnapshot);
+	const float RevealSeconds = GetPlayerDamageRevealSeconds(GetWorld());
 
 	int32 DamagedCount = 0;
 	for (const FMassEntityHandle Entity : ManagedEntities)
@@ -1006,6 +1023,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 		}
 		if (bHasInstigatorSnapshot)
 		{
+			Health->PlayerDamageRevealEndTimeSeconds = FMath::Max(
+				Health->PlayerDamageRevealEndTimeSeconds, CurrentTime + RevealSeconds);
 			if (FASMassMonsterThreatFragment* Threats =
 				EntityManager.GetFragmentDataPtr<FASMassMonsterThreatFragment>(Entity))
 			{

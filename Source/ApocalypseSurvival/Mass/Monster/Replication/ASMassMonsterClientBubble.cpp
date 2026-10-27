@@ -141,6 +141,12 @@ void FASMassMonsterClientBubbleHandler::QueueInterpolationSnapshot(const FMassEn
 void FASMassMonsterClientBubbleHandler::ApplyVisualData(const FMassEntityView& EntityView,
 	const FASReplicatedMonsterVisualData& VisualData, const bool bIsInitialState) const
 {
+	if (FASMassMonsterFogVisibilityFragment* FogState =
+		EntityView.GetFragmentDataPtr<FASMassMonsterFogVisibilityFragment>())
+	{
+		FogState->bCombatRevealed = VisualData.bCombatRevealed;
+	}
+
 	const float NewHealthRatio = DequantizeHealthRatio(VisualData.HealthRatio);
 	bool bReceivedDamage = false;
 	if (FASMassMonsterHealthFragment* Health = EntityView.GetFragmentDataPtr<FASMassMonsterHealthFragment>())

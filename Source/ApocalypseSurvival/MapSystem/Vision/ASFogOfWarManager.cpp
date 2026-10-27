@@ -2,6 +2,7 @@
 
 #include "ApocalypseSurvival.h"
 #include "Components/SceneComponent.h"
+#include "CoreGlobals.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "MapSystem/Vision/ASFogDisplayComponent.h"
@@ -290,6 +291,65 @@ bool AASFogOfWarManager::IsLocationExplored(const FVector& Location) const
 bool AASFogOfWarManager::IsLocationVisibleLocally(const FVector& Location) const
 {
 	return FogDisplayComponent->IsLocationVisibleLocally(Location);
+}
+
+bool AASFogOfWarManager::IsLocationConcealedByBushLocally(const FVector& Location) const
+{
+	if (!VisionDefinition)
+	{
+		return false;
+	}
+	const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this);
+	if (!Subsystem)
+	{
+		return false;
+	}
+
+	if (LocalTeamBushSourcesFrame != GFrameCounter)
+	{
+		LocalTeamBushSources.Reset();
+		LocalTeamBushSourcesFrame = GFrameCounter;
+		const int32 LocalTeam = UASVisionFunctionLibrary::GetLocalTeamId(this);
+		const float NightAlpha = GetNightAlpha();
+		for (const UASVisionSourceComponent* Source : Subsystem->GetVisionSources())
+		{
+			if (!IsValid(Source) || Source->GetTeamId() != LocalTeam
+				|| !Source->IsProvidingVision(VisionDefinition->DeadStateTag))
+			{
+				continue;
+			}
+			const AActor* SourceOwner = Source->GetOwner();
+			if (!IsValid(SourceOwner))
+			{
+				continue;
+			}
+			const FVector SourceLocation = SourceOwner->GetActorLocation();
+			const FName SourceBushId = Subsystem->FindBushIdAtLocation(SourceLocation);
+			if (SourceBushId != NAME_None)
+			{
+				LocalTeamBushSources.FindOrAdd(SourceBushId).Add(FLocalTeamBushSource{
+					FVector2D(SourceLocation), Source->GetVisionRadius(VisionDefinition->Settings, NightAlpha)});
+			}
+		}
+	}
+
+	const FName BushId = Subsystem->FindBushIdAtLocation(Location);
+	if (BushId == NAME_None)
+	{
+		return false;
+	}
+	// 작은 수풀 내부의 벽 추적은 대상별 매 프레임 비용 때문에 생략한다.
+	if (const TArray<FLocalTeamBushSource>* Sources = LocalTeamBushSources.Find(BushId))
+	{
+		for (const FLocalTeamBushSource& Source : *Sources)
+		{
+			if (FVector2D::DistSquared(Source.Location, FVector2D(Location)) <= FMath::Square(Source.Radius))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 bool AASFogOfWarManager::IsLocationInLocalVisionBuffer(const FVector& Location) const

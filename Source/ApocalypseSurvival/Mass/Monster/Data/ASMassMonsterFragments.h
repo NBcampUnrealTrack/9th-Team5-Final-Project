@@ -22,6 +22,7 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterHealthFragment : public FMassFragmen
 	GENERATED_BODY()
 
 	float CurrentHealth = 100.0f;
+	double PlayerDamageRevealEndTimeSeconds = 0.0;
 	float DeathTimeRemaining = 0.0f;
 	bool bDeathTimerStarted = false;
 	/** 가장 최근에 피해를 준 등록 타깃. 경험치 수령자 판정에만 쓴다. */
@@ -227,6 +228,8 @@ struct APOCALYPSESURVIVAL_API FASMassMonsterFogVisibilityFragment : public FMass
 
 	bool bInitialized = false;
 	bool bVisibleToLocalTeam = false;
+	/** 클라이언트 복제 개체가 수풀 은폐를 무시할 서버 전투 노출 상태. */
+	bool bCombatRevealed = false;
 	bool bRetainedInFogBuffer = false;
 	float SecondsOutsideFogBuffer = 0.0f;
 	bool bTemporarilyForcedOff = false;

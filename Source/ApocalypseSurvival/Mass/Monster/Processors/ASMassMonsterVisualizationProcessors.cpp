@@ -12,6 +12,7 @@
 #include "Mass/Monster/Processors/ASMassMonsterTemporaryVisualProcessor.h"
 #include "Mass/Monster/Data/ASMassMonsterFragments.h"
 #include "Mass/Monster/Data/ASMassMonsterTags.h"
+#include "Mass/Monster/Replication/ASMassMonsterClientInterpolationFragment.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterFogMaterialSubsystem.h"
 #include "MassExecutionContext.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -109,6 +110,10 @@ void UASMassMonsterVisualizationProcessor::ConfigureQueries(
 	FogVisibilityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
 	FogVisibilityQuery.AddRequirement<FMassRepresentationLODFragment>(EMassFragmentAccess::ReadWrite);
 	FogVisibilityQuery.AddRequirement<FASMassMonsterFogVisibilityFragment>(EMassFragmentAccess::ReadWrite);
+	FogVisibilityQuery.AddRequirement<FASMassMonsterCombatFragment>(
+		EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+	FogVisibilityQuery.AddRequirement<FASMassMonsterHealthFragment>(
+		EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	FogVisibilityQuery.AddTagRequirement<FASMassMonsterTag>(EMassFragmentPresence::All);
 	FogVisibilityQuery.AddTagRequirement<FMassVisualizationProcessorTag>(EMassFragmentPresence::All);
 }
@@ -153,13 +158,19 @@ void UASMassMonsterVisualizationProcessor::Execute(
 		return;
 	}
 
+	const double Now = World->GetTimeSeconds();
 	const float DeltaTime = Context.GetDeltaTimeSeconds();
 	const float CullDelaySeconds = FogManager->GetVisionDefinition()
 		? FogManager->GetVisionDefinition()->Settings.MassVisibilityCullDelaySeconds
 		: 0.2f;
-	FogVisibilityQuery.ForEachEntityChunk(Context, [FogManager, DeltaTime, CullDelaySeconds](FMassExecutionContext& QueryContext)
+	FogVisibilityQuery.ForEachEntityChunk(Context, [FogManager, Now, DeltaTime, CullDelaySeconds](FMassExecutionContext& QueryContext)
 	{
 		const TConstArrayView<FTransformFragment> Transforms = QueryContext.GetFragmentView<FTransformFragment>();
+		const TConstArrayView<FASMassMonsterCombatFragment> Combats =
+			QueryContext.GetFragmentView<FASMassMonsterCombatFragment>();
+		const TConstArrayView<FASMassMonsterHealthFragment> Healths =
+			QueryContext.GetFragmentView<FASMassMonsterHealthFragment>();
+		const bool bIsReplica = QueryContext.DoesArchetypeHaveTag<FASMassMonsterClientReplicaTag>();
 		const TArrayView<FMassRepresentationLODFragment> LODs =
 			QueryContext.GetMutableFragmentView<FMassRepresentationLODFragment>();
 		const TArrayView<FASMassMonsterFogVisibilityFragment> FogVisibility =
@@ -169,7 +180,14 @@ void UASMassMonsterVisualizationProcessor::Execute(
 		{
 			FASMassMonsterFogVisibilityFragment& FogState = FogVisibility[EntityIt];
 			const FVector Location = Transforms[EntityIt].GetTransform().GetLocation();
-			const bool bInLocalTeamVision = FogManager->IsLocationVisibleLocally(Location);
+			const bool bVisibleByTerrain = FogManager->IsLocationVisibleLocally(Location);
+			const bool bCombatRevealed = bIsReplica
+				? FogState.bCombatRevealed
+				: (!Combats.IsEmpty() && !Healths.IsEmpty()
+					&& (Combats[EntityIt].AttackState != EASMassMonsterAttackState::Ready
+						|| Now < Healths[EntityIt].PlayerDamageRevealEndTimeSeconds));
+			const bool bInLocalTeamVision = bVisibleByTerrain
+				&& (bCombatRevealed || !FogManager->IsLocationConcealedByBushLocally(Location));
 			const bool bInFogBuffer = FogManager->IsLocationInLocalVisionBuffer(Location);
 
 			if (bInLocalTeamVision)
@@ -178,6 +196,14 @@ void UASMassMonsterVisualizationProcessor::Execute(
 				FogState.bVisibleToLocalTeam = true;
 				FogState.bRetainedInFogBuffer = true;
 				FogState.SecondsOutsideFogBuffer = 0.0f;
+			}
+			else if (bVisibleByTerrain)
+			{
+				// 안개 재질은 수풀을 판별하지 못하므로 ISM을 즉시 제거한다.
+				FogState.bInitialized = true;
+				FogState.bVisibleToLocalTeam = false;
+				FogState.bRetainedInFogBuffer = false;
+				FogState.SecondsOutsideFogBuffer = CullDelaySeconds;
 			}
 			else if (bInFogBuffer)
 			{
