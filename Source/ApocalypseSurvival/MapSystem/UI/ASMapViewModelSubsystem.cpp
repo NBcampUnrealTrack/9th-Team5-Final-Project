@@ -10,6 +10,8 @@
 
 namespace ASMapViewModelSubsystemPrivate
 {
+	constexpr double ZoneHudHoldSeconds = 1.0;
+
 	UMVVMViewModelCollectionObject* GetCollection(const UWorld* World)
 	{
 		const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
@@ -107,6 +109,22 @@ void UASMapViewModelSubsystem::RefreshZoneHud()
 	if (const APawn* Pawn = UASMapFunctionLibrary::GetLocalPlayerPawn(this))
 	{
 		Info = UASMapFunctionLibrary::GetZoneHudInfoAtLocation(this, Pawn->GetActorLocation());
+	}
+	const double Now = GetWorld()->GetTimeSeconds();
+
+	// 구역 경계 틈에서 HUD가 깜빡이지 않게 한다.
+	if (Info.bInZone)
+	{
+		HeldZoneId = Info.ZoneId;
+		HeldZoneEndTime = Now + ASMapViewModelSubsystemPrivate::ZoneHudHoldSeconds;
+	}
+	else if (!HeldZoneId.IsNone() && Now < HeldZoneEndTime)
+	{
+		Info = UASMapFunctionLibrary::GetZoneHudInfo(this, HeldZoneId);
+	}
+	else
+	{
+		HeldZoneId = NAME_None;
 	}
 	ZoneHudViewModel->SetInfo(Info);
 }

@@ -27,6 +27,7 @@ enum class EASMapWidgetMode : uint8
  * 로컬 안개 텍스처, 플레이어 방향 화살표 (사망 시 회색 사각형), 현재 보이는
  * 적과 목표물 (시야 대상), 보이는 Mass 적과 루팅 상자를 그린다. 이 클래스로 Widget Blueprint를
  * 만들고 크기를 지정한다. 자식 위젯은 필요하지 않다.
+ * 미니맵은 마우스 휠로 확대·축소한다.
  */
 UCLASS(Blueprintable)
 class APOCALYPSESURVIVAL_API UASMapWidget : public UUserWidget
@@ -42,12 +43,22 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Map")
 	TArray<FVector> GetLootChestMarkerLocations() const { return LootChestMarkerLocations; }
 
+	/** MinimapViewRadius를 MinimapZoomRadii의 다음 작은 값으로 옮기며, 한계에서는 false를 반환한다. */
+	bool ZoomMinimapIn();
+
+	/** MinimapViewRadius를 MinimapZoomRadii의 다음 큰 값으로 옮기며, 한계에서는 false를 반환한다. */
+	bool ZoomMinimapOut();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map")
 	EASMapWidgetMode Mode = EASMapWidgetMode::Minimap;
 
 	/** 월드 단위로 나타낸 미니맵 창 너비의 절반. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map", meta = (ClampMin = "500.0", Units = "cm"))
 	float MinimapViewRadius = 4000.0f;
+
+	/** 마우스 휠로 전환할 미니맵 반경 단계. */
+	UPROPERTY(EditAnywhere, Category = "Map", meta = (ClampMin = "500.0"))
+	TArray<float> MinimapZoomRadii = { 2000.0f, 3000.0f, 4000.0f, 6000.0f, 8000.0f };
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map")
 	bool bShowFog = true;
@@ -92,6 +103,9 @@ public:
 
 protected:
 	virtual void NativeConstruct() override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual int32 NativePaint(
 		const FPaintArgs& Args,

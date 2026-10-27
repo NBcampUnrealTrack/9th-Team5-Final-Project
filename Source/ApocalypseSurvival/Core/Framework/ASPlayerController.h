@@ -136,6 +136,7 @@ private:
 	void OnCameraCenterStarted();
 	void OnCameraCenterCompleted();
 	void OnCameraZoom(const FInputActionValue& Value);
+	void OnToggleMap();
 
 	/** 어빌리티 입력. 태그는 AbilityInputConfig 의 항목에서 바인딩할 때 같이 넘어온다. */
 	void OnAbilityInputPressed(FGameplayTag InputTag);
@@ -195,6 +196,10 @@ private:
 	/** 카메라 확대·축소. 1D 축 입력이고 양수가 확대다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> CameraZoomAction;
+
+	/** 확장 맵을 열고 닫는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> ToggleMapAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TEnumAsByte<ECollisionChannel> CursorTraceChannel = ECC_Visibility;

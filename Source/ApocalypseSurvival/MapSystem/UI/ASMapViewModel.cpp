@@ -12,5 +12,5 @@ void UASMapViewModel::SetExpandedMapOpen(bool bOpen)
 
 ESlateVisibility UASMapViewModel::GetExpandedMapVisibility() const
 {
-	return bExpandedMapOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	return bExpandedMapOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
 }

@@ -42,6 +42,10 @@ private:
 	void RefreshZoneHud();
 	void UnregisterViewModels();
 
+	/** 모든 구역을 잠시 벗어났을 때 HUD에 유지할 마지막 구역. */
+	FName HeldZoneId;
+	double HeldZoneEndTime = 0.0;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UASZoneHudViewModel> ZoneHudViewModel;
 
