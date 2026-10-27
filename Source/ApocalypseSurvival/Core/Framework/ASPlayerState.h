@@ -69,6 +69,8 @@ public:
 	 * 사망 태그를 떼고 체력·스태미나·마나를 최대로 채운다. 첫 빙의 때 불려도 해가 없다.
 	 */
 	void ResetForRespawn();
+	// Only called on returning to the lobby, never during a respawn.
+	void ResetForNewMatch();
 
 	/**
 	 * 서버 전용. 장착 컴포넌트가 "지금 든 무기"를 여기에 적어 둔다.

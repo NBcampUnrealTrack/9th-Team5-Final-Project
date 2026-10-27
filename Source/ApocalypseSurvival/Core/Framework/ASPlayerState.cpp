@@ -246,3 +246,39 @@ void AASPlayerState::ApplyCharacterDefinitionOnce()
 	bCharacterDefinitionApplied = true;
 	UE_LOG(LogTemp, Log, TEXT("[PlayerState] 캐릭터 정의 적용: %s"), *GetNameSafe(CharacterDefinition));
 }
+
+void AASPlayerState::ResetForNewMatch()
+{
+	if (!HasAuthority()) return;
+	AbilitySystemComponent->CancelAllAbilities();
+	ModuleComponent->ResetForNextRun();
+	CharacterAbilityHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+	DefaultAbilityHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+	AbilitySystemComponent->ClearAllAbilities();
+	AbilitySystemComponent->RemoveActiveEffects(FGameplayEffectQuery());
+	const FGameplayTag ResetTags[] = { ASGameplayTags::State_Dead, ASGameplayTags::State_Downed,
+		ASGameplayTags::State_Staggered, ASGameplayTags::State_KnockedDown, ASGameplayTags::State_StaggerProtected };
+	for (const FGameplayTag& Tag : ResetTags)
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(Tag, 0, EGameplayTagReplicationState::TagAndCountToAll);
+	}
+	TArray<FGameplayAttribute> Attributes;
+	AbilitySystemComponent->GetAllAttributes(Attributes);
+	// Reset missing entries too, so the next character cannot inherit old growth values.
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		for (const FGameplayAttribute& Attribute : Attributes)
+		{
+			const UAttributeSet* Defaults = Attribute.GetAttributeSetClass()->GetDefaultObject<UAttributeSet>();
+			AbilitySystemComponent->SetNumericAttributeBase(Attribute, Attribute.GetNumericValue(Defaults));
+		}
+	}
+	CharacterDefinition = nullptr;
+	bCharacterDefinitionApplied = false;
+	bCharacterAbilitySetGranted = false;
+	bCharacterSelectionReceived = false;
+	bCharacterSelectionSent = false;
+	EquippedItemRecord.Reset();
+	ProgressionComponent->ResetForNewMatch();
+	ForceNetUpdate();
+}

@@ -7,6 +7,7 @@
 class UASSessionSubsystem;
 class UTextBlock;
 class UWidgetSwitcher;
+class UButton;
 
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API UASMainMenuWidget : public UUserWidget
@@ -43,6 +44,11 @@ private:
 	void HandleSessionCreated(bool bSuccess);
 
 	void FailHosting(const FText& Message);
+	UFUNCTION()
+	void ValidateRoomInput();
+	TWeakObjectPtr<UUserWidget> CreateRoomPanel;
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> CreateRoomValidationButton;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASSessionSubsystem> SessionSubsystem;

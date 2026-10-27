@@ -11,6 +11,7 @@ class USlider;
 class UTextBlock;
 class UInputMappingContext;
 class UASKeyBindingsWidget;
+class UASVideoModeConfirmationWidget;
 
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API UASSettingsWidget : public UUserWidget
@@ -81,4 +82,6 @@ private:
 	int32 PendingOverallQuality = INDEX_NONE;
 	UPROPERTY(Transient)
 	TObjectPtr<UASKeyBindingsWidget> KeyBindingsWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<UASVideoModeConfirmationWidget> VideoConfirmation;
 };

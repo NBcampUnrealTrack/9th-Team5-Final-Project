@@ -1073,3 +1073,10 @@ void AASGameMode::DebugKillPlayer()
 	// 이미 죽어 있으면 캐릭터 쪽에서 무시
 	ASC->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), 0.f);
 }
+
+void AASGameMode::PreLogin(const FString& Options, const FString& Address, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage)
+{
+	Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
+	// Existing lobby players use seamless travel and do not pass through PreLogin.
+	if (ErrorMessage.IsEmpty()) ErrorMessage = TEXT("AS_GAME_IN_PROGRESS");
+}

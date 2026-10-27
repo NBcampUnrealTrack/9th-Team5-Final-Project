@@ -6,6 +6,7 @@
 #include "Components/TextBlock.h"
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
 #include "Core/UI/ASKeyBindingsWidget.h"
+#include "Core/UI/ASVideoModeConfirmationWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -45,6 +46,7 @@ void UASSettingsWidget::NativeConstruct()
 
 void UASSettingsWidget::NativeDestruct()
 {
+	if (VideoConfirmation) VideoConfirmation->RemoveFromParent();
 	if (ApplyButton) ApplyButton->OnClicked.RemoveDynamic(this, &ThisClass::ApplyGameSettings);
 	if (KeyBindingsButton) KeyBindingsButton->OnClicked.RemoveDynamic(this, &ThisClass::OpenKeyBindings);
 	if (BackButton) BackButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleBackRequested);
@@ -180,7 +182,10 @@ void UASSettingsWidget::HandleVolumeChanged(const float Value)
 void UASSettingsWidget::ApplyGameSettings()
 {
 	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
-	if (!Settings) return;
+	if (!Settings || (VideoConfirmation && VideoConfirmation->IsInViewport())) return;
+	const FIntPoint PreviousResolution = Settings->GetScreenResolution();
+	const EWindowMode::Type PreviousMode = Settings->GetFullscreenMode();
+	Settings->ConfirmVideoMode();
 	if (WindowModeComboBox && WindowModeComboBox->GetSelectedIndex() >= 0)
 	{
 		Settings->SetFullscreenMode(static_cast<EWindowMode::Type>(WindowModeComboBox->GetSelectedIndex()));
@@ -194,7 +199,21 @@ void UASSettingsWidget::ApplyGameSettings()
 	Settings->SetAntiAliasingQuality(ReadQuality(AntiAliasingQualityComboBox, Settings->GetAntiAliasingQuality()));
 	if (VSyncCheckBox) Settings->SetVSyncEnabled(VSyncCheckBox->IsChecked());
 	Settings->ApplySettings(false);
-	Settings->ConfirmVideoMode();
+	if (PreviousResolution != Settings->GetScreenResolution() || PreviousMode != Settings->GetFullscreenMode())
+	{
+		VideoConfirmation = CreateWidget<UASVideoModeConfirmationWidget>(GetOwningPlayer());
+		if (VideoConfirmation)
+		{
+			VideoConfirmation->SetSettingsOwner(this);
+			VideoConfirmation->OnClosed.BindUObject(this, &ThisClass::RefreshSettings);
+			VideoConfirmation->AddToViewport(300);
+		}
+		else
+		{
+			Settings->RevertVideoMode();
+			Settings->ApplyResolutionSettings(false);
+		}
+	}
 	Settings->SaveSettings();
 	if (UASSkillSettingsSubsystem* Skills = UASSkillSettingsSubsystem::Get(GetOwningPlayer()))
 	{

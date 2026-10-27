@@ -192,6 +192,8 @@ void UASCharacterSelectWidget::UpdateNetworkSelectionDisplay()
 	}
 	const bool bConfirmed = IsCharacterConfirmed();
 	if (CharacterReadyButton) CharacterReadyButton->SetIsEnabled(!bConfirmed && GetSelectionTimeRemaining() > 0.0f);
+	if (ConfirmButton) ConfirmButton->SetIsEnabled(!bConfirmed && GetSelectionTimeRemaining() > 0.0f);
+	if (ConfirmText) ConfirmText->SetText(FText::FromString(bConfirmed ? TEXT("확정 완료 · 다른 플레이어 대기 중") : TEXT("캐릭터 확정")));
 	if (CharacterSelectionStatusText)
 	{
 		CharacterSelectionStatusText->SetText(FText::FromString(bConfirmed

@@ -33,6 +33,7 @@ void AASLobbyGameMode::PostLogin(APlayerController* NewPlayer)
 void AASLobbyGameMode::HandleSeamlessTravelPlayer(AController*& C)
 {
 	Super::HandleSeamlessTravelPlayer(C);
+	if (AASPlayerState* State = C ? C->GetPlayerState<AASPlayerState>() : nullptr) State->ResetForNewMatch();
 	RefreshLobby();
 }
 
@@ -210,6 +211,8 @@ void AASLobbyGameMode::FinishCharacterSelection()
 	if (!GetWorld()->ServerTravel(TravelURL, true))
 	{
 		UE_LOG(LogTemp, Error, TEXT("[CharacterSelect] Game map travel request failed."));
+		Sessions->LeaveRoom();
+		Sessions->ReturnToMenuMessage = FText::FromString(TEXT("게임 맵으로 이동하지 못했습니다. 맵 설정을 확인한 후 다시 방을 생성해 주세요."));
 	}
 }
 

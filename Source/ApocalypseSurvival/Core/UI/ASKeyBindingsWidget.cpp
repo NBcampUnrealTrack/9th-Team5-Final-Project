@@ -41,7 +41,7 @@ void UASKeyBindingRowWidget::SetMapping(UInputMappingContext* Context, const int
 	const FEnhancedActionKeyMapping& Mapping = Context->GetMappings()[Index];
 	FString Label = GetNameSafe(Mapping.Action);
 	Label.RemoveFromStart(TEXT("IA_"));
-	ActionLabel->SetText(FText::FromString(Label));
+	ActionLabel->SetText(Mapping.GetDisplayName().IsEmpty() ? FText::FromString(Label) : Mapping.GetDisplayName());
 	if (const ULocalPlayer* Player = GetOwningLocalPlayer())
 	{
 		if (const UASLocalSettingsSubsystem* Settings = Player->GetSubsystem<UASLocalSettingsSubsystem>())
@@ -66,7 +66,19 @@ void UASKeyBindingRowWidget::HandleKeySelected(const FInputChord Key)
 	}
 	else
 	{
-		Settings->SetMappedKey(MappingContext, MappingIndex, Key.Key, Error);
+		if (Settings->SetMappedKey(MappingContext, MappingIndex, Key.Key, Error))
+		{
+			const auto& Mappings = MappingContext->GetMappings();
+			for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+			{
+				if (Index != MappingIndex && Mappings[Index].Action != Mappings[MappingIndex].Action
+					&& Settings->GetMappedKey(MappingContext, Index) == Key.Key)
+				{
+					Error = FText::FromString(TEXT("저장했습니다. 다른 동작과 같은 키를 사용합니다. 의도한 중복인지 확인해 주세요."));
+					break;
+				}
+			}
+		}
 	}
 	ErrorLabel->SetText(Error);
 	SetMapping(MappingContext, MappingIndex);
