@@ -17,6 +17,18 @@ TSharedRef<SWidget> UASMonsterHealthBarWidget::RebuildWidget()
     return Super::RebuildWidget();
 }
 
+void UASMonsterHealthBarWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+
+    // Screen Space WidgetComponent가 다시 화면 레이어에 추가된 경우,
+    // NativeDestruct에서 해제했던 Attribute 구독과 현재 체력 표시를 복구한다.
+    if (AASMonsterCharacter* Monster = HealthSource.Get())
+    {
+       SetHealthSource(Monster);
+    }
+}
+
 void UASMonsterHealthBarWidget::NativeDestruct()
 {
     UnbindHealthSource();
@@ -25,6 +37,8 @@ void UASMonsterHealthBarWidget::NativeDestruct()
 
 void UASMonsterHealthBarWidget::SetHealthSource(AASMonsterCharacter* InMonster)
 {
+    HealthSource = InMonster;
+
     UASAbilitySystemComponent* NewAbilitySystemComponent = IsValid(InMonster)
        ? InMonster->GetASAbilitySystemComponent()
        : nullptr;
