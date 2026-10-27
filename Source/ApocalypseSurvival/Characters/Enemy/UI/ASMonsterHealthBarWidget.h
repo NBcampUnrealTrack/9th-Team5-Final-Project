@@ -12,8 +12,8 @@ struct FOnAttributeChangeData;
 
 /**
  * 몬스터 머리 위에 표시하는 가벼운 체력바.
- * Tick이나 UMG Property Binding 대신 GAS Attribute 변경 이벤트로만 갱신한다.
- *
+ * Tick 이나 UMG Property Binding 대신 GAS Attribute 변경 이벤트로만 갱신한다.
+ * 
  * Blueprint 자식에서 HealthProgressBar와 HealthText를 같은 이름으로 배치하면 그 Widget을 사용하고,
  * 별도 Blueprint가 없으면 코드에서 만드는 기본 레이아웃을 사용한다.
  */
