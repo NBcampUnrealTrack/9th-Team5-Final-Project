@@ -1,11 +1,11 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/ComboBoxString.h"
 #include "Core/Framework/ASSessionSubsystem.h"
 #include "ASJoinRoomWidget.generated.h"
 
 class UButton;
-class UComboBoxString;
 class UTextBlock;
 class UEditableTextBox;
 
@@ -40,6 +40,9 @@ protected:
 	TObjectPtr<UEditableTextBox> PasswordTextBox;
 
 private:
+	UFUNCTION()
+	void HandleRoomSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+	void UpdatePasswordVisibility();
 	UFUNCTION()
 	void HandlePasswordChanged(const FText& Text);
 	FString LastValidPassword;

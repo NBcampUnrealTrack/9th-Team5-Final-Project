@@ -3,10 +3,19 @@
 #include "Core/Framework/ASSessionSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Components/TextBlock.h"
+#include "Components/WidgetSwitcher.h"
+#include "Core/UI/ASJoinRoomWidget.h"
 
 void UASMainMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (ScreenSwitcher)
+	{
+		ScreenSwitcher->RemoveAllFieldValueChangedDelegates(this);
+		ScreenSwitcher->AddFieldValueChangedDelegate(UWidgetSwitcher::FFieldNotificationClassDescriptor::ActiveWidgetIndex,
+			INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateWeakLambda(this,
+				[this](UObject*, UE::FieldNotification::FFieldId) { SearchActiveJoinRoom(); }));
+	}
 
 	UGameInstance* GameInstance = GetGameInstance();
 	SessionSubsystem = GameInstance ? GameInstance->GetSubsystem<UASSessionSubsystem>() : nullptr;
@@ -18,16 +27,24 @@ void UASMainMenuWidget::NativeConstruct()
 			ConnectionStatusText->SetText(SessionSubsystem->ReturnToMenuMessage);
 		}
 	}
+	SearchActiveJoinRoom();
 }
 
 void UASMainMenuWidget::NativeDestruct()
 {
+	if (ScreenSwitcher) ScreenSwitcher->RemoveAllFieldValueChangedDelegates(this);
 	if (SessionSubsystem)
 	{
 		SessionSubsystem->OnSessionCreated.RemoveDynamic(this, &ThisClass::HandleSessionCreated);
 	}
 
 	Super::NativeDestruct();
+}
+
+void UASMainMenuWidget::SearchActiveJoinRoom()
+{
+	UASJoinRoomWidget* JoinPanel = ScreenSwitcher ? Cast<UASJoinRoomWidget>(ScreenSwitcher->GetActiveWidget()) : nullptr;
+	if (JoinPanel) JoinPanel->SearchRooms();
 }
 
 void UASMainMenuWidget::HostRoom(const FString& RoomName, const bool bUsePassword, const FString& Password)

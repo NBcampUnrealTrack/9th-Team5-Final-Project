@@ -6,6 +6,7 @@
 
 class UASSessionSubsystem;
 class UTextBlock;
+class UWidgetSwitcher;
 
 UCLASS(Abstract)
 class APOCALYPSESURVIVAL_API UASMainMenuWidget : public UUserWidget
@@ -20,6 +21,8 @@ public:
 	bool bIsHosting = false;
 
 protected:
+	UPROPERTY(BlueprintReadOnly, Category = "Menu", meta = (BindWidgetOptional))
+	TObjectPtr<UWidgetSwitcher> ScreenSwitcher;
 	UPROPERTY(BlueprintReadOnly, Category = "Session", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ConnectionStatusText;
 	virtual void NativeConstruct() override;
@@ -35,6 +38,7 @@ protected:
 	FString LobbyMapPath = TEXT("/Game/ApocalypseSurvival/Maps/Lobby_Proto");
 
 private:
+	void SearchActiveJoinRoom();
 	UFUNCTION()
 	void HandleSessionCreated(bool bSuccess);
 

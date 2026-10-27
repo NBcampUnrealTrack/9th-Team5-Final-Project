@@ -24,6 +24,8 @@ public:
 	void ApplyGameSettings();
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void OpenKeyBindings();
+	void CloseKeyBindings();
+	FSimpleDelegate OnBackRequested;
 
 protected:
 	virtual void NativeConstruct() override;
@@ -64,6 +66,8 @@ protected:
 	TObjectPtr<UTextBlock> SettingsStatusText;
 
 private:
+	UFUNCTION()
+	void HandleBackRequested();
 	UFUNCTION()
 	void HandleOverallQualityChanged(FString Item, ESelectInfo::Type SelectionType);
 	UFUNCTION()
