@@ -114,11 +114,10 @@ FLinearColor UASMapFunctionLibrary::GetDangerColor(const UObject* WorldContextOb
 	return Definition ? Definition->GetDangerColor(DangerLevel) : FLinearColor::White;
 }
 
-FASZoneHudInfo UASMapFunctionLibrary::GetZoneHudInfoAtLocation(const UObject* WorldContextObject, const FVector& Location)
+FASZoneHudInfo UASMapFunctionLibrary::GetZoneHudInfo(const UObject* WorldContextObject, FName ZoneId)
 {
 	FASZoneHudInfo Info;
 
-	const FName ZoneId = FindZoneIdAtLocation(WorldContextObject, Location);
 	if (ZoneId.IsNone())
 	{
 		return Info;
@@ -142,6 +141,11 @@ FASZoneHudInfo UASMapFunctionLibrary::GetZoneHudInfoAtLocation(const UObject* Wo
 	Info.DangerColor = GetDangerColor(WorldContextObject, Info.DangerLevel);
 
 	return Info;
+}
+
+FASZoneHudInfo UASMapFunctionLibrary::GetZoneHudInfoAtLocation(const UObject* WorldContextObject, const FVector& Location)
+{
+	return GetZoneHudInfo(WorldContextObject, FindZoneIdAtLocation(WorldContextObject, Location));
 }
 
 APawn* UASMapFunctionLibrary::GetLocalPlayerPawn(const UObject* WorldContextObject)

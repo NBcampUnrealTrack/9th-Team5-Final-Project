@@ -44,6 +44,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static FLinearColor GetDangerColor(const UObject* WorldContextObject, int32 DangerLevel);
 
+	/** 공유 스냅샷에서 가져온 구역 이름과 위험도. */
+	static FASZoneHudInfo GetZoneHudInfo(const UObject* WorldContextObject, FName ZoneId);
+
 	/** 공유 스냅샷에서 가져온 특정 위치의 구역 이름과 위험도. */
 	UFUNCTION(BlueprintPure, Category = "AS|Map", meta = (WorldContext = "WorldContextObject"))
 	static FASZoneHudInfo GetZoneHudInfoAtLocation(const UObject* WorldContextObject, const FVector& Location);
