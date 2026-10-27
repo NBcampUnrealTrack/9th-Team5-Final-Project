@@ -7,6 +7,7 @@ class SASLoadingScreen : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SASLoadingScreen) {}
+		SLATE_EVENT(FSimpleDelegate, OnCancel)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);

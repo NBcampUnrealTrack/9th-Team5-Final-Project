@@ -23,6 +23,7 @@ public:
 	void TryStartGame(APlayerController* RequestingPlayer);
 	void SelectCharacter(AASLobbyPlayerController* Player, int32 Index);
 	void SetCharacterReady(AASLobbyPlayerController* Player, bool bReady);
+	static int32 ResolveCharacterIndex(const UASCharacterRoster* Roster, int32 RequestedIndex);
 
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Lobby", meta = (ClampMin = "1"))
@@ -37,7 +38,8 @@ protected:
 
 private:
 	bool bStartingGame = false;
-	void FinishCharacterSelection();
+	void FinishCharacterSelection(AController* ExcludedPlayer = nullptr);
+	void AbortCharacterSelection(const FText& Message);
 	void TryFinishCharacterSelection(AController* ExcludedPlayer = nullptr);
 	FTimerHandle CharacterSelectionTimer;
 };

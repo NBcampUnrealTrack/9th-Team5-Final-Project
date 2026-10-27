@@ -12,6 +12,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/GameSession.h"
 
 AASLobbyGameMode::AASLobbyGameMode()
 {
@@ -26,6 +27,23 @@ AASLobbyGameMode::AASLobbyGameMode()
 void AASLobbyGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
+	const AASLobbyGameState* State = GetGameState<AASLobbyGameState>();
+	if (State && State->LobbyPhase == EASLobbyPhase::Travelling)
+	{
+		if (GameSession) GameSession->KickPlayer(NewPlayer, FText::FromString(TEXT("게임이 이미 시작되었습니다.")));
+		return;
+	}
+	if (State && State->LobbyPhase == EASLobbyPhase::CharacterSelection)
+	{
+		// PreLogin may have succeeded just before selection started.
+		const int32 DefaultIndex = ResolveCharacterIndex(CharacterRoster, INDEX_NONE);
+		if (DefaultIndex == INDEX_NONE)
+		{
+			AbortCharacterSelection(FText::FromString(TEXT("사용 가능한 캐릭터가 없습니다. 캐릭터 설정을 확인해 주세요.")));
+			return;
+		}
+		if (AASLobbyPlayerController* Player = Cast<AASLobbyPlayerController>(NewPlayer)) Player->InitializeCharacterSelection(DefaultIndex);
+	}
 	RefreshLobby();
 	UE_LOG(LogTemp, Log, TEXT("[Lobby] Player joined: %s"), *GetNameSafe(NewPlayer));
 }
@@ -99,22 +117,10 @@ void AASLobbyGameMode::TryStartGame(APlayerController* RequestingPlayer)
 	RefreshLobby();
 	const AASLobbyGameState* State = GetGameState<AASLobbyGameState>();
 	if (!State || !State->bCanStartGame || GameMapPath.IsEmpty()) return;
-	int32 DefaultIndex = INDEX_NONE;
-	if (CharacterRoster)
-	{
-		for (int32 Index = 0; Index < CharacterRoster->Characters.Num(); ++Index)
-		{
-			const UASCharacterDefinition* Definition = CharacterRoster->GetCharacterAt(Index);
-			if (Definition && Definition->CharacterClass)
-			{
-				DefaultIndex = Index;
-				break;
-			}
-		}
-	}
+	const int32 DefaultIndex = ResolveCharacterIndex(CharacterRoster, INDEX_NONE);
 	if (DefaultIndex == INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[CharacterSelect] Set a CharacterRoster with a valid character on the lobby GameMode."));
+		AbortCharacterSelection(FText::FromString(TEXT("사용 가능한 캐릭터가 없습니다. 캐릭터 설정을 확인해 주세요.")));
 		return;
 	}
 	bStartingGame = true;
@@ -129,7 +135,8 @@ void AASLobbyGameMode::TryStartGame(APlayerController* RequestingPlayer)
 	}
 	RefreshLobby();
 	GetGameState<AASLobbyGameState>()->BeginCharacterSelection(CharacterRoster, CharacterSelectionDuration);
-	GetWorldTimerManager().SetTimer(CharacterSelectionTimer, this, &ThisClass::FinishCharacterSelection, CharacterSelectionDuration, false);
+	GetWorldTimerManager().SetTimer(CharacterSelectionTimer,
+		FTimerDelegate::CreateWeakLambda(this, [this]() { FinishCharacterSelection(); }), CharacterSelectionDuration, false);
 	UE_LOG(LogTemp, Log, TEXT("[CharacterSelect] Selection started: %.1f seconds"), CharacterSelectionDuration);
 }
 
@@ -177,31 +184,47 @@ void AASLobbyGameMode::TryFinishCharacterSelection(AController* ExcludedPlayer)
 		++PlayerCount;
 		if (!Player->IsCharacterReady()) return;
 	}
-	if (PlayerCount > 0) FinishCharacterSelection();
+	if (PlayerCount > 0) FinishCharacterSelection(ExcludedPlayer);
 }
 
-void AASLobbyGameMode::FinishCharacterSelection()
+void AASLobbyGameMode::FinishCharacterSelection(AController* ExcludedPlayer)
 {
 	AASLobbyGameState* State = GetGameState<AASLobbyGameState>();
 	if (!State || State->LobbyPhase != EASLobbyPhase::CharacterSelection) return;
 	UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>();
 	if (!Sessions) return;
-	Sessions->ClearMatchCharacters();
+	if (Sessions->IsLeavingRoom())
+	{
+		GetWorldTimerManager().ClearTimer(CharacterSelectionTimer);
+		return;
+	}
+	TArray<TPair<AASPlayerState*, const UASCharacterDefinition*>> Selections;
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		AASLobbyPlayerController* Player = Cast<AASLobbyPlayerController>(It->Get());
 		AASPlayerState* PlayerState = Player ? Player->GetPlayerState<AASPlayerState>() : nullptr;
-		if (!PlayerState) continue;
-		const UASCharacterDefinition* Definition = CharacterRoster ? CharacterRoster->GetCharacterAt(Player->GetCharacterIndex()) : nullptr;
-		if (!Definition || !Definition->CharacterClass)
+		if (!PlayerState || Player == ExcludedPlayer) continue;
+		const int32 FinalIndex = ResolveCharacterIndex(CharacterRoster, Player->GetCharacterIndex());
+		if (FinalIndex == INDEX_NONE)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[CharacterSelect] Invalid server selection for %s"), *GetNameSafe(Player));
+			AbortCharacterSelection(FText::FromString(TEXT("사용 가능한 캐릭터가 없어 게임을 시작하지 못했습니다.")));
 			return;
 		}
-		PlayerState->SetCharacterDefinition(Definition);
-		PlayerState->MarkCharacterSelectionReceived();
-		Sessions->SaveMatchCharacter(PlayerState->GetUniqueId(), Definition);
-		UE_LOG(LogTemp, Log, TEXT("[CharacterSelect] Final selection: %s -> %s"), *PlayerState->GetPlayerName(), *GetNameSafe(Definition));
+		Player->SetCharacterSelectionOnServer(FinalIndex, Player->IsCharacterReady());
+		Selections.Emplace(PlayerState, CharacterRoster->GetCharacterAt(FinalIndex));
+	}
+	if (Selections.IsEmpty())
+	{
+		AbortCharacterSelection(FText::FromString(TEXT("참가자가 없어 게임 시작을 취소했습니다.")));
+		return;
+	}
+	Sessions->ClearMatchCharacters();
+	for (const auto& Selection : Selections)
+	{
+		Selection.Key->SetCharacterDefinition(Selection.Value);
+		Selection.Key->MarkCharacterSelectionReceived();
+		Sessions->SaveMatchCharacter(Selection.Key->GetUniqueId(), Selection.Value);
+		UE_LOG(LogTemp, Log, TEXT("[CharacterSelect] Final selection: %s -> %s"), *Selection.Key->GetPlayerName(), *GetNameSafe(Selection.Value));
 	}
 	GetWorldTimerManager().ClearTimer(CharacterSelectionTimer);
 	State->MarkTravelling();
@@ -211,8 +234,7 @@ void AASLobbyGameMode::FinishCharacterSelection()
 	if (!GetWorld()->ServerTravel(TravelURL, true))
 	{
 		UE_LOG(LogTemp, Error, TEXT("[CharacterSelect] Game map travel request failed."));
-		Sessions->LeaveRoom();
-		Sessions->ReturnToMenuMessage = FText::FromString(TEXT("게임 맵으로 이동하지 못했습니다. 맵 설정을 확인한 후 다시 방을 생성해 주세요."));
+		AbortCharacterSelection(FText::FromString(TEXT("게임 맵으로 이동하지 못했습니다. 맵 설정을 확인한 후 다시 방을 생성해 주세요.")));
 	}
 }
 
@@ -220,4 +242,27 @@ void AASLobbyGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(CharacterSelectionTimer);
 	Super::EndPlay(EndPlayReason);
+}
+
+int32 AASLobbyGameMode::ResolveCharacterIndex(const UASCharacterRoster* Roster, const int32 RequestedIndex)
+{
+	if (!Roster) return INDEX_NONE;
+	const UASCharacterDefinition* Requested = Roster->GetCharacterAt(RequestedIndex);
+	if (Requested && Requested->CharacterClass) return RequestedIndex;
+	for (int32 Index = 0; Index < Roster->Characters.Num(); ++Index)
+	{
+		const UASCharacterDefinition* Definition = Roster->GetCharacterAt(Index);
+		if (Definition && Definition->CharacterClass) return Index;
+	}
+	return INDEX_NONE;
+}
+
+void AASLobbyGameMode::AbortCharacterSelection(const FText& Message)
+{
+	GetWorldTimerManager().ClearTimer(CharacterSelectionTimer);
+	UE_LOG(LogTemp, Warning, TEXT("[CharacterSelect] %s"), *Message.ToString());
+	if (UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>())
+	{
+		Sessions->ReturnToMenuWithError(Message);
+	}
 }

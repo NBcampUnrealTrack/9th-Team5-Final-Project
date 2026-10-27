@@ -66,6 +66,11 @@ public:
 	void DestroySession();
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void LeaveRoom();
+	UFUNCTION(BlueprintCallable, Category = "Session")
+	void CancelJoin();
+	void ReturnToMenuWithError(const FText& Message);
+	bool IsLeavingRoom() const { return bLeavingRoom; }
+	static bool ShouldEndHostSessionForNetworkFailure(ENetworkFailure::Type FailureType);
 	UPROPERTY(BlueprintReadOnly, Category = "Session")
 	FText ReturnToMenuMessage;
 
@@ -89,6 +94,8 @@ public:
 	FASSessionOperationCompleted OnSessionDestroyed;
 
 private:
+	friend class FASSessionCleanupTest;
+	friend class FASJoinCancellationTest;
 	FUniqueNetIdRepl GetLocalUserId() const;
 
 	void HandleCreateSessionComplete(FName SessionName, bool bWasSuccessful);
@@ -98,12 +105,23 @@ private:
 	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& Error);
 	void HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& Error);
 	void HandleMapLoaded(UWorld* World);
+	void HandleWorldPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds);
+	void HandleJoinTimeout();
+	void HandleDestroyTimeout();
+	void StopJoinAttempt();
 	void HandleConnectionFailure(UWorld* World, const FString& Error);
 	bool bJoinTravelPending = false;
 	FString HostPassword;
 	FString PendingJoinPassword;
 	bool bLeavingRoom = false;
-	void FinishLeavingRoom(bool bSessionDestroyed);
+	bool bJoiningSession = false;
+	bool bCreatingSession = false;
+	bool bDestroyingSession = false;
+	bool bFindingSessions = false;
+	FTimerHandle JoinTimeoutTimer;
+	FTimerHandle DestroyTimeoutTimer;
+	FTimerHandle ReturnToMenuTimer;
+	void FinishLeavingRoom();
 	// Server-owned choices survive non-seamless reconnects as well as normal map travel.
 	UPROPERTY(Transient)
 	TMap<FString, TObjectPtr<const UASCharacterDefinition>> MatchCharacters;

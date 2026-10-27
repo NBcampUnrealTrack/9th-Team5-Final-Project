@@ -11,6 +11,7 @@ class UTexture2D;
 class UTextBlock;
 class UButton;
 class AASLobbyGameState;
+class UASLeaveRoomConfirmationWidget;
 
 /* 선택 화면에 표시할 캐릭터 정보 (정의 DA 의 표시용 값만 모은 것) */
 USTRUCT(BlueprintType)
@@ -127,6 +128,8 @@ protected:
 	TObjectPtr<UTextBlock> ConfirmText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CharacterPlayerListText;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LeaveRoomButton;
 	
 private:
 	// 선택 서브시스템에 저장. 성공하면 true
@@ -140,6 +143,12 @@ private:
 	int32 SelectedIndex = 0;
 	void UpdateNetworkSelectionDisplay();
 	void CreatePlayerListDisplay();
+	void CreateLeaveRoomButton();
+	UFUNCTION()
+	void LeaveRoom();
+	void ConfirmLeaveRoom();
+	UPROPERTY(Transient)
+	TObjectPtr<UASLeaveRoomConfirmationWidget> LeaveConfirmation;
 	bool bReadyRequestPending = false;
 	bool bRequestedReady = false;
 	FTimerHandle SelectionDisplayTimer;

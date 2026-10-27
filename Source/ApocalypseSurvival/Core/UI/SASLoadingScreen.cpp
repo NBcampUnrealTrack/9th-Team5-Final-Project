@@ -5,6 +5,8 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/SOverlay.h"
 
 void SASLoadingScreen::Construct(const FArguments& InArgs)
 {
@@ -15,9 +17,12 @@ void SASLoadingScreen::Construct(const FArguments& InArgs)
 		SNew(SBorder)
 		.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
 		.BorderBackgroundColor(FLinearColor::Black)
-		.HAlign(HAlign_Center)
-		.VAlign(VAlign_Center)
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Fill)
 		[
+			SNew(SOverlay)
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
@@ -36,6 +41,18 @@ void SASLoadingScreen::Construct(const FArguments& InArgs)
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 32))
 					.ColorAndOpacity(FLinearColor::White)
 				]
+			]
+			]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0.0f, 0.0f, 0.0f, 48.0f)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(TEXT("참가 취소")))
+				.Visibility(InArgs._OnCancel.IsBound() ? EVisibility::Visible : EVisibility::Collapsed)
+				.OnClicked_Lambda([OnCancel = InArgs._OnCancel]()
+				{
+					OnCancel.ExecuteIfBound();
+					return FReply::Handled();
+				})
 			]
 		]
 	];

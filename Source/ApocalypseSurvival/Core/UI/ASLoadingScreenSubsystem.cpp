@@ -1,10 +1,12 @@
 #include "Core/UI/ASLoadingScreenSubsystem.h"
 
 #include "Core/UI/SASLoadingScreen.h"
+#include "Core/Framework/ASSessionSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Engine/NetDriver.h"
 #include "Framework/Application/SlateApplication.h"
 #include "MoviePlayer.h"
 #include "UObject/UObjectGlobals.h"
@@ -36,14 +38,14 @@ void UASLoadingScreenSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-void UASLoadingScreenSubsystem::ShowLoadingScreen()
+void UASLoadingScreenSubsystem::ShowLoadingScreen(const FSimpleDelegate& OnCancel)
 {
 	if (ViewportScreen.IsValid() || IsRunningDedicatedServer() || IsRunningCommandlet() || !FSlateApplication::IsInitialized()) return;
 	UGameViewportClient* Viewport = GetGameInstance()->GetGameViewportClient();
 	if (!Viewport) return;
 	SourceWorld = GetWorld();
 	LoadingViewport = Viewport;
-	ViewportScreen = SNew(SASLoadingScreen);
+	ViewportScreen = SNew(SASLoadingScreen).OnCancel(OnCancel);
 	Viewport->AddViewportWidgetContent(ViewportScreen.ToSharedRef(), 10000);
 	UE_LOG(LogTemp, Log, TEXT("[Loading] Show"));
 }
@@ -93,7 +95,13 @@ void UASLoadingScreenSubsystem::HandleWorldPostActorTick(UWorld* World, ELevelTi
 
 void UASLoadingScreenSubsystem::HandleNetworkFailure(UWorld* World, UNetDriver* Driver, ENetworkFailure::Type FailureType, const FString& Error)
 {
-	if (World && World->GetGameInstance() == GetGameInstance()) HideLoadingScreen();
+	if (World && Driver && Driver != World->GetNetDriver() && Driver->NetDriverName != FName(TEXT("PendingNetDriver"))
+		&& Driver->NetDriverName != FName(TEXT("GameNetDriver"))) return;
+	if (World && World->GetGameInstance() == GetGameInstance()
+		&& (World->GetNetMode() != NM_ListenServer || UASSessionSubsystem::ShouldEndHostSessionForNetworkFailure(FailureType)))
+	{
+		HideLoadingScreen();
+	}
 }
 
 void UASLoadingScreenSubsystem::HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& Error)
