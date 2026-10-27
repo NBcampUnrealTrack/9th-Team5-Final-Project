@@ -9,7 +9,6 @@
 #include "Core/UI/ASVideoModeConfirmationWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/GameUserSettings.h"
-#include "Kismet/KismetSystemLibrary.h"
 #include "Skills/Settings/ASSkillSettingsSubsystem.h"
 
 namespace
@@ -81,12 +80,7 @@ void UASSettingsWidget::PopulateOptions()
 		WindowModeComboBox->ClearOptions();
 		for (const TCHAR* Label : { TEXT("전체 화면"), TEXT("테두리 없는 창"), TEXT("창 모드") }) WindowModeComboBox->AddOption(Label);
 	}
-	Resolutions.Reset();
-	UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
-	const FIntPoint Current = Settings->GetScreenResolution();
-	if (Current.X > 0 && Current.Y > 0) Resolutions.AddUnique(Current);
-	if (Resolutions.IsEmpty()) Resolutions.Add(FIntPoint(1280, 720));
-	Resolutions.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X == B.X ? A.Y < B.Y : A.X < B.X; });
+	Resolutions = { FIntPoint(1280, 720), FIntPoint(1600, 900), FIntPoint(1920, 1080), FIntPoint(2560, 1440) };
 	if (ResolutionComboBox)
 	{
 		ResolutionComboBox->ClearOptions();
