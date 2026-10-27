@@ -16,6 +16,8 @@ class UGameplayEffect;
 class AASPlayerCharacter;
 class AASLootChest;
 class APlayerStart;
+class AASMonsterCharacter;
+class AASBossEncounter;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API AASGameMode : public AGameMode
@@ -65,6 +67,7 @@ public:
 	// 보스가 죽었을 때 호출
 	UFUNCTION(BlueprintCallable, Category = "GameFlow")
 	void OnBossDefeated();
+	bool IsActiveBoss(const AASMonsterCharacter* Monster) const { return ActiveBoss == Monster; }
 
 	// 밤이 끝날 때 웨이브 결과 (보상 시스템 등이 참조)
 	UPROPERTY(BlueprintAssignable, Category = "GameFlow")
@@ -148,7 +151,17 @@ protected:
 	
 	// 보스 등장일
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Boss")
-	TArray<int32> BossDays;
+	TArray<int32> BossDays = {3, 5};
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rule|Boss")
+	TSoftClassPtr<AASMonsterCharacter> BossClass = TSoftClassPtr<AASMonsterCharacter>(
+		FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Characters/Enemy/Blueprints/BP_BossMonster.BP_BossMonster_C")));
+
+	UPROPERTY(Transient)
+	TObjectPtr<AASMonsterCharacter> ActiveBoss;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AASBossEncounter> BossEncounter;
 	
 	// 싱글 전용
 	UPROPERTY(EditDefaultsOnly, Category = "Rule|Respawn")

@@ -167,7 +167,13 @@ bool UASVisibilityComponent::IsVisibleToTeam(int32 TeamId) const
 
 bool UASVisibilityComponent::IsVisibleToLocalTeam() const
 {
-	return IsVisibleToTeam(UASVisionFunctionLibrary::GetLocalTeamId(this));
+	return bBossIntroVisible || IsVisibleToTeam(UASVisionFunctionLibrary::GetLocalTeamId(this));
+}
+
+void UASVisibilityComponent::SetBossIntroVisible(bool bVisible)
+{
+	bBossIntroVisible = bVisible;
+	RefreshLocalPresentation();
 }
 
 void UASVisibilityComponent::RefreshLocalPresentation()

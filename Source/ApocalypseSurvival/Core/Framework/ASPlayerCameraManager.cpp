@@ -64,6 +64,11 @@ void AASPlayerCameraManager::PostInitializeComponents()
 
 void AASPlayerCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, const float DeltaTime)
 {
+	if (bBossIntroActive)
+	{
+		OutVT.POV = BossIntroView;
+		return;
+	}
 	// 뷰 타깃은 보통 조종 중인 폰이다. 엔진이 빙의할 때 자동으로 지정한다.
 	const AActor* Target = OutVT.Target;
 	const bool bTargetChanged = LastViewTarget.Get() != Target;
@@ -108,4 +113,27 @@ void AASPlayerCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, const
 	OutVT.POV.Location = ViewFocusLocation - CameraRotation.Vector() * ViewCameraDistance;
 	OutVT.POV.Rotation = CameraRotation;
 	OutVT.POV.FOV = DefaultFOV;
+}
+
+void AASPlayerCameraManager::BeginBossIntro(const FVector& BossLocation)
+{
+	if (bBossIntroActive) return;
+	SavedBossIntroView = GetCameraCacheView();
+	BossIntroView = SavedBossIntroView;
+	BossIntroCameraLocation = BossLocation - SavedBossIntroView.Rotation.Vector() * ViewCameraDistance;
+	bBossIntroActive = true;
+}
+
+void AASPlayerCameraManager::SetBossIntroBlend(float Alpha)
+{
+	BossIntroView.Location = FMath::Lerp(SavedBossIntroView.Location, BossIntroCameraLocation,
+		FMath::SmoothStep(0.0f, 1.0f, Alpha));
+	UpdateCamera(0.0f);
+}
+
+void AASPlayerCameraManager::EndBossIntro()
+{
+	if (!bBossIntroActive) return;
+	SetBossIntroBlend(0.0f);
+	bBossIntroActive = false;
 }
