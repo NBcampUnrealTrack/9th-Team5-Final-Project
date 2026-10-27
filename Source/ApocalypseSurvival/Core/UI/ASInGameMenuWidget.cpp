@@ -11,6 +11,7 @@
 #include "Core/Framework/ASPlayerController.h"
 #include "Core/Framework/ASSessionSubsystem.h"
 #include "Core/UI/ASSettingsWidget.h"
+#include "Core/UI/ASLeaveRoomConfirmationWidget.h"
 #include "Engine/GameInstance.h"
 #include "InputCoreTypes.h"
 
@@ -73,6 +74,7 @@ void UASInGameMenuWidget::NativeConstruct()
 
 void UASInGameMenuWidget::NativeDestruct()
 {
+	if (LeaveConfirmation) LeaveConfirmation->RemoveFromParent();
 	if (ResumeButton) ResumeButton->OnClicked.RemoveDynamic(this, &ThisClass::ResumeGame);
 	if (SettingsButton) SettingsButton->OnClicked.RemoveDynamic(this, &ThisClass::OpenSettings);
 	if (LeaveRoomButton) LeaveRoomButton->OnClicked.RemoveDynamic(this, &ThisClass::LeaveRoom);
@@ -137,6 +139,18 @@ void UASInGameMenuWidget::ShowMainMenu()
 }
 
 void UASInGameMenuWidget::LeaveRoom()
+{
+	if (bLeavingRoom || (LeaveConfirmation && LeaveConfirmation->IsInViewport())) return;
+	LeaveConfirmation = CreateWidget<UASLeaveRoomConfirmationWidget>(GetOwningPlayer());
+	if (!LeaveConfirmation) return;
+	LeaveConfirmation->SetReturnFocusWidget(this);
+	LeaveConfirmation->OnConfirmed.BindUObject(this, &ThisClass::ConfirmLeaveRoom);
+	LeaveConfirmation->AddToViewport(200);
+	SetIsEnabled(false);
+	LeaveConfirmation->SetKeyboardFocus();
+}
+
+void UASInGameMenuWidget::ConfirmLeaveRoom()
 {
 	if (bLeavingRoom || !GetGameInstance()) return;
 	UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>();

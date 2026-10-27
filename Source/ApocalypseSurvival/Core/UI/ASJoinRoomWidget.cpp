@@ -17,6 +17,7 @@ void UASJoinRoomWidget::NativeConstruct()
 	}
 	if (SearchRoomsButton) SearchRoomsButton->OnClicked.AddUniqueDynamic(this, &ThisClass::SearchRooms);
 	if (JoinRoomButton) JoinRoomButton->OnClicked.AddUniqueDynamic(this, &ThisClass::JoinSelectedRoom);
+	if (RoomComboBox) RoomComboBox->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleRoomSelectionChanged);
 	if (PasswordTextBox)
 	{
 		PasswordTextBox->SetIsPassword(true);
@@ -25,6 +26,7 @@ void UASJoinRoomWidget::NativeConstruct()
 		LastValidPassword.Reset();
 		PasswordTextBox->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandlePasswordChanged);
 	}
+	UpdatePasswordVisibility();
 	UpdateButtons();
 }
 
@@ -37,6 +39,7 @@ void UASJoinRoomWidget::NativeDestruct()
 	}
 	if (SearchRoomsButton) SearchRoomsButton->OnClicked.RemoveDynamic(this, &ThisClass::SearchRooms);
 	if (JoinRoomButton) JoinRoomButton->OnClicked.RemoveDynamic(this, &ThisClass::JoinSelectedRoom);
+	if (RoomComboBox) RoomComboBox->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleRoomSelectionChanged);
 	if (PasswordTextBox) PasswordTextBox->OnTextChanged.RemoveDynamic(this, &ThisClass::HandlePasswordChanged);
 	Super::NativeDestruct();
 }
@@ -51,6 +54,7 @@ void UASJoinRoomWidget::SearchRooms()
 	}
 	AvailableRooms.Reset();
 	if (RoomComboBox) RoomComboBox->ClearOptions();
+	UpdatePasswordVisibility();
 	bSearching = true;
 	UpdateButtons();
 	SetStatus(TEXT("방 검색 중..."));
@@ -72,9 +76,25 @@ void UASJoinRoomWidget::HandleSessionsFound(const bool bSuccess, const TArray<FA
 		}
 		if (!AvailableRooms.IsEmpty()) RoomComboBox->SetSelectedIndex(0);
 	}
+	UpdatePasswordVisibility();
 	UpdateButtons();
 	SetStatus(bSuccess ? FString::Printf(TEXT("검색된 방: %d개"), AvailableRooms.Num()) : TEXT("방 검색에 실패했습니다."));
 	OnRoomListUpdated(bSuccess);
+}
+
+void UASJoinRoomWidget::HandleRoomSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	LastValidPassword.Reset();
+	if (PasswordTextBox) PasswordTextBox->SetText(FText::GetEmpty());
+	UpdatePasswordVisibility();
+}
+
+void UASJoinRoomWidget::UpdatePasswordVisibility()
+{
+	if (!PasswordTextBox) return;
+	const int32 Selection = RoomComboBox ? RoomComboBox->GetSelectedIndex() : INDEX_NONE;
+	const bool bRequiresPassword = AvailableRooms.IsValidIndex(Selection) && AvailableRooms[Selection].bRequiresPassword;
+	PasswordTextBox->SetVisibility(bRequiresPassword ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
 
 void UASJoinRoomWidget::JoinSelectedRoom()

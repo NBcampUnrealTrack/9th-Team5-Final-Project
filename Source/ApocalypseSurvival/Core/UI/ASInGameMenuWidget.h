@@ -7,6 +7,7 @@
 class UButton;
 class UWidgetSwitcher;
 class UASSettingsWidget;
+class UASLeaveRoomConfirmationWidget;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API UASInGameMenuWidget : public UUserWidget
@@ -40,6 +41,9 @@ protected:
 	TObjectPtr<UWidgetSwitcher> MenuScreenSwitcher;
 
 private:
+	void ConfirmLeaveRoom();
+	UPROPERTY(Transient)
+	TObjectPtr<UASLeaveRoomConfirmationWidget> LeaveConfirmation;
 	UPROPERTY(Transient)
 	TObjectPtr<UASSettingsWidget> SettingsPanel;
 	bool bLeavingRoom = false;

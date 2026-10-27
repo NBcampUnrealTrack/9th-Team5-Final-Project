@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerState.h"
 #include "Core/Framework/ASSessionSubsystem.h"
 #include "Engine/GameInstance.h"
+#include "Core/UI/ASLeaveRoomConfirmationWidget.h"
 
 void UASLobbyWidget::NativeConstruct()
 {
@@ -20,6 +21,7 @@ void UASLobbyWidget::NativeConstruct()
 
 void UASLobbyWidget::NativeDestruct()
 {
+	if (LeaveConfirmation) LeaveConfirmation->RemoveFromParent();
 	if (GetWorld()) GetWorld()->GameStateSetEvent.RemoveAll(this);
 	if (BoundState) BoundState->OnLobbyStateChanged.RemoveDynamic(this, &ThisClass::HandleLobbyUpdated);
 	if (ReadyButton) ReadyButton->OnClicked.RemoveDynamic(this, &ThisClass::ToggleReady);
@@ -67,6 +69,18 @@ void UASLobbyWidget::RequestStartGame()
 }
 
 void UASLobbyWidget::LeaveRoom()
+{
+	if (LeaveConfirmation && LeaveConfirmation->IsInViewport()) return;
+	LeaveConfirmation = CreateWidget<UASLeaveRoomConfirmationWidget>(GetOwningPlayer());
+	if (!LeaveConfirmation) return;
+	LeaveConfirmation->SetReturnFocusWidget(this);
+	LeaveConfirmation->OnConfirmed.BindUObject(this, &ThisClass::ConfirmLeaveRoom);
+	LeaveConfirmation->AddToViewport(200);
+	SetIsEnabled(false);
+	LeaveConfirmation->SetKeyboardFocus();
+}
+
+void UASLobbyWidget::ConfirmLeaveRoom()
 {
 	if (UGameInstance* Instance = GetGameInstance())
 	{
