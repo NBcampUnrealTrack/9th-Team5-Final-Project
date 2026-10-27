@@ -296,6 +296,18 @@ namespace ASMapShapeUtils
 		}
 	}
 
+	void DisableAreaShapeCollision(const TArray<TWeakObjectPtr<UPrimitiveComponent>>& Components)
+	{
+		for (const TWeakObjectPtr<UPrimitiveComponent>& WeakComponent : Components)
+		{
+			if (UPrimitiveComponent* Component = WeakComponent.Get())
+			{
+				Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Component->SetGenerateOverlapEvents(false);
+			}
+		}
+	}
+
 	bool AnyShapeContainsLocation(const TArray<TWeakObjectPtr<UPrimitiveComponent>>& Components, const FVector& Location, bool bIgnoreHeight)
 	{
 		for (const TWeakObjectPtr<UPrimitiveComponent>& Component : Components)

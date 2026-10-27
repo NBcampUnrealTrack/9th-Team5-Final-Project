@@ -33,6 +33,9 @@ namespace ASMapShapeUtils
 	/** 다각형과 도형 컴포넌트를 수집한다 ("NotArea" 태그가 있는 컴포넌트는 제외). */
 	APOCALYPSESURVIVAL_API void GatherAreaComponents(const AActor* Actor, TArray<TWeakObjectPtr<UPrimitiveComponent>>& OutComponents);
 
+	/** 유효한 영역 컴포넌트의 충돌과 오버랩 이벤트를 끈다. */
+	APOCALYPSESURVIVAL_API void DisableAreaShapeCollision(const TArray<TWeakObjectPtr<UPrimitiveComponent>>& Components);
+
 	/** 파괴된 컴포넌트는 제외한다. 영역은 각 컴포넌트의 합집합이다. */
 	APOCALYPSESURVIVAL_API bool AnyShapeContainsLocation(const TArray<TWeakObjectPtr<UPrimitiveComponent>>& Components, const FVector& Location, bool bIgnoreHeight);
 

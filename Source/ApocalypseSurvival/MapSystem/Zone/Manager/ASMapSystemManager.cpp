@@ -478,12 +478,12 @@ bool AASMapSystemManager::ValidateLevel(const TArray<FASZoneConfig>& ZoneConfigs
 		}
 	}
 
-	// 반대쪽에서만 연결했어도 이웃이 있는 것으로 판단한다.
+	// 인접 정보는 디버그 표시에만 사용하므로 경고만 남긴다.
 	for (const FASZoneConfig& Config : ZoneConfigs)
 	{
 		if (Config.AdjacentZoneIds.IsEmpty())
 		{
-			OutErrors.Add(FString::Printf(TEXT("Zone '%s' has no adjacent zone in the level."), *Config.ZoneId.ToString()));
+			UE_LOG(LogApocalypseSurvival, Warning, TEXT("Zone '%s' has no adjacent zone in the level; adjacency is only used for debug display."), *Config.ZoneId.ToString());
 		}
 	}
 	return OutErrors.Num() == InitialErrorCount;
