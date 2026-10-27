@@ -50,8 +50,14 @@ public:
 	/** 제한 영역이 없는 로컬 전용 포스트 프로세스 볼륨으로 안개 텍스처를 적용한다. */
 	void UpdateWorldFog();
 	void RemoveWorldFog();
+	void SetBossIntroActive(bool bActive, const FVector& BossLocation = FVector::ZeroVector, float Radius = 600.0f);
 
 private:
+	friend class FASBossIntroFogTest;
+	float GetBossIntroFogOpacityScale(const FVector2D& WorldLocation) const;
+	FVector2D BossIntroCenter = FVector2D::ZeroVector;
+	float BossIntroRadius = 0.0f;
+	bool bBossIntroActive = false;
 	struct FLocalMaskContext
 	{
 		bool bWallOcclusion;

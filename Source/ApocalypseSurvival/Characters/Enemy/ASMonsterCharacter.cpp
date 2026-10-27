@@ -16,6 +16,7 @@
 #include "EngineUtils.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
+#include "GameplayEffectExtension.h"
 #include "GameplayEffectTypes.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -554,6 +555,18 @@ void AASMonsterCharacter::OnRep_MonsterDisplayName()
 
 void AASMonsterCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
+#if !UE_BUILD_SHIPPING
+    const AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>();
+    if (GameMode && GameMode->IsActiveBoss(this) && !FMath::IsNearlyEqual(Data.OldValue, Data.NewValue))
+    {
+       const FGameplayEffectModCallbackData* EffectData = Data.GEModData;
+       const FGameplayEffectContextHandle Context = EffectData ? EffectData->EffectSpec.GetContext() : FGameplayEffectContextHandle();
+       UE_LOG(LogTemp, Log, TEXT("[BossDebug][Health] Boss=%s Old=%.2f New=%.2f Max=%.2f Damage=%.2f Instigator=%s Causer=%s Effect=%s"),
+          *GetName(), Data.OldValue, Data.NewValue, OwnedHealthAttributeSet->GetMaxHealth(),
+          FMath::Max(0.0f, Data.OldValue - Data.NewValue), *GetNameSafe(Context.GetOriginalInstigator()),
+          *GetNameSafe(Context.GetEffectCauser()), *GetNameSafe(EffectData ? EffectData->EffectSpec.Def.Get() : nullptr));
+    }
+#endif
     if (HasAuthority() && Data.NewValue <= 0.0f)
     {
        QueueDeathHandling();
@@ -574,6 +587,15 @@ void AASMonsterCharacter::HandleDeath()
     }
 
     OwnedAbilitySystemComponent->AddMinimalReplicationGameplayTag(ASGameplayTags::State_Monster_Dead);
+#if !UE_BUILD_SHIPPING
+    const AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>();
+    if (GameMode && GameMode->IsActiveBoss(this))
+    {
+       UE_LOG(LogTemp, Log, TEXT("[BossDebug][Death] Boss=%s Health=%.2f Max=%.2f KillerController=%s DeadTag=%d"),
+          *GetName(), OwnedHealthAttributeSet->GetHealth(), OwnedHealthAttributeSet->GetMaxHealth(),
+          *GetNameSafe(LastDamageKillerController.Get()), IsDead());
+    }
+#endif
     SetHealthBarEnabled(false);
     SetTargetedAttackMaterialTint(false);
     AwardExperienceToKiller();
@@ -631,6 +653,7 @@ void AASMonsterCharacter::ReportDeathToGameMode_Implementation()
     if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
     {
        GameMode->OnEnemyKilled(LastDamageKillerController.Get());
+       if (GameMode->IsActiveBoss(this)) GameMode->OnBossDefeated();
     }
 }
 

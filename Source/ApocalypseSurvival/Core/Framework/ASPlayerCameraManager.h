@@ -53,6 +53,9 @@ public:
 
 	/** 0은 MinCameraDistance, 1은 MaxCameraDistance다. */
 	float GetZoomAlpha() const;
+	void BeginBossIntro(const FVector& BossLocation);
+	void SetBossIntroBlend(float Alpha);
+	void EndBossIntro();
 
 protected:
 	virtual void PostInitializeComponents() override;
@@ -61,6 +64,7 @@ protected:
 	virtual void UpdateViewTargetInternal(FTViewTarget& OutVT, float DeltaTime) override;
 
 private:
+	friend class FASBossCameraRestoreTest;
 	bool IsFollowingPawn() const { return bLockedToPawn || bCentering; }
 	
 	/* 관전 중 대상을 계속 따라간다 */
@@ -132,4 +136,8 @@ private:
 
 	/** 줌 보간 중 실제 값이 달라진 프레임에만 이벤트를 보내기 위한 마지막 값. */
 	float LastBroadcastZoomAlpha = -1.0f;
+	bool bBossIntroActive = false;
+	FMinimalViewInfo SavedBossIntroView;
+	FMinimalViewInfo BossIntroView;
+	FVector BossIntroCameraLocation = FVector::ZeroVector;
 };

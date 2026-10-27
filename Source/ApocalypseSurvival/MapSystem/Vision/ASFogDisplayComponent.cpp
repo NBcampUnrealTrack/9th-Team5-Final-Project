@@ -279,6 +279,25 @@ void UASFogDisplayComponent::RemoveWorldFog()
 	WorldFogMaterial = nullptr;
 }
 
+void UASFogDisplayComponent::SetBossIntroActive(bool bActive, const FVector& BossLocation, float Radius)
+{
+	if (bBossIntroActive == bActive) return;
+	bBossIntroActive = bActive;
+	BossIntroCenter = FVector2D(BossLocation.X, BossLocation.Y);
+	BossIntroRadius = FMath::Max(0.0f, Radius);
+	// Only the uploaded display pixels change. Logical vision and exploration stay untouched.
+	UploadTexture({FIntRect(0, 0, ResolutionX, ResolutionY)});
+}
+
+float UASFogDisplayComponent::GetBossIntroFogOpacityScale(const FVector2D& WorldLocation) const
+{
+	if (!bBossIntroActive || BossIntroRadius <= 0.0f) return 1.0f;
+	const double DistanceSquared = FVector2D::DistSquared(WorldLocation, BossIntroCenter);
+	if (DistanceSquared >= FMath::Square(BossIntroRadius)) return 1.0f;
+	const float SoftEdge = FMath::Min(100.0f, BossIntroRadius * 0.2f);
+	return FMath::SmoothStep(BossIntroRadius - SoftEdge, BossIntroRadius, static_cast<float>(FMath::Sqrt(DistanceSquared)));
+}
+
 void UASFogDisplayComponent::ResetExplored()
 {
 	FMemory::Memzero(ExploredCells.GetData(), ExploredCells.Num());
@@ -1098,6 +1117,18 @@ void UASFogDisplayComponent::UploadTexture(const TArray<FIntRect>& DirtyRegions)
 				Pixel[1] = bLocal ? DisplayShownAlpha[Index] : ShownAlpha[Index]; // G
 				Pixel[2] = bLocal ? OthersShownAlpha[Index] : ShownAlpha[Index]; // R
 				Pixel[3] = ShownAlpha[Index];
+				if (bBossIntroActive)
+				{
+					const FVector2D WorldSize = GetFogWorldSize();
+					const FVector2D WorldLocation(
+						FogWorldMin.X + (1.0 - (GridY + 0.5) / ResolutionY) * WorldSize.X,
+						FogWorldMin.Y + (GridX + 0.5) / ResolutionX * WorldSize.Y);
+					const float OpacityScale = GetBossIntroFogOpacityScale(WorldLocation);
+					for (int32 Channel = 1; Channel < 4; ++Channel)
+					{
+						Pixel[Channel] = static_cast<uint8>(FMath::RoundToInt(Pixel[Channel] * OpacityScale));
+					}
+				}
 			}
 		}
 		SourceY += Dirty.Height();

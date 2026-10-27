@@ -69,6 +69,7 @@ public:
 	/** 로컬 표시를 다시 적용한다 (새 시각 액터 부착 후 호출). */
 	UFUNCTION(BlueprintCallable, Category = "AS|Vision")
 	void RefreshLocalPresentation();
+	void SetBossIntroVisible(bool bVisible);
 
 	/** 로컬 팀에게 이 대상이 나타나거나 사라질 때 각 머신에서 발생한다. */
 	UPROPERTY(BlueprintAssignable, Category = "AS|Vision")
@@ -120,5 +121,6 @@ private:
 	bool bOwnerAlwaysRelevantByDefault = false;
 	bool bLocallyVisible = true;
 	bool bPresentationInitialized = false;
+	bool bBossIntroVisible = false;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> HiddenPrimitives;
 };

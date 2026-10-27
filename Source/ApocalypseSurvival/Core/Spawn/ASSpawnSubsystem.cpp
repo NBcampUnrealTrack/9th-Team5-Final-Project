@@ -79,6 +79,13 @@ void UASSpawnSubsystem::StopAllSpawning()
 	StopWave();
 }
 
+AASMonsterCharacter* UASSpawnSubsystem::SpawnNightBoss(TSubclassOf<AASMonsterCharacter> BossClass)
+{
+	TArray<FVector> Locations;
+	if (!BossClass || !FindWaveSpawnLocations(1, Locations) || Locations.IsEmpty()) return nullptr;
+	return SpawnMonster(BossClass, FTransform(FRotator::ZeroRotator, Locations[0]), false, nullptr, true);
+}
+
 void UASSpawnSubsystem::SpawnDayUnits(int32 Day, UDataTable* DaySpawnDataTable, UDataTable* MonsterSpawnGroupDataTable)
 {
 	if (!DaySpawnDataTable)
@@ -741,7 +748,7 @@ bool UASSpawnSubsystem::IsNearAnyLivingPlayer(const FVector& Location) const
 }
 
 AASMonsterCharacter* UASSpawnSubsystem::SpawnMonster(TSubclassOf<AASMonsterCharacter> MonsterClass,
-	const FTransform& SpawnTransform, bool bCanAggroDuringDay, const AASMonsterSpawnPoint* HomeSpawnPoint)
+	const FTransform& SpawnTransform, bool bCanAggroDuringDay, const AASMonsterSpawnPoint* HomeSpawnPoint, bool bAlwaysRelevant)
 {
 	UWorld* World = GetWorld();
 	if (!World || !MonsterClass)
@@ -755,6 +762,8 @@ AASMonsterCharacter* UASSpawnSubsystem::SpawnMonster(TSubclassOf<AASMonsterChara
 		MonsterClass, SpawnTransform, nullptr, nullptr, SpawnParams.SpawnCollisionHandlingOverride);
 	if (Monster)
 	{
+		// Vision components cache this flag during BeginPlay; set it before FinishSpawning.
+		if (bAlwaysRelevant) Monster->bAlwaysRelevant = true;
 		Monster->SetDayBehavior(bCanAggroDuringDay
 			? EASMonsterDayBehavior::ProximityAggro
 			: EASMonsterDayBehavior::NightOnly);

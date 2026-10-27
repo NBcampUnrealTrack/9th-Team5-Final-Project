@@ -6,6 +6,7 @@
 #include "ASPlayerController.generated.h"
 
 class AASPlayerCameraManager;
+class AASBossEncounter;
 class UASAbilitySystemComponent;
 class UASPlayerAttackMoveComponent;
 class UASInputConfig;
@@ -45,6 +46,9 @@ class APOCALYPSESURVIVAL_API AASPlayerController : public APlayerController
 
 public:
 	AASPlayerController();
+	UFUNCTION(Server, Reliable)
+	void ServerAcknowledgeBossIntro(AASBossEncounter* Encounter);
+	void SetBossIntroInputBlocked(bool bBlocked);
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ToggleInGameMenu();
@@ -113,6 +117,9 @@ protected:
 	virtual void PlayerTick(float DeltaTime) override;
 
 private:
+	bool bBossIntroInputBlocked = false;
+	bool bFullTickBeforeBossIntro = false;
+	bool bTickWhenPausedBeforeBossIntro = false;
 	bool IsResultPhase() const;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UASInGameMenuWidget> InGameMenuWidgetClass;

@@ -41,6 +41,7 @@ public:
 	void HandleNightStarted(int32 Day, UDataTable* WaveDataTable, UDataTable* MonsterSpawnGroupDataTable);
 	void HandleNightEnded();
 	void StopAllSpawning();
+	AASMonsterCharacter* SpawnNightBoss(TSubclassOf<AASMonsterCharacter> BossClass);
 	bool IsWaveSpawnFinished() const {return SpawnedWaveMonsterCount >= TotalWaveMonsterCount;}
 
 private:
@@ -62,7 +63,7 @@ private:
 	void GenerateWaveSpawnPoints();
 	bool IsNearAnyLivingPlayer(const FVector& Location) const;
 	AASMonsterCharacter* SpawnMonster(TSubclassOf<AASMonsterCharacter> MonsterClass, const FTransform& SpawnTransform,
-		bool bCanAggroDuringDay, const AASMonsterSpawnPoint* HomeSpawnPoint = nullptr);
+		bool bCanAggroDuringDay, const AASMonsterSpawnPoint* HomeSpawnPoint = nullptr, bool bAlwaysRelevant = false);
 	int32 SpawnMassMonsters(UMassEntityConfigAsset& EntityConfig, TConstArrayView<FTransform> SpawnTransforms,
 		EASMassMonsterWorldBehavior WorldBehavior, const AASMonsterSpawnPoint* HomeSpawnPoint = nullptr);
 	int32 CountAliveManagedActorMonsters();

@@ -11,6 +11,7 @@
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Core/Cheats/ASCheatManager.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
+#include "Core/Framework/ASBossEncounter.h"
 #include "Core/Input/ASInputConfig.h"
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
 #include "Core/Framework/ASGameState.h"
@@ -155,6 +156,7 @@ void AASPlayerController::SetupInputComponent()
 
 bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
+	if (bBossIntroInputBlocked) return true;
 	if (IsLocalController() && Params.Key == EKeys::Escape && Params.Event == IE_Pressed && !IsResultPhase())
 	{
 		ToggleInGameMenu();
@@ -165,6 +167,7 @@ bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
+	if (bBossIntroInputBlocked) return;
 	if (IsInGameMenuOpen()) return;
 	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
 	// 준비가 실제로 시작된 뒤에만 공격 이동 상태를 바꾼다. 발동 실패(쿨타임·비용 등)는
@@ -372,6 +375,7 @@ void AASPlayerController::ServerDebugGiveWeapon_Implementation(FName WeaponName)
 
 void AASPlayerController::PlayerTick(const float DeltaTime)
 {
+	if (bBossIntroInputBlocked) return;
 	Super::PlayerTick(DeltaTime);
 	if (IsInGameMenuOpen())
 	{
@@ -395,6 +399,7 @@ bool AASPlayerController::IsResultPhase() const
 
 void AASPlayerController::ToggleInGameMenu()
 {
+	if (bBossIntroInputBlocked) return;
 	if (!IsLocalController()) return;
 	if (IsInGameMenuOpen())
 	{
@@ -463,6 +468,7 @@ bool AASPlayerController::GetCursorWorldLocation(FVector& OutLocation) const
 
 void AASPlayerController::RequestMoveTo(const FVector& Destination)
 {
+	if (bBossIntroInputBlocked) return;
 	if (!IsValid(GetPawn()))
 	{
 		return;
@@ -484,6 +490,30 @@ void AASPlayerController::RequestMoveTo(const FVector& Destination)
 
 	UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, NavLocation.Location);
 	LastMoveRequestTime = GetWorld()->GetTimeSeconds();
+}
+
+void AASPlayerController::ServerAcknowledgeBossIntro_Implementation(AASBossEncounter* Encounter)
+{
+	if (IsValid(Encounter) && Encounter->GetWorld() == GetWorld())
+	{
+		Encounter->AcknowledgePlayer(this);
+	}
+}
+
+void AASPlayerController::SetBossIntroInputBlocked(bool bBlocked)
+{
+	if (bBossIntroInputBlocked == bBlocked) return;
+	if (bBlocked)
+	{
+		bFullTickBeforeBossIntro = bShouldPerformFullTickWhenPaused;
+		bTickWhenPausedBeforeBossIntro = PrimaryActorTick.bTickEvenWhenPaused;
+	}
+	// Camera-manager updates still need the controller's full paused tick; PlayerTick blocks gameplay input separately.
+	bShouldPerformFullTickWhenPaused = bBlocked ? true : bFullTickBeforeBossIntro;
+	PrimaryActorTick.bTickEvenWhenPaused = bBlocked ? true : bTickWhenPausedBeforeBossIntro;
+	// Releases that occur while the overlay owns focus must not leave gameplay keys held down.
+	FlushPressedKeys();
+	bBossIntroInputBlocked = bBlocked;
 }
 
 void AASPlayerController::OnMoveStarted()

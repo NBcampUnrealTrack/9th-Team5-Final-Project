@@ -1,5 +1,7 @@
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
+#include "Core/Framework/ASBossEncounter.h"
+#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Core/Spawn/ASSpawnSubsystem.h"
 #include "Core/Framework/ASPlayerRecordComponent.h"
 #include "Core/Framework/ASRespawnPoint.h"
@@ -175,6 +177,20 @@ void AASGameMode::StartNight()
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
 		SpawnSubsystem->HandleNightStarted(Day, WaveDataTable, MonsterSpawnGroupDataTable);
+		if (bBossNight)
+		{
+			ActiveBoss = SpawnSubsystem->SpawnNightBoss(BossClass.LoadSynchronous());
+			if (ActiveBoss)
+			{
+				ReportWaveSpawned(1);
+				BossEncounter = GetWorld()->SpawnActor<AASBossEncounter>();
+				if (BossEncounter) BossEncounter->InitializeBoss(ActiveBoss);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("[Boss] Day %d boss could not be spawned."), Day);
+			}
+		}
 	}
 	
 	GetWorldTimerManager().SetTimer(PhaseTimerHandle, this, &AASGameMode::OnNightTimeUp, Duration, false);
@@ -346,6 +362,8 @@ void AASGameMode::OnEnemiesKilled(const int32 Count, AController* Killer)
 void AASGameMode::OnBossDefeated()
 {
 	if (IsGameEnded()) return;
+	// Elite blueprints also call this event. Only the scheduled boss ends a boss night.
+	if (bBossDefeatedThisNight || !IsValid(ActiveBoss) || !ActiveBoss->IsDead()) return;
 	
 	AASGameState* GS = GetASGameState();
 	if (!GS) return;
@@ -1055,6 +1073,13 @@ void AASGameMode::DebugKillEnemy()
 
 void AASGameMode::DebugKillBoss()
 {
+	if (IsValid(ActiveBoss))
+	{
+		if (UAbilitySystemComponent* Abilities = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(ActiveBoss))
+		{
+			Abilities->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), 0.0f);
+		}
+	}
 	OnBossDefeated();
 }
 
