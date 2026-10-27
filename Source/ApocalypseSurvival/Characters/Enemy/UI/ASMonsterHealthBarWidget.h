@@ -32,6 +32,7 @@ public:
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
 private:
@@ -49,6 +50,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASAbilitySystemComponent> AbilitySystemComponent;
+
+	/**
+	 * Screen Space WidgetComponent가 안개로 화면에서 제거되면 NativeDestruct가 호출될 수 있다.
+	 * 다시 구성될 때 동일한 몬스터의 Attribute 구독을 복구할 수 있도록 약한 참조를 유지한다.
+	 */
+	TWeakObjectPtr<AASMonsterCharacter> HealthSource;
 
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle MaxHealthChangedHandle;
