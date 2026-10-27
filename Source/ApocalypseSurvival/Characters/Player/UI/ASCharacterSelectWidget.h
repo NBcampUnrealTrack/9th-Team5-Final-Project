@@ -121,6 +121,10 @@ protected:
 	TObjectPtr<UTextBlock> CharacterSelectionStatusText;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CharacterReadyButton;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> ConfirmButton;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ConfirmText;
 	
 private:
 	// 선택 서브시스템에 저장. 성공하면 true

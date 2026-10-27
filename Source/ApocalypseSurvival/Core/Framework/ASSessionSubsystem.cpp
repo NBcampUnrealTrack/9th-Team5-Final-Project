@@ -426,7 +426,13 @@ void UASSessionSubsystem::HandleNetworkFailure(UWorld* World, UNetDriver* NetDri
 
 void UASSessionSubsystem::HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& Error)
 {
-	HandleConnectionFailure(World, Error.IsEmpty() ? TEXT("맵 이동에 실패했습니다.") : Error);
+	if (!World || World->GetGameInstance() != GetGameInstance() || bLeavingRoom) return;
+	bLeavingRoom = true;
+	bJoinTravelPending = false;
+	ReturnToMenuMessage = FText::FromString(TEXT("맵 이동에 실패하여 메인메뉴로 돌아왔습니다. 다시 방을 생성하거나 참가해 주세요."));
+	UE_LOG(LogTemp, Warning, TEXT("[Session] Travel failed: %s"), *Error);
+	SetLobbyOpen(false);
+	DestroySession();
 }
 
 void UASSessionSubsystem::HandleMapLoaded(UWorld* World)
@@ -454,7 +460,9 @@ void UASSessionSubsystem::HandleConnectionFailure(UWorld* World, const FString& 
 		bLeavingRoom = true;
 		ReturnToMenuMessage = FText::FromString(bWasJoining && Error.Contains(TEXT("AS_WRONG_PASSWORD"))
 			? TEXT("비밀번호가 일치하지 않습니다. 방을 다시 선택해 주세요.")
-			: TEXT("서버와 연결이 종료되었습니다. 방장이 나갔거나 연결이 끊겼습니다."));
+			: Error.Contains(TEXT("AS_GAME_IN_PROGRESS")) || Error.Contains(TEXT("Game is starting."))
+				? TEXT("이미 시작한 방에는 참가할 수 없습니다. 다른 방을 선택해 주세요.")
+				: TEXT("서버와 연결이 종료되었습니다. 방장이 나갔거나 연결이 끊겼습니다."));
 	}
 	DestroySession();
 	if (bWasJoining) OnSessionJoined.Broadcast(false, Error);

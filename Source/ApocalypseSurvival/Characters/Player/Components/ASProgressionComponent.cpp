@@ -189,3 +189,13 @@ void UASProgressionComponent::NotifyProgressionDataChanged()
 	// 레벨 이벤트는 레벨업 연출이 붙어 있어서 보내지 않는다. 필요 경험치만 다시 알린다.
 	OnExpChanged.Broadcast(CurrentExp, GetExpToNextLevel());
 }
+
+void UASProgressionComponent::ResetForNewMatch()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	Level = 1;
+	CurrentExp = 0;
+	UnlockedSkillUpgradeTierCount = 0;
+	GetOwner()->ForceNetUpdate();
+	NotifyProgressionDataChanged();
+}

@@ -9,6 +9,10 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "OnlineSubsystemTypes.h"
+#include "GAS/ASAbilitySystemComponent.h"
+#include "GAS/Attributes/ASCombatAttributeSet.h"
+#include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
+#include "GAS/ASAbilityTags.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FASMatchCharacterCacheTest,
 	"ApocalypseSurvival.CharacterSelection.PlayerChoicesSurviveTravel",
@@ -68,6 +72,47 @@ bool FASCharacterSelectionStateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Copied selection is ready before spawning"), Destination->HasReceivedCharacterSelection());
 	State->MarkTravelling();
 	TestTrue(TEXT("Selection closes when travelling"), State->LobbyPhase == EASLobbyPhase::Travelling);
+	World->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FASNewMatchSelectionTest,
+	"ApocalypseSurvival.CharacterSelection.NewMatchClearsPreviousCharacter",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FASNewMatchSelectionTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	if (!TestNotNull(TEXT("Test world"), World)) return false;
+	AASPlayerState* State = World->SpawnActor<AASPlayerState>();
+	if (!TestNotNull(TEXT("Player state"), State))
+	{
+		World->DestroyWorld(false);
+		return false;
+	}
+	UASAbilitySystemComponent* ASC = Cast<UASAbilitySystemComponent>(State->GetAbilitySystemComponent());
+	ASC->InitAbilityActorInfo(State, State);
+	ASC->AddAttributeSetSubobject(NewObject<UASCombatAttributeSet>(State));
+	const UASCharacterDefinition* First = NewObject<UASCharacterDefinition>();
+	const UASCharacterDefinition* Second = NewObject<UASCharacterDefinition>();
+	State->SetCharacterDefinition(First);
+	State->ApplyCharacterDefinitionOnce();
+	State->MarkCharacterSelectionReceived();
+	State->SetCharacterDefinition(Second);
+	TestTrue(TEXT("Character remains locked during the current match"), State->GetCharacterDefinition() == First);
+	const FGameplayAbilitySpecHandle OldAbility = ASC->GiveAbility(FGameplayAbilitySpec(UASGameplayAbility_CharacterPrimaryAttack::StaticClass()));
+	ASC->SetNumericAttributeBase(UASCombatAttributeSet::GetAttackPowerAttribute(), 999.0f);
+	ASC->AddLooseGameplayTag(ASGameplayTags::State_Downed);
+	State->ResetForNewMatch();
+	TestNull(TEXT("Previous match ability is removed"), ASC->FindAbilitySpecFromHandle(OldAbility));
+	TestFalse(TEXT("Previous downed state is removed"), ASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed));
+	TestEqual(TEXT("Previous attack growth is reset"), ASC->GetNumericAttributeBase(UASCombatAttributeSet::GetAttackPowerAttribute()),
+		GetDefault<UASCombatAttributeSet>()->GetAttackPower());
+	TestNull(TEXT("Lobby return clears the previous character"), State->GetCharacterDefinition());
+	TestFalse(TEXT("New match requires a fresh selection"), State->HasReceivedCharacterSelection());
+	State->SetCharacterDefinition(Second);
+	State->ApplyCharacterDefinitionOnce();
+	TestTrue(TEXT("Second match applies the newly selected character"), State->GetCharacterDefinition() == Second);
 	World->DestroyWorld(false);
 	return true;
 }
