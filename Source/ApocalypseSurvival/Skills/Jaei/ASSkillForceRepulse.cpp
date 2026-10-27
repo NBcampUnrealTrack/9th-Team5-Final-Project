@@ -117,7 +117,7 @@ void UASSkillForceRepulse::TickWave()
 		ApplyKnockback(Target);
 	}
 
-	if (bDrawDebug)
+	if (ShouldDrawDebug())
 	{
 		DrawDebugCone(World, WaveOrigin, WaveDirection, CurrentRadius, FMath::DegreesToRadians(Angle * 0.5f), 0.05f, 16,
 			Result.HasAnyHit() ? FColor::Red : FColor::Green, false, WaveTickInterval * 2.0f);

@@ -152,7 +152,7 @@ void UASSkillDash::CheckDashHit()
 	const FVector SweepStart = LastSweepLocation;
 	const FVector CurrentLocation = Avatar->GetActorLocation();
 
-	if (bDrawDebug)
+	if (ShouldDrawDebug())
 	{
 		DrawDebugLine(World, SweepStart, CurrentLocation, FColor::Cyan, false, 1.0f, 0, 2.0f);
 		DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Cyan, false, 1.0f);
@@ -204,7 +204,7 @@ void UASSkillDash::CheckDashHit()
 		return;
 	}
 
-	if (bDrawDebug)
+	if (ShouldDrawDebug())
 	{
 		DrawDebugSphere(World, CurrentLocation, DashHitRadius, 12, FColor::Red, false, 1.0f);
 	}

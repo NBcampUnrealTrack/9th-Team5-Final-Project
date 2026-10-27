@@ -63,7 +63,7 @@ void UASSkillMelee::OnSkillEffect_Implementation()
 	//AS.Debug.SkillDamage 1
 	ASSkillDamageDebug::Report(this, EffectSpecs, ApplyResult, Center);
 
-	if (bDrawDebug)
+	if (ShouldDrawDebug())
 	{
 		const FColor Color = ApplyResult.HasAnyHit() ? FColor::Red : FColor::Green;
 

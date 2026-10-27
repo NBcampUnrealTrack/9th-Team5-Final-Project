@@ -75,7 +75,7 @@ AASSkillAreaActor* UASSkillArea::SpawnArea(const FVector& Location, const FVecto
 	ImpactContext.HitLocation = Location;
 	ImpactContext.HitDirection = Aim;
 	Area->InitArea(MakeDamageSpec(), Avatar, Radius, Duration, TickInterval,
-		bDamageOnSpawn, bCanHitPlayers, bDrawDebug, ImpactContext);
+		bDamageOnSpawn, bCanHitPlayers, ShouldDrawDebug(), ImpactContext);
 	Area->SetExtraEffectSpecs(MakeAdditionalEffectSpecs());
 
 	if (FollowTarget && FollowTarget->IsValid())

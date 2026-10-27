@@ -64,7 +64,7 @@ void UASSkillCatchSling::OnSkillEffect_Implementation()
 	FASCombatTargetRef Target;
 	const bool bFoundTarget = FindFollowTarget(TargetLocation, Target);
 
-	if (bDrawDebug)
+	if (ShouldDrawDebug())
 	{
 		DrawDebugCircle(World, TargetLocation, ServerSearchRadius, 32,
 			bFoundTarget ? FColor::Green : FColor::Yellow, false, 1.0f, 0, 3.0f,

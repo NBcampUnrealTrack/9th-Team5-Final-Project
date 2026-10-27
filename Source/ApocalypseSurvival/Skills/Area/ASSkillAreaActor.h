@@ -66,7 +66,7 @@ protected:
 	AActor* GetInstigatorAvatar() const { return InstigatorAvatar.Get(); }
 	const FGameplayEffectSpecHandle& GetDamageSpec() const { return DamageSpec; }
 	bool CanHitPlayers() const { return bCanHitPlayers; }
-	bool ShouldDrawDebug() const { return bDrawDebug; }
+	bool ShouldDrawDebug() const;
 
 private:
 	void DoDamageTick();

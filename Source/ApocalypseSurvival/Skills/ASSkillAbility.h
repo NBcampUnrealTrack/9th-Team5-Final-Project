@@ -220,6 +220,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Debug")
 	bool bDrawDebug = false;
 
+	//bDrawDebug + 패키징 빌드에서는 꺼짐 (디버그 선은 이걸로 확인)
+	bool ShouldDrawDebug() const;
+
 	//스킬 아이콘 (SkillData에 아이콘이 있으면 그쪽 사용)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Icon")
 	TObjectPtr<UTexture2D> SkillIcon;

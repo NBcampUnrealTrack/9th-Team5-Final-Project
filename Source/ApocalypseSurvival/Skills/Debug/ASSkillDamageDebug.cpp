@@ -15,6 +15,12 @@ namespace
 		TEXT("1 = 스킬 데미지를 화면(머리 위 숫자)과 출력 로그에 표시"),
 		ECVF_Cheat);
 
+	TAutoConsoleVariable<int32> CVarSkillDrawDebug(
+		TEXT("AS.Debug.SkillDraw"),
+		0,
+		TEXT("1 = 패키징 빌드에서도 스킬 BP의 Draw Debug 선 표시 (에디터에서는 항상 표시)"),
+		ECVF_Cheat);
+
 	//숫자가 떠 있는 시간
 	constexpr float LabelDuration = 1.5f;
 }
@@ -22,6 +28,15 @@ namespace
 bool ASSkillDamageDebug::IsEnabled()
 {
 	return CVarSkillDamageDebug.GetValueOnGameThread() > 0;
+}
+
+bool ASSkillDamageDebug::IsSkillDrawEnabled()
+{
+#if ENABLE_DRAW_DEBUG
+	return GIsEditor || CVarSkillDrawDebug.GetValueOnGameThread() > 0;
+#else
+	return false;
+#endif
 }
 
 float ASSkillDamageDebug::GetDamageFromSpecs(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs)

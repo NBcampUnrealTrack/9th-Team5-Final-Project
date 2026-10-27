@@ -15,6 +15,7 @@
 #include "GameplayEffect.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Skills/ASSkillTags.h"
+#include "Skills/Debug/ASSkillDamageDebug.h"
 #include "Skills/Data/ASSkillData.h"
 #include "AbilitySystemGlobals.h"
 #include "GAS/ASAbilityTags.h"
@@ -929,6 +930,11 @@ ACharacter* UASSkillAbility::GetOwnerCharacter() const
 	return Cast<ACharacter>(GetAvatarActorFromActorInfo());
 }
 
+bool UASSkillAbility::ShouldDrawDebug() const
+{
+	return bDrawDebug && ASSkillDamageDebug::IsSkillDrawEnabled();
+}
+
 bool UASSkillAbility::HasSkillAuthority() const
 {
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
@@ -981,7 +987,7 @@ TArray<AActor*> UASSkillAbility::FindTargetsInRadius(const FVector& Center, floa
 	Query.bRequireAlive = false;
 	TArray<AActor*> Targets = CombatTargets ? CombatTargets->FindActorTargets(Query) : TArray<AActor*>();
 
-	if (bDrawDebug && World)
+	if (ShouldDrawDebug() && World)
 	{
 		DrawDebugSphere(World, Center, Radius, 16, Targets.Num() > 0 ? FColor::Red : FColor::Green, false, 1.0f);
 	}

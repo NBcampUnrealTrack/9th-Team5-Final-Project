@@ -73,7 +73,7 @@ void AASSpreadOrbActor::Spread(const FVector& Origin)
 		}
 		SpawnChildOrb(Origin, Direction, SpreadSpecs, &Target);
 
-		if (bDrawDebug)
+		if (bDrawDebug && ASSkillDamageDebug::IsSkillDrawEnabled())
 		{
 			DrawDebugLine(GetWorld(), Origin, FVector(Target.GetLocation().X, Target.GetLocation().Y, Origin.Z),
 				FColor::Cyan, false, 1.0f, 0, 2.0f);
@@ -96,14 +96,14 @@ void AASSpreadOrbActor::Spread(const FVector& Origin)
 			const FVector Direction = Forward.RotateAngleAxis(Step * 0.5f + Step * Index, FVector::UpVector);
 			SpawnChildOrb(Origin, Direction, SpreadSpecs, nullptr);
 
-			if (bDrawDebug)
+			if (bDrawDebug && ASSkillDamageDebug::IsSkillDrawEnabled())
 			{
 				DrawDebugLine(GetWorld(), Origin, Origin + Direction * ScatterRange, FColor::Yellow, false, 1.0f, 0, 2.0f);
 			}
 		}
 	}
 
-	if (bDrawDebug)
+	if (bDrawDebug && ASSkillDamageDebug::IsSkillDrawEnabled())
 	{
 		DrawDebugCircle(GetWorld(), Origin, SeekRadius, 32, FColor::Cyan, false, 1.0f, 0, 2.0f,
 			FVector::ForwardVector, FVector::RightVector, false);

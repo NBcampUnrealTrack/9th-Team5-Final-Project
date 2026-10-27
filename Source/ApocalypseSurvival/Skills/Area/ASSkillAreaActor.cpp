@@ -183,7 +183,7 @@ void AASSkillAreaActor::DoDamageTick()
 	//GameplayCue로 충격파 이펙트 (모든 화면)
 	ExecutePulseCue(Center);
 
-	if (bDrawDebug)
+	if (ShouldDrawDebug())
 	{
 		DrawDebugSphere(GetWorld(), Center, Radius, 16,
 			ApplyResult.HasAnyHit() ? FColor::Red : FColor::Orange, false, TickInterval * 0.8f);
@@ -196,6 +196,11 @@ void AASSkillAreaActor::DoDamageTick()
 	{
 		GetWorldTimerManager().ClearTimer(TickTimerHandle);
 	}
+}
+
+bool AASSkillAreaActor::ShouldDrawDebug() const
+{
+	return bDrawDebug && ASSkillDamageDebug::IsSkillDrawEnabled();
 }
 
 void AASSkillAreaActor::ExecutePulseCue(const FVector& Center) const
