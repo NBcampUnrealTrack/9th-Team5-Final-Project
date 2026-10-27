@@ -242,6 +242,12 @@ namespace ASMapShapeUtils
 			return false;
 		}
 
+		const FVector Scale = Shape->GetComponentTransform().GetScale3D();
+		if (FMath::IsNearlyZero(FMath::Abs(Scale.X)) || FMath::IsNearlyZero(FMath::Abs(Scale.Y)))
+		{
+			return false;
+		}
+
 		// 로컬 공간에 컴포넌트 스케일이 포함되므로 스케일을 적용하지 않은 크기를 비교한다.
 		const FVector Local = Shape->GetComponentTransform().InverseTransformPosition(Location);
 
