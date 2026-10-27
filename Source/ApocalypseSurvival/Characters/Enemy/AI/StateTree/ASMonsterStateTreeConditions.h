@@ -78,3 +78,38 @@ struct APOCALYPSESURVIVAL_API FASMonsterTargetInAttackRangeCondition : public FS
 
 	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
 };
+
+/** 체력 비율이 지정한 임계값 이하인지 검사하는 Condition의 인스턴스 데이터. */
+USTRUCT()
+struct FASMonsterHealthConditionInstanceData
+{
+	GENERATED_BODY()
+
+	/** 몬스터 컨텍스트의 CombatComponent를 바인딩하여 체력 비율을 조회한다. */
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UASMonsterCombatComponent> CombatComponent;
+
+	/** 비교할 체력 비율 임계값 (예: 0.5 = 50%). */
+	UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HealthThreshold = 0.5f;
+
+	/** true면 결과를 뒤집는다. */
+	UPROPERTY(EditAnywhere, Category = "Parameter")
+	bool bInvert = false;
+};
+
+/**
+ * 몬스터의 현재 체력 비율이 임계값 이하인지 검사한다.
+ * 페이즈 2 전환 등의 조건에 사용한다.
+ */
+USTRUCT(meta = (DisplayName = "AS Monster Health Condition", Category = "AS|Monster"))
+struct APOCALYPSESURVIVAL_API FASMonsterHealthCondition : public FStateTreeConditionCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FASMonsterHealthConditionInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+
+	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
+};
