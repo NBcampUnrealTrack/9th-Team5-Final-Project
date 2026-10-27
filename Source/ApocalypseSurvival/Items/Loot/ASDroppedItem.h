@@ -38,6 +38,7 @@ class APOCALYPSESURVIVAL_API UASDroppedItemNameWidget : public UUserWidget
 	GENERATED_BODY()
 public:
 	void SetItem(AASDroppedItem* InItem);
+	void RefreshVisibility();
 	void SetWorldHovered(bool bHovered);
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -72,6 +73,7 @@ public:
 	int32 Pickup(APawn* Interactor, UASInventoryComponent* TargetInventory);
 	/** Local cosmetic state only; each player's item interaction component updates it. */
 	void SetWorldHovered(bool bHovered);
+	void RefreshNameVisibility();
 
 	virtual bool CanInteract_Implementation(AActor* Interactor) const override;
 	virtual void Interact_Implementation(AActor* Interactor) override;

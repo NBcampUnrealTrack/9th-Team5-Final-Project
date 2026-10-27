@@ -357,6 +357,13 @@ void AASPlayerController::ServerDebugGod_Implementation()
 #endif
 }
 
+void AASPlayerController::ServerDebugGiveWeapon_Implementation(FName WeaponName)
+{
+#if !UE_BUILD_SHIPPING
+	UASCheatManager::GiveWeaponToPlayer(this, WeaponName);
+#endif
+}
+
 void AASPlayerController::PlayerTick(const float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
