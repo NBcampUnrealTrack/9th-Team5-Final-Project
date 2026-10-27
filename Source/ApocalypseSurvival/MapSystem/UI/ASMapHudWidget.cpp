@@ -5,6 +5,9 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+#include "MapSystem/UI/ASMapViewModel.h"
+#include "MapSystem/UI/ASMapViewModelSubsystem.h"
 #include "MapSystem/Zone/Core/ASMapFunctionLibrary.h"
 
 TSharedRef<SWidget> UASMapHudWidget::RebuildWidget()
@@ -50,4 +53,49 @@ void UASMapHudWidget::NativeConstruct()
 	const bool bHideHud = !IsDesignTime() && World && World->IsGameWorld()
 		&& !UASMapFunctionLibrary::LevelHasMapZones(this);
 	SetVisibility(bHideHud ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+
+	APlayerController* OwningPlayer = GetOwningPlayer();
+	if (!bHideHud && !IsDesignTime() && OwningPlayer && OwningPlayer->IsLocalPlayerController() && !ExpandedMapWidget)
+	{
+		if (UClass* ExpandedMapClass = ExpandedMapWidgetClass.LoadSynchronous())
+		{
+			ExpandedMapWidget = CreateWidget<UUserWidget>(OwningPlayer, ExpandedMapClass);
+			if (ExpandedMapWidget)
+			{
+				// 팀 HUD(뷰포트 레이어, 인벤토리 바 10)보다 위, 게임 메뉴(20)보다 아래에 그린다.
+				ExpandedMapWidget->AddToViewport(15);
+				// 위치·크기 설정은 앵커를 좌상단으로 되돌리므로 늘이는 앵커만 지정한다.
+				ExpandedMapWidget->SetAnchorsInViewport(FAnchors(0.1f, 0.1f, 0.9f, 0.9f));
+				ExpandedMapWidget->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+	}
+}
+
+void UASMapHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (ExpandedMapWidget)
+	{
+		// 뷰모델이 HUD보다 늦게 생성될 수 있어 매 틱 조회한다.
+		const UASMapViewModelSubsystem* Subsystem = UASMapViewModelSubsystem::Get(this);
+		const UASMapViewModel* ViewModel = Subsystem ? Subsystem->GetMapViewModel() : nullptr;
+		const ESlateVisibility TargetVisibility = ViewModel ? ViewModel->GetExpandedMapVisibility() : ESlateVisibility::Collapsed;
+		if (ExpandedMapWidget->GetVisibility() != TargetVisibility)
+		{
+			ExpandedMapWidget->SetVisibility(TargetVisibility);
+		}
+	}
+}
+
+void UASMapHudWidget::NativeDestruct()
+{
+	if (ExpandedMapWidget)
+	{
+		ExpandedMapWidget->RemoveFromParent();
+		ExpandedMapWidget = nullptr;
+	}
+
+	Super::NativeDestruct();
 }

@@ -233,6 +233,25 @@ FReply UASMapWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPoin
 	return FReply::Handled();
 }
 
+FReply UASMapWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	// 확장 맵 위의 클릭이 이동·공격으로 전달되지 않게 한다.
+	if (Mode == EASMapWidgetMode::Expanded)
+	{
+		return FReply::Handled();
+	}
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply UASMapWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (Mode == EASMapWidgetMode::Expanded)
+	{
+		return FReply::Handled();
+	}
+	return Super::NativeOnMouseButtonDoubleClick(InGeometry, InMouseEvent);
+}
+
 void UASMapWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
