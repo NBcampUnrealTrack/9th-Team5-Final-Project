@@ -33,7 +33,7 @@ void UASSettingsWidget::NativeConstruct()
 	Super::NativeConstruct();
 	if (ApplyButton) ApplyButton->OnClicked.AddUniqueDynamic(this, &ThisClass::ApplyGameSettings);
 	if (KeyBindingsButton) KeyBindingsButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenKeyBindings);
-	if (BackButton) BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::RefreshSettings);
+	if (BackButton) BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBackRequested);
 	if (QualityComboBox) QualityComboBox->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleOverallQualityChanged);
 	for (UComboBoxString* Combo : { ShadowQualityComboBox.Get(), TextureQualityComboBox.Get(), EffectsQualityComboBox.Get(), AntiAliasingQualityComboBox.Get() })
 	{
@@ -47,15 +47,27 @@ void UASSettingsWidget::NativeDestruct()
 {
 	if (ApplyButton) ApplyButton->OnClicked.RemoveDynamic(this, &ThisClass::ApplyGameSettings);
 	if (KeyBindingsButton) KeyBindingsButton->OnClicked.RemoveDynamic(this, &ThisClass::OpenKeyBindings);
-	if (BackButton) BackButton->OnClicked.RemoveDynamic(this, &ThisClass::RefreshSettings);
+	if (BackButton) BackButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleBackRequested);
 	if (QualityComboBox) QualityComboBox->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleOverallQualityChanged);
 	for (UComboBoxString* Combo : { ShadowQualityComboBox.Get(), TextureQualityComboBox.Get(), EffectsQualityComboBox.Get(), AntiAliasingQualityComboBox.Get() })
 	{
 		if (Combo) Combo->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleIndividualQualityChanged);
 	}
 	if (MasterVolumeSlider) MasterVolumeSlider->OnValueChanged.RemoveDynamic(this, &ThisClass::HandleVolumeChanged);
-	if (KeyBindingsWidget) KeyBindingsWidget->RemoveFromParent();
+	CloseKeyBindings();
 	Super::NativeDestruct();
+}
+
+void UASSettingsWidget::HandleBackRequested()
+{
+	RefreshSettings();
+	CloseKeyBindings();
+	OnBackRequested.ExecuteIfBound();
+}
+
+void UASSettingsWidget::CloseKeyBindings()
+{
+	if (KeyBindingsWidget) KeyBindingsWidget->RemoveFromParent();
 }
 
 void UASSettingsWidget::PopulateOptions()

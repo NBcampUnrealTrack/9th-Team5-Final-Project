@@ -12,6 +12,10 @@
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Input/ASInputConfig.h"
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
+#include "Core/Framework/ASGameState.h"
+#include "Core/UI/ASInGameMenuWidget.h"
+#include "InputCoreTypes.h"
+#include "InputKeyEventArgs.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/Abilities/ASGameplayAbility_CharacterPrimaryAttack.h"
 #include "Skills/ASSkillTags.h"
@@ -50,6 +54,7 @@ AASPlayerController::AASPlayerController()
 	InventoryComponent = CreateDefaultSubobject<UASInventoryComponent>(TEXT("InventoryComponent"));
 	AttackMoveComponent = CreateDefaultSubobject<UASPlayerAttackMoveComponent>(TEXT("AttackMoveComponent"));
 	PlayerCameraManagerClass = AASPlayerCameraManager::StaticClass();
+	InGameMenuWidgetClass = UASInGameMenuWidget::StaticClass();
 
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Default;
@@ -139,8 +144,19 @@ void AASPlayerController::SetupInputComponent()
 	}
 }
 
+bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	if (IsLocalController() && Params.Key == EKeys::Escape && Params.Event == IE_Pressed && !IsResultPhase())
+	{
+		ToggleInGameMenu();
+		return true;
+	}
+	return Super::InputKey(Params);
+}
+
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
+	if (IsInGameMenuOpen()) return;
 	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
 	// 준비가 실제로 시작된 뒤에만 공격 이동 상태를 바꾼다. 발동 실패(쿨타임·비용 등)는
 	// 이전 이동/공격 이동 명령을 그대로 유지해야 한다.
@@ -322,8 +338,75 @@ void AASPlayerController::ReceivedPlayer()
 void AASPlayerController::PlayerTick(const float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
+	if (IsInGameMenuOpen())
+	{
+		if (IsResultPhase()) CloseInGameMenu();
+		return;
+	}
 
 	UpdateCameraEdgeScroll(DeltaTime);
+}
+
+bool AASPlayerController::IsInGameMenuOpen() const
+{
+	return InGameMenuWidget && InGameMenuWidget->IsInViewport();
+}
+
+bool AASPlayerController::IsResultPhase() const
+{
+	const AASGameState* State = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr;
+	return State && (State->GetCurrentPhase() == EGamePhase::Victory || State->GetCurrentPhase() == EGamePhase::Defeat);
+}
+
+void AASPlayerController::ToggleInGameMenu()
+{
+	if (!IsLocalController()) return;
+	if (IsInGameMenuOpen())
+	{
+		CloseInGameMenu();
+		return;
+	}
+	if (IsResultPhase() || !InGameMenuWidgetClass) return;
+	InGameMenuWidget = CreateWidget<UASInGameMenuWidget>(this, InGameMenuWidgetClass);
+	if (!InGameMenuWidget) return;
+	bCursorVisibleBeforeMenu = bShowMouseCursor;
+	OnMoveCompleted();
+	OnStop();
+	bHasPendingAttackMoveRequest = false;
+	OnCameraCenterCompleted();
+	ItemInteractionComponent->CloseLoot();
+	if (UASAbilitySystemComponent* Abilities = GetPawnAbilitySystemComponent())
+	{
+		if (Abilities->HasMatchingGameplayTag(ASGameplayTags::State_Targeting)) Abilities->LocalInputCancel();
+		if (AbilityInputConfig)
+		{
+			for (const FASInputTagAction& Entry : AbilityInputConfig->AbilityInputActions)
+			{
+				Abilities->AbilityInputTagReleased(Entry.InputTag);
+			}
+		}
+	}
+	InGameMenuWidget->AddToViewport(20);
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(InGameMenuWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+}
+
+void AASPlayerController::CloseInGameMenu()
+{
+	if (!IsLocalController() || !InGameMenuWidget) return;
+	InGameMenuWidget->RemoveFromParent();
+	InGameMenuWidget = nullptr;
+	// The result screen owns focus once the match has ended.
+	if (IsResultPhase()) return;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = bCursorVisibleBeforeMenu;
+	UWidgetBlueprintLibrary::SetFocusToGameViewport();
 }
 
 AASPlayerCameraManager* AASPlayerController::GetASPlayerCameraManager() const
@@ -370,6 +453,7 @@ void AASPlayerController::RequestMoveTo(const FVector& Destination)
 
 void AASPlayerController::OnMoveStarted()
 {
+	if (IsInGameMenuOpen()) return;
 	bInteractionClickHeld = false;
 	if (IsPawnDead() || ItemInteractionComponent->IsLootOpen()) return;
 
@@ -404,6 +488,7 @@ void AASPlayerController::OnMoveStarted()
 
 void AASPlayerController::OnMoveHeld()
 {
+	if (IsInGameMenuOpen()) return;
 	if (AttackMoveComponent->HasActiveCommand()) return;
 	if (IsPawnDead() || bInteractionClickHeld || ItemInteractionComponent->HasPendingInteraction() || ItemInteractionComponent->IsLootOpen()) return;
 	// 매 프레임 길을 다시 찾는 것은 낭비라서 누르고 있는 동안에는 간격을 둔다.
