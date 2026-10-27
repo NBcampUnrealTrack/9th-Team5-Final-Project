@@ -679,6 +679,35 @@ void AASGameMode::OnPlayerDied(AController* DeadController)
 	GetWorldTimerManager().SetTimer(RespawnHandle, RespawnDelegate, RespawnDelay, false);
 }
 
+void AASGameMode::Logout(AController* Exiting)
+{
+	// 멀티 진행 중 퇴장: 엔진 처리(폰 정리) 전에, 폰이 아직 있을 때 관전·전멸을 정리한다.
+	if (Exiting && IsMultiplayerRules() && !IsGameEnded())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] %s 퇴장"), *GetNameSafe(Exiting));
+
+		// 판정 함수들이 퇴장자를 건너뛰도록 표시
+		LeavingController = Exiting;
+
+		// 퇴장자가 관전 중이었으면 목록에서 제거 (이미 사라진 항목도 함께 정리)
+		const APlayerController* ExitingPlayer = Cast<APlayerController>(Exiting);
+		Spectators.RemoveAll([ExitingPlayer](const TWeakObjectPtr<APlayerController>& Spectator)
+		{
+			return !Spectator.IsValid() || Spectator.Get() == ExitingPlayer;
+		});
+
+		// 퇴장자를 보던 관전자는 다른 파티원으로 옮긴다
+		ReassignSpectatorsWatching(Exiting->GetPawn());
+
+		// 남은 인원 기준으로 전멸 재판정 (서 있는 사람이 없으면 패배)
+		CheckPartyWipe();
+
+		LeavingController.Reset();
+	}
+
+	Super::Logout(Exiting);
+}
+
 void AASGameMode::OnPlayerDowned(AController* DownedController)
 {
 	if (!DownedController || IsGameEnded()) return;
@@ -694,7 +723,7 @@ void AASGameMode::CheckPartyWipe()
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		const APlayerController* PlayerController = It->Get();
-		if (!PlayerController)
+		if (!PlayerController || PlayerController == LeavingController.Get())
 		{
 			continue;
 		}
@@ -718,7 +747,7 @@ TArray<AASPlayerCharacter*> AASGameMode::GetSpectateCandidates(const APlayerCont
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		const APlayerController* PlayerController = It->Get();
-		if (!PlayerController || PlayerController == Spectator)
+		if (!PlayerController || PlayerController == Spectator || PlayerController == LeavingController.Get())
 		{
 			continue;
 		}

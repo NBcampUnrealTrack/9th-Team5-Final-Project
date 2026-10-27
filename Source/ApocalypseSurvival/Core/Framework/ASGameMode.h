@@ -111,6 +111,7 @@ protected:
 	virtual void HandleMatchHasStarted() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void RestartPlayer(AController* NewPlayer) override;
+	virtual void Logout(AController* Exiting) override;
 	
 	// 원격 클라이언트는 캐릭터 선택이 도착할 때까지 스폰하지 않는다.
 	virtual bool PlayerCanRestart_Implementation(APlayerController* Player) override;
@@ -230,6 +231,9 @@ private:
 	
 	// 관전 중인 플레이어 (멀티에서 사망한 플레이어)
 	TArray<TWeakObjectPtr<APlayerController>> Spectators;
+
+	// 퇴장 처리 중인 컨트롤러. Logout 중에는 아직 월드 목록에 남아 있어서 판정에서 직접 제외한다
+	TWeakObjectPtr<AController> LeavingController;
 	
 	// 시체 위치에 루팅 상자를 만들고 사망자 인벤토리를 옮긴다. 옮길 게 없으면 시체를 바로 숨긴다
 	void SpawnCorpseLoot(AASPlayerCharacter* Corpse, AController* DeadController);
