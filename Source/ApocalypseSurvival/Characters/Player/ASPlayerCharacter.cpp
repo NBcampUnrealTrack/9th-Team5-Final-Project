@@ -480,6 +480,53 @@ bool AASPlayerCharacter::IsDowned() const
 	return ASC && ASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed);
 }
 
+float AASPlayerCharacter::GetServerTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 0.f;
+	}
+	const AGameStateBase* GameState = World->GetGameState();
+	return GameState ? GameState->GetServerWorldTimeSeconds() : World->GetTimeSeconds();
+}
+
+float AASPlayerCharacter::GetDownedTimeRemaining() const
+{
+	if (!IsDowned())
+	{
+		return 0.f;
+	}
+	if (BleedOutPausedRemaining >= 0.f)
+	{
+		return BleedOutPausedRemaining;
+	}
+	return FMath::Max(0.f, BleedOutEndServerTime - GetServerTimeSeconds());
+}
+
+float AASPlayerCharacter::GetReviveProgress() const
+{
+	if (!bBeingRevived || ReviveDuration <= 0.f)
+	{
+		return 0.f;
+	}
+	return FMath::Clamp((GetServerTimeSeconds() - ReviveStartServerTime) / ReviveDuration, 0.f, 1.f);
+}
+
+AASPlayerCharacter* AASPlayerCharacter::GetCurrentReviveTarget() const
+{
+	// 파티원이 3명뿐이라 매번 훑어도 부담이 없다.
+	for (TActorIterator<AASPlayerCharacter> It(GetWorld()); It; ++It)
+	{
+		AASPlayerCharacter* Other = *It;
+		if (Other && Other != this && Other->IsBeingRevived() && Other->ReplicatedReviver == this)
+		{
+			return Other;
+		}
+	}
+	return nullptr;
+}
+
 bool AASPlayerCharacter::IsStaggered() const
 {
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
@@ -547,6 +594,10 @@ void AASPlayerCharacter::EnterDowned()
 	ASC->AddLooseGameplayTag(ASGameplayTags::State_Downed, 1, EGameplayTagReplicationState::TagAndCountToAll);
 
 	GetWorldTimerManager().SetTimer(BleedOutTimerHandle, this, &AASPlayerCharacter::BleedOut, DownedDuration, false);
+
+	// UI용: 사망 예정 시각을 모든 머신에 알린다
+	BleedOutEndServerTime = GetServerTimeSeconds() + DownedDuration;
+	BleedOutPausedRemaining = -1.f;
 
 	if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
 	{
@@ -683,6 +734,10 @@ void AASPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AASPlayerCharacter, bBeingRevived);
+	DOREPLIFETIME(AASPlayerCharacter, BleedOutEndServerTime);
+	DOREPLIFETIME(AASPlayerCharacter, BleedOutPausedRemaining);
+	DOREPLIFETIME(AASPlayerCharacter, ReviveStartServerTime);
+	DOREPLIFETIME(AASPlayerCharacter, ReplicatedReviver);
 }
 
 void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -792,6 +847,7 @@ void AASPlayerCharacter::StartRevive(AASPlayerCharacter* Reviver)
 	}
 
 	ActiveReviver = Reviver;
+	ReplicatedReviver = Reviver;
 	ReviveElapsed = 0.f;
 	bBeingRevived = true;
 	OnRep_BeingRevived(); // 서버는 OnRep 이 자동으로 불리지 않는다.
@@ -805,6 +861,10 @@ void AASPlayerCharacter::StartRevive(AASPlayerCharacter* Reviver)
 
 	// 부활받는 동안은 사망까지 남은 시간이 줄지 않는다.
 	GetWorldTimerManager().PauseTimer(BleedOutTimerHandle);
+	
+	// UI용: 멈춘 시점의 남은 시간과 부활 시작 시각
+	BleedOutPausedRemaining = GetWorldTimerManager().GetTimerRemaining(BleedOutTimerHandle);
+	ReviveStartServerTime = GetServerTimeSeconds();
 
 	constexpr float TickInterval = 0.1f;
 	GetWorldTimerManager().SetTimer(ReviveTickTimerHandle, this, &AASPlayerCharacter::TickRevive, TickInterval, true);
@@ -851,6 +911,8 @@ void AASPlayerCharacter::ClearReviver()
 	}
 
 	ReviverAbilitySystem.Reset();
+	ActiveReviver.Reset();
+	ReplicatedReviver = nullptr;
 	ReviverAbilityActivatedHandle.Reset();
 	ActiveReviver.Reset();
 }
@@ -869,6 +931,10 @@ void AASPlayerCharacter::CancelRevive()
 
 	// 멈춰 둔 사망 타이머를 이어서 진행
 	GetWorldTimerManager().UnPauseTimer(BleedOutTimerHandle);
+	
+	// UI용: 남은 시간이 다시 줄어들기 시작
+	BleedOutEndServerTime = GetServerTimeSeconds() + GetWorldTimerManager().GetTimerRemaining(BleedOutTimerHandle);
+	BleedOutPausedRemaining = -1.f;
 
 	UE_LOG(LogTemp, Log, TEXT("[Downed] %s 부활 취소"), *GetName());
 }
