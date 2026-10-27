@@ -29,6 +29,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "Framework/Application/SlateApplication.h"
 #include "InputActionValue.h"
+#include "MapSystem/UI/ASMapViewModel.h"
+#include "MapSystem/UI/ASMapViewModelSubsystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
 #include "NiagaraFunctionLibrary.h"
@@ -128,6 +130,10 @@ void AASPlayerController::SetupInputComponent()
 	EnhancedInputComponent->BindAction(CameraCenterAction, ETriggerEvent::Completed, this, &AASPlayerController::OnCameraCenterCompleted);
 	EnhancedInputComponent->BindAction(CameraCenterAction, ETriggerEvent::Canceled, this, &AASPlayerController::OnCameraCenterCompleted);
 	EnhancedInputComponent->BindAction(CameraZoomAction, ETriggerEvent::Triggered, this, &AASPlayerController::OnCameraZoom);
+	if (ToggleMapAction)
+	{
+		EnhancedInputComponent->BindAction(ToggleMapAction, ETriggerEvent::Started, this, &AASPlayerController::OnToggleMap);
+	}
 
 	// 어빌리티 입력은 목록을 돌며 건다. 키마다 함수를 만들지 않고, 태그를 인자로 같이 넘긴다.
 	// Started 는 누른 순간 한 번이라 "한 번 누름 = 한 번 발동"이 된다.
@@ -574,6 +580,17 @@ void AASPlayerController::OnCameraZoom(const FInputActionValue& Value)
 	if (AASPlayerCameraManager* CameraManager = GetASPlayerCameraManager())
 	{
 		CameraManager->AddZoomInput(Value.Get<float>());
+	}
+}
+
+void AASPlayerController::OnToggleMap()
+{
+	if (UASMapViewModelSubsystem* Subsystem = UASMapViewModelSubsystem::Get(this))
+	{
+		if (UASMapViewModel* ViewModel = Subsystem->GetMapViewModel())
+		{
+			ViewModel->ToggleExpandedMap();
+		}
 	}
 }
 
