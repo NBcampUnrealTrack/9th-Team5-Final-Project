@@ -25,7 +25,7 @@ enum class EASMapWidgetMode : uint8
 /**
  * 최소 구성의 네이티브 맵. 공유 MapState에서 구역 위험도 색상과 라벨을 그린다. 또한
  * 로컬 안개 텍스처, 플레이어 방향 화살표 (사망 시 회색 사각형), 현재 보이는
- * 적과 목표물 (시야 대상)을 그린다. 이 클래스로 Widget Blueprint를
+ * 적과 목표물 (시야 대상), 보이는 Mass 적과 루팅 상자를 그린다. 이 클래스로 Widget Blueprint를
  * 만들고 크기를 지정한다. 자식 위젯은 필요하지 않다.
  */
 UCLASS(Blueprintable)
@@ -35,6 +35,12 @@ class APOCALYPSESURVIVAL_API UASMapWidget : public UUserWidget
 
 public:
 	UASMapWidget(const FObjectInitializer& ObjectInitializer);
+
+	UFUNCTION(BlueprintPure, Category = "Map")
+	TArray<FVector> GetMassEnemyMarkerLocations() const { return MassEnemyMarkerLocations; }
+
+	UFUNCTION(BlueprintPure, Category = "Map")
+	TArray<FVector> GetLootChestMarkerLocations() const { return LootChestMarkerLocations; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Map")
 	EASMapWidgetMode Mode = EASMapWidgetMode::Minimap;
@@ -133,8 +139,13 @@ private:
 	void DrawZones(const FPaintContext& Context, const UASMapStateComponent& MapState, const UASMapWorldSubsystem& Subsystem,
 		int32 FillLayer, int32 LabelLayer) const;
 	void DrawVisibilityMarkers(const FPaintContext& Context, const UASVisionWorldSubsystem& VisionSubsystem, int32 Layer) const;
+	void DrawLocationMarkers(const FPaintContext& Context, const TArray<FVector>& Locations, const FLinearColor& Color, int32 Layer) const;
 	/** 사망 Layer, 아군 Layer + 1, 로컬 Layer + 2를 사용한다. */
 	void DrawPlayers(const FPaintContext& Context, const UWorld& World, int32 Layer) const;
+
+	TArray<FVector> MassEnemyMarkerLocations;
+	TArray<FVector> LootChestMarkerLocations;
+	float MarkerRefreshTimeRemaining = 0.0f;
 
 	/** 기본 브러시: 사각형과 다각형에 전달한 색상으로 틴트한다. */
 	FSlateBrush SolidBrush;

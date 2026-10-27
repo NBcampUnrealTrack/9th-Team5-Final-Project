@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/GameStateBase.h"
@@ -10,6 +11,7 @@
 #include "GameFramework/PlayerState.h"
 #include "GAS/ASAbilityTags.h"
 #include "GeomTools.h"
+#include "Items/Loot/ASLootChest.h"
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
@@ -21,6 +23,11 @@
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "MapSystem/Zone/ASMapZone.h"
+#include "Mass/Monster/Data/ASMassMonsterFragments.h"
+#include "MassCommonFragments.h"
+#include "MassEntityQuery.h"
+#include "MassEntitySubsystem.h"
+#include "MassExecutionContext.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/RenderingCommon.h"
 #include "Rendering/SlateRenderer.h"
@@ -30,6 +37,68 @@
 
 namespace ASMapWidgetPrivate
 {
+	constexpr float MarkerRefreshInterval = 0.1f;
+
+	void RefreshMassEnemyMarkerLocations(UWorld* World, TArray<FVector>& Locations)
+	{
+		UMassEntitySubsystem* Subsystem = World ? World->GetSubsystem<UMassEntitySubsystem>() : nullptr;
+		if (!Subsystem)
+		{
+			Locations.Reset();
+			return;
+		}
+
+		FMassEntityManager& EntityManager = Subsystem->GetMutableEntityManager();
+		if (EntityManager.IsProcessing())
+		{
+			return;
+		}
+
+		Locations.Reset();
+		FMassEntityQuery Query(EntityManager.AsShared());
+		Query.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
+		Query.AddRequirement<FASMassMonsterHealthFragment>(EMassFragmentAccess::ReadOnly);
+		Query.AddRequirement<FASMassMonsterFogVisibilityFragment>(EMassFragmentAccess::ReadOnly);
+		FMassExecutionContext Context(EntityManager, 0.0f, false);
+		Query.ForEachEntityChunk(Context, [&Locations](FMassExecutionContext& ChunkContext)
+		{
+			const TConstArrayView<FTransformFragment> Transforms = ChunkContext.GetFragmentView<FTransformFragment>();
+			const TConstArrayView<FASMassMonsterHealthFragment> Healths = ChunkContext.GetFragmentView<FASMassMonsterHealthFragment>();
+			const TConstArrayView<FASMassMonsterFogVisibilityFragment> FogStates = ChunkContext.GetFragmentView<FASMassMonsterFogVisibilityFragment>();
+			for (FMassExecutionContext::FEntityIterator EntityIt = ChunkContext.CreateEntityIterator(); EntityIt; ++EntityIt)
+			{
+				if (Healths[EntityIt].CurrentHealth > 0.0f && FogStates[EntityIt].bInitialized && FogStates[EntityIt].bVisibleToLocalTeam)
+				{
+					Locations.Add(Transforms[EntityIt].GetTransform().GetLocation());
+				}
+			}
+		});
+	}
+
+	void RefreshLootChestMarkerLocations(UWorld* World, const AASFogOfWarManager* FogManager, TArray<FVector>& Locations)
+	{
+		Locations.Reset();
+		if (!World || !FogManager || !FogManager->HasLocalVisionMask())
+		{
+			return;
+		}
+
+		for (TActorIterator<AASLootChest> It(World); It; ++It)
+		{
+			const AASLootChest* Chest = *It;
+			if (!IsValid(Chest) || Chest->IsActorBeingDestroyed())
+			{
+				continue;
+			}
+
+			const FVector Location = Chest->GetActorLocation();
+			if (FogManager->IsLocationVisibleLocally(Location))
+			{
+				Locations.Add(Location);
+			}
+		}
+	}
+
 	FPaintGeometry MakeGeometry(const FGeometry& Geometry, const FVector2D& Position, const FVector2D& Size)
 	{
 		return Geometry.ToPaintGeometry(
@@ -109,6 +178,7 @@ void UASMapWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	SetClipping(EWidgetClipping::ClipToBounds);
+	MarkerRefreshTimeRemaining = 0.0f;
 }
 
 void UASMapWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -137,6 +207,14 @@ void UASMapWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		{
 			FogBrush.ImageSize = FVector2D(FogTexture->GetSizeX(), FogTexture->GetSizeY());
 		}
+	}
+
+	MarkerRefreshTimeRemaining -= InDeltaTime;
+	if (MarkerRefreshTimeRemaining <= 0.0f)
+	{
+		MarkerRefreshTimeRemaining = ASMapWidgetPrivate::MarkerRefreshInterval;
+		ASMapWidgetPrivate::RefreshMassEnemyMarkerLocations(GetWorld(), MassEnemyMarkerLocations);
+		ASMapWidgetPrivate::RefreshLootChestMarkerLocations(GetWorld(), FogManager, LootChestMarkerLocations);
 	}
 }
 
@@ -307,8 +385,11 @@ int32 UASMapWidget::NativePaint(
 
 	// 4. 모든 요소 위에 마커를 표시한다. 적은 안개 텍스처가 아닌 팀 시야로 필터링한다.
 	Layer = LabelLayer + 1;
+	DrawLocationMarkers(Context, LootChestMarkerLocations, InteractableColor, Layer);
+	++Layer;
 	DrawVisibilityMarkers(Context, *VisionSubsystem, Layer);
-	DrawPlayers(Context, *World, Layer);
+	DrawLocationMarkers(Context, MassEnemyMarkerLocations, EnemyColor, Layer);
+	DrawPlayers(Context, *World, ++Layer);
 	return Layer + 3;
 }
 
@@ -403,6 +484,18 @@ void UASMapWidget::DrawVisibilityMarkers(const FPaintContext& Context, const UAS
 		const FVector2D Size(MarkerSize, MarkerSize);
 		DrawRect(Context.Out, Layer, Context.Geometry, &SolidBrush, Position - Size * 0.5, Size,
 			GetMarkerColor(static_cast<uint8>(Target->GetMarkerType())));
+	}
+}
+
+void UASMapWidget::DrawLocationMarkers(const FPaintContext& Context, const TArray<FVector>& Locations, const FLinearColor& Color, int32 Layer) const
+{
+	using namespace ASMapWidgetPrivate;
+
+	const FVector2D Size(MarkerSize, MarkerSize);
+	for (const FVector& Location : Locations)
+	{
+		const FVector2D Position = Context.WorldToLocal(Location);
+		DrawRect(Context.Out, Layer, Context.Geometry, &SolidBrush, Position - Size * 0.5, Size, Color);
 	}
 }
 
