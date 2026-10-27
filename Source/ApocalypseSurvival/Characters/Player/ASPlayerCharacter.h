@@ -104,6 +104,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Downed")
 	bool IsBeingRevived() const { return bBeingRevived; }
 
+	/** 쓰러진 뒤 사망까지 남은 시간(초). 부활받는 중에는 멈춘 값. 쓰러지지 않았으면 0 (UI용, 모든 머신) */
+	UFUNCTION(BlueprintPure, Category = "Downed")
+	float GetDownedTimeRemaining() const;
+
+	/** 부활 진행률 0~1. 부활받는 중이 아니면 0 (UI용, 모든 머신) */
+	UFUNCTION(BlueprintPure, Category = "Downed")
+	float GetReviveProgress() const;
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
@@ -275,6 +283,21 @@ void StartRevive(AASPlayerCharacter* Reviver);
 
 	FTimerHandle ReviveTickTimerHandle;
 	float ReviveElapsed = 0.f;
+
+	/** 사망 예정 서버 시각. 쓰러질 때와 부활 취소로 타이머가 다시 돌 때 서버가 정한다 */
+	UPROPERTY(Replicated)
+	float BleedOutEndServerTime = 0.f;
+
+	/** 부활받는 동안 멈춘 남은 시간. 0 이상이면 멈춘 상태, -1 이면 진행 중 */
+	UPROPERTY(Replicated)
+	float BleedOutPausedRemaining = -1.f;
+
+	/** 부활 시작 서버 시각 (진행률 계산용) */
+	UPROPERTY(Replicated)
+	float ReviveStartServerTime = 0.f;
+
+	/** 서버와 맞춘 현재 시각. 클라이언트도 서버 기준으로 계산하기 위해 쓴다 */
+	float GetServerTimeSeconds() const;
 	
 	/** 로컬: F키. 가까운 쓰러진 파티원을 찾아 서버에 부활을 요청한다. */
 	void OnRevivePressed();
