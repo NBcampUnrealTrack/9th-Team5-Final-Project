@@ -8,7 +8,7 @@
 /*
  * 재이 R 제로 그래비티 존 (1차)
  * - 커서 위치에 Duration(기본 6초) 동안 장판, TickInterval마다 피해 + AdditionalEffects(엘리트·보스 슬로우 등)
- * - 장판 안 Actor 적마다 StunRollInterval 간격으로 최대 StunRollCount번 StunChance 확률로 스턴 (기본 2초 간격 2번 x 30% = 약 51%)
+ * - 장판 안 Actor 적마다 StunRollInterval 간격으로 최대 StunRollCount번 StunChance 확률로 스턴 (StunEffect를 비우면 스턴 없음)
  * - 장판이 끝나면 중심 폭발, 안에 있던 적 수만큼 피해·반경 증가
  * - 장판 액터는 AreaClass에 AASZeroGravityAreaActor(또는 그 BP) 지정
  * 1차 미구현: 공중에 띄우기, 투사체 정지, 재사용으로 조기 폭발, 지정 지점 추락, Mass 스턴
@@ -24,7 +24,7 @@ public:
 protected:
 	virtual void ConfigureArea(AASSkillAreaActor* Area) override;
 
-	//스턴 GE (Has Duration, Granted Tag = State.Monster.HitReact)
+	//스턴 GE (Has Duration, Granted Tag = State.Monster.HitReact). 비우면 스턴 없음
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|ZeroGravity")
 	TSubclassOf<UGameplayEffect> StunEffect;
 

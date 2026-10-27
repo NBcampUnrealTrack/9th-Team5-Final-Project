@@ -112,9 +112,12 @@ void UASSkillForceRepulse::TickWave()
 	ImpactContext.HitDirection = WaveDirection;
 	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext, &WaveHitTargets);
 	ASSkillDamageDebug::Report(this, EffectSpecs, Result, WaveOrigin);
-	for (AActor* Target : Result.ActorTargets)
+	if (bApplyKnockback)
 	{
-		ApplyKnockback(Target);
+		for (AActor* Target : Result.ActorTargets)
+		{
+			ApplyKnockback(Target);
+		}
 	}
 
 	if (ShouldDrawDebug())

@@ -8,6 +8,8 @@
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "ASSkillAreaActor.generated.h"
 
+class UNiagaraSystem;
+
 //일정 시간 유지되며 주기적으로 원 범위 데미지를 주는 액터
 
 UCLASS(Blueprintable)
@@ -52,10 +54,14 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "AS|Skill|Area")
 	void BP_OnAreaTick(const TArray<AActor*>& HitTargets);
 	
-	//데미지 줄 때마다 실행할 GameplayCue (시전자 ASC로 모든 화면에 복제, 비우면 안 함)
-	//큐 에셋(GameplayCueNotify)에서 이펙트·사운드 재생. Location = 장판 위치, RawMagnitude = 반경
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area|Cue", meta = (Categories = "GameplayCue"))
-	FGameplayTag PulseCueTag;
+	//데미지 줄 때마다 각 화면에서 직접 재생할 Niagara (GameplayCue 없이, 비우면 안 함)
+	//클라이언트는 복제받은 반경·간격으로 서버와 같은 횟수만큼 재생
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area|VFX")
+	TObjectPtr<UNiagaraSystem> PulseNiagara;
+
+	//PulseNiagara 크기 기준 반경 (Scale = Radius / 이 값)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Area|VFX", meta = (ClampMin = "1.0"))
+	float PulseNiagaraBaseRadius = 100.0f;
 
 	//데미지 줄 때마다 호출 (서버, C++ 자식 클래스 확장용)
 	virtual void OnAreaTick(const FASCombatApplyResult& Result, const FVector& Center) {}
@@ -74,8 +80,9 @@ private:
 	//따라가는 타겟 위치로 이동 (서버). 타겟을 잃으면 따라가기 종료
 	void UpdateFollow();
 
-	//PulseCueTag 실행 (서버)
-	void ExecutePulseCue(const FVector& Center) const;
+	//PulseNiagara를 이 화면에서 주기적으로 재생 시작 (서버·클라 각각, 데디서버 제외)
+	void StartLocalPulseVFX();
+	void PlayLocalPulseVFX();
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -92,12 +99,22 @@ private:
 	//따라가는 타겟 (비어 있으면 고정 장판)
 	FASCombatTargetRef FollowTarget;
 
+	//클라이언트 이펙트 횟수·간격 계산용
+	UPROPERTY(Replicated)
 	float Duration = 3.0f;
+
+	UPROPERTY(Replicated)
 	float TickInterval = 0.5f;
+
+	UPROPERTY(Replicated)
 	bool bDamageOnSpawn = true;
+
 	bool bCanHitPlayers = false;
 	bool bDrawDebug = false;
 
 	int32 TicksRemaining = 0;
 	FTimerHandle TickTimerHandle;
+
+	int32 VFXPulsesRemaining = 0;
+	FTimerHandle VFXTimerHandle;
 };

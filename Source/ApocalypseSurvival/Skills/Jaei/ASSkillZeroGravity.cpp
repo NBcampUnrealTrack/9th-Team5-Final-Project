@@ -25,6 +25,7 @@ void UASSkillZeroGravity::ConfigureArea(AASSkillAreaActor* Area)
 		return;
 	}
 
+	//StunEffect가 비어 있으면 빈 Spec을 넘겨서 장판이 판정 자체를 안 함
 	const FGameplayEffectSpecHandle StunSpec = StunEffect
 		? MakeOutgoingGameplayEffectSpec(StunEffect, GetAbilityLevel())
 		: FGameplayEffectSpecHandle();

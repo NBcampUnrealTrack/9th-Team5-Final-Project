@@ -6,6 +6,8 @@
 #include "AbilitySystemComponent.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -26,6 +28,9 @@ void AASSkillAreaActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AASSkillAreaActor, Radius);
+	DOREPLIFETIME_CONDITION(AASSkillAreaActor, Duration, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AASSkillAreaActor, TickInterval, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AASSkillAreaActor, bDamageOnSpawn, COND_InitialOnly);
 }
 
 void AASSkillAreaActor::InitArea(
@@ -109,6 +114,8 @@ void AASSkillAreaActor::BeginPlay()
 
 	if (!HasAuthority())
 	{
+		//클라이언트는 이펙트만
+		StartLocalPulseVFX();
 		return;
 	}
 
@@ -134,6 +141,51 @@ void AASSkillAreaActor::BeginPlay()
 
 	//마지막 틱이 끝난 뒤 사라지도록 약간 여유
 	SetLifeSpan(Duration + 0.05f);
+
+	//리슨서버 호스트 화면 이펙트 (따라가기 위치를 맞춘 뒤)
+	StartLocalPulseVFX();
+}
+
+void AASSkillAreaActor::StartLocalPulseVFX()
+{
+	//데디서버는 화면이 없음
+	if (!PulseNiagara || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	//서버 판정과 같은 횟수 (예: 3초 / 0.5초 = 6번)
+	VFXPulsesRemaining = FMath::Max(1, FMath::FloorToInt(Duration / TickInterval + KINDA_SMALL_NUMBER));
+
+	if (bDamageOnSpawn)
+	{
+		PlayLocalPulseVFX();
+	}
+
+	if (VFXPulsesRemaining > 0)
+	{
+		GetWorldTimerManager().SetTimer(VFXTimerHandle, this, &AASSkillAreaActor::PlayLocalPulseVFX, TickInterval, true);
+	}
+}
+
+void AASSkillAreaActor::PlayLocalPulseVFX()
+{
+	if (VFXPulsesRemaining <= 0)
+	{
+		GetWorldTimerManager().ClearTimer(VFXTimerHandle);
+		return;
+	}
+
+	--VFXPulsesRemaining;
+
+	//클라이언트는 복제된 위치 (따라가는 장판도 같이 움직임)
+	const float Scale = Radius / FMath::Max(1.0f, PulseNiagaraBaseRadius);
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, PulseNiagara, GetActorLocation(), FRotator::ZeroRotator, FVector(Scale));
+
+	if (VFXPulsesRemaining <= 0)
+	{
+		GetWorldTimerManager().ClearTimer(VFXTimerHandle);
+	}
 }
 
 void AASSkillAreaActor::DoDamageTick()
@@ -180,9 +232,6 @@ void AASSkillAreaActor::DoDamageTick()
 	//AS.Debug.SkillDamage 1
 	ASSkillDamageDebug::Report(this, EffectSpecs, ApplyResult, Center);
 	
-	//GameplayCue로 충격파 이펙트 (모든 화면)
-	ExecutePulseCue(Center);
-
 	if (ShouldDrawDebug())
 	{
 		DrawDebugSphere(GetWorld(), Center, Radius, 16,
@@ -201,11 +250,6 @@ void AASSkillAreaActor::DoDamageTick()
 bool AASSkillAreaActor::ShouldDrawDebug() const
 {
 	return bDrawDebug && ASSkillDamageDebug::IsSkillDrawEnabled();
-}
-
-void AASSkillAreaActor::ExecutePulseCue(const FVector& Center) const
-{
-	ExecuteCueAt(PulseCueTag, Center, Radius);
 }
 
 void AASSkillAreaActor::ExecuteCueAt(const FGameplayTag& CueTag, const FVector& Location, float Magnitude) const
