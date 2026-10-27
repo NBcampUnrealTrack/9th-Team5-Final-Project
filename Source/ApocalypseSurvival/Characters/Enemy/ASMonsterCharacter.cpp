@@ -33,6 +33,7 @@
 #include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Net/UnrealNetwork.h"
 #include "Skills/ASSkillTags.h"
 #include "TimerManager.h"
 
@@ -63,6 +64,13 @@ AASMonsterCharacter::AASMonsterCharacter()
 UAbilitySystemComponent* AASMonsterCharacter::GetAbilitySystemComponent() const
 {
     return OwnedAbilitySystemComponent;
+}
+
+void AASMonsterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    DOREPLIFETIME(AASMonsterCharacter, MonsterDisplayName);
 }
 
 void AASMonsterCharacter::BeginPlay()
@@ -476,6 +484,9 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
        return;
     }
 
+    MonsterDisplayName = MonsterDefinition->DisplayName;
+    OnRep_MonsterDisplayName();
+
     const FASMonsterInitialAttributes& InitialAttributes = MonsterDefinition->InitialAttributes;
     float MaxHealth = InitialAttributes.MaxHealth;
     float MoveSpeed = InitialAttributes.MoveSpeed;
@@ -534,6 +545,11 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
     }
 
     CombatComponent->ConfigurePatterns(MonsterDefinition->AttackPatterns, PatternAbilityHandles);
+}
+
+void AASMonsterCharacter::OnRep_MonsterDisplayName()
+{
+    OnMonsterDisplayNameChanged.Broadcast(MonsterDisplayName);
 }
 
 void AASMonsterCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)

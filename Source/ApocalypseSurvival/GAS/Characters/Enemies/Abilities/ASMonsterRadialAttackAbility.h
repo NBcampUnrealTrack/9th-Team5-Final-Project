@@ -1,14 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GAS/Characters/Enemies/Abilities/ASMonsterMeleeAbility.h"
+#include "GAS/Characters/Enemies/Abilities/ASMonsterComboStepAbility.h"
 #include "ASMonsterRadialAttackAbility.generated.h"
 
 class AASMonsterAttackIndicatorActor;
 
 /** 몬스터 중심에서 한 번 피해를 주는 360도 근접 범위 공격. */
 UCLASS(Blueprintable)
-class APOCALYPSESURVIVAL_API UASMonsterRadialAttackAbility : public UASMonsterMeleeAbility
+class APOCALYPSESURVIVAL_API UASMonsterRadialAttackAbility : public UASMonsterComboStepAbility
 {
 	GENERATED_BODY()
 
@@ -29,12 +29,14 @@ public:
 		bool bWasCancelled) override;
 
 protected:
+	virtual void OnSkillEffect_Implementation() override;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Monster|Radial", meta = (ClampMin = "1.0", Units = "cm"))
+	float Radius = 320.0f;
+
 	/** 원형 위험 범위 표시 Blueprint. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Monster|Telegraph")
 	TSubclassOf<AASMonsterAttackIndicatorActor> IndicatorClass;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Monster|Telegraph", meta = (ClampMin = "0.0", Units = "s"))
-	float WindupDuration = 1.25f;
 
 private:
 	void BeginRadialAttack();

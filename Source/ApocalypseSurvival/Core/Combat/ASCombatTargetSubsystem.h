@@ -30,15 +30,17 @@ enum class EASCombatTargetShape : uint8
 {
 	Radius,
 	Cone,
-	Segment
+	Segment,
+	/** Direction을 전방 축으로 사용하는 2D 회전 사각형 판정. */
+	Box
 };
 
 /** 타겟 검색 규칙. 호출부는 백엔드가 아닌 검색 의도만 지정한다. */
 struct APOCALYPSESURVIVAL_API FASCombatTargetQuery
 {
-	/** Radius/Cone의 중심, Segment의 시작 위치. */
+	/** Radius/Cone/Box의 중심, Segment의 시작 위치. */
 	FVector SearchOrigin = FVector::ZeroVector;
-	/** Cone의 방향. */
+	/** Cone/Box의 방향. Box는 이 방향을 전방 축으로 사용한다. */
 	FVector Direction = FVector::ForwardVector;
 	/** Segment의 끝 위치. */
 	FVector EndLocation = FVector::ZeroVector;
@@ -47,6 +49,8 @@ struct APOCALYPSESURVIVAL_API FASCombatTargetQuery
 	float SearchRadius = 0.0f;
 	/** Cone의 전체 각도. 360이면 원형과 같다. */
 	float AngleDegrees = 360.0f;
+	/** Box의 반쪽 크기. X=전후, Y=좌우, Z는 현재 2D 판정에서 사용하지 않는다. */
+	FVector BoxHalfExtent = FVector::ZeroVector;
 	const AActor* Instigator = nullptr;
 	/** 지정 공격에서만 사용하는 Actor 고정 대상. 설정 시 Mass는 검색하지 않는다. */
 	const AActor* ExplicitActor = nullptr;

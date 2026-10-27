@@ -24,6 +24,9 @@ class UAbilitySystemComponent;
 struct FASCombatImpactContext;
 enum class EASResolvedHitReaction : uint8;
 
+/** MonsterDefinition에서 적용된 이름이 준비됐거나 변경됐을 때 UI에 알린다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASMonsterDisplayNameChanged, FText, NewDisplayName);
+
 /** 스폰 출처에 따른 낮 시간 탐지 정책. AI 판단은 서버에서만 사용한다. */
 UENUM()
 enum class EASMonsterDayBehavior : uint8
@@ -45,6 +48,8 @@ class APOCALYPSESURVIVAL_API AASMonsterCharacter : public AASCharacterBase
 
 public:
     AASMonsterCharacter();
+
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     /**
      * 몬스터는 Actor 자신이 ASC를 소유한다. AttributeSet의 초기 복제가 BeginPlay보다 먼저
@@ -99,6 +104,17 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Enemy")
     UASMonsterDefinition* GetMonsterDefinition() const { return MonsterDefinition; }
+
+    /**
+     * MonsterDefinition의 DisplayName을 서버에서 적용해 모든 클라이언트에 복제한 런타임 이름.
+     * 보스 등장 연출, 타깃 UI 등은 Definition을 직접 읽지 말고 이 값을 사용한다.
+     */
+    UFUNCTION(BlueprintPure, Category = "Enemy|UI")
+    FText GetMonsterDisplayName() const { return MonsterDisplayName; }
+
+    /** MonsterDisplayName이 준비되거나 변경됐을 때 서버와 클라이언트에서 방송된다. */
+    UPROPERTY(BlueprintAssignable, Category = "Enemy|UI")
+    FASMonsterDisplayNameChanged OnMonsterDisplayNameChanged;
 
     UFUNCTION(BlueprintPure, Category = "Enemy|GAS")
     UASAbilitySystemComponent* GetASAbilitySystemComponent() const { return OwnedAbilitySystemComponent; }
@@ -166,6 +182,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy")
     TObjectPtr<UASMonsterDefinition> MonsterDefinition;
 
+    /** Definition에서 복사한 런타임 표시 이름. Definition 에셋 로드 여부와 무관하게 UI에서 사용한다. */
+    UPROPERTY(ReplicatedUsing = OnRep_MonsterDisplayName, VisibleInstanceOnly, BlueprintReadOnly, Category = "Enemy|UI")
+    FText MonsterDisplayName;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UASAbilitySystemComponent> OwnedAbilitySystemComponent;
 
@@ -182,6 +202,9 @@ protected:
     TObjectPtr<UASMonsterCombatComponent> CombatComponent;
 
 private:
+    UFUNCTION()
+    void OnRep_MonsterDisplayName();
+
     void ApplyHealthBarState();
     void CreateHealthBarIfNeeded();
     void ReleaseHealthBar();

@@ -25,6 +25,7 @@ UASMonsterChargeAbility::UASMonsterChargeAbility()
 	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack);
 	AssetTagsToSet.AddTag(ASGameplayTags::Ability_Monster_Attack_Charge);
 	SetAssetTags(AssetTagsToSet);
+	CompletionEventTag = ASGameplayTags::Event_Monster_ComboStep_ChargeFinished;
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Attacking);
 	ActivationOwnedTags.AddTag(ASGameplayTags::State_Monster_Charging);
 	ActivationBlockedTags.AddTag(ASGameplayTags::State_Monster_Dead);
@@ -77,6 +78,21 @@ void UASMonsterChargeAbility::ActivateAbility(const FGameplayAbilitySpecHandle H
 	Character->SetActorRotation(ChargeDirection.Rotation());
 	Character->GetCharacterMovement()->StopMovementImmediately();
 	ChargeElapsedTime = 0.0f;
+	ResolvedChargeDistance = FMath::Max(0.0f, ChargeDistance);
+	if (bUseTargetDistance)
+	{
+		const AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(Character);
+		const UASMonsterTargetingComponent* Targeting = Monster ? Monster->GetTargetingComponent() : nullptr;
+		const AActor* Target = Targeting ? Targeting->GetTargetActor() : nullptr;
+		if (IsValid(Target))
+		{
+			const float TargetDistance = FVector::Dist2D(Character->GetActorLocation(), Target->GetActorLocation());
+			const float MinimumDistance = FMath::Min(
+				FMath::Max(0.0f, MinTargetChargeDistance), ResolvedChargeDistance);
+			ResolvedChargeDistance = FMath::Clamp(
+				TargetDistance - FMath::Max(0.0f, TargetStopDistance), MinimumDistance, ResolvedChargeDistance);
+		}
+	}
 	HitTargets.Reset();
 
 	if (WindupDuration > 0.0f)
@@ -104,6 +120,7 @@ void UASMonsterChargeAbility::EndAbility(const FGameplayAbilitySpecHandle Handle
 	EndChargePawnCollisionIgnore();
 	HitTargets.Reset();
 	ChargeElapsedTime = 0.0f;
+	ResolvedChargeDistance = 0.0f;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
 }
@@ -167,7 +184,7 @@ void UASMonsterChargeAbility::TickCharge()
 	const float TickInterval = FMath::Max(0.005f, MovementTickInterval);
 	const float RemainingTime = FMath::Max(0.0f, SafeDuration - ChargeElapsedTime);
 	const float StepTime = FMath::Min(TickInterval, RemainingTime);
-	const float Speed = FMath::Max(0.0f, ChargeDistance) / SafeDuration;
+	const float Speed = ResolvedChargeDistance / SafeDuration;
 
 	FHitResult SweepHit;
 	const FVector NextLocation = Character->GetActorLocation() + ChargeDirection * Speed * StepTime;
@@ -178,16 +195,30 @@ void UASMonsterChargeAbility::TickCharge()
 
 	if (ChargeElapsedTime >= SafeDuration || (!bMoved && bStopOnBlockingHit))
 	{
-		FinishCharge(false);
+		EndChargeMovement();
+		OnChargeFinished();
 	}
+}
+
+void UASMonsterChargeAbility::OnChargeFinished()
+{
+	FinishCharge(false);
+}
+
+void UASMonsterChargeAbility::EndChargeMovement()
+{
+	if (ACharacter* Character = GetOwnerCharacter())
+	{
+		Character->GetWorldTimerManager().ClearTimer(ChargeTimerHandle);
+		Character->GetCharacterMovement()->StopMovementImmediately();
+	}
+
+	EndChargePawnCollisionIgnore();
 }
 
 void UASMonsterChargeAbility::FinishCharge(bool bWasCancelled)
 {
-	if (IsActive())
-	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bWasCancelled);
-	}
+	FinishComboStep(bWasCancelled);
 }
 
 void UASMonsterChargeAbility::ApplyChargeHitDamage()
@@ -225,7 +256,7 @@ void UASMonsterChargeAbility::SpawnChargeIndicator()
 	}
 
 	const FVector IndicatorLocation = Character->GetActorLocation()
-		+ ChargeDirection * (FMath::Max(0.0f, ChargeDistance) * 0.5f);
+		+ ChargeDirection * (ResolvedChargeDistance * 0.5f);
 	const FTransform SpawnTransform(ChargeDirection.Rotation(), IndicatorLocation);
 	AASMonsterAttackIndicatorActor* Indicator = World->SpawnActorDeferred<AASMonsterAttackIndicatorActor>(
 		IndicatorClass, SpawnTransform, Character, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
@@ -234,7 +265,7 @@ void UASMonsterChargeAbility::SpawnChargeIndicator()
 		return;
 	}
 
-	Indicator->InitializeIndicator(EASMonsterAttackIndicatorShape::Rectangle, 0.0f, ChargeDistance,
+	Indicator->InitializeIndicator(EASMonsterAttackIndicatorShape::Rectangle, 0.0f, ResolvedChargeDistance,
 		IndicatorWidth, WindupDuration);
 	Indicator->FinishSpawning(SpawnTransform);
 	ActiveIndicator = Indicator;
