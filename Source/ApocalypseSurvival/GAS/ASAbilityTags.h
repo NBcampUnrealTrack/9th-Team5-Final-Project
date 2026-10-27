@@ -26,6 +26,9 @@ namespace ASGameplayTags
 	/** 피해 무적. 지속형 GE가 부여하며, 피해 GE는 이 태그가 있으면 적용되지 않는다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable);
 
+	/** 테스트 치트의 무적. 회피·리스폰 보호와 별개로 추가/제거하며 부모 무적 판정에 포함된다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable_Debug);
+
 	/** 플레이어가 피격 경직 또는 넉다운으로 조작을 잠시 잃은 상태. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
 

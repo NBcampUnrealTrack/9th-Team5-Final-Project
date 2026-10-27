@@ -289,6 +289,14 @@ void AASPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
+		if (HasAuthority() && bDebugGodEnabled)
+		{
+			// ASC는 PlayerState에 남으므로 이전 캐릭터의 치트 상태를 정리한다.
+			ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Invulnerable_Debug, 1,
+				EGameplayTagReplicationState::TagAndCountToAll);
+			bDebugGodEnabled = false;
+		}
+
 		if (AASPlayerState* ASPlayerState = Cast<AASPlayerState>(ASC->GetOwnerActor()))
 		{
 			ASPlayerState->GetModuleComponent()->SuspendForAvatar(this);
@@ -1078,6 +1086,44 @@ void AASPlayerCharacter::DebugKillSelf()
 void AASPlayerCharacter::ServerDebugKillSelf_Implementation()
 {
 	DebugKillSelf();
+}
+
+void AASPlayerCharacter::ToggleDebugInvulnerability()
+{
+#if !UE_BUILD_SHIPPING
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!ASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[DebugGod] AbilitySystemComponent is not ready."));
+		return;
+	}
+
+	bDebugGodEnabled = !bDebugGodEnabled;
+	if (bDebugGodEnabled)
+	{
+		ASC->AddLooseGameplayTag(ASGameplayTags::State_Invulnerable_Debug, 1,
+			EGameplayTagReplicationState::TagAndCountToAll);
+	}
+	else
+	{
+		// 회피·리스폰 보호 등 다른 출처의 무적은 유지한다.
+		ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Invulnerable_Debug, 1,
+			EGameplayTagReplicationState::TagAndCountToAll);
+	}
+
+	const FString Message = FString::Printf(TEXT("[DebugGod] Invulnerability %s"),
+		bDebugGodEnabled ? TEXT("ON") : TEXT("OFF"));
+	UE_LOG(LogTemp, Log, TEXT("%s: %s"), *GetNameSafe(this), *Message);
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		PlayerController->ClientMessage(Message);
+	}
+#endif
 }
 
 void AASPlayerCharacter::DebugSelectCharacter(int32 Index)

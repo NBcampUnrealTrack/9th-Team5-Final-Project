@@ -1,6 +1,7 @@
 ﻿#include "GAS/Attributes/ASHealthAttributeSet.h"
 
 #include "GameplayEffectExtension.h"
+#include "GAS/ASAbilityTags.h"
 #include "Net/UnrealNetwork.h"
 
 namespace
@@ -52,6 +53,12 @@ bool UASHealthAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackD
 	//피해(Health 감소)일 때 DamageReduction만큼 줄임 (데드 앵글 등)
 	if (Data.EvaluatedData.Attribute == GetHealthAttribute() && Data.EvaluatedData.Magnitude < 0.0f)
 	{
+		// BP가 피해 효과를 직접 적용해도 무적 태그가 있으면 체력을 깎지 않는다.
+		if (Data.Target.HasMatchingGameplayTag(ASGameplayTags::State_Invulnerable))
+		{
+			return false;
+		}
+
 		const float Reduction = FMath::Clamp(GetDamageReduction(), 0.0f, MaxDamageReduction);
 		Data.EvaluatedData.Magnitude *= (1.0f - Reduction);
 	}
