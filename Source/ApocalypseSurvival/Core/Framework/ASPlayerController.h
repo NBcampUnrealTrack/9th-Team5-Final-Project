@@ -97,6 +97,10 @@ public:
 	UFUNCTION(Exec)
 	void ASUnequipWeapon();
 
+	/** CheatManager의 무적 명령을 서버에서 실행한다. */
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGod();
+
 protected:
 	virtual void PostInitializeComponents() override;
 	virtual void SetupInputComponent() override;
