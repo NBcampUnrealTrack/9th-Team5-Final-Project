@@ -38,6 +38,34 @@
 namespace ASMapWidgetPrivate
 {
 	constexpr float MarkerRefreshInterval = 0.1f;
+	// MinimapViewRadius / MinimapZoomRadii의 ClampMin과 일치해야 한다.
+	constexpr float MinMinimapViewRadius = 500.0f;
+
+	bool StepMinimapZoom(const TArray<float>& Radii, float& ViewRadius, bool bZoomIn)
+	{
+		float NextRadius = ViewRadius;
+		bool bFound = false;
+		for (const float Radius : Radii)
+		{
+			if (Radius < MinMinimapViewRadius)
+			{
+				continue;
+			}
+
+			if ((bZoomIn ? Radius < ViewRadius : Radius > ViewRadius)
+				&& (!bFound || (bZoomIn ? Radius > NextRadius : Radius < NextRadius)))
+			{
+				NextRadius = Radius;
+				bFound = true;
+			}
+		}
+
+		if (bFound)
+		{
+			ViewRadius = NextRadius;
+		}
+		return bFound;
+	}
 
 	void RefreshMassEnemyMarkerLocations(UWorld* World, TArray<FVector>& Locations)
 	{
@@ -172,6 +200,37 @@ namespace ASMapWidgetPrivate
 UASMapWidget::UASMapWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	// 미니맵이 마우스 휠 이벤트를 받도록 한다.
+	SetVisibilityInternal(ESlateVisibility::Visible);
+}
+
+bool UASMapWidget::ZoomMinimapIn()
+{
+	return ASMapWidgetPrivate::StepMinimapZoom(MinimapZoomRadii, MinimapViewRadius, true);
+}
+
+bool UASMapWidget::ZoomMinimapOut()
+{
+	return ASMapWidgetPrivate::StepMinimapZoom(MinimapZoomRadii, MinimapViewRadius, false);
+}
+
+FReply UASMapWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (Mode != EASMapWidgetMode::Minimap)
+	{
+		return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+	}
+
+	const float WheelDelta = InMouseEvent.GetWheelDelta();
+	if (WheelDelta > 0.0f)
+	{
+		ZoomMinimapIn();
+	}
+	else if (WheelDelta < 0.0f)
+	{
+		ZoomMinimapOut();
+	}
+	return FReply::Handled();
 }
 
 void UASMapWidget::NativeConstruct()
