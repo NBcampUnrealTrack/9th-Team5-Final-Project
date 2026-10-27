@@ -212,6 +212,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Aim")
 	bool bFaceAimDirection = true;
 
+	//시전(몽타주 재생) 중 제자리에 멈춤. 조준 중에는 이동 가능, 시전이 시작되면 멈추고 스킬이 끝나면 다시 걸음
+	//대시처럼 스킬이 직접 캐릭터를 움직이는 경우는 끄기
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Animation")
+	bool bStopMovementWhileCasting = false;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Debug")
 	bool bDrawDebug = false;
 
@@ -238,6 +243,11 @@ protected:
 private:
 	UFUNCTION()
 	void HandleHitEvent(FGameplayEventData Payload);
+
+	//시전 중 이동 막기 시작·해제
+	void BeginCastMovementLock();
+	void EndCastMovementLock();
+	bool bCastMovementLocked = false;
 
 	//시전 순간의 조준 방향 계산 (커서는 본인 클라이언트·호스트에서만 읽힘)
 	FVector ComputeAimDirection() const;
