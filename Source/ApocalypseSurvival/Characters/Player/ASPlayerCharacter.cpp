@@ -11,6 +11,7 @@
 #include "Core/Combat/ASCombatImpactSettings.h"
 #include "Core/Testing/ASCombatImpactTestLibrary.h"
 #include "Core/Framework/ASGameMode.h"
+#include "Core/Framework/ASPlayerController.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Team/ASTeamTypes.h"
 #include "Core/Framework/ASCharacterSelectSubsystem.h"
@@ -351,6 +352,17 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 	RefreshMonsterTargetingRegistration();
 	
 	BindProgressionDelegates();
+
+	// 클라이언트는 폰과 PlayerState(ASC)가 따로 복제되어 도착 순서가 매번 다르다.
+	// 폰이 먼저 오면 HUD가 ASC 없이 스킬바 연결을 시도해 빈 채로 남으므로,
+	// ASC가 준비된 지금 HUD에 다시 연결하라고 알린다. (로컬 플레이어만, 중복 호출돼도 안전)
+	if (IsLocallyControlled())
+	{
+		if (AASPlayerController* LocalController = Cast<AASPlayerController>(GetController()))
+		{
+			LocalController->OnLocalPawnChanged.Broadcast(this);
+		}
+	}
 }
 
 void AASPlayerCharacter::InitAbilitySystemFromPlayerState()
