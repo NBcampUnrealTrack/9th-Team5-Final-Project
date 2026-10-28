@@ -20,6 +20,7 @@ class APOCALYPSESURVIVAL_API UASAbilitySystemComponent : public UAbilitySystemCo
 
 public:
 	UASAbilitySystemComponent();
+	virtual bool AreAbilityTagsBlocked(const FGameplayTagContainer& Tags) const override;
 
 	/**
 	 * 입력 태그가 눌렸다. 태그가 맞는 어빌리티를 발동하거나, 이미 실행 중이면

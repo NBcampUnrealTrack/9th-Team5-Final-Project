@@ -167,7 +167,7 @@ bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
-	if (bBossIntroInputBlocked) return;
+	if (bBossIntroInputBlocked || IsResultPhase()) return;
 	if (IsInGameMenuOpen()) return;
 	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
 	// 준비가 실제로 시작된 뒤에만 공격 이동 상태를 바꾼다. 발동 실패(쿨타임·비용 등)는
@@ -377,9 +377,13 @@ void AASPlayerController::PlayerTick(const float DeltaTime)
 {
 	if (bBossIntroInputBlocked) return;
 	Super::PlayerTick(DeltaTime);
+	if (IsResultPhase())
+	{
+		if (IsInGameMenuOpen()) CloseInGameMenu();
+		return;
+	}
 	if (IsInGameMenuOpen())
 	{
-		if (IsResultPhase()) CloseInGameMenu();
 		return;
 	}
 
@@ -468,7 +472,7 @@ bool AASPlayerController::GetCursorWorldLocation(FVector& OutLocation) const
 
 void AASPlayerController::RequestMoveTo(const FVector& Destination)
 {
-	if (bBossIntroInputBlocked) return;
+	if (bBossIntroInputBlocked || IsResultPhase()) return;
 	if (!IsValid(GetPawn()))
 	{
 		return;

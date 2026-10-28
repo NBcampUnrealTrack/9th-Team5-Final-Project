@@ -10,6 +10,8 @@
 #include "Mass/Monster/Combat/ASMassMonsterDamageEffect.h"
 #include "Mass/Monster/Combat/ASMonsterDamageable.h"
 #include "Skills/ASSkillTags.h"
+#include "Core/Framework/ASGameState.h"
+#include "Engine/World.h"
 
 ASMassMonsterDamage::EApplyResult ASMassMonsterDamage::ApplyToActor(
 	AActor* TargetActor,
@@ -25,6 +27,8 @@ ASMassMonsterDamage::EApplyResult ASMassMonsterDamage::ApplyToActor(
 	}
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
+	const AASGameState* State = TargetActor->GetWorld()->GetGameState<AASGameState>();
+	if (State && State->IsGameEnded()) return EApplyResult::InvalidTarget;
 	if (IsValid(TargetASC))
 	{
 		if (TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)

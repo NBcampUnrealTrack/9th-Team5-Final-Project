@@ -3,11 +3,19 @@
 #include "Core/Input/ASInputTags.h"
 #include "GAS/ASAbilityTags.h"
 #include "Skills/ASSkillTags.h"
+#include "Core/Framework/ASGameState.h"
+#include "Engine/World.h"
 
 UASAbilitySystemComponent::UASAbilitySystemComponent()
 {
 	// 복제를 켜야 클라이언트가 어트리뷰트와 태그를 받는다.
 	SetIsReplicatedByDefault(true);
+}
+
+bool UASAbilitySystemComponent::AreAbilityTagsBlocked(const FGameplayTagContainer& Tags) const
+{
+	const AASGameState* State = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr;
+	return (State && State->IsGameEnded()) || Super::AreAbilityTagsBlocked(Tags);
 }
 
 void UASAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)

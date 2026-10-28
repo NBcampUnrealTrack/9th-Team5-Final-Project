@@ -36,6 +36,9 @@ public:
 	// 조회 (UI 등에서 사용)
 	UFUNCTION(BlueprintPure, Category = "GameFlow")
 	EGamePhase GetCurrentPhase() const {return CurrentPhase;}
+
+	UFUNCTION(BlueprintPure, Category = "GameFlow")
+	bool IsGameEnded() const { return CurrentPhase == EGamePhase::Victory || CurrentPhase == EGamePhase::Defeat; }
 	
 	UFUNCTION(BlueprintPure, Category = "GameFlow")
 	int32 GetCurrentDay() const {return CurrentDay;}
@@ -93,6 +96,9 @@ protected:
 	void OnRep_CurrentPhase();
 
 private:
+	void StopGameplay();
+	bool bGameplayStopped = false;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Map", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASMapStateComponent> MapState;
 };

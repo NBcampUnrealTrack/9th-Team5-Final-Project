@@ -3,6 +3,7 @@
 #include "GameplayEffectExtension.h"
 #include "GAS/ASAbilityTags.h"
 #include "Net/UnrealNetwork.h"
+#include "Core/Framework/ASGameState.h"
 
 namespace
 {
@@ -45,6 +46,8 @@ void UASHealthAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribu
 
 bool UASHealthAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData& Data)
 {
+	const AASGameState* State = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr;
+	if (State && State->IsGameEnded() && Data.EvaluatedData.Attribute == GetHealthAttribute()) return false;
 	if (!Super::PreGameplayEffectExecute(Data))
 	{
 		return false;

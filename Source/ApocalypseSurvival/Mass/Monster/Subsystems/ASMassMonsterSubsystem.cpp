@@ -17,6 +17,7 @@
 #include "Mass/Monster/TemporaryVisual/ASMassMonsterTemporaryVisualFragment.h"
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Core/Framework/ASGameMode.h"
+#include "Core/Framework/ASGameState.h"
 #include "Core/Combat/ASCombatImpactSettings.h"
 #include "StructUtils/StructView.h"
 #include "TimerManager.h"
@@ -93,6 +94,8 @@ bool UASMassMonsterSubsystem::QueueMonsterSpawns(UMassEntityConfigAsset* EntityC
 	const bool bCountTowardWave)
 {
 	UWorld* World = GetWorld();
+	const AASGameState* State = World ? World->GetGameState<AASGameState>() : nullptr;
+	if (State && State->IsGameEnded()) return false;
 	if (!World || World->GetNetMode() == NM_Client || !IsValid(EntityConfig) || SpawnTransforms.IsEmpty()
 		|| SpawnTransforms.Num() > MaxMassMonsterSpawnBatchSize)
 	{
@@ -137,6 +140,13 @@ FASMassMonsterSpawnResult UASMassMonsterSubsystem::SpawnMonsters(
 	FASMassMonsterSpawnResult Result;
 	Result.RequestedCount = SpawnTransforms.Num();
 	OutEntities.Reset();
+	const AASGameState* State = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr;
+	if (State && State->IsGameEnded())
+	{
+		Result.Status = EASMassMonsterSpawnStatus::InvalidRequest;
+		Result.ErrorMessage = TEXT("The game has ended.");
+		return Result;
+	}
 
 	FString MutationError;
 	if (!CanMutateEntities(MutationError))
@@ -852,6 +862,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageAlongSegmentUnique(
 	const int32 MaxTargets,
 	const FASCombatImpactContext& ImpactContext)
 {
+	const AASGameState* State = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr;
+	if (State && State->IsGameEnded()) return 0;
 	FString MutationError;
 	if (!CanMutateEntities(MutationError) || bMutationInProgress || Damage <= 0.0f)
 	{
@@ -978,6 +990,8 @@ int32 UASMassMonsterSubsystem::ApplyDamageToMatchingMonsters(
 	const FASCombatImpactContext& ImpactContext,
 	TFunctionRef<bool(FMassEntityHandle, const FVector&, const FASMassMonsterConfigFragment&)> Predicate)
 {
+	const AASGameState* State = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr;
+	if (State && State->IsGameEnded()) return 0;
 	FString MutationError;
 	if (!CanMutateEntities(MutationError) || bMutationInProgress || Damage <= 0.0f)
 	{

@@ -254,6 +254,7 @@ void AASGameMode::TryEndNightEarly()
 
 void AASGameMode::EndGame(bool bVictory)
 {
+	if (!HasAuthority() || IsGameEnded()) return;
 	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
@@ -263,6 +264,7 @@ void AASGameMode::EndGame(bool bVictory)
 	if (AASGameState* GS = GetASGameState())
 	{
 		GS->SetPhase(bVictory ? EGamePhase::Victory : EGamePhase::Defeat, 0.f);
+		GS->ForceNetUpdate();
 	}
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] 게임 종료: %s"), bVictory ? TEXT("승리") : TEXT("패배"));
 }
