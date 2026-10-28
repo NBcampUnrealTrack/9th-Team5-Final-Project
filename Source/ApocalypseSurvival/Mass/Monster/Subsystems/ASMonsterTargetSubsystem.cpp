@@ -180,6 +180,24 @@ void UASMonsterTargetSubsystem::FindTargetsInRange(
 	}
 }
 
+void UASMonsterTargetSubsystem::GetTargetsWithCapabilities(
+	const EASMonsterTargetCapability RequiredCapabilities,
+	TArray<FASTargetSnapshot>& OutTargets) const
+{
+	OutTargets.Reset();
+	for (const TPair<int32, FTargetRecord>& Pair : TargetsById)
+	{
+		FASTargetSnapshot Snapshot;
+		if (!BuildSnapshot(Pair.Value, Snapshot) || !Snapshot.bAlive
+			|| !ASHasAllTargetCapabilities(Snapshot.Capabilities, RequiredCapabilities))
+		{
+			continue;
+		}
+
+		OutTargets.Add(MoveTemp(Snapshot));
+	}
+}
+
 void UASMonsterTargetSubsystem::GetGlobalCandidateTargets(TArray<FASTargetSnapshot>& OutTargets) const
 {
 	OutTargets.Reset();

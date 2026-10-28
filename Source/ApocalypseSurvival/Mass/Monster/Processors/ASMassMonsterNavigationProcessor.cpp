@@ -408,6 +408,21 @@ void UASMassMonsterNavigationProcessor::Execute(FMassEntityManager& EntityManage
 
 			NavigationState.PathRefreshTimeRemaining = FMath::Max(0.0f, NavigationState.PathRefreshTimeRemaining - DeltaTime);
 			const FVector EntityLocation = Transforms[EntityIt].GetTransform().GetLocation();
+			// Dynamic NavMesh tile rebuilds invalidate paths crossing a newly placed obstacle. A valid
+			// TSharedPtr does not mean the FNavigationPath itself is still valid, so stop following the
+			// stale short path and request a replacement before Mass can walk through the obstacle.
+			if (CachedPath.NavPath.IsValid() && !CachedPath.NavPath->IsValid())
+			{
+				ASMassMonsterNavigation::Stop(*World, MoveTarget, CachedPath, ShortPath);
+				ASMassMonsterNavigation::ResetProgressTracking(NavigationState);
+				NavigationState.bHasRequestedGoal = false;
+				NavigationState.PathRefreshTimeRemaining = 0.0f;
+#if !UE_BUILD_SHIPPING
+				UE_LOG(LogApocalypseSurvival, Verbose,
+					TEXT("[MassMonsterNavigation] Entity=%d Reason=PathInvalidated"),
+					Context.GetEntity(EntityIt).Index);
+#endif
+			}
 			const bool bProgressStalled = Behavior.State == EASMassMonsterState::Chase
 				&& Target.HasPrimaryTarget() && !Target.HasBlockingTarget()
 				&& ASMassMonsterNavigation::IsMovementStalled(

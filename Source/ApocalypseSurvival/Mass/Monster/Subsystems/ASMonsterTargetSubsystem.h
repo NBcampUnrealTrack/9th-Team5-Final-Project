@@ -31,6 +31,8 @@ public:
 
 	void FindTargetsInRange(const FVector& Origin, float MaxDistance,
 		EASMonsterTargetCapability RequiredCapabilities, TArray<FASTargetSnapshot>& OutTargets) const;
+	void GetTargetsWithCapabilities(EASMonsterTargetCapability RequiredCapabilities,
+		TArray<FASTargetSnapshot>& OutTargets) const;
 	void GetGlobalCandidateTargets(TArray<FASTargetSnapshot>& OutTargets) const;
 
 private:
