@@ -5,9 +5,10 @@
 #include "ASGrenadeUseAbility.generated.h"
 
 class AASGrenadeActor;
+class AASGrenadeTrajectoryPreview;
 class AASSkillRangeIndicatorActor;
 
-/** Cursor-targeted consumable. Shows the blast radius, waits for left-click, then commits inventory cost on the server. */
+/** Cursor-targeted consumable. Previews the bouncing trajectory and blast, then commits inventory cost on the server. */
 UCLASS(Blueprintable)
 class APOCALYPSESURVIVAL_API UASGrenadeUseAbility : public UASItemUseAbility
 {
@@ -58,6 +59,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AASSkillRangeIndicatorActor> RangeIndicator;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AASGrenadeTrajectoryPreview> TrajectoryPreview;
 
 	FTimerHandle PendingUseTimer;
 	FDelegateHandle OtherAbilityActivatedHandle;
