@@ -1,6 +1,7 @@
 ﻿#include "Skills/Projectile/ASSkillProjectileActor.h"
 
 #include "Skills/Debug/ASSkillDamageDebug.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Components/SphereComponent.h"
@@ -115,6 +116,11 @@ void AASSkillProjectileActor::ConfigureProjectileCollision()
 void AASSkillProjectileActor::BeginPlay()
 {
 	Super::BeginPlay();
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Projectile.Begin TickEnabled=%d StartEnabled=%d"),
+			IsActorTickEnabled(), PrimaryActorTick.bStartWithTickEnabled));
+	}
 
 	// Deferred Spawn의 InitProjectile 뒤에는 FinishSpawning 과정에서 BP Construction Script가 실행된다.
 	// 그 스크립트가 Mesh/Collision 기본값을 다시 적용할 수 있으므로, 실제 비행 직전에 다시 강제한다.
@@ -122,9 +128,13 @@ void AASSkillProjectileActor::BeginPlay()
 
 	if (HasAuthority())
 	{
+		if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+		{
+			Targets->AddMassTickPrerequisites(PrimaryActorTick);
+		}
 		PreviousLocation = GetActorLocation();
 		//최대 거리에 도달하면 사라짐
-		GetWorldTimerManager().SetTimer(RangeTimerHandle, this, &AASSkillProjectileActor::EndProjectile, FlightTime, false);
+		GetWorldTimerManager().SetTimer(RangeTimerHandle, this, &ThisClass::HandleRangeExpired, FlightTime, false);
 	}
 }
 
@@ -144,6 +154,14 @@ void AASSkillProjectileActor::ResolveHitsAlongSegment(const FVector& CurrentLoca
 	if (bEnded || !bResolveSegmentHits)
 	{
 		return;
+	}
+	if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+	{
+		if (Targets->DeferUntilMassIdle(DeferredHitTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			DeferredHitTimer.Invalidate();
+			ResolveHitsAlongSegment(GetActorLocation());
+		}))) return;
 	}
 
 	const int32 RemainingHits = PierceCount >= 0
@@ -203,11 +221,36 @@ void AASSkillProjectileActor::HandleOverlap(UPrimitiveComponent* OverlappedCompo
 
 void AASSkillProjectileActor::HandleStop(const FHitResult& ImpactResult)
 {
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Projectile.Stopped HitActor=%s Location=%s"),
+			*GetNameSafe(ImpactResult.GetActor()), *ImpactResult.ImpactPoint.ToString()));
+	}
 	if (HasAuthority())
 	{
-		ResolveHitsAlongSegment(ImpactResult.ImpactPoint);
-		EndProjectile();
+		FinishFlight(ImpactResult.ImpactPoint);
 	}
+}
+
+void AASSkillProjectileActor::HandleRangeExpired()
+{
+	FinishFlight(GetActorLocation());
+}
+
+void AASSkillProjectileActor::FinishFlight(const FVector FinalLocation)
+{
+	if (bEnded) return;
+	if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+	{
+		if (Targets->DeferUntilMassIdle(DeferredEndTimer,
+			FTimerDelegate::CreateWeakLambda(this, [this, FinalLocation]()
+			{
+				DeferredEndTimer.Invalidate();
+				FinishFlight(FinalLocation);
+			}))) return;
+	}
+	ResolveHitsAlongSegment(FinalLocation);
+	EndProjectile();
 }
 
 void AASSkillProjectileActor::OnHitTarget_Implementation(AActor* Target)
@@ -228,6 +271,8 @@ void AASSkillProjectileActor::EndProjectile()
 
 	bEnded = true;
 	GetWorldTimerManager().ClearTimer(RangeTimerHandle);
+	GetWorldTimerManager().ClearTimer(DeferredHitTimer);
+	GetWorldTimerManager().ClearTimer(DeferredEndTimer);
 
 	OnProjectileEnd();
 	Destroy();

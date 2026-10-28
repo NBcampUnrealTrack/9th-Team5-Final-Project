@@ -4,6 +4,7 @@
 #include "Core/Combat/ASCombatImpactTypes.h"
 #include "GameplayEffectTypes.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "TimerManager.h"
 #include "ASCombatTargetSubsystem.generated.h"
 
 class AActor;
@@ -125,6 +126,10 @@ class APOCALYPSESURVIVAL_API UASCombatTargetSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	/** Preserve the caller's hit/lifetime logic while waiting for a writable Mass phase. */
+	bool DeferUntilMassIdle(FTimerHandle& PendingTimer, FTimerDelegate Callback);
+	void AddMassTickPrerequisites(FTickFunction& TickFunction);
+
 	static bool IsValidActorTarget(const AActor* Target, const AActor* Instigator, bool bCanHitPlayers);
 	static int32 ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Target);
 	static int32 ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Target,

@@ -47,6 +47,10 @@ void AASWeaponProjectile::BeginPlay()
 	// 이동과 판정은 서버만 한다. 클라이언트는 복제된 위치를 받는다.
 	if (HasAuthority() && bInitialized)
 	{
+		if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+		{
+			Targets->AddMassTickPrerequisites(PrimaryActorTick);
+		}
 		SetActorTickEnabled(true);
 	}
 }

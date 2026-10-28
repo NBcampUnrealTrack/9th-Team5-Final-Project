@@ -88,6 +88,8 @@ private:
 	/** 발사 직전에 BP 기본값을 덮어써 피격용 Sphere만 충돌에 참여하게 한다. */
 	void ConfigureProjectileCollision();
 	void ResolveHitsAlongSegment(const FVector& CurrentLocation);
+	void FinishFlight(FVector FinalLocation);
+	void HandleRangeExpired();
 
 	//0 = 첫 적에서 사라짐, -1 = 무한 관통
 	int32 PierceCount = 0;
@@ -97,4 +99,6 @@ private:
 	FVector PreviousLocation = FVector::ZeroVector;
 
 	FTimerHandle RangeTimerHandle;
+	FTimerHandle DeferredHitTimer;
+	FTimerHandle DeferredEndTimer;
 };
