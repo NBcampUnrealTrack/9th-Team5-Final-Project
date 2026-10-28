@@ -61,6 +61,9 @@ public:
 	/** 커서 아래로 트레이스해서 맞은 월드 위치를 돌려준다. 맞은 곳이 없으면 false. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	bool GetCursorWorldLocation(FVector& OutLocation) const;
+	
+	/** 커서가 바닥을 맞히지 못했을 때(맵 밖 등) 캐릭터 높이의 수평면에 커서를 투영한 위치 */
+	bool GetCursorPlaneLocation(FVector& OutLocation) const;
 
 	/** 조종 중인 폰을 Destination 에서 가장 가까운 이동 가능 지점으로 걸어가게 한다. */
 	UFUNCTION(BlueprintCallable, Category = "Movement")

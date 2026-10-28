@@ -16,6 +16,7 @@ class USoundAttenuation;
 class USoundBase;
 class USphereComponent;
 class UStaticMeshComponent;
+class APawn;
 
 /** Server-simulated bouncing grenade. Its fuse applies one explosion to every team, including the thrower. */
 UCLASS(Blueprintable)
@@ -29,6 +30,12 @@ public:
 	/** Prepare damage and visuals after FinishSpawning, before committing inventory cost. No fuse or movement starts here. */
 	bool InitializeGrenade(UAbilitySystemComponent* SourceASC, UASItemInstance* InSourceItem, const FVector& Velocity);
 	void StartThrow();
+
+	/** Shared by the local trajectory preview and the authoritative throw. Target is already range/ground resolved. */
+	static FTransform MakeThrowTransform(const APawn* Avatar, const FVector& TargetLocation, const FVector& SpawnOffset);
+	static FVector MakeThrowVelocity(const FVector& Start, const FVector& GroundTarget, float Radius, float GravityZ, float FlightTime);
+	static void ConfigureGrenadeCollision(USphereComponent* Sphere);
+	float GetFuseTime() const { return FuseTime; }
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Item|Grenade")
@@ -51,7 +58,7 @@ protected:
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade", meta = (ClampMin = "0.01", Units = "s"))
-	float FuseTime = 3.0f;
+	float FuseTime = 1.5f;
 
 	/** Positive fallback damage. An item's negative Data.Damage SetByCaller value overrides this. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade", meta = (ClampMin = "0.0"))

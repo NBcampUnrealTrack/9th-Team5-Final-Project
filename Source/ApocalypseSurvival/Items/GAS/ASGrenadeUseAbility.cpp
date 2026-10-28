@@ -16,6 +16,7 @@
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/Use/ASGrenadeActor.h"
+#include "Items/Use/ASGrenadeTrajectoryPreview.h"
 #include "Skills/ASSkillAbility.h"
 #include "Skills/ASSkillTags.h"
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
@@ -119,8 +120,15 @@ void UASGrenadeUseAbility::BeginTargeting()
 	Settings.Shape = EASSkillIndicatorShape::Circle;
 	Settings.Radius = Definition->GetEffectMagnitude(ASGameplayTags::Data_Item_ExplosionRadius, ASItemMagnitudeDefaults::ExplosionRadius);
 	Settings.MaxCastRange = Definition->GetEffectMagnitude(ASGameplayTags::Data_Item_ThrowRange, ASItemMagnitudeDefaults::ThrowRange);
-	Settings.RangeRingRadius = Settings.MaxCastRange;
+	Settings.RangeRingRadius = 0.0f;
 	RangeIndicator->InitIndicator(Avatar, Settings);
+	TrajectoryPreview = GetWorld()->SpawnActor<AASGrenadeTrajectoryPreview>(
+		AASGrenadeTrajectoryPreview::StaticClass(), Avatar->GetActorTransform(), Params);
+	if (!TrajectoryPreview || !TrajectoryPreview->InitializePreview(Avatar, GrenadeClass, ThrowFlightTime, SpawnOffset, RangeIndicator))
+	{
+		OnLocalCancel();
+		return;
+	}
 	ASC->AddLooseGameplayTag(ASGameplayTags::State_Targeting);
 	bAddedTargetingTag = true;
 	ASC->GenericLocalConfirmCallbacks.AddDynamic(this, &ThisClass::OnLocalConfirm);
@@ -196,21 +204,14 @@ void UASGrenadeUseAbility::ThrowAtLocation(const FVector& DesiredLocation)
 	}
 	// Range and ground height come from server item data and world geometry, never from client claims.
 	const FVector TargetLocation = AASSkillRangeIndicatorActor::ResolveTargetLocation(Avatar, DesiredLocation, ThrowRange);
-	FVector Direction = (TargetLocation - Avatar->GetActorLocation()).GetSafeNormal2D();
-	if (Direction.IsNearlyZero()) Direction = Avatar->GetActorForwardVector().GetSafeNormal2D();
-	const FRotator Facing = Direction.Rotation();
-	FVector Offset = SpawnOffset;
-	if (Offset.X > 0.0f) Offset.X = FMath::Min(Offset.X, FVector::Dist2D(TargetLocation, Avatar->GetActorLocation()) * 0.5f);
-	const FVector SpawnLocation = Avatar->GetActorLocation() + Facing.RotateVector(Offset);
-
+	const FTransform SpawnTransform = AASGrenadeActor::MakeThrowTransform(Avatar, TargetLocation, SpawnOffset);
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(ASGrenadeSpawn), false, Avatar);
 	FHitResult Obstruction;
-	if (World->LineTraceSingleByChannel(Obstruction, Avatar->GetActorLocation(), SpawnLocation, ECC_Visibility, Params))
+	if (World->LineTraceSingleByChannel(Obstruction, Avatar->GetActorLocation(), SpawnTransform.GetLocation(), ECC_Visibility, Params))
 	{
 		OnTargetDataCancelled();
 		return;
 	}
-	const FTransform SpawnTransform(Facing, SpawnLocation);
 	AASGrenadeActor* Grenade = World->SpawnActorDeferred<AASGrenadeActor>(GrenadeClass, SpawnTransform,
 		Avatar, Avatar, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding);
 	if (Grenade)
@@ -222,9 +223,8 @@ void UASGrenadeUseAbility::ThrowAtLocation(const FVector& DesiredLocation)
 	FVector Velocity = FVector::ZeroVector;
 	if (Movement && Collision)
 	{
-		const FVector LandingCenter = TargetLocation + FVector(0.0f, 0.0f, Collision->GetScaledSphereRadius());
-		Velocity = (LandingCenter - Grenade->GetActorLocation()) / ThrowFlightTime;
-		Velocity.Z -= 0.5f * Movement->GetGravityZ() * ThrowFlightTime;
+		Velocity = AASGrenadeActor::MakeThrowVelocity(Grenade->GetActorLocation(), TargetLocation,
+			Collision->GetScaledSphereRadius(), Movement->GetGravityZ(), ThrowFlightTime);
 	}
 	if (!Movement || !Collision || !Grenade->InitializeGrenade(ASC, GetSourceItem(), Velocity))
 	{
@@ -239,7 +239,7 @@ void UASGrenadeUseAbility::ThrowAtLocation(const FVector& DesiredLocation)
 		return;
 	}
 	Grenade->StartThrow();
-	Avatar->SetActorRotation(Facing);
+	Avatar->SetActorRotation(SpawnTransform.Rotator());
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
@@ -282,6 +282,8 @@ void UASGrenadeUseAbility::StopTargeting()
 		if (bAddedTargetingTag) ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Targeting);
 	}
 	bAddedTargetingTag = false;
+	if (IsValid(TrajectoryPreview)) TrajectoryPreview->Destroy();
+	TrajectoryPreview = nullptr;
 	if (IsValid(RangeIndicator)) RangeIndicator->Destroy();
 	RangeIndicator = nullptr;
 }

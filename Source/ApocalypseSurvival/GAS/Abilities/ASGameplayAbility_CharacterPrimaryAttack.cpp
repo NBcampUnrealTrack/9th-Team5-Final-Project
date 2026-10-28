@@ -7,11 +7,13 @@
 #include "Animation/AnimMontage.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "Items/ASItemInstance.h"
@@ -38,7 +40,7 @@ float UASGameplayAbility_CharacterPrimaryAttack::GetCurrentAttackRange() const
 	FASWeaponAttackExecutionContext Context;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	return BuildExecutionContext(Context, Execution) && Context.Definition
-		? FMath::Max(0.0f, Context.Definition->AttackRange)
+		? FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition))
 		: 0.0f;
 }
 
@@ -462,7 +464,7 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 				return false;
 			}
 
-			const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f
+			const float AllowedRange = FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition)) + 15.0f
 				+ ServerTarget.GetHitRadius();
 			if (FVector::DistSquared2D(Context.Avatar->GetActorLocation(), ServerTarget.GetLocation())
 				> FMath::Square(AllowedRange))
@@ -512,7 +514,7 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 	}
 
 	const FVector ToTarget = RequestedTarget->GetActorLocation() - Context.Avatar->GetActorLocation();
-	const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f;
+	const float AllowedRange = FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition)) + 15.0f;
 	if (ToTarget.SizeSquared2D() > FMath::Square(AllowedRange))
 	{
 		return false;
@@ -595,7 +597,28 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 		}
 		AttackingCharacter->GetCharacterMovement()->StopMovementImmediately();
 	}
-	Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
+	if (AASPlayerCharacter* TurningCharacter = Cast<AASPlayerCharacter>(Context.Avatar))
+	{
+		// 감속 중 남은 속도 때문에 이동 방향으로 다시 돌아가지 않도록 즉시 정지
+		if (UCharacterMovementComponent* MoveComp = TurningCharacter->GetCharacterMovement())
+		{
+			MoveComp->StopMovementImmediately();
+		}
+		TurningCharacter->TurnToYaw(CachedAimDirection.Rotation().Yaw);
+	}
+	else
+	{
+		Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
+	}
+	// 공격 방향으로 부드럽게 돈다. 판정 방향은 CachedAimDirection 이라 회전 중에도 정확하다.
+	if (AASPlayerCharacter* TurningCharacter = Cast<AASPlayerCharacter>(Context.Avatar))
+	{
+		TurningCharacter->TurnToYaw(CachedAimDirection.Rotation().Yaw);
+	}
+	else
+	{
+		Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
+	}
 
 	bool bScaleToInterval = true;
 	UAnimMontage* ResolvedMontage = nullptr;
