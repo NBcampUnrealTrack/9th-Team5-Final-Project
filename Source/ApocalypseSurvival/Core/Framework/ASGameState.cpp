@@ -1,6 +1,20 @@
 ﻿#include "Core/Framework/ASGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "MapSystem/Zone/Core/ASMapStateComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystemComponent.h"
+#include "AIController.h"
+#include "BrainComponent.h"
+#include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/MovementComponent.h"
+#include "MassSimulationSubsystem.h"
+#include "Items/Combat/ASWeaponProjectile.h"
+#include "Skills/Projectile/ASSkillProjectileActor.h"
+#include "Skills/Area/ASSkillAreaActor.h"
+#include "Mass/Monster/Combat/ASMassMonsterProjectile.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "TimerManager.h"
 
 AASGameState::AASGameState()
 {
@@ -22,7 +36,7 @@ void AASGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 
 void AASGameState::SetPhase(EGamePhase NewPhase, float Duration)
 {
-	if (!HasAuthority()) return;
+	if (!HasAuthority() || IsGameEnded()) return;
 	
 	CurrentPhase = NewPhase;
 	PhaseEndServerTime = (Duration > 0.f) ? GetServerWorldTimeSeconds() + Duration : 0.f;
@@ -92,5 +106,58 @@ float AASGameState::GetPhaseRemainingTime() const
 
 void AASGameState::OnRep_CurrentPhase()
 {
+	if (IsGameEnded()) StopGameplay();
 	OnPhaseChanged.Broadcast(CurrentPhase);
+}
+
+void AASGameState::StopGameplay()
+{
+	if (bGameplayStopped) return;
+	bGameplayStopped = true;
+
+	// Keep world/network/UI ticking; only the gameplay simulation is stopped.
+	if (UMassSimulationSubsystem* Simulation = GetWorld()->GetSubsystem<UMassSimulationSubsystem>())
+	{
+		Simulation->PauseSimulation();
+	}
+
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* Actor = *It;
+		const bool bPawn = Actor->IsA<APawn>();
+		const bool bProjectile = Actor->IsA<AASWeaponProjectile>()
+			|| Actor->IsA<AASSkillProjectileActor>() || Actor->IsA<AASMassMonsterProjectile>();
+		if (!bPawn && !bProjectile && !Actor->IsA<AASSkillAreaActor>()) continue;
+
+		if (UAbilitySystemComponent* Abilities = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Actor))
+		{
+			Abilities->CancelAllAbilities();
+		}
+		if (APawn* Pawn = Cast<APawn>(Actor))
+		{
+			if (AController* Controller = Pawn->GetController())
+			{
+				if (UPathFollowingComponent* Path = Controller->FindComponentByClass<UPathFollowingComponent>())
+				{
+					Path->AbortMove(*this, FPathFollowingResultFlags::ForcedScript);
+				}
+			}
+			if (AAIController* AI = Cast<AAIController>(Pawn->GetController()))
+			{
+				AI->StopMovement();
+				if (UBrainComponent* Brain = AI->GetBrainComponent()) Brain->StopLogic(TEXT("Game ended"));
+			}
+		}
+
+		Actor->SetActorTickEnabled(false);
+		Actor->SetActorEnableCollision(false);
+		GetWorldTimerManager().ClearAllTimersForObject(Actor);
+		TInlineComponentArray<UActorComponent*> Components(Actor);
+		for (UActorComponent* Component : Components)
+		{
+			if (UMovementComponent* Movement = Cast<UMovementComponent>(Component)) Movement->StopMovementImmediately();
+			Component->SetComponentTickEnabled(false);
+			GetWorldTimerManager().ClearAllTimersForObject(Component);
+		}
+	}
 }
