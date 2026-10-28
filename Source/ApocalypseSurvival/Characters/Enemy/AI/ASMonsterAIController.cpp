@@ -360,10 +360,40 @@ void AASMonsterAIController::UpdateAggroAndMovement()
     // 타깃을 얻은 뒤에만 StateTree를 시작한다. 빈 TargetActor가 Move To에 전달되는 것을 차단한다.
     StartStateTree();
 
+    const UASMonsterDefinition* Definition = Monster->GetMonsterDefinition();
+    const float RetreatDistance = Definition ? FMath::Max(0.0f, Definition->RetreatDistance) : 0.0f;
+    const float CurrentDistance = FVector::Dist2D(Monster->GetActorLocation(), Target->GetActorLocation());
+    if (RetreatDistance > 0.0f && CurrentDistance < RetreatDistance)
+    {
+       // 원거리형은 추격 AI가 계속 타깃에게 붙어 버리면 핵심 패턴의 회피 설계가 무너진다.
+       // NavMesh가 없는 방향은 MoveToLocation이 실패하므로 다음 갱신에서 다른 지점으로 다시 시도한다.
+       FVector RetreatDirection = (Monster->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
+       if (RetreatDirection.IsNearlyZero())
+       {
+          RetreatDirection = -Monster->GetActorForwardVector().GetSafeNormal2D();
+       }
+
+       const float DesiredDistance = Definition
+          ? FMath::Max(RetreatDistance, Definition->PreferredCombatDistance)
+          : RetreatDistance;
+       const FVector RetreatLocation = Monster->GetActorLocation()
+          + RetreatDirection * FMath::Max(100.0f, DesiredDistance - CurrentDistance);
+       SetCombatFocus(Target);
+       if (GetMoveStatus() != EPathFollowingStatus::Moving)
+       {
+          MoveToLocation(RetreatLocation, 75.0f, false);
+       }
+       MoveTarget.Reset();
+       return;
+    }
+
     if (MoveTarget != Target || GetMoveStatus() != EPathFollowingStatus::Moving)
     {
        const UASMonsterCombatComponent* Combat = Monster->GetCombatComponent();
-       const float AcceptanceRadius = Combat ? FMath::Max(Combat->GetAttackRange(), 1.0f) : 100.0f;
+       const float DefaultAcceptanceRadius = Combat ? FMath::Max(Combat->GetAttackRange(), 1.0f) : 100.0f;
+       const float AcceptanceRadius = Definition && Definition->PreferredCombatDistance > 0.0f
+          ? Definition->PreferredCombatDistance
+          : DefaultAcceptanceRadius;
        MoveToActor(Target, AcceptanceRadius);
        MoveTarget = Target;
     }
