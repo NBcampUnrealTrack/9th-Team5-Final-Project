@@ -14,6 +14,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Combat/ASWeaponAttackProfile.h"
@@ -596,7 +597,28 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 		}
 		AttackingCharacter->GetCharacterMovement()->StopMovementImmediately();
 	}
-	Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
+	if (AASPlayerCharacter* TurningCharacter = Cast<AASPlayerCharacter>(Context.Avatar))
+	{
+		// 감속 중 남은 속도 때문에 이동 방향으로 다시 돌아가지 않도록 즉시 정지
+		if (UCharacterMovementComponent* MoveComp = TurningCharacter->GetCharacterMovement())
+		{
+			MoveComp->StopMovementImmediately();
+		}
+		TurningCharacter->TurnToYaw(CachedAimDirection.Rotation().Yaw);
+	}
+	else
+	{
+		Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
+	}
+	// 공격 방향으로 부드럽게 돈다. 판정 방향은 CachedAimDirection 이라 회전 중에도 정확하다.
+	if (AASPlayerCharacter* TurningCharacter = Cast<AASPlayerCharacter>(Context.Avatar))
+	{
+		TurningCharacter->TurnToYaw(CachedAimDirection.Rotation().Yaw);
+	}
+	else
+	{
+		Context.Avatar->SetActorRotation(FRotator(0.0f, CachedAimDirection.Rotation().Yaw, 0.0f));
+	}
 
 	bool bScaleToInterval = true;
 	UAnimMontage* ResolvedMontage = nullptr;

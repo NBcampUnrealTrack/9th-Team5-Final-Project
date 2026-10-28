@@ -44,6 +44,11 @@ class APOCALYPSESURVIVAL_API AASPlayerCharacter : public AASCharacterBase, publi
 
 public:
 	AASPlayerCharacter();
+	
+	virtual void Tick(float DeltaSeconds) override;
+
+	/** 지정한 방향으로 몸을 부드럽게 돌린다 (공격 방향 전환용, 판정 방향과는 별개인 보이는 회전) */
+	void TurnToYaw(float TargetYaw);
 
 	/** 서버: 빙의되는 시점에는 PlayerState 가 이미 있다. 기본 어빌리티도 여기서 부여한다. */
 	virtual void PossessedBy(AController* NewController) override;
@@ -215,6 +220,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "0.1"))
 	float StandUpPlayRate = 1.5f;
 	
+	/** 공격 방향으로 도는 속도 (임시값) */
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "90.0", Units = "deg/s"))
+	float AttackTurnRate = 1440.0f;
+	
+	// 회전 시작 직후 남은 가속도로 회전이 취소되지 않도록 검사를 미루는 시간 (임시)
+	UPROPERTY(EditDefaultsOnly, Category="Movement")
+	float TurnCancelGraceTime = 0.15f;
+	
 	/** 부활에 걸리는 시간 (임시값) */
 	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "0.1", Units = "s"))
 	float ReviveDuration = 5.f;
@@ -248,6 +261,10 @@ protected:
 	void OnLevelUp(int32 NewLevel);
 
 private:
+	bool bTurningToYaw = false;
+	float TurnTargetYaw = 0.0f;
+	float TurnStartTime = 0.0f;
+	
 	/** 서버에서 이 캐릭터가 추가한 무적 태그 한 개만 추적한다. */
 	bool bDebugGodEnabled = false;
 

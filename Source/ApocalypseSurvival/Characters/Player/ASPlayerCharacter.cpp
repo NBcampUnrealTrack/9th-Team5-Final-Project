@@ -55,8 +55,51 @@ namespace ASPlayerCharacterTargeting
 	}
 }
 
+void AASPlayerCharacter::TurnToYaw(const float TargetYaw)
+{
+	TurnTargetYaw = TargetYaw;
+	TurnStartTime = GetWorld()->GetTimeSeconds();
+	bTurningToYaw = true;
+	SetActorTickEnabled(true);
+}
+
+void AASPlayerCharacter::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bTurningToYaw)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	// 회전 시작 후 일정 시간이 지난 뒤에만, 새 이동 명령(가속)이 들어오면 회전을 취소한다.
+	const bool bPastGrace = GetWorld()->GetTimeSeconds() - TurnStartTime > TurnCancelGraceTime;
+	const UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	if (bPastGrace && MoveComp && MoveComp->GetCurrentAcceleration().SizeSquared2D() > KINDA_SMALL_NUMBER)
+	{
+		bTurningToYaw = false;
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	const float CurrentYaw = GetActorRotation().Yaw;
+	const float NewYaw = FMath::FixedTurn(CurrentYaw, TurnTargetYaw, AttackTurnRate * DeltaSeconds);
+	SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
+
+	if (FMath::Abs(FRotator::NormalizeAxis(NewYaw - TurnTargetYaw)) < 1.0f)
+	{
+		bTurningToYaw = false;
+		SetActorTickEnabled(false);
+	}
+}
+
 AASPlayerCharacter::AASPlayerCharacter()
 {
+	// 부모는 Tick 을 끄지만, 공격 방향 회전(TurnToYaw) 동안만 켜서 쓴다.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	
 	TeamId = ASTeam::Player();
 
 	EquipmentComponent = CreateDefaultSubobject<UASEquipmentComponent>(TEXT("EquipmentComponent"));

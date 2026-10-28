@@ -589,6 +589,12 @@ void AASPlayerController::OnMoveStarted()
 	{
 		return;
 	}
+	
+	// 몬스터를 우클릭하면 그 몬스터를 1회 공격한다 (사거리 밖이면 다가감). 상호작용이 우선이다.
+	if (AttackMoveComponent->StartTargetAttack(Destination))
+	{
+		return;
+	}
 
 	RequestMoveTo(Destination);
 
