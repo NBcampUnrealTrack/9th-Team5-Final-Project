@@ -21,6 +21,10 @@
 #include "GameplayEffectExtension.h"
 #include "GAS/ASAbilitySet.h"
 #include "Modules/ASModuleComponent.h"
+#include "MapSystem/Vision/ASFogOfWarManager.h"
+#include "MapSystem/Vision/ASVisionDefinition.h"
+#include "MapSystem/Vision/ASVisionSourceComponent.h"
+#include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
@@ -33,6 +37,7 @@
 #include "Net/UnrealNetwork.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Items/Data/ASItemDefinition.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "EngineUtils.h"
@@ -50,8 +55,51 @@ namespace ASPlayerCharacterTargeting
 	}
 }
 
+void AASPlayerCharacter::TurnToYaw(const float TargetYaw)
+{
+	TurnTargetYaw = TargetYaw;
+	TurnStartTime = GetWorld()->GetTimeSeconds();
+	bTurningToYaw = true;
+	SetActorTickEnabled(true);
+}
+
+void AASPlayerCharacter::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bTurningToYaw)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	// 회전 시작 후 일정 시간이 지난 뒤에만, 새 이동 명령(가속)이 들어오면 회전을 취소한다.
+	const bool bPastGrace = GetWorld()->GetTimeSeconds() - TurnStartTime > TurnCancelGraceTime;
+	const UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	if (bPastGrace && MoveComp && MoveComp->GetCurrentAcceleration().SizeSquared2D() > KINDA_SMALL_NUMBER)
+	{
+		bTurningToYaw = false;
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	const float CurrentYaw = GetActorRotation().Yaw;
+	const float NewYaw = FMath::FixedTurn(CurrentYaw, TurnTargetYaw, AttackTurnRate * DeltaSeconds);
+	SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
+
+	if (FMath::Abs(FRotator::NormalizeAxis(NewYaw - TurnTargetYaw)) < 1.0f)
+	{
+		bTurningToYaw = false;
+		SetActorTickEnabled(false);
+	}
+}
+
 AASPlayerCharacter::AASPlayerCharacter()
 {
+	// 부모는 Tick 을 끄지만, 공격 방향 회전(TurnToYaw) 동안만 켜서 쓴다.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	
 	TeamId = ASTeam::Player();
 
 	EquipmentComponent = CreateDefaultSubobject<UASEquipmentComponent>(TEXT("EquipmentComponent"));
@@ -526,6 +574,42 @@ AASPlayerCharacter* AASPlayerCharacter::GetCurrentReviveTarget() const
 		}
 	}
 	return nullptr;
+}
+
+float AASPlayerCharacter::GetCurrentVisionRadius() const
+{
+	const UASVisionSourceComponent* VisionSource = FindComponentByClass<UASVisionSourceComponent>();
+	const UASVisionWorldSubsystem* VisionSubsystem = UASVisionWorldSubsystem::Get(this);
+	const AASFogOfWarManager* FogManager = VisionSubsystem ? VisionSubsystem->GetFogOfWarManager() : nullptr;
+	const UASVisionDefinition* VisionDefinition = FogManager ? FogManager->GetVisionDefinition() : nullptr;
+	if (!VisionSource || !VisionDefinition)
+	{
+		return -1.0f;
+	}
+
+	// 서버 시간 기준 밤 비율이라 서버·클라이언트가 같은 반경을 얻는다.
+	return VisionSource->GetVisionRadius(VisionDefinition->Settings, FogManager->GetNightAlpha());
+}
+
+float AASPlayerCharacter::ResolveAttackRange(const AActor* Avatar, const UASItemDefinition* Definition)
+{
+	if (!Definition)
+	{
+		return 0.0f;
+	}
+
+	const float WeaponRange = FMath::Max(0.0f, Definition->AttackRange);
+
+	// 보이지 않는 곳은 공격하지 않는다. 시야 정보가 없는 맵(테스트 맵 등)은 무기 사거리 그대로.
+	if (const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Avatar))
+	{
+		const float VisionRadius = PlayerCharacter->GetCurrentVisionRadius();
+		if (VisionRadius > 0.0f)
+		{
+			return FMath::Min(WeaponRange, VisionRadius);
+		}
+	}
+	return WeaponRange;
 }
 
 void AASPlayerCharacter::OnRep_LyingDown()

@@ -96,12 +96,63 @@ bool UASPlayerAttackMoveComponent::ConfirmAttackMove(const FVector& Destination)
 	return true;
 }
 
+bool UASPlayerAttackMoveComponent::StartTargetAttack(const FVector& CursorLocation)
+{
+	AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
+	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+	UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
+	if (!Controller || !Controller->IsLocalController() || !Pawn || !World || GetAttackRange() <= 0.0f)
+	{
+		return false;
+	}
+
+	// 방향으로 쏘는 원거리 무기는 대상을 지정하는 공격이 없다.
+	if (!UsesAttackMoveTargeting())
+	{
+		return false;
+	}
+
+	const UASCombatTargetSubsystem* CombatTargets = World->GetSubsystem<UASCombatTargetSubsystem>();
+	if (!CombatTargets)
+	{
+		return false;
+	}
+
+	// 커서 바로 근처의 보이는 적만 고른다. Mass 몬스터는 액터가 없어 커서에 걸리지 않으므로 위치로 찾는다.
+	FASCombatTargetQuery Query;
+	Query.SearchOrigin = CursorLocation;
+	Query.SearchRadius = TargetPickRadius;
+	Query.Instigator = Pawn;
+	Query.Domain = EASCombatTargetDomain::All;
+	Query.SortPolicy = EASCombatTargetSortPolicy::NearestToSearchOrigin;
+	Query.bRequireVisibleToLocalTeam = true;
+
+	FASCombatTargetRef PickedTarget;
+	if (!CombatTargets->FindBestTarget(Query, PickedTarget))
+	{
+		return false;
+	}
+
+	CancelAttackMove();
+	CurrentTarget = PickedTarget;
+	CommandDestination = PickedTarget.GetLocation();
+	bLockedTarget = true;
+	State = EASAttackMoveState::Chasing;
+	NextSearchTime = 0.0;
+	NextRepathTime = 0.0;
+
+	// 사거리 안이면 바로 공격 요청, 밖이면 대상 쪽으로 이동을 시작한다.
+	UpdateTargetedCommand(World->GetTimeSeconds());
+	return true;
+}
+
 void UASPlayerAttackMoveComponent::CancelAttackMove()
 {
 	State = EASAttackMoveState::Idle;
 	CurrentTarget.Reset();
 	NextSearchTime = 0.0;
 	NextRepathTime = 0.0;
+	bLockedTarget = false;
 }
 
 void UASPlayerAttackMoveComponent::NotifyExternalMoveRequested()
@@ -163,7 +214,7 @@ float UASPlayerAttackMoveComponent::GetAttackRange() const
 	const UASEquipmentComponent* Equipment = Character ? Character->GetEquipmentComponent() : nullptr;
 	const UASItemInstance* Weapon = Equipment ? Equipment->GetEquippedItem() : nullptr;
 	const UASItemDefinition* Definition = Weapon ? Weapon->GetItemDefinition() : nullptr;
-	return Definition ? FMath::Max(0.0f, Definition->AttackRange) : 0.0f;
+	return Definition ? FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Character, Definition)) : 0.0f;
 }
 
 bool UASPlayerAttackMoveComponent::FindBestTarget(
@@ -277,6 +328,12 @@ void UASPlayerAttackMoveComponent::UpdateTargetedCommand(const double CurrentTim
 	FVector TargetLocation;
 	float TargetHitRadius = 0.0f;
 	bool bHasTarget = RefreshCurrentTarget(TargetLocation, TargetHitRadius);
+	if (!bHasTarget && bLockedTarget)
+	{
+		// 우클릭으로 지정한 대상이 죽거나 시야에서 사라지면 다른 적을 찾지 않고 멈춘다.
+		CancelAttackMove();
+		return;
+	}
 	if (!bHasTarget && CurrentTime >= NextSearchTime)
 	{
 		const float AcquireRadius = FMath::Max(GetAttackRange(), MinimumAcquireRadius);
