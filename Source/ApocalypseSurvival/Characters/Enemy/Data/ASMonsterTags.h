@@ -16,6 +16,8 @@ namespace ASGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_RadialVolley);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_RadialBurstCascade);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_Radial);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_SlowField);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Monster_Attack_SniperBeam);
 
 	/** Combo GA가 각 단계의 정상 종료를 구분해 기다리는 이벤트다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Monster_ComboStep_ChargeFinished);
@@ -35,4 +37,11 @@ namespace ASGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_TargetedAttacking);
 	/** 돌진 Ability가 직접 캐릭터 이동을 제어 중이다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_Charging);
+	/** 저격 빔이 현재 타깃을 추적 조준 중이다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_Aiming);
+	/** 저격 빔의 방향이 고정되어 회피 가능한 마지막 선딜 상태다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Monster_AimLocked);
+
+	/** 엘리트 B의 장판이 적용한 이동속도 감소 효과 식별 태그다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Debuff_Movement_Slow_EliteB);
 }

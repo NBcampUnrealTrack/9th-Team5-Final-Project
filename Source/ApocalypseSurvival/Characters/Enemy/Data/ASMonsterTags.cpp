@@ -13,6 +13,8 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Monster_Attack_RadialVolley, "Ability.Monster.Attack.RadialVolley");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Monster_Attack_RadialBurstCascade, "Ability.Monster.Attack.RadialBurstCascade");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Monster_Attack_Radial, "Ability.Monster.Attack.Radial");
+	UE_DEFINE_GAMEPLAY_TAG(Ability_Monster_Attack_SlowField, "Ability.Monster.Attack.SlowField");
+	UE_DEFINE_GAMEPLAY_TAG(Ability_Monster_Attack_SniperBeam, "Ability.Monster.Attack.SniperBeam");
 
 	UE_DEFINE_GAMEPLAY_TAG(Event_Monster_ComboStep_ChargeFinished, "Event.Monster.ComboStep.ChargeFinished");
 	UE_DEFINE_GAMEPLAY_TAG(Event_Monster_ComboStep_SlamFinished, "Event.Monster.ComboStep.SlamFinished");
@@ -27,4 +29,8 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(State_Monster_Attacking, "State.Monster.Attacking");
 	UE_DEFINE_GAMEPLAY_TAG(State_Monster_TargetedAttacking, "State.Monster.TargetedAttacking");
 	UE_DEFINE_GAMEPLAY_TAG(State_Monster_Charging, "State.Monster.Charging");
+	UE_DEFINE_GAMEPLAY_TAG(State_Monster_Aiming, "State.Monster.Aiming");
+	UE_DEFINE_GAMEPLAY_TAG(State_Monster_AimLocked, "State.Monster.AimLocked");
+
+	UE_DEFINE_GAMEPLAY_TAG(Debuff_Movement_Slow_EliteB, "Debuff.Movement.Slow.EliteB");
 }
