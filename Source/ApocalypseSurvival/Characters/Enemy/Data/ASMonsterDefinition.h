@@ -130,6 +130,14 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0", Units = "cm"))
     float AttackRange = 180.0f;
 
+    /** 0이면 AttackRange를 사용한다. 원거리 몬스터가 공격을 시도하며 유지할 목표 거리다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0", Units = "cm"))
+    float PreferredCombatDistance = 0.0f;
+
+    /** 0이면 후퇴하지 않는다. 이 거리보다 가까운 타깃에게서 뒤로 이동한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0", Units = "cm"))
+    float RetreatDistance = 0.0f;
+
     /** 이 거리 안의 가장 가까운 살아 있는 플레이어를 타깃으로 잡는다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", Units = "cm"))
     float DetectionRadius = 1500.0f;
