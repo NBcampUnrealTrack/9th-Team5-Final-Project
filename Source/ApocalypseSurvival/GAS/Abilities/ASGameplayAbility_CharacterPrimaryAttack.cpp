@@ -7,6 +7,7 @@
 #include "Animation/AnimMontage.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
+#include "Characters/Player/ASPlayerCharacter.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
@@ -38,7 +39,7 @@ float UASGameplayAbility_CharacterPrimaryAttack::GetCurrentAttackRange() const
 	FASWeaponAttackExecutionContext Context;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	return BuildExecutionContext(Context, Execution) && Context.Definition
-		? FMath::Max(0.0f, Context.Definition->AttackRange)
+		? FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition))
 		: 0.0f;
 }
 
@@ -462,7 +463,7 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 				return false;
 			}
 
-			const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f
+			const float AllowedRange = FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition)) + 15.0f
 				+ ServerTarget.GetHitRadius();
 			if (FVector::DistSquared2D(Context.Avatar->GetActorLocation(), ServerTarget.GetLocation())
 				> FMath::Square(AllowedRange))
@@ -512,7 +513,7 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 	}
 
 	const FVector ToTarget = RequestedTarget->GetActorLocation() - Context.Avatar->GetActorLocation();
-	const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f;
+	const float AllowedRange = FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition)) + 15.0f;
 	if (ToTarget.SizeSquared2D() > FMath::Square(AllowedRange))
 	{
 		return false;

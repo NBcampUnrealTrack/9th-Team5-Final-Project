@@ -197,23 +197,43 @@ void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 	// 공격 이동 대상 또는 투사체 방향을 기록한 뒤 기존 GAS 확정 흐름으로 넘긴다.
 	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary) && AttackMoveComponent->IsArmed())
 	{
-		FVector AttackDestination;
-		if (GetCursorWorldLocation(AttackDestination))
-		{
-			AttackMoveComponent->ConfirmAttackMove(AttackDestination);
+		UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent();
 
-			// 적을 아직 찾지 못한 공격 이동은 좌클릭 확정을 보류한다.
-			// 컴포넌트가 이동 중 사거리 안의 적을 찾았을 때만 확정한다.
-			if (AttackMoveComponent->HasActiveCommand())
+		// 맵 밖처럼 바닥이 없는 곳을 찍어도 어택땅(적 탐색)으로 처리한다.
+		FVector AttackDestination;
+		if (!GetCursorWorldLocation(AttackDestination) && !GetCursorPlaneLocation(AttackDestination))
+		{
+			AttackMoveComponent->CancelAttackMove();
+			if (AbilitySystemComponent)
 			{
-				// A 조준은 이번 좌클릭으로 끝난다. 적이 없어서 이동만 시작하더라도
-				// 사거리 인디케이터를 남겨 두지 않는다.
-				if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
-				{
-					AbilitySystemComponent->LocalInputCancel();
-				}
-				return;
+				AbilitySystemComponent->LocalInputCancel();
 			}
+			return;
+		}
+
+		AttackMoveComponent->ConfirmAttackMove(AttackDestination);
+
+		// 적을 아직 찾지 못한 공격 이동은 좌클릭 확정을 보류한다.
+		// 컴포넌트가 이동 중 사거리 안의 적을 찾았을 때만 확정한다.
+		if (AttackMoveComponent->HasActiveCommand())
+		{
+			// A 조준은 이번 좌클릭으로 끝난다. 적이 없어서 이동만 시작하더라도
+			// 사거리 인디케이터를 남겨 두지 않는다.
+			if (AbilitySystemComponent)
+			{
+				AbilitySystemComponent->LocalInputCancel();
+			}
+			return;
+		}
+
+		// 바로 공격할 대상이 정해지지 않았으면(자기 자신 클릭 등 제자리 도착) 허공 공격으로 넘기지 않는다.
+		if (!bHasPendingAttackMoveRequest)
+		{
+			if (AbilitySystemComponent)
+			{
+				AbilitySystemComponent->LocalInputCancel();
+			}
+			return;
 		}
 	}
 	else if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Primary)
@@ -467,6 +487,29 @@ bool AASPlayerController::GetCursorWorldLocation(FVector& OutLocation) const
 	}
 
 	OutLocation = Hit.Location;
+	return true;
+}
+
+bool AASPlayerController::GetCursorPlaneLocation(FVector& OutLocation) const
+{
+	const APawn* ControlledPawn = GetPawn();
+	FVector WorldOrigin;
+	FVector WorldDirection;
+	if (!ControlledPawn || !DeprojectMousePositionToWorld(WorldOrigin, WorldDirection)
+		|| FMath::IsNearlyZero(WorldDirection.Z))
+	{
+		return false;
+	}
+
+	// 캐릭터 높이의 수평면과 커서 광선이 만나는 점
+	const float PlaneZ = ControlledPawn->GetActorLocation().Z;
+	const float Distance = (PlaneZ - WorldOrigin.Z) / WorldDirection.Z;
+	if (Distance <= 0.0f)
+	{
+		return false;
+	}
+
+	OutLocation = WorldOrigin + WorldDirection * Distance;
 	return true;
 }
 

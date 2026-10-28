@@ -21,6 +21,10 @@
 #include "GameplayEffectExtension.h"
 #include "GAS/ASAbilitySet.h"
 #include "Modules/ASModuleComponent.h"
+#include "MapSystem/Vision/ASFogOfWarManager.h"
+#include "MapSystem/Vision/ASVisionDefinition.h"
+#include "MapSystem/Vision/ASVisionSourceComponent.h"
+#include "MapSystem/Vision/ASVisionWorldSubsystem.h"
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "GAS/Attributes/ASHealthAttributeSet.h"
@@ -33,6 +37,7 @@
 #include "Net/UnrealNetwork.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Items/Data/ASItemDefinition.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "EngineUtils.h"
@@ -526,6 +531,42 @@ AASPlayerCharacter* AASPlayerCharacter::GetCurrentReviveTarget() const
 		}
 	}
 	return nullptr;
+}
+
+float AASPlayerCharacter::GetCurrentVisionRadius() const
+{
+	const UASVisionSourceComponent* VisionSource = FindComponentByClass<UASVisionSourceComponent>();
+	const UASVisionWorldSubsystem* VisionSubsystem = UASVisionWorldSubsystem::Get(this);
+	const AASFogOfWarManager* FogManager = VisionSubsystem ? VisionSubsystem->GetFogOfWarManager() : nullptr;
+	const UASVisionDefinition* VisionDefinition = FogManager ? FogManager->GetVisionDefinition() : nullptr;
+	if (!VisionSource || !VisionDefinition)
+	{
+		return -1.0f;
+	}
+
+	// 서버 시간 기준 밤 비율이라 서버·클라이언트가 같은 반경을 얻는다.
+	return VisionSource->GetVisionRadius(VisionDefinition->Settings, FogManager->GetNightAlpha());
+}
+
+float AASPlayerCharacter::ResolveAttackRange(const AActor* Avatar, const UASItemDefinition* Definition)
+{
+	if (!Definition)
+	{
+		return 0.0f;
+	}
+
+	const float WeaponRange = FMath::Max(0.0f, Definition->AttackRange);
+
+	// 보이지 않는 곳은 공격하지 않는다. 시야 정보가 없는 맵(테스트 맵 등)은 무기 사거리 그대로.
+	if (const AASPlayerCharacter* PlayerCharacter = Cast<AASPlayerCharacter>(Avatar))
+	{
+		const float VisionRadius = PlayerCharacter->GetCurrentVisionRadius();
+		if (VisionRadius > 0.0f)
+		{
+			return FMath::Min(WeaponRange, VisionRadius);
+		}
+	}
+	return WeaponRange;
 }
 
 void AASPlayerCharacter::OnRep_LyingDown()

@@ -98,7 +98,7 @@ namespace ASWeaponAttackExecutionPrivate
 		const TArray<FGameplayEffectSpecHandle> DamageSpecs = MakeDamageSpecs(Context);
 		const FASCombatImpactContext ImpactContext = MakeImpactContext(Context, SpawnLocation, Direction);
 		Projectile->InitProjectile(DamageSpecs, Context.Avatar,
-			Direction, Profile.ProjectileSpeed, Context.Definition->AttackRange, Profile.ProjectilePierceCount, false, ImpactContext);
+			Direction, Profile.ProjectileSpeed, 	AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition), Profile.ProjectilePierceCount, false, ImpactContext);
 		Projectile->FinishSpawning(SpawnTransform);
 	}
 	
@@ -200,7 +200,7 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 	}
 
 	// 캐릭터 위치 기준 앞쪽 부채꼴. 반경 = 무기 사거리, 각도 = 프로필
-	const float AttackRange = FMath::Max(1.0f, Context.Definition->AttackRange);
+	const float AttackRange = FMath::Max(1.0f, 	AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition));
 	FVector Direction = Context.AimDirection.GetSafeNormal2D();
 	if (Direction.IsNearlyZero())
 	{
@@ -276,7 +276,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 
 		if (Profile->TargetMode == EASAttackTargetMode::Single)
 	{
-		const float AllowedRange = FMath::Max(0.0f, Context.Definition->AttackRange) + 15.0f;
+		const float AllowedRange = FMath::Max(0.0f, 	AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition)) + 15.0f;
 
 		// 대상 찾기 쿼리: 클릭한 액터 몬스터가 사거리 안이면 그 액터, 아니면 클릭 지점/공격자 기준 Mass 한 마리
 		FASCombatTargetQuery Query;
@@ -374,7 +374,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		return;
 	}
 
-	const FVector End = Start + Context.AimDirection * FMath::Max(1.0f, Context.Definition->AttackRange);
+	const FVector End = Start + Context.AimDirection * FMath::Max(1.0f, 	AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition));
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WeaponAttack), false, Context.Avatar);
 	TArray<FHitResult> Hits;
 	World->SweepMultiByObjectType(Hits, Start, End, FQuat::Identity,

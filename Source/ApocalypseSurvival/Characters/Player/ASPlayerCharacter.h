@@ -20,6 +20,7 @@ class UInputMappingContext;
 class UGameplayAbility;
 class UAnimInstance;
 class UAnimMontage;
+class UASItemDefinition;
 struct FGameplayEventData;
 
 /**
@@ -138,6 +139,16 @@ public:
 		float Radius,
 		bool bIsMelee,
 		bool bHit);
+	
+	/** 현재 시야 반경(낮·밤 반영). 시야 정보가 없으면 -1 (모든 머신에서 같은 값) */
+	UFUNCTION(BlueprintPure, Category = "Vision")
+	float GetCurrentVisionRadius() const;
+
+	/**
+	 * 실제 기본 공격 사거리 = min(무기 사거리, 현재 시야).
+	 * 어택땅 탐색, 서버 검증, 공격 실행이 모두 이 값을 써야 서로 어긋나지 않는다.
+	 */
+	static float ResolveAttackRange(const AActor* Avatar, const UASItemDefinition* Definition);
 	
 	/** 근접 평타 부채꼴 판정 디버그 표시 (모든 머신) */
 	UFUNCTION(NetMulticast, Unreliable)

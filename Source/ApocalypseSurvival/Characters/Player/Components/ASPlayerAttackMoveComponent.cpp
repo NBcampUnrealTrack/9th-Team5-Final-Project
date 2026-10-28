@@ -163,7 +163,7 @@ float UASPlayerAttackMoveComponent::GetAttackRange() const
 	const UASEquipmentComponent* Equipment = Character ? Character->GetEquipmentComponent() : nullptr;
 	const UASItemInstance* Weapon = Equipment ? Equipment->GetEquippedItem() : nullptr;
 	const UASItemDefinition* Definition = Weapon ? Weapon->GetItemDefinition() : nullptr;
-	return Definition ? FMath::Max(0.0f, Definition->AttackRange) : 0.0f;
+	return Definition ? FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Character, Definition)) : 0.0f;
 }
 
 bool UASPlayerAttackMoveComponent::FindBestTarget(
