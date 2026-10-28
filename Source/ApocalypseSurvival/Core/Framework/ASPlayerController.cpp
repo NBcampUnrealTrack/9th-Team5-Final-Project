@@ -10,6 +10,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Core/Cheats/ASCheatManager.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Framework/ASBossEncounter.h"
 #include "Core/Input/ASInputConfig.h"
@@ -98,6 +99,7 @@ void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn*
 void AASPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	ASCombatDiagnostics::Record(this, TEXT("Input.Setup"));
 
 	// 입력은 화면 앞에 사람이 있는 컨트롤러에만 건다.
 	// 리슨 서버에는 다른 플레이어의 컨트롤러도 존재한다.

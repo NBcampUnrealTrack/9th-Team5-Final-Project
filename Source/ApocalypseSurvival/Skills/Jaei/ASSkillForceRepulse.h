@@ -62,6 +62,8 @@ protected:
 	float MinPushDistance = 100.0f;
 
 private:
+	void BeginWaveDamage();
+
 	//파동 한 틱: 현재 반경까지 판정 + 새로 맞은 대상 넉백 (서버)
 	void TickWave();
 
@@ -76,6 +78,7 @@ private:
 	void ApplyMassDamageOnce() const;
 
 	FTimerHandle WaveTimerHandle;
+	FTimerHandle DeferredWaveTimer;
 
 	//시전 순간 고정한 값
 	FVector WaveOrigin = FVector::ZeroVector;

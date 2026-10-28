@@ -4,6 +4,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Combat/ASCombatImpactSettings.h"
 #include "Engine/World.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
@@ -338,6 +339,11 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			else
 			{
 				bFoundTarget = CombatTargets->FindBestTarget(Query, TargetRef);
+			}
+			if (ASCombatDiagnostics::IsEnabled())
+			{
+				ASCombatDiagnostics::Record(Context.Avatar, FString::Printf(TEXT("Attack.RangedTarget Found=%d Mass=%d Specs=%d"),
+					bFoundTarget, TargetRef.IsMass(), DamageSpecs.Num()));
 			}
 #if !UE_BUILD_SHIPPING
 			const TCHAR* TargetKind = TargetRef.IsMass() ? TEXT("Mass")

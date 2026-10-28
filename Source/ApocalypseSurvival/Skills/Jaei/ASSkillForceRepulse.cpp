@@ -60,6 +60,23 @@ void UASSkillForceRepulse::OnSkillEffect_Implementation()
 	WaveHitTargets.Reset();
 	WaveElapsed = 0.0f;
 	bWaveActive = true;
+	BeginWaveDamage();
+}
+
+void UASSkillForceRepulse::BeginWaveDamage()
+{
+	if (!IsActive() || !bWaveActive) return;
+	UWorld* World = GetWorld();
+	if (!World) return;
+	if (UASCombatTargetSubsystem* Targets = World->GetSubsystem<UASCombatTargetSubsystem>())
+	{
+		if (Targets->DeferUntilMassIdle(DeferredWaveTimer,
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				DeferredWaveTimer.Invalidate();
+				BeginWaveDamage();
+			}))) return;
+	}
 
 	//Mass는 한 번만 (파동마다 판정하면 중복 피해)
 	ApplyMassDamageOnce();
@@ -221,6 +238,7 @@ void UASSkillForceRepulse::StopWave()
 	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
 	{
 		Avatar->GetWorldTimerManager().ClearTimer(WaveTimerHandle);
+		Avatar->GetWorldTimerManager().ClearTimer(DeferredWaveTimer);
 	}
 }
 

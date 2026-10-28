@@ -9,6 +9,7 @@
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -117,6 +118,11 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo, const bool bReplicatedEndAbility, const bool bWasCancelled)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DeferredHitTimer);
+		World->GetTimerManager().ClearTimer(DeferredFinishTimer);
+	}
 	if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
 	{
 		const FPredictionKey PredictionKey = ActivationInfo.GetActivationPredictionKey();
@@ -142,6 +148,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 
 void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Attack.BeginTargeting"));
 	// 일반 공격은 별도 쿨타임 GE 대신 이 인스턴스의 공격 간격을 사용한다.
 	// A 입력이 쿨타임 중 조준 상태에 들어가면, 나중에 좌클릭해도 공격이 실패하고
 	// 준비 상태만 남을 수 있으므로 시작 단계에서 무시한다.
@@ -157,6 +164,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 	const UASWeaponAttackExecution* Execution = nullptr;
 	if (!BuildExecutionContext(Context, Execution))
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Attack.Rejected MissingWeaponOrProfile"));
 		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] %s 조준 시작 실패: 장착 무기/프로필 없음 (Authority=%d)"),
 			*GetNameSafe(GetAvatarActorFromActorInfo()), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
@@ -164,6 +172,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 	}
 	if (!Execution->CanPayCost(Context))
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Attack.Rejected CannotPayCost"));
 		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] %s 조준 시작 실패: 비용 부족 (스태미나/탄약, Authority=%d)"),
 			*GetNameSafe(GetAvatarActorFromActorInfo()), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
@@ -532,6 +541,11 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget,
 	const uint32 RequestedMassTargetNetworkId)
 {
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Attack.Start Aim=%s Target=%s Authority=%d"),
+			*AimDirection.ToString(), *TargetLocation.ToString(), CurrentActorInfo && CurrentActorInfo->IsNetAuthority()));
+	}
 	if (bAttackStarted || !CurrentActorInfo) return;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	FASWeaponAttackExecutionContext Context;
@@ -647,8 +661,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 
 	if (CurrentActorInfo->IsNetAuthority())
 	{
-		PerformHit();
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		OnMontageFinished();
 	}
 	// A predicting client with no montage waits for the server's replicated end. Ending here can
 	// race the TargetData RPC and cancel the authoritative activation before it receives the aim.
@@ -656,7 +669,17 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 
 void UASGameplayAbility_CharacterPrimaryAttack::PerformHit()
 {
-	if (bHitPerformed || !CurrentActorInfo || !CurrentActorInfo->IsNetAuthority()) return;
+	ASCombatDiagnostics::Record(this, TEXT("Attack.PerformHit"));
+	if (!IsActive() || bHitPerformed || !CurrentActorInfo || !CurrentActorInfo->IsNetAuthority()) return;
+	if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+	{
+		if (Targets->DeferUntilMassIdle(DeferredHitTimer,
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				DeferredHitTimer.Invalidate();
+				PerformHit();
+			}))) return;
+	}
 	bHitPerformed = true;
 
 	// The equipped weapon is authoritative. Do not finish an old weapon's attack after a swap.
@@ -690,6 +713,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnHitEvent(FGameplayEventData Pa
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnMontageFinished()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Attack.MontageFinished"));
 	if (!IsActive() || !CurrentActorInfo)
 	{
 		return;
@@ -707,6 +731,15 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnMontageFinished()
 
 	if (!bHitPerformed)
 	{
+		if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+		{
+			if (Targets->DeferUntilMassIdle(DeferredFinishTimer,
+				FTimerDelegate::CreateWeakLambda(this, [this]()
+				{
+					DeferredFinishTimer.Invalidate();
+					OnMontageFinished();
+				}))) return;
+		}
 		PerformHit();
 	}
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
@@ -714,6 +747,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnMontageFinished()
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnMontageCancelled()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Attack.MontageCancelled"));
 	if (!IsActive() || !CurrentActorInfo)
 	{
 		return;

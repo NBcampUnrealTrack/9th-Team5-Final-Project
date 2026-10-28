@@ -32,6 +32,9 @@ public:
 		FGameplayAbilityActivationInfo ActivationInfo, bool bReplicatedEndAbility, bool bWasCancelled) override;
 
 private:
+	FTimerHandle DeferredHitTimer;
+	FTimerHandle DeferredFinishTimer;
+
 	void BeginTargeting();
 	void ConfirmTargeting();
 	void StopTargetingInput(bool bWasCancelled);
