@@ -11,6 +11,11 @@
 #include "OnlineSubsystem.h"
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystemUtils.h"
+#include "Interfaces/OnlineExternalUIInterface.h"
+#include "Interfaces/OnlineIdentityInterface.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "Core/UI/ASSessionInviteWidget.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameMapsSettings.h"
@@ -21,6 +26,10 @@ namespace
 {
 	const FName RoomNameKey(TEXT("RoomName"));
 	const FName RequiresPasswordKey(TEXT("RequiresPassword"));
+	const FName GameIdKey(TEXT("ASGame"));
+	const FName LobbyOpenKey(TEXT("LobbyOpen"));
+	// Also isolates our lobbies from other projects using the shared test App ID 480.
+	constexpr int32 GameProtocolId = 0x41535001;
 }
 
 void UASSessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -36,6 +45,12 @@ void UASSessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	IOnlineSubsystem* OnlineSubsystem = Online::GetSubsystem(GetWorld());
 	SessionInterface = OnlineSubsystem ? OnlineSubsystem->GetSessionInterface() : nullptr;
+	if (SessionInterface.IsValid())
+	{
+		SessionInterface->OnSessionUserInviteAcceptedDelegates.AddUObject(this, &ThisClass::HandleSessionInviteAccepted);
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Session] Backend=%s: %s"),
+		OnlineSubsystem ? *OnlineSubsystem->GetSubsystemName().ToString() : TEXT("None"), *GetConnectionStatusText().ToString());
 
 	if (!SessionInterface.IsValid())
 	{
@@ -57,6 +72,7 @@ void UASSessionSubsystem::Deinitialize()
 	FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
 	if (SessionInterface.IsValid())
 	{
+		SessionInterface->OnSessionUserInviteAcceptedDelegates.RemoveAll(this);
 		SessionInterface->OnCreateSessionCompleteDelegates.RemoveAll(this);
 		SessionInterface->OnFindSessionsCompleteDelegates.RemoveAll(this);
 		SessionInterface->OnJoinSessionCompleteDelegates.RemoveAll(this);
@@ -64,6 +80,7 @@ void UASSessionSubsystem::Deinitialize()
 	}
 
 	SessionSearch.Reset();
+	DismissSessionInvite();
 	SessionInterface.Reset();
 
 	Super::Deinitialize();
@@ -74,6 +91,148 @@ FUniqueNetIdRepl UASSessionSubsystem::GetLocalUserId() const
 	const UGameInstance* GameInstance = GetGameInstance();
 	const ULocalPlayer* LocalPlayer = GameInstance ? GameInstance->GetFirstGamePlayer() : nullptr;
 	return LocalPlayer ? LocalPlayer->GetPreferredUniqueNetId() : FUniqueNetIdRepl();
+}
+
+bool UASSessionSubsystem::IsSteamSession() const
+{
+	const IOnlineSubsystem* Subsystem = Online::GetSubsystem(GetWorld());
+	return Subsystem && Subsystem->GetSubsystemName() == FName(TEXT("STEAM"));
+}
+
+bool UASSessionSubsystem::IsSessionServiceReady() const
+{
+	if (!SessionInterface.IsValid()) return false;
+	if (!IsSteamSession()) return GIsEditor || FParse::Param(FCommandLine::Get(), TEXT("nosteam"));
+	const IOnlineIdentityPtr Identity = Online::GetSubsystem(GetWorld())->GetIdentityInterface();
+	return Identity.IsValid() && Identity->GetLoginStatus(0) == ELoginStatus::LoggedIn;
+}
+
+FText UASSessionSubsystem::GetConnectionStatusText() const
+{
+	if (!IsSessionServiceReady()) return FText::FromString(TEXT("Steam 연결 실패: Steam에 로그인한 후 게임을 다시 실행해 주세요."));
+	return FText::FromString(IsSteamSession() ? TEXT("Steam 온라인 · 친구 초대 사용 가능") : TEXT("LAN 테스트 모드 · Steam 초대 사용 불가"));
+}
+
+FOnlineSessionSettings UASSessionSubsystem::MakeSessionSettings(const bool bSteam, const int32 PublicConnections,
+	const FString& RoomName, const bool bRequiresPassword)
+{
+	FOnlineSessionSettings Settings;
+	Settings.NumPublicConnections = FMath::Clamp(PublicConnections, 2, 250);
+	Settings.bIsLANMatch = !bSteam;
+	Settings.bIsDedicated = false;
+	Settings.bShouldAdvertise = true;
+	Settings.bAllowJoinInProgress = true;
+	Settings.bAllowInvites = bSteam;
+	Settings.bAllowJoinViaPresence = bSteam;
+	Settings.bUsesPresence = bSteam;
+	Settings.bUseLobbiesIfAvailable = bSteam;
+	Settings.Set(RoomNameKey, RoomName, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	Settings.Set(RequiresPasswordKey, bRequiresPassword, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	Settings.Set(GameIdKey, GameProtocolId, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	Settings.Set(LobbyOpenKey, true, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	return Settings;
+}
+
+void UASSessionSubsystem::ConfigureSearch(FOnlineSessionSearch& Search, const bool bSteam, const int32 MaxResults)
+{
+	Search.bIsLanQuery = !bSteam;
+	Search.MaxSearchResults = FMath::Clamp(MaxResults, 1, 1000);
+	if (bSteam)
+	{
+		Search.QuerySettings.Set(SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals);
+		Search.QuerySettings.Set(GameIdKey, GameProtocolId, EOnlineComparisonOp::Equals);
+	}
+}
+
+bool UASSessionSubsystem::IsCompatibleSession(const FOnlineSessionSearchResult& Result)
+{
+	int32 Protocol = 0;
+	bool bOpen = false;
+	return Result.IsValid() && Result.Session.SessionSettings.Get(GameIdKey, Protocol) && Protocol == GameProtocolId
+		&& Result.Session.SessionSettings.Get(LobbyOpenKey, bOpen) && bOpen;
+}
+
+bool UASSessionSubsystem::CanInviteFriends() const
+{
+	if (!IsSteamSession() || !IsSessionServiceReady() || bLeavingRoom || bDestroyingSession || bJoiningSession) return false;
+	const FNamedOnlineSession* Session = SessionInterface->GetNamedSession(NAME_GameSession);
+	return Session && Session->SessionInfo.IsValid() && Session->SessionSettings.bAllowInvites
+		&& Session->SessionSettings.bAllowJoinInProgress && Session->NumOpenPublicConnections > 0
+		&& GetWorld() && GetWorld()->GetNetMode() != NM_Standalone;
+}
+
+bool UASSessionSubsystem::ShowInviteFriendsUI()
+{
+	if (!CanInviteFriends()) return false;
+	const IOnlineExternalUIPtr ExternalUI = Online::GetSubsystem(GetWorld())->GetExternalUIInterface();
+	return ExternalUI.IsValid() && ExternalUI->ShowInviteUI(0, NAME_GameSession);
+}
+
+void UASSessionSubsystem::HandleSessionInviteAccepted(const bool bWasSuccessful, const int32 ControllerId,
+	FUniqueNetIdPtr UserId, const FOnlineSessionSearchResult& InviteResult)
+{
+	const FUniqueNetIdRepl LocalId = GetLocalUserId();
+	if (!bWasSuccessful || !UserId.IsValid() || (LocalId.IsValid() && *LocalId != *UserId)
+		|| !IsSteamSession() || !IsCompatibleSession(InviteResult))
+	{
+		ReturnToMenuMessage = FText::FromString(TEXT("초대한 방을 찾지 못했습니다. 같은 버전의 게임인지 확인하고 다시 초대해 주세요."));
+		OnSessionJoined.Broadcast(false, ReturnToMenuMessage.ToString());
+		return;
+	}
+	const FNamedOnlineSession* Current = SessionInterface->GetNamedSession(NAME_GameSession);
+	if (Current && Current->SessionInfo.IsValid() && Current->GetSessionIdStr() == InviteResult.GetSessionIdStr()) return;
+	DismissSessionInvite();
+	PendingInvite = InviteResult;
+	// World tick waits for in-flight operations and startup travel before switching rooms.
+}
+
+void UASSessionSubsystem::ProcessPendingInvite(UWorld* World)
+{
+	if (!PendingInvite.IsSet() || bLeavingRoom || bDestroyingSession || bCreatingSession || bJoiningSession || bFindingSessions
+		|| !World->GetFirstPlayerController()) return;
+	if (SessionInterface.IsValid() && (SessionInterface->GetNamedSession(NAME_GameSession) || World->GetNetMode() != NM_Standalone))
+	{
+		ReturnToMenuWithError(FText::FromString(TEXT("친구 초대를 수락하여 기존 방에서 나왔습니다.")));
+		return;
+	}
+	if (bInviteAccepted)
+	{
+		const FOnlineSessionSearchResult Result = PendingInvite.GetValue();
+		const FString Password = AcceptedInvitePassword;
+		DismissSessionInvite();
+		JoinSessionResult(Result, Password);
+		return;
+	}
+	if (InviteWidget && InviteWidget->IsInViewport()) return;
+	InviteWidget = CreateWidget<UASSessionInviteWidget>(World->GetFirstPlayerController());
+	if (!InviteWidget) return;
+	FString RoomName = PendingInvite->Session.OwningUserName;
+	bool bPassword = false;
+	PendingInvite->Session.SessionSettings.Get(RoomNameKey, RoomName);
+	PendingInvite->Session.SessionSettings.Get(RequiresPasswordKey, bPassword);
+	InviteWidget->Configure(RoomName, bPassword);
+	InviteWidget->AddToViewport(300);
+	InviteWidget->SetKeyboardFocus();
+}
+
+bool UASSessionSubsystem::AcceptSessionInvite(const FString& Password)
+{
+	if (!PendingInvite.IsSet()) return false;
+	bool bPassword = false;
+	PendingInvite->Session.SessionSettings.Get(RequiresPasswordKey, bPassword);
+	if (bPassword && !IsValidRoomPassword(Password)) return false;
+	AcceptedInvitePassword = bPassword ? Password : FString();
+	bInviteAccepted = true;
+	return true;
+}
+
+void UASSessionSubsystem::DismissSessionInvite()
+{
+	PendingInvite.Reset();
+	AcceptedInvitePassword.Reset();
+	bInviteAccepted = false;
+	if (InviteWidget) InviteWidget->RemoveFromParent();
+	InviteWidget = nullptr;
 }
 
 bool UASSessionSubsystem::IsValidRoomPassword(const FString& Password)
@@ -103,7 +262,7 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 		OnSessionCreated.Broadcast(false);
 		return;
 	}
-	if (!SessionInterface.IsValid())
+	if (!IsSessionServiceReady())
 	{
 		OnSessionCreated.Broadcast(false);
 		return;
@@ -124,22 +283,10 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 		return;
 	}
 
-	FOnlineSessionSettings SessionSettings;
+	const FOnlineSessionSettings SessionSettings = MakeSessionSettings(IsSteamSession(), PublicConnections, RoomName, bUsePassword);
 	HostPassword = bUsePassword ? Password : FString();
 	ReturnToMenuMessage = FText::GetEmpty();
-	SessionSettings.Set(RequiresPasswordKey, bUsePassword, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	ClearMatchCharacters();
-	SessionSettings.NumPublicConnections = FMath::Max(2, PublicConnections);
-	SessionSettings.bIsLANMatch = true;
-	SessionSettings.bShouldAdvertise = true;
-	SessionSettings.bAllowJoinInProgress = true;
-	SessionSettings.bAllowJoinViaPresence = false;
-	SessionSettings.bUsesPresence = false;
-	SessionSettings.bUseLobbiesIfAvailable = false;
-	SessionSettings.Set(
-		RoomNameKey,
-		RoomName,
-		EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 
 	SessionInterface->OnCreateSessionCompleteDelegates.RemoveAll(this);
 	SessionInterface->OnCreateSessionCompleteDelegates.AddUObject(
@@ -157,7 +304,7 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 
 void UASSessionSubsystem::FindSessions(const int32 MaxResults)
 {
-	if (!SessionInterface.IsValid() || bLeavingRoom || bDestroyingSession || bJoiningSession || bCreatingSession || bFindingSessions)
+	if (!IsSessionServiceReady() || bLeavingRoom || bDestroyingSession || bJoiningSession || bCreatingSession || bFindingSessions)
 	{
 		OnSessionsFound.Broadcast(false, TArray<FASSessionSearchResult>());
 		return;
@@ -171,8 +318,7 @@ void UASSessionSubsystem::FindSessions(const int32 MaxResults)
 	}
 
 	SessionSearch = MakeShared<FOnlineSessionSearch>();
-	SessionSearch->bIsLanQuery = true;
-	SessionSearch->MaxSearchResults = FMath::Max(1, MaxResults);
+	ConfigureSearch(*SessionSearch, IsSteamSession(), MaxResults);
 
 	SessionInterface->OnFindSessionsCompleteDelegates.RemoveAll(this);
 	SessionInterface->OnFindSessionsCompleteDelegates.AddUObject(
@@ -191,6 +337,16 @@ void UASSessionSubsystem::FindSessions(const int32 MaxResults)
 
 void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FString& Password)
 {
+	if (!SessionSearch.IsValid() || !SessionSearch->SearchResults.IsValidIndex(ResultIndex))
+	{
+		OnSessionJoined.Broadcast(false, TEXT("참가할 세션을 찾지 못했습니다. 방을 다시 검색해 주세요."));
+		return;
+	}
+	JoinSessionResult(SessionSearch->SearchResults[ResultIndex], Password);
+}
+
+void UASSessionSubsystem::JoinSessionResult(const FOnlineSessionSearchResult& SearchResult, const FString& Password)
+{
 	if (bLeavingRoom || bDestroyingSession || bJoiningSession || bCreatingSession || bFindingSessions)
 	{
 		OnSessionJoined.Broadcast(false, TEXT("이전 세션 요청을 처리 중입니다. 잠시 후 다시 시도해 주세요."));
@@ -201,8 +357,7 @@ void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FStr
 		OnSessionJoined.Broadcast(false, TEXT("이미 세션에 참가해 있습니다."));
 		return;
 	}
-	if (!SessionInterface.IsValid() || !SessionSearch.IsValid()
-		|| !SessionSearch->SearchResults.IsValidIndex(ResultIndex))
+	if (!IsSessionServiceReady() || !IsCompatibleSession(SearchResult))
 	{
 		OnSessionJoined.Broadcast(false, TEXT("참가할 세션을 찾지 못했습니다."));
 		return;
@@ -216,7 +371,7 @@ void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FStr
 	}
 
 	bool bRequiresPassword = false;
-	SessionSearch->SearchResults[ResultIndex].Session.SessionSettings.Get(RequiresPasswordKey, bRequiresPassword);
+	SearchResult.Session.SessionSettings.Get(RequiresPasswordKey, bRequiresPassword);
 	if (bRequiresPassword && !IsValidRoomPassword(Password))
 	{
 		OnSessionJoined.Broadcast(false, TEXT("비밀번호는 숫자 4자리로 입력해 주세요."));
@@ -234,7 +389,7 @@ void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FStr
 	if (!SessionInterface->JoinSession(
 		*UserId,
 		NAME_GameSession,
-		SessionSearch->SearchResults[ResultIndex]))
+		SearchResult))
 	{
 		StopJoinAttempt();
 		DestroySession();
@@ -362,6 +517,9 @@ void UASSessionSubsystem::SetLobbyOpen(const bool bOpen)
 	FOnlineSessionSettings Settings = *CurrentSettings;
 	Settings.bShouldAdvertise = bOpen;
 	Settings.bAllowJoinInProgress = bOpen;
+	Settings.bAllowInvites = bOpen && IsSteamSession();
+	Settings.bAllowJoinViaPresence = bOpen && IsSteamSession();
+	Settings.Set(LobbyOpenKey, bOpen, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	if (!SessionInterface->UpdateSession(NAME_GameSession, Settings))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Session] Failed to update lobby advertisement."));
@@ -414,6 +572,7 @@ void UASSessionSubsystem::HandleFindSessionsComplete(const bool bWasSuccessful)
 		for (int32 Index = 0; Index < SessionSearch->SearchResults.Num(); ++Index)
 		{
 			const FOnlineSessionSearchResult& SearchResult = SessionSearch->SearchResults[Index];
+			if (!IsCompatibleSession(SearchResult)) continue;
 			FASSessionSearchResult Result;
 			Result.Index = Index;
 			Result.RoomName = SearchResult.Session.OwningUserName;
@@ -523,6 +682,7 @@ void UASSessionSubsystem::HandleMapLoaded(UWorld* World)
 
 void UASSessionSubsystem::HandleWorldPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds)
 {
+	if (World && World == GetWorld() && World->HasBegunPlay()) ProcessPendingInvite(World);
 	if (bJoiningSession && bJoinTravelPending && World && World == GetWorld() && World->GetNetMode() == NM_Client
 		&& World->HasBegunPlay() && World->GetFirstPlayerController())
 	{

@@ -43,6 +43,8 @@ private:
 	FTimerHandle JoinRoomSearchTimer;
 	UFUNCTION()
 	void HandleSessionCreated(bool bSuccess);
+	UFUNCTION()
+	void HandleSessionJoined(bool bSuccess, const FString& ErrorMessage);
 
 	void FailHosting(const FText& Message);
 	UFUNCTION()

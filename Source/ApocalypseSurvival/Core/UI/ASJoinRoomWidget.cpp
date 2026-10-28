@@ -78,7 +78,9 @@ void UASJoinRoomWidget::HandleSessionsFound(const bool bSuccess, const TArray<FA
 	}
 	UpdatePasswordVisibility();
 	UpdateButtons();
-	SetStatus(bSuccess ? FString::Printf(TEXT("검색된 방: %d개"), AvailableRooms.Num()) : TEXT("방 검색에 실패했습니다."));
+	SetStatus(bSuccess ? FString::Printf(TEXT("검색된 방: %d개"), AvailableRooms.Num())
+		: SessionSubsystem && !SessionSubsystem->IsSessionServiceReady() ? SessionSubsystem->GetConnectionStatusText().ToString()
+		: TEXT("방 검색에 실패했습니다."));
 	OnRoomListUpdated(bSuccess);
 }
 

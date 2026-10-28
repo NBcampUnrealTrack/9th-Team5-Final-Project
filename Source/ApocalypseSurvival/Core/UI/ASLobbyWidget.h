@@ -19,6 +19,8 @@ public:
 	void RequestStartGame();
 	UFUNCTION(BlueprintCallable, Category = "Lobby")
 	void LeaveRoom();
+	UFUNCTION(BlueprintCallable, Category = "Lobby|Steam")
+	void InviteFriends();
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	AASLobbyGameState* GetLobbyState() const;
 	UFUNCTION(BlueprintPure, Category = "Lobby")
@@ -27,6 +29,7 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void OnLobbyUpdated();
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -35,6 +38,8 @@ protected:
 	TObjectPtr<UButton> StartGameButton;
 	UPROPERTY(BlueprintReadOnly, Category = "Lobby", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> LeaveRoomButton;
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby|Steam", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> InviteFriendsButton;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> PlayerListText;
 	UPROPERTY(meta = (BindWidgetOptional))

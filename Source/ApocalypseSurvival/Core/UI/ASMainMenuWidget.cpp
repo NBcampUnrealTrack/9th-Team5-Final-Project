@@ -57,9 +57,11 @@ void UASMainMenuWidget::NativeConstruct()
 	if (SessionSubsystem)
 	{
 		SessionSubsystem->OnSessionCreated.AddUniqueDynamic(this, &ThisClass::HandleSessionCreated);
+		SessionSubsystem->OnSessionJoined.AddUniqueDynamic(this, &ThisClass::HandleSessionJoined);
 		if (ConnectionStatusText)
 		{
-			ConnectionStatusText->SetText(SessionSubsystem->ReturnToMenuMessage);
+			ConnectionStatusText->SetText(SessionSubsystem->ReturnToMenuMessage.IsEmpty()
+				? SessionSubsystem->GetConnectionStatusText() : SessionSubsystem->ReturnToMenuMessage);
 			SessionSubsystem->ReturnToMenuMessage = FText::GetEmpty();
 		}
 	}
@@ -74,6 +76,7 @@ void UASMainMenuWidget::NativeDestruct()
 	if (SessionSubsystem)
 	{
 		SessionSubsystem->OnSessionCreated.RemoveDynamic(this, &ThisClass::HandleSessionCreated);
+		SessionSubsystem->OnSessionJoined.RemoveDynamic(this, &ThisClass::HandleSessionJoined);
 	}
 
 	Super::NativeDestruct();
@@ -139,7 +142,8 @@ void UASMainMenuWidget::HandleSessionCreated(const bool bSuccess)
 
 	if (!bSuccess)
 	{
-		FailHosting(FText::FromString(TEXT("방 생성에 실패했습니다.")));
+		FailHosting(SessionSubsystem && !SessionSubsystem->IsSessionServiceReady() ? SessionSubsystem->GetConnectionStatusText()
+			: FText::FromString(TEXT("방 생성에 실패했습니다. Steam 연결과 로그인 상태를 확인해 주세요.")));
 		return;
 	}
 
@@ -156,6 +160,11 @@ void UASMainMenuWidget::FailHosting(const FText& Message)
 	if (ConnectionStatusText) ConnectionStatusText->SetText(Message);
 	UE_LOG(LogTemp, Warning, TEXT("[Session] %s"), *Message.ToString());
 	OnHostRoomFailed(Message);
+}
+
+void UASMainMenuWidget::HandleSessionJoined(const bool bSuccess, const FString& ErrorMessage)
+{
+	if (!bSuccess && ConnectionStatusText) ConnectionStatusText->SetText(FText::FromString(ErrorMessage));
 }
 
 

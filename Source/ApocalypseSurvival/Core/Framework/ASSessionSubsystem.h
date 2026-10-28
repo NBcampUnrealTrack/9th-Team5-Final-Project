@@ -3,10 +3,12 @@
 #include "CoreMinimal.h"
 #include "Engine/EngineBaseTypes.h"
 #include "Interfaces/OnlineSessionInterface.h"
+#include "OnlineSessionSettings.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "ASSessionSubsystem.generated.h"
 
 class UASCharacterDefinition;
+class UASSessionInviteWidget;
 
 USTRUCT(BlueprintType)
 struct FASSessionSearchResult
@@ -59,8 +61,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void FindSessions(int32 MaxResults = 100);
 
-	UFUNCTION(BlueprintCallable, Category = "Session|LAN")
+	UFUNCTION(BlueprintCallable, Category = "Session")
 	void JoinSessionByIndex(int32 ResultIndex, const FString& Password = TEXT(""));
+
+	UFUNCTION(BlueprintPure, Category = "Session|Steam")
+	bool IsSteamSession() const;
+	UFUNCTION(BlueprintPure, Category = "Session|Steam")
+	bool IsSessionServiceReady() const;
+	UFUNCTION(BlueprintPure, Category = "Session|Steam")
+	FText GetConnectionStatusText() const;
+	UFUNCTION(BlueprintPure, Category = "Session|Steam")
+	bool CanInviteFriends() const;
+	UFUNCTION(BlueprintCallable, Category = "Session|Steam")
+	bool ShowInviteFriendsUI();
+	// The invite confirmation supplies the room password without advertising it on Steam.
+	bool AcceptSessionInvite(const FString& Password);
+	void DismissSessionInvite();
 
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void DestroySession();
@@ -96,6 +112,14 @@ public:
 private:
 	friend class FASSessionCleanupTest;
 	friend class FASJoinCancellationTest;
+	friend class FASSteamSessionSettingsTest;
+	friend class FASSteamInviteValidationTest;
+	static FOnlineSessionSettings MakeSessionSettings(bool bSteam, int32 PublicConnections, const FString& RoomName, bool bRequiresPassword);
+	static void ConfigureSearch(FOnlineSessionSearch& Search, bool bSteam, int32 MaxResults);
+	static bool IsCompatibleSession(const FOnlineSessionSearchResult& Result);
+	void JoinSessionResult(const FOnlineSessionSearchResult& SearchResult, const FString& Password);
+	void HandleSessionInviteAccepted(bool bWasSuccessful, int32 ControllerId, FUniqueNetIdPtr UserId, const FOnlineSessionSearchResult& InviteResult);
+	void ProcessPendingInvite(UWorld* World);
 	FUniqueNetIdRepl GetLocalUserId() const;
 
 	void HandleCreateSessionComplete(FName SessionName, bool bWasSuccessful);
@@ -128,4 +152,9 @@ private:
 
 	IOnlineSessionPtr SessionInterface;
 	TSharedPtr<FOnlineSessionSearch> SessionSearch;
+	TOptional<FOnlineSessionSearchResult> PendingInvite;
+	FString AcceptedInvitePassword;
+	bool bInviteAccepted = false;
+	UPROPERTY(Transient)
+	TObjectPtr<UASSessionInviteWidget> InviteWidget;
 };

@@ -54,6 +54,14 @@
 			"Enabled": true
 		},
 		{
+			"Name": "OnlineSubsystemSteam",
+			"Enabled": true
+		},
+		{
+			"Name": "SteamSockets",
+			"Enabled": true
+		},
+		{
 			"Name": "NavCorridor",
 			"Enabled": true
 		},
