@@ -54,6 +54,8 @@ public:
 	void ArmAttackMove();
 	bool IsArmed() const { return State == EASAttackMoveState::Armed; }
 	bool HasActiveCommand() const { return State != EASAttackMoveState::Idle; }
+	/** 우클릭한 위치 근처의 보이는 적을 지정해 1회 공격한다(사거리 밖이면 다가감). 적이 없으면 false */
+	bool StartTargetAttack(const FVector& CursorLocation);
 	bool ConfirmAttackMove(const FVector& Destination);
 	void CancelAttackMove();
 	void NotifyExternalMoveRequested();
@@ -87,6 +89,13 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Attack Move", meta = (ClampMin = "0.0", Units = "cm"))
 	float AttackRangeTolerance = 15.0f;
+	
+	/** 우클릭으로 대상을 고르는 커서 주변 반경 (임시값) */
+	UPROPERTY(EditDefaultsOnly, Category = "Attack Move", meta = (ClampMin = "0.0", Units = "cm"))
+	float TargetPickRadius = 80.0f;
+
+	/** 우클릭으로 지정한 대상만 공격한다. 대상을 잃으면 다른 적을 찾지 않고 명령을 끝낸다 */
+	bool bLockedTarget = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Attack Move", meta = (ClampMin = "0.0", Units = "cm"))
 	float DestinationAcceptanceRadius = 50.0f;
