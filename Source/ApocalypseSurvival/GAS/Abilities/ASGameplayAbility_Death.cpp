@@ -1,8 +1,11 @@
 #include "GAS/Abilities/ASGameplayAbility_Death.h"
 
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Characters/Player/ASPlayerCharacter.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GAS/ASAbilityTags.h"
 #include "TimerManager.h"
 
@@ -50,7 +53,14 @@ void UASGameplayAbility_Death::ActivateAbility(
 	// BP 자식의 ActivateAbility 이벤트가 있으면 여기서 불린다.
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (DeathMontage)
+	// 멀티에서 쓰러져 있다가 죽으면 이미 누운 자세라 사망 몽타주를 건너뛴다.
+	// (BleedOut 은 사망 요청 뒤에 쓰러짐 태그를 떼므로, 이 시점에는 아직 쓰러진 상태다)
+	// 쓰러진 자세로 죽으면(멀티) 누운 채 그대로 둔다.
+	// 쓰러질 때 미리 복제된 값이라 서버와 클라이언트 판정이 같다.
+	const AASPlayerCharacter* DeathCharacter = GetPlayerCharacter();
+	const bool bAlreadyLyingDown = DeathCharacter && DeathCharacter->IsLyingDown();
+
+	if (DeathMontage && !bAlreadyLyingDown)
 	{
 		// 끝나도 몽타주를 멈추지 않는다. 쓰러진 자세를 리스폰 때까지 유지해야 한다.
 		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
@@ -61,10 +71,18 @@ void UASGameplayAbility_Death::ActivateAbility(
 		MontageTask->OnInterrupted.AddDynamic(this, &UASGameplayAbility_Death::HandleMontageFinished);
 		MontageTask->OnCancelled.AddDynamic(this, &UASGameplayAbility_Death::HandleMontageFinished);
 		MontageTask->ReadyForActivation();
+
+		// 마지막 자세 유지(Auto Blend Out 끔)면 몽타주 종료 알림이 오지 않으므로,
+		// 몽타주 길이만큼 지나면 사망 처리를 마저 진행한다.
+		if (bAutoFinishDeath)
+		{
+			GetWorld()->GetTimerManager().SetTimer(MinDurationTimerHandle, this, &UASGameplayAbility_Death::FinishDeath,
+				FMath::Max(DeathMontage->GetPlayLength(), MinDeathDuration), false);
+		}
 	}
 	else if (bAutoFinishDeath)
 	{
-		// 몽타주가 없으면 최소 시간만 기다린다. 0 이면 바로 끝낸다.
+		// 몽타주가 없거나 쓰러진 채 죽으면 최소 시간만 기다린다. 0 이면 바로 끝낸다.
 		if (MinDeathDuration > 0.0f)
 		{
 			GetWorld()->GetTimerManager().SetTimer(MinDurationTimerHandle, this, &UASGameplayAbility_Death::FinishDeath, MinDeathDuration, false);
