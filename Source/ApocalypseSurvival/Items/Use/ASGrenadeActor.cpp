@@ -7,6 +7,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
@@ -60,15 +61,38 @@ AASGrenadeActor::AASGrenadeActor()
 	ConfigureCollision();
 }
 
+void AASGrenadeActor::ConfigureGrenadeCollision(USphereComponent* Sphere)
+{
+	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Sphere->SetCollisionObjectType(ECC_WorldDynamic);
+	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	Sphere->SetGenerateOverlapEvents(false);
+	Sphere->SetCanEverAffectNavigation(false);
+}
+
+FTransform AASGrenadeActor::MakeThrowTransform(const APawn* Avatar, const FVector& TargetLocation, const FVector& SpawnOffset)
+{
+	FVector Direction = (TargetLocation - Avatar->GetActorLocation()).GetSafeNormal2D();
+	if (Direction.IsNearlyZero()) Direction = Avatar->GetActorForwardVector().GetSafeNormal2D();
+	const FRotator Facing = Direction.Rotation();
+	FVector Offset = SpawnOffset;
+	if (Offset.X > 0.0f) Offset.X = FMath::Min(Offset.X, FVector::Dist2D(TargetLocation, Avatar->GetActorLocation()) * 0.5f);
+	return FTransform(Facing, Avatar->GetActorLocation() + Facing.RotateVector(Offset));
+}
+
+FVector AASGrenadeActor::MakeThrowVelocity(const FVector& Start, const FVector& GroundTarget,
+	const float Radius, const float GravityZ, const float FlightTime)
+{
+	FVector Velocity = (GroundTarget + FVector(0.0f, 0.0f, Radius) - Start) / FlightTime;
+	Velocity.Z -= 0.5f * GravityZ * FlightTime;
+	return Velocity;
+}
+
 void AASGrenadeActor::ConfigureCollision()
 {
-	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	CollisionComponent->SetCollisionObjectType(ECC_WorldDynamic);
-	CollisionComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	CollisionComponent->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	CollisionComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	CollisionComponent->SetGenerateOverlapEvents(false);
-	CollisionComponent->SetCanEverAffectNavigation(false);
+	ConfigureGrenadeCollision(CollisionComponent);
 	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
 	for (UPrimitiveComponent* Primitive : Primitives)
 	{
