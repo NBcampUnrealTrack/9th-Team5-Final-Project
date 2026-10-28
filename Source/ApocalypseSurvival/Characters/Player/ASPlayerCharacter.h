@@ -75,6 +75,10 @@ public:
 	/* 쓰러져서 부활을 기다리는 중인가 (멀티 전용). 모든 머신에서 같은 답을 준다. */
 	UFUNCTION(BlueprintPure, Category = "Downed")
 	bool IsDowned() const;
+	
+	/** 쓰러진 자세(바닥에 누움)인가. 쓰러질 때 켜지고 부활할 때만 꺼진다. 쓰러진 채 죽으면 켜진 채 유지 (모든 머신) */
+	UFUNCTION(BlueprintPure, Category = "Downed")
+	bool IsLyingDown() const { return bLyingDown; }
 
 	/** 피격 경직 또는 넉다운으로 조작이 잠시 제한되어 있는가. */
 	UFUNCTION(BlueprintPure, Category = "Combat|Impact")
@@ -191,6 +195,14 @@ protected:
 	/** 쓰러진 뒤 사망까지 걸리는 시간 (임시값) */
 	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "1.0", Units = "s"))
 	float DownedDuration = 30.f;
+	
+	/** 쓰러질 때 재생할 몽타주. Auto Blend Out 을 끄고 마지막 누운 자세를 유지한다 (임시: 사망 몽타주와 같은 것) */
+	UPROPERTY(EditDefaultsOnly, Category = "Downed")
+	TObjectPtr<UAnimMontage> DownedMontage;
+
+	/** 부활 시 쓰러짐 몽타주를 거꾸로 재생하는 속도 (임시값) */
+	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "0.1"))
+	float StandUpPlayRate = 1.5f;
 	
 	/** 부활에 걸리는 시간 (임시값) */
 	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "0.1", Units = "s"))
@@ -309,6 +321,19 @@ void StartRevive(AASPlayerCharacter* Reviver);
 	/** 지금 나를 부활시키는 파티원 (UI용으로 복제). 서버 판정은 ActiveReviver를 쓴다 */
 	UPROPERTY(Replicated)
 	TObjectPtr<AASPlayerCharacter> ReplicatedReviver;
+	
+	/** 누운 자세. 서버가 정하고 복제한다 */
+	UPROPERTY(ReplicatedUsing = OnRep_LyingDown)
+	bool bLyingDown = false;
+
+	/** 누운 자세가 바뀌면 모든 머신에서 쓰러짐/일어서기 애니메이션을 처리한다 */
+	UFUNCTION()
+	void OnRep_LyingDown();
+
+	/** 일어서기(거꾸로 재생)가 끝나면 쓰러짐 몽타주를 정리한다 */
+	void FinishStandUp();
+
+	FTimerHandle StandUpTimerHandle;
 
 	/** 서버와 맞춘 현재 시각. 클라이언트도 서버 기준으로 계산하기 위해 쓴다 */
 	float GetServerTimeSeconds() const;

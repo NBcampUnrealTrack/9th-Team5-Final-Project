@@ -286,6 +286,7 @@ void AASPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(ImpactReactionTimerHandle);
 	GetWorldTimerManager().ClearTimer(StaggerProtectionTimerHandle);
 	GetWorldTimerManager().ClearTimer(MeleeHitStopTimerHandle);
+	GetWorldTimerManager().ClearTimer(StandUpTimerHandle);
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
@@ -527,6 +528,47 @@ AASPlayerCharacter* AASPlayerCharacter::GetCurrentReviveTarget() const
 	return nullptr;
 }
 
+void AASPlayerCharacter::OnRep_LyingDown()
+{
+	UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (!AnimInstance || !DownedMontage)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(StandUpTimerHandle);
+
+	if (bLyingDown)
+	{
+		// 쓰러짐: 처음부터 재생, 마지막 누운 자세 유지 (몽타주 Auto Blend Out 끔)
+		AnimInstance->Montage_Play(DownedMontage, 1.f);
+		return;
+	}
+
+	// 부활: 지금 자세에서 거꾸로 재생해 일어선다
+	FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(DownedMontage);
+	if (!MontageInstance)
+	{
+		return;
+	}
+
+	const float CurrentPosition = MontageInstance->GetPosition();
+	MontageInstance->SetPlayRate(-StandUpPlayRate);
+	MontageInstance->SetPlaying(true); // 끝에서 멈춰 있던 몽타주를 다시 움직인다
+
+	// 처음 자세(서 있음)에 도착할 때쯤 몽타주를 끝내 원래 이동 애니메이션으로 돌아간다
+	GetWorldTimerManager().SetTimer(StandUpTimerHandle, this, &AASPlayerCharacter::FinishStandUp,
+		FMath::Max(0.05f, CurrentPosition / StandUpPlayRate), false);
+}
+
+void AASPlayerCharacter::FinishStandUp()
+{
+	if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		AnimInstance->Montage_Stop(0.2f, DownedMontage);
+	}
+}
+
 bool AASPlayerCharacter::IsStaggered() const
 {
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
@@ -593,6 +635,10 @@ void AASPlayerCharacter::EnterDowned()
 	// 모든 머신에 복제되는 태그. 이 줄에서 서버의 HandleDownedTagChanged 가 바로 불린다.
 	ASC->AddLooseGameplayTag(ASGameplayTags::State_Downed, 1, EGameplayTagReplicationState::TagAndCountToAll);
 
+	// 누운 자세 (서버는 OnRep 이 자동으로 불리지 않아 직접 부른다)
+	bLyingDown = true;
+	OnRep_LyingDown();
+	
 	GetWorldTimerManager().SetTimer(BleedOutTimerHandle, this, &AASPlayerCharacter::BleedOut, DownedDuration, false);
 
 	// UI용: 사망 예정 시각을 모든 머신에 알린다
@@ -738,6 +784,7 @@ void AASPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME(AASPlayerCharacter, BleedOutPausedRemaining);
 	DOREPLIFETIME(AASPlayerCharacter, ReviveStartServerTime);
 	DOREPLIFETIME(AASPlayerCharacter, ReplicatedReviver);
+	DOREPLIFETIME(AASPlayerCharacter, bLyingDown);
 }
 
 void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -965,6 +1012,10 @@ void AASPlayerCharacter::Revive()
 	const float MaxHealth = ASC->GetNumericAttribute(UASHealthAttributeSet::GetMaxHealthAttribute());
 	ASC->SetNumericAttributeBase(UASHealthAttributeSet::GetHealthAttribute(), MaxHealth * ReviveHealthRatio);
 	ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Downed, 1, EGameplayTagReplicationState::TagAndCountToAll);
+	
+	// 부활: 일어서기
+	bLyingDown = false;
+	OnRep_LyingDown();
 
 	UE_LOG(LogTemp, Log, TEXT("[Downed] %s 부활 완료 (체력 %.0f)"), *GetName(), MaxHealth * ReviveHealthRatio);
 	
