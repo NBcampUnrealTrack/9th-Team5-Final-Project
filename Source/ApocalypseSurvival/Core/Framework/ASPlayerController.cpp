@@ -263,7 +263,7 @@ void AASPlayerController::OnAbilityInputReleased(const FGameplayTag InputTag)
 	}
 }
 
-void AASPlayerController::ASEquipWeapon()
+void AASPlayerController::DebugEquipWeapon()
 {
 	for (const UASItemInstance* Item : InventoryComponent->GetItemInstances())
 	{
@@ -279,7 +279,7 @@ void AASPlayerController::ASEquipWeapon()
 	UE_LOG(LogTemp, Warning, TEXT("[Equip] 인벤토리에 무기가 없다. 상자에서 먼저 주워야 한다."));
 }
 
-void AASPlayerController::ASUnequipWeapon()
+void AASPlayerController::DebugUnequipWeapon()
 {
 	ItemInteractionComponent->RequestUnequipItem();
 }

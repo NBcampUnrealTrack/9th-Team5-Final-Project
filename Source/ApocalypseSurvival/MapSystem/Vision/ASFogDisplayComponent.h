@@ -39,7 +39,8 @@ public:
 	UTexture2D* GetFogTexture() const { return FogTexture; }
 	FASFogMaterialState GetMaterialState() const;
 	/** 로컬 팀 시야 마스크가 적어도 한 번 갱신됐는지 반환한다. */
-	bool HasLocalVisionMask() const { return bHasLocalVisionMask; }
+	bool HasLocalVisionMask() const { return bDebugMapRevealed || bHasLocalVisionMask; }
+	void SetDebugMapRevealed(bool bEnabled);
 	bool IsLocationExplored(const FVector& Location) const;
 	bool IsLocationVisibleLocally(const FVector& Location) const;
 	/** 현재 로컬 팀 시야 주변의 Mass ISM 유지 Buffer에 위치하는지 반환한다. */
@@ -53,6 +54,8 @@ public:
 	void SetBossIntroActive(bool bActive, const FVector& BossLocation = FVector::ZeroVector, float Radius = 600.0f);
 
 private:
+	friend class FASDebugRevealMapTest;
+	bool bDebugMapRevealed = false;
 	friend class FASBossIntroFogTest;
 	float GetBossIntroFogOpacityScale(const FVector2D& WorldLocation) const;
 	FVector2D BossIntroCenter = FVector2D::ZeroVector;

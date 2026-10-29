@@ -56,6 +56,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
 	void SetWallOcclusionEnabled(bool bEnabled);
 
+	bool IsDebugMapRevealed() const { return bDebugMapRevealed; }
+	void SetDebugMapRevealed(bool bEnabled);
+
 	/** 서버 전용. 현재 밤 비율에서 새 목표까지 전환하며 즉시 적용할 수도 있다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "AS|Vision")
 	void SetNight(bool bNight, bool bImmediate = false);
@@ -117,6 +120,9 @@ private:
 	void OnRep_WallOcclusionEnabled();
 
 	UFUNCTION()
+	void OnRep_DebugMapRevealed();
+
+	UFUNCTION()
 	void OnRep_ExploredResetCount();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
@@ -127,6 +133,9 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_WallOcclusionEnabled)
 	bool bWallOcclusionEnabled = true;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DebugMapRevealed)
+	bool bDebugMapRevealed = false;
 
 	/** 늦게 참여한 클라이언트도 서버 시간으로 현재 전환 위치를 계산한다. */
 	UPROPERTY(Replicated)

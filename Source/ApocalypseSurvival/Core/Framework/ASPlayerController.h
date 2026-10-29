@@ -103,10 +103,10 @@ public:
 	 * 인벤토리의 첫 번째 무기를 장착한다. 클라이언트에서 쳐도 서버 RPC 로 전달된다.
 	 */
 	UFUNCTION(Exec)
-	void ASEquipWeapon();
+	void DebugEquipWeapon();
 
 	UFUNCTION(Exec)
-	void ASUnequipWeapon();
+	void DebugUnequipWeapon();
 
 	/** CheatManager의 무적 명령을 서버에서 실행한다. */
 	UFUNCTION(Server, Reliable)
