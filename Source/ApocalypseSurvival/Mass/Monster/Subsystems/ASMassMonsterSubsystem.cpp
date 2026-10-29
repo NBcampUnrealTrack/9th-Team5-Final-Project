@@ -18,6 +18,7 @@
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Combat/ASCombatImpactSettings.h"
 #include "StructUtils/StructView.h"
 #include "TimerManager.h"
@@ -584,6 +585,70 @@ bool UASMassMonsterSubsystem::FindBestAliveMonsterTarget(
 	return true;
 }
 
+void UASMassMonsterSubsystem::FindAliveMonsterTargetsAlongSegment(
+	const FVector& Start, const FVector& End, const float SweepRadius,
+	TArray<FASMassMonsterTargetSnapshot>& OutTargets) const
+{
+	OutTargets.Reset();
+	if (!SpawnerSubsystem || SweepRadius < 0.0f)
+	{
+		return;
+	}
+
+	const FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	const FVector Start2D(Start.X, Start.Y, 0.0f);
+	const FVector End2D(End.X, End.Y, 0.0f);
+	const FVector Segment = End2D - Start2D;
+	const float SegmentLengthSquared = Segment.SizeSquared();
+	const float SafeSweepRadius = FMath::Max(0.0f, SweepRadius);
+
+	for (const FMassEntityHandle Entity : ManagedEntities)
+	{
+		if (!EntityManager.IsEntityValid(Entity))
+		{
+			continue;
+		}
+
+		const FASMassMonsterHealthFragment* Health =
+			EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+		const FASMassMonsterConfigFragment* Config =
+			EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
+		if (!Health || Health->CurrentHealth <= 0.0f || !Transform || !Config)
+		{
+			continue;
+		}
+
+		const FVector Location = Transform->GetTransform().GetLocation();
+		const FVector Location2D(Location.X, Location.Y, 0.0f);
+		const float HitRadius = FMath::Max(0.0f, Config->HitRadius);
+		if (FMath::PointDistToSegmentSquared(Location2D, Start2D, End2D)
+			> FMath::Square(SafeSweepRadius + HitRadius))
+		{
+			continue;
+		}
+
+		FASMassMonsterTargetSnapshot& Snapshot = OutTargets.AddDefaulted_GetRef();
+		Snapshot.TargetId = Entity.AsNumber();
+		Snapshot.Location = Location;
+		Snapshot.HitRadius = HitRadius;
+		Snapshot.SortKey = SegmentLengthSquared > SMALL_NUMBER
+			? FMath::Clamp(FVector::DotProduct(Location2D - Start2D, Segment) / SegmentLengthSquared, 0.0f, 1.0f)
+			: 0.0f;
+		if (const FMassNetworkIDFragment* NetworkId =
+			EntityManager.GetFragmentDataPtr<FMassNetworkIDFragment>(Entity);
+			NetworkId && NetworkId->NetID.IsValid())
+		{
+			Snapshot.NetworkId = NetworkId->NetID.GetValue();
+		}
+	}
+
+	OutTargets.Sort([](const FASMassMonsterTargetSnapshot& Left, const FASMassMonsterTargetSnapshot& Right)
+	{
+		return Left.SortKey < Right.SortKey;
+	});
+}
+
 bool UASMassMonsterSubsystem::GetAliveMonsterTarget(
 	const uint64 TargetId,
 	FVector& OutLocation,
@@ -771,6 +836,57 @@ int32 UASMassMonsterSubsystem::ApplyDamageToTarget(
 		{
 			return Entity == RequestedEntity;
 		});
+}
+
+bool UASMassMonsterSubsystem::ApplyImpactKnockbackToTarget(
+	const uint64 TargetId, const FASCombatImpactContext& ImpactContext)
+{
+	if (TargetId == 0 || ImpactContext.KnockbackDistance <= 0.0f)
+	{
+		return false;
+	}
+	const FVector Direction = ImpactContext.HitDirection.GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+	{
+		return false;
+	}
+
+	FString MutationError;
+	if (!CanMutateEntities(MutationError) || bMutationInProgress)
+	{
+		return false;
+	}
+
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	CompactManagedEntities();
+	FMassEntityManager& EntityManager = SpawnerSubsystem->GetEntityManagerChecked();
+	const FMassEntityHandle Entity = FMassEntityHandle::FromNumber(TargetId);
+	if (!EntityManager.IsEntityValid(Entity))
+	{
+		return false;
+	}
+
+	const FASMassMonsterHealthFragment* Health =
+		EntityManager.GetFragmentDataPtr<FASMassMonsterHealthFragment>(Entity);
+	const FASMassMonsterConfigFragment* Config =
+		EntityManager.GetConstSharedFragmentDataPtr<FASMassMonsterConfigFragment>(Entity);
+	FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+	if (!Health || Health->CurrentHealth <= 0.0f || !Config || !Transform
+		|| Config->StaggerResistance != EASStaggerResistance::Normal)
+	{
+		return false;
+	}
+
+	FTransform& MutableTransform = Transform->GetMutableTransform();
+	MutableTransform.SetLocation(MutableTransform.GetLocation() + Direction * ImpactContext.KnockbackDistance);
+	if (FASMassMonsterNavigationFragment* Navigation =
+		EntityManager.GetFragmentDataPtr<FASMassMonsterNavigationFragment>(Entity))
+	{
+		Navigation->LastProgressLocation = MutableTransform.GetLocation();
+		Navigation->bHasProgressSample = true;
+		Navigation->StuckTimeSeconds = 0.0f;
+	}
+	return true;
 }
 
 int32 UASMassMonsterSubsystem::ApplyDamageInCone(
@@ -1131,6 +1247,7 @@ bool UASMassMonsterSubsystem::CanMutateEntities(FString& OutError) const
 	}
 	if (SpawnerSubsystem->GetEntityManagerChecked().IsProcessing())
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Mass.MutationRejected EntityManagerIsProcessing"));
 		OutError = TEXT("Mass Entity processing is active; defer this mutation until processing completes.");
 		return false;
 	}

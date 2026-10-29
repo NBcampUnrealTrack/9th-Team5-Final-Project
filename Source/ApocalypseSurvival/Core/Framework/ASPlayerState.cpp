@@ -132,8 +132,9 @@ void AASPlayerState::GrantDefaultAbilitySetOnce(const UASAbilitySet* AbilitySet)
 	bool bHasPrimaryAttack = false;
 	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
 	{
-		if (Spec.Ability && Spec.Ability->GetClass()->IsChildOf(
-			UASGameplayAbility_CharacterPrimaryAttack::StaticClass()))
+		const UASGameplayAbility_CharacterPrimaryAttack* PrimaryAttack =
+			Cast<UASGameplayAbility_CharacterPrimaryAttack>(Spec.Ability);
+		if (PrimaryAttack)
 		{
 			bHasPrimaryAttack = true;
 			break;

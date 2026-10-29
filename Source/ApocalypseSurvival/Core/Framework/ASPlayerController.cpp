@@ -10,6 +10,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Core/Cheats/ASCheatManager.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Framework/ASPlayerCameraManager.h"
 #include "Core/Framework/ASBossEncounter.h"
 #include "Core/Input/ASInputConfig.h"
@@ -98,6 +99,7 @@ void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn*
 void AASPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	ASCombatDiagnostics::Record(this, TEXT("Input.Setup"));
 
 	// 입력은 화면 앞에 사람이 있는 컨트롤러에만 건다.
 	// 리슨 서버에는 다른 플레이어의 컨트롤러도 존재한다.
@@ -169,24 +171,27 @@ void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
 	if (bBossIntroInputBlocked || IsResultPhase()) return;
 	if (IsInGameMenuOpen()) return;
-	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
-	// 준비가 실제로 시작된 뒤에만 공격 이동 상태를 바꾼다. 발동 실패(쿨타임·비용 등)는
-	// 이전 이동/공격 이동 명령을 그대로 유지해야 한다.
+	// 현재 Ability Set에 장착된 일반 공격 GA 하나만 A 입력을 받는다.
+	// Attack Move GA만 컴포넌트를 무장하며, Directional Attack은 이동·타깃 탐색을 전혀 시작하지 않는다.
 	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Prepare))
 	{
 		if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
 		{
 			const bool bWasTargeting = AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting);
-			AbilitySystemComponent->AbilityInputTagPressed(InputTag);
-
 			if (bWasTargeting)
 			{
-				// A를 다시 누르는 것은 현재 조준/공격 이동 명령 취소다.
+				// 준비 입력을 다시 누르면 현재 어느 종류의 조준이든 취소한다.
 				AttackMoveComponent->CancelAttackMove();
+				AbilitySystemComponent->LocalInputCancel();
+				return;
 			}
-			else if (AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+
+			AbilitySystemComponent->AbilityInputTagPressed(InputTag);
+
+			if (AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting)
+				&& !AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting_DirectionalAttack))
 			{
-				// Primary Attack이 실제로 조준 상태에 들어간 경우에만 준비 상태를 만든다.
+				// Attack Move GA가 실제로 조준 상태에 들어간 경우에만 이동 컴포넌트를 무장한다.
 				AttackMoveComponent->ArmAttackMove();
 			}
 		}
@@ -290,6 +295,20 @@ UASAbilitySystemComponent* AASPlayerController::GetPawnAbilitySystemComponent() 
 	return Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetPawn()));
 }
 
+bool AASPlayerController::IsPrimaryAttackReady() const
+{
+	const UWorld* World = GetWorld();
+	return !World || World->GetTimeSeconds() >= NextPrimaryAttackTime;
+}
+
+void AASPlayerController::StartPrimaryAttackCooldown(const float AttackInterval)
+{
+	if (const UWorld* World = GetWorld())
+	{
+		NextPrimaryAttackTime = World->GetTimeSeconds() + FMath::Max(0.01f, AttackInterval);
+	}
+}
+
 void AASPlayerController::CancelMovementForCommittedAbility()
 {
 	// 이 컨트롤러가 실제로 움직임을 지시한 로컬 폰에서만 기존 명령을 정리한다.
@@ -340,8 +359,9 @@ void AASPlayerController::TryActivatePrimaryAttack()
 
 	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
 	{
-		if (!Spec.IsActive() && Spec.Ability
-			&& Spec.Ability->GetClass()->IsChildOf(UASGameplayAbility_CharacterPrimaryAttack::StaticClass()))
+		const UASGameplayAbility_CharacterPrimaryAttack* PrimaryAttack =
+			Cast<UASGameplayAbility_CharacterPrimaryAttack>(Spec.Ability);
+		if (!Spec.IsActive() && PrimaryAttack && PrimaryAttack->IsAttackMoveAbility())
 		{
 			AbilitySystemComponent->TryActivateAbility(Spec.Handle);
 			return;

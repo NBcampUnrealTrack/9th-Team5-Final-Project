@@ -9,6 +9,7 @@
 #include "Characters/Player/Components/ASPlayerAttackMoveComponent.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -39,9 +40,19 @@ float UASGameplayAbility_CharacterPrimaryAttack::GetCurrentAttackRange() const
 {
 	FASWeaponAttackExecutionContext Context;
 	const UASWeaponAttackExecution* Execution = nullptr;
-	return BuildExecutionContext(Context, Execution) && Context.Definition
-		? FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition))
-		: 0.0f;
+	if (!BuildExecutionContext(Context, Execution) || !Context.Definition)
+	{
+		return 0.0f;
+	}
+
+	return GetAttackMode() == EASPrimaryAttackMode::Directional
+		? FMath::Max(0.0f, Context.Definition->AttackRange)
+		: FMath::Max(0.0f, AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition));
+}
+
+FGameplayTag UASGameplayAbility_CharacterPrimaryAttack::GetTargetingStateTag() const
+{
+	return ASGameplayTags::State_Targeting;
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
@@ -55,6 +66,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	bAddedTargetingTag = false;
 	bBoundLocalConfirm = false;
 	bBoundLocalCancel = false;
+	ActiveTargetingStateTag = FGameplayTag();
 
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	if (!ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead))
@@ -70,30 +82,33 @@ void UASGameplayAbility_CharacterPrimaryAttack::ActivateAbility(
 	}
 
 	// A + 클릭 명령이 준비한 요청은 일반 조준 상태를 거치지 않고 즉시 한 번 공격한다.
-	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo->PlayerController.Get()))
+	if (ShouldConsumeAttackMoveRequest())
 	{
-		AActor* RequestedTarget = nullptr;
-		FVector RequestedTargetLocation = FVector::ZeroVector;
-		uint32 RequestedMassTargetNetworkId = 0;
-		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, RequestedTargetLocation,
-			RequestedMassTargetNetworkId))
+		if (AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo->PlayerController.Get()))
 		{
-			FVector AimDirection = RequestedTarget
-				? (RequestedTarget->GetActorLocation() - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D()
-				: (RequestedTargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
-			if (AimDirection.IsNearlyZero())
+			AActor* RequestedTarget = nullptr;
+			FVector RequestedTargetLocation = FVector::ZeroVector;
+			uint32 RequestedMassTargetNetworkId = 0;
+			if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, RequestedTargetLocation,
+				RequestedMassTargetNetworkId))
 			{
-				AimDirection = GetAvatarActorFromActorInfo()->GetActorForwardVector().GetSafeNormal2D();
-			}
+				FVector AimDirection = RequestedTarget
+					? (RequestedTarget->GetActorLocation() - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D()
+					: (RequestedTargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
+				if (AimDirection.IsNearlyZero())
+				{
+					AimDirection = GetAvatarActorFromActorInfo()->GetActorForwardVector().GetSafeNormal2D();
+				}
 
-			if (!ActorInfo->IsNetAuthority())
-			{
-				SendAimToServer(AimDirection, RequestedTargetLocation, RequestedTarget,
+				if (!ActorInfo->IsNetAuthority())
+				{
+					SendAimToServer(AimDirection, RequestedTargetLocation, RequestedTarget,
+						RequestedMassTargetNetworkId);
+				}
+				StartAttack(AimDirection, RequestedTargetLocation, RequestedTarget,
 					RequestedMassTargetNetworkId);
+				return;
 			}
-			StartAttack(AimDirection, RequestedTargetLocation, RequestedTarget,
-				RequestedMassTargetNetworkId);
-			return;
 		}
 	}
 
@@ -117,6 +132,11 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo, const bool bReplicatedEndAbility, const bool bWasCancelled)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DeferredHitTimer);
+		World->GetTimerManager().ClearTimer(DeferredFinishTimer);
+	}
 	if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
 	{
 		const FPredictionKey PredictionKey = ActivationInfo.GetActivationPredictionKey();
@@ -142,21 +162,34 @@ void UASGameplayAbility_CharacterPrimaryAttack::EndAbility(
 
 void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Attack.BeginTargeting"));
 	// 일반 공격은 별도 쿨타임 GE 대신 이 인스턴스의 공격 간격을 사용한다.
 	// A 입력이 쿨타임 중 조준 상태에 들어가면, 나중에 좌클릭해도 공격이 실패하고
 	// 준비 상태만 남을 수 있으므로 시작 단계에서 무시한다.
-	const AActor* Avatar = GetAvatarActorFromActorInfo();
-	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
-	if (World && World->GetTimeSeconds() < NextAttackTime)
+	if (const AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
-		return;
+		if (!PlayerController->IsPrimaryAttackReady())
+		{
+			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+			return;
+		}
+	}
+	else
+	{
+		const AActor* Avatar = GetAvatarActorFromActorInfo();
+		const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
+		if (World && World->GetTimeSeconds() < NextAttackTime)
+		{
+			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+			return;
+		}
 	}
 
 	FASWeaponAttackExecutionContext Context;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	if (!BuildExecutionContext(Context, Execution))
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Attack.Rejected MissingWeaponOrProfile"));
 		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] %s 조준 시작 실패: 장착 무기/프로필 없음 (Authority=%d)"),
 			*GetNameSafe(GetAvatarActorFromActorInfo()), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
@@ -164,6 +197,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 	}
 	if (!Execution->CanPayCost(Context))
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Attack.Rejected CannotPayCost"));
 		UE_LOG(LogTemp, Warning, TEXT("[PrimaryAttack] %s 조준 시작 실패: 비용 부족 (스태미나/탄약, Authority=%d)"),
 			*GetNameSafe(GetAvatarActorFromActorInfo()), CurrentActorInfo->IsNetAuthority());
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
@@ -179,7 +213,8 @@ void UASGameplayAbility_CharacterPrimaryAttack::BeginTargeting()
 
 	bIsTargeting = true;
 	// 로컬 전용 태그다. 좌클릭이 Primary Attack 재발동 대신 조준 확정으로 처리된다.
-	ASC->AddLooseGameplayTag(ASGameplayTags::State_Targeting);
+	ActiveTargetingStateTag = GetTargetingStateTag();
+	ASC->AddLooseGameplayTag(ActiveTargetingStateTag);
 	bAddedTargetingTag = true;
 	ASC->GenericLocalConfirmCallbacks.AddDynamic(this, &UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm);
 	bBoundLocalConfirm = true;
@@ -200,16 +235,19 @@ void UASGameplayAbility_CharacterPrimaryAttack::ConfirmTargeting()
 	ComputeLocalAim(AimDirection, TargetLocation);
 	AActor* RequestedTarget = nullptr;
 	uint32 RequestedMassTargetNetworkId = 0;
-	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
+	if (ShouldConsumeAttackMoveRequest())
 	{
-		if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, TargetLocation,
-			RequestedMassTargetNetworkId))
+		if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
 		{
-			TargetLocation = RequestedTarget ? RequestedTarget->GetActorLocation() : TargetLocation;
-			AimDirection = (TargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
-			if (AimDirection.IsNearlyZero())
+			if (PlayerController->ConsumeAttackMoveRequest(RequestedTarget, TargetLocation,
+				RequestedMassTargetNetworkId))
 			{
-				AimDirection = GetAvatarActorFromActorInfo()->GetActorForwardVector().GetSafeNormal2D();
+				TargetLocation = RequestedTarget ? RequestedTarget->GetActorLocation() : TargetLocation;
+				AimDirection = (TargetLocation - GetAvatarActorFromActorInfo()->GetActorLocation()).GetSafeNormal2D();
+				if (AimDirection.IsNearlyZero())
+				{
+					AimDirection = GetAvatarActorFromActorInfo()->GetActorForwardVector().GetSafeNormal2D();
+				}
 			}
 		}
 	}
@@ -226,7 +264,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StopTargetingInput(const bool bW
 	{
 		if (bAddedTargetingTag)
 		{
-			ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Targeting);
+			ASC->RemoveLooseGameplayTag(ActiveTargetingStateTag);
 		}
 		if (bBoundLocalConfirm)
 		{
@@ -245,6 +283,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StopTargetingInput(const bool bW
 	bAddedTargetingTag = false;
 	bBoundLocalConfirm = false;
 	bBoundLocalCancel = false;
+	ActiveTargetingStateTag = FGameplayTag();
 }
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnLocalInputConfirm()
@@ -299,6 +338,7 @@ bool UASGameplayAbility_CharacterPrimaryAttack::BuildExecutionContext(
 	OutContext.Weapon = Weapon;
 	OutContext.Definition = Definition;
 	OutContext.Profile = Profile;
+	OutContext.AttackMode = GetAttackMode();
 	return true;
 }
 
@@ -322,7 +362,20 @@ void UASGameplayAbility_CharacterPrimaryAttack::ComputeLocalAim(FVector& OutAimD
 	OutAimDirection = Avatar ? Avatar->GetActorForwardVector().GetSafeNormal2D() : FVector::ForwardVector;
 	OutTargetLocation = Origin;
 	FVector CursorLocation;
-	if (Avatar && AASSkillRangeIndicatorActor::GetCursorWorldLocation(Cast<APawn>(Avatar), CursorLocation))
+	bool bHasCursorLocation = Avatar
+		&& AASSkillRangeIndicatorActor::GetCursorWorldLocation(Cast<APawn>(Avatar), CursorLocation);
+	if (!bHasCursorLocation)
+	{
+		const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+		if (ActorInfo)
+		{
+			if (const AASPlayerController* PlayerController = Cast<AASPlayerController>(ActorInfo->PlayerController.Get()))
+			{
+				bHasCursorLocation = PlayerController->GetCursorPlaneLocation(CursorLocation);
+			}
+		}
+	}
+	if (bHasCursorLocation)
 	{
 		const FVector ToCursor = (CursorLocation - Origin).GetSafeNormal2D();
 		if (!ToCursor.IsNearlyZero()) OutAimDirection = ToCursor;
@@ -435,6 +488,20 @@ bool UASGameplayAbility_CharacterPrimaryAttack::IsValidAttackRequest(
 	{
 		return false;
 	}
+	if (Context.AttackMode == EASPrimaryAttackMode::Directional)
+	{
+		// 방향 공격은 적을 지정하지 않는다. 서버는 클릭 위치에서 방향만 재구성한다.
+		if (IsValid(RequestedTarget) || RequestedMassTargetNetworkId != 0)
+		{
+			return false;
+		}
+		OutAimDirection = (TargetLocation - Context.Avatar->GetActorLocation()).GetSafeNormal2D();
+		if (OutAimDirection.IsNearlyZero())
+		{
+			OutAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
+		}
+		return !OutAimDirection.IsNearlyZero();
+	}
 
 	const UASRangedAttackProfile* RangedProfile = Cast<UASRangedAttackProfile>(Context.Profile);
 	const bool bUsesAttackMoveTargeting = Cast<UASMeleeAttackProfile>(Context.Profile) != nullptr
@@ -532,6 +599,11 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	const FVector& AimDirection, const FVector& TargetLocation, AActor* RequestedTarget,
 	const uint32 RequestedMassTargetNetworkId)
 {
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Attack.Start Aim=%s Target=%s Authority=%d"),
+			*AimDirection.ToString(), *TargetLocation.ToString(), CurrentActorInfo && CurrentActorInfo->IsNetAuthority()));
+	}
 	if (bAttackStarted || !CurrentActorInfo) return;
 	const UASWeaponAttackExecution* Execution = nullptr;
 	FASWeaponAttackExecutionContext Context;
@@ -552,7 +624,20 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 	}
 
 	UWorld* World = Context.Avatar->GetWorld();
-	if (!World || World->GetTimeSeconds() < NextAttackTime)
+	if (!World)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
+	{
+		if (!PlayerController->IsPrimaryAttackReady())
+		{
+			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+			return;
+		}
+	}
+	else if (World->GetTimeSeconds() < NextAttackTime)
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
@@ -567,7 +652,14 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 
 	bAttackStarted = true;
 	bHitPerformed = false;
-	NextAttackTime = World->GetTimeSeconds() + FMath::Max(0.01f, Context.Definition->AttackInterval);
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get()))
+	{
+		PlayerController->StartPrimaryAttackCooldown(Context.Definition->AttackInterval);
+	}
+	else
+	{
+		NextAttackTime = World->GetTimeSeconds() + FMath::Max(0.01f, Context.Definition->AttackInterval);
+	}
 	CachedAimDirection = ValidAimDirection.GetSafeNormal2D();
 	if (CachedAimDirection.IsNearlyZero()) CachedAimDirection = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
 	Context.AimDirection = CachedAimDirection;
@@ -647,8 +739,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 
 	if (CurrentActorInfo->IsNetAuthority())
 	{
-		PerformHit();
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		OnMontageFinished();
 	}
 	// A predicting client with no montage waits for the server's replicated end. Ending here can
 	// race the TargetData RPC and cancel the authoritative activation before it receives the aim.
@@ -656,7 +747,17 @@ void UASGameplayAbility_CharacterPrimaryAttack::StartAttack(
 
 void UASGameplayAbility_CharacterPrimaryAttack::PerformHit()
 {
-	if (bHitPerformed || !CurrentActorInfo || !CurrentActorInfo->IsNetAuthority()) return;
+	ASCombatDiagnostics::Record(this, TEXT("Attack.PerformHit"));
+	if (!IsActive() || bHitPerformed || !CurrentActorInfo || !CurrentActorInfo->IsNetAuthority()) return;
+	if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+	{
+		if (Targets->DeferUntilMassIdle(DeferredHitTimer,
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				DeferredHitTimer.Invalidate();
+				PerformHit();
+			}))) return;
+	}
 	bHitPerformed = true;
 
 	// The equipped weapon is authoritative. Do not finish an old weapon's attack after a swap.
@@ -690,6 +791,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnHitEvent(FGameplayEventData Pa
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnMontageFinished()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Attack.MontageFinished"));
 	if (!IsActive() || !CurrentActorInfo)
 	{
 		return;
@@ -707,6 +809,15 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnMontageFinished()
 
 	if (!bHitPerformed)
 	{
+		if (UASCombatTargetSubsystem* Targets = GetWorld()->GetSubsystem<UASCombatTargetSubsystem>())
+		{
+			if (Targets->DeferUntilMassIdle(DeferredFinishTimer,
+				FTimerDelegate::CreateWeakLambda(this, [this]()
+				{
+					DeferredFinishTimer.Invalidate();
+					OnMontageFinished();
+				}))) return;
+		}
 		PerformHit();
 	}
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
@@ -714,6 +825,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::OnMontageFinished()
 
 void UASGameplayAbility_CharacterPrimaryAttack::OnMontageCancelled()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Attack.MontageCancelled"));
 	if (!IsActive() || !CurrentActorInfo)
 	{
 		return;

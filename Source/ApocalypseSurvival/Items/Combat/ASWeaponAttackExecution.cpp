@@ -4,6 +4,7 @@
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Combat/ASCombatImpactSettings.h"
 #include "Engine/World.h"
 #include "GAS/Attributes/ASPlayerAttributeSet.h"
@@ -14,6 +15,9 @@
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/Combat/ASWeaponProjectile.h"
+#include "Items/Combat/ASRifleBurstSequence.h"
+#include "Items/Combat/ASShotgunAttackSequence.h"
+#include "Items/Combat/ASSniperPiercingProjectile.h"
 #include "Skills/Projectile/ASSkillProjectileActor.h"
 
 namespace ASWeaponAttackExecutionPrivate
@@ -84,9 +88,11 @@ namespace ASWeaponAttackExecutionPrivate
 		}
 
 		const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
-		UClass* ProjectileClass = Profile.ProjectileClass
-			? Profile.ProjectileClass.Get()
-			: AASSkillProjectileActor::StaticClass();
+		UClass* ProjectileClass = Profile.DirectionalProjectileClass
+			? Profile.DirectionalProjectileClass.Get()
+			: (Profile.ProjectileClass
+				? Profile.ProjectileClass.Get()
+				: AASSkillProjectileActor::StaticClass());
 		AASSkillProjectileActor* Projectile = World->SpawnActorDeferred<AASSkillProjectileActor>(
 			ProjectileClass, SpawnTransform, Context.Avatar, Context.Avatar,
 			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
@@ -97,8 +103,11 @@ namespace ASWeaponAttackExecutionPrivate
 
 		const TArray<FGameplayEffectSpecHandle> DamageSpecs = MakeDamageSpecs(Context);
 		const FASCombatImpactContext ImpactContext = MakeImpactContext(Context, SpawnLocation, Direction);
+		const float ProjectileRange = Context.AttackMode == EASPrimaryAttackMode::Directional
+			? FMath::Max(0.0f, Context.Definition->AttackRange)
+			: AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition);
 		Projectile->InitProjectile(DamageSpecs, Context.Avatar,
-			Direction, Profile.ProjectileSpeed, 	AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition), Profile.ProjectilePierceCount, false, ImpactContext);
+			Direction, Profile.ProjectileSpeed, ProjectileRange, Profile.ProjectilePierceCount, false, ImpactContext);
 		Projectile->FinishSpawning(SpawnTransform);
 	}
 	
@@ -200,7 +209,10 @@ void UASMeleeAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& 
 	}
 
 	// 캐릭터 위치 기준 앞쪽 부채꼴. 반경 = 무기 사거리, 각도 = 프로필
-	const float AttackRange = FMath::Max(1.0f, 	AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition));
+	const float ResolvedAttackRange = Context.AttackMode == EASPrimaryAttackMode::Directional
+		? FMath::Max(0.0f, Context.Definition->AttackRange)
+		: AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition);
+	const float AttackRange = FMath::Max(1.0f, ResolvedAttackRange);
 	FVector Direction = Context.AimDirection.GetSafeNormal2D();
 	if (Direction.IsNearlyZero())
 	{
@@ -260,7 +272,9 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	if (!Profile) return;
 	const float TraceRadius = FMath::Max(0.0f, Profile->TraceRadius);
 	const FVector Start = Context.Avatar->GetActorLocation();
-	if (!Profile->bUseAttackMoveTargeting)
+	const bool bUseDirectionalShot = Context.AttackMode == EASPrimaryAttackMode::Directional
+		|| !Profile->bUseAttackMoveTargeting;
+	if (bUseDirectionalShot)
 	{
 		ASWeaponAttackExecutionPrivate::SpawnDirectionalProjectile(Context, *Profile);
 		return;
@@ -338,6 +352,11 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 			else
 			{
 				bFoundTarget = CombatTargets->FindBestTarget(Query, TargetRef);
+			}
+			if (ASCombatDiagnostics::IsEnabled())
+			{
+				ASCombatDiagnostics::Record(Context.Avatar, FString::Printf(TEXT("Attack.RangedTarget Found=%d Mass=%d Specs=%d"),
+					bFoundTarget, TargetRef.IsMass(), DamageSpecs.Num()));
 			}
 #if !UE_BUILD_SHIPPING
 			const TCHAR* TargetKind = TargetRef.IsMass() ? TEXT("Mass")
@@ -447,4 +466,105 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		Character->MulticastDrawWeaponAttackDebug(Start, DebugEnd, TraceRadius, false,
 			ApplyResult.HasAnyHit());
 	}
+}
+
+void UASRifleBurstAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& Context) const
+{
+	UWorld* World = Context.Avatar ? Context.Avatar->GetWorld() : nullptr;
+	const UASRifleBurstAttackProfile* RifleProfile = Cast<UASRifleBurstAttackProfile>(Context.Profile);
+	if (!World || !Context.Avatar || !Context.Avatar->HasAuthority() || !RifleProfile)
+	{
+		return;
+	}
+
+	const FTransform SpawnTransform(Context.Avatar->GetActorTransform());
+	AASRifleBurstSequence* Sequence = World->SpawnActorDeferred<AASRifleBurstSequence>(
+		AASRifleBurstSequence::StaticClass(), SpawnTransform, Context.Avatar, Context.Avatar,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Sequence)
+	{
+		return;
+	}
+	Sequence->InitBurst(Context, RifleProfile);
+	Sequence->FinishSpawning(SpawnTransform);
+}
+
+void UASShotgunAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& Context) const
+{
+	UWorld* World = Context.Avatar ? Context.Avatar->GetWorld() : nullptr;
+	const UASShotgunAttackProfile* ShotgunProfile = Cast<UASShotgunAttackProfile>(Context.Profile);
+	if (!World || !Context.Avatar || !Context.Avatar->HasAuthority() || !ShotgunProfile)
+	{
+		return;
+	}
+
+	const FTransform SpawnTransform(Context.Avatar->GetActorTransform());
+	AASShotgunAttackSequence* Sequence = World->SpawnActorDeferred<AASShotgunAttackSequence>(
+		AASShotgunAttackSequence::StaticClass(), SpawnTransform, Context.Avatar, Context.Avatar,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Sequence)
+	{
+		return;
+	}
+	Sequence->InitShotgun(Context, ShotgunProfile);
+	Sequence->FinishSpawning(SpawnTransform);
+}
+
+void UASSniperAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext& Context) const
+{
+	UWorld* World = Context.Avatar ? Context.Avatar->GetWorld() : nullptr;
+	const UASSniperAttackProfile* SniperProfile = Cast<UASSniperAttackProfile>(Context.Profile);
+	if (!World || !Context.Avatar || !Context.Avatar->HasAuthority() || !Context.Definition || !SniperProfile)
+	{
+		return;
+	}
+
+	FVector Direction = Context.AimDirection.GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+	{
+		Direction = Context.Avatar->GetActorForwardVector().GetSafeNormal2D();
+	}
+	if (Direction.IsNearlyZero())
+	{
+		return;
+	}
+
+	FVector SpawnLocation = Context.Avatar->GetActorLocation()
+		+ Direction * SniperProfile->ProjectileSpawnForwardOffset
+		+ FVector(0.0f, 0.0f, SniperProfile->ProjectileSpawnHeightOffset);
+	if (!SniperProfile->ProjectileSpawnSocketName.IsNone())
+	{
+		if (const ACharacter* Character = Cast<ACharacter>(Context.Avatar))
+		{
+			if (const USkeletalMeshComponent* Mesh = Character->GetMesh();
+				Mesh && Mesh->DoesSocketExist(SniperProfile->ProjectileSpawnSocketName))
+			{
+				SpawnLocation = Mesh->GetSocketLocation(SniperProfile->ProjectileSpawnSocketName);
+			}
+		}
+	}
+
+	const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
+	UClass* ProjectileClass = SniperProfile->SniperProjectileClass
+		? SniperProfile->SniperProjectileClass.Get()
+		: AASSniperPiercingProjectile::StaticClass();
+	AASSniperPiercingProjectile* Projectile = World->SpawnActorDeferred<AASSniperPiercingProjectile>(
+		ProjectileClass, SpawnTransform, Context.Avatar, Context.Avatar,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Projectile)
+	{
+		return;
+	}
+
+	const float ProjectileRange = Context.AttackMode == EASPrimaryAttackMode::Directional
+		? FMath::Max(0.0f, Context.Definition->AttackRange)
+		: AASPlayerCharacter::ResolveAttackRange(Context.Avatar, Context.Definition);
+	FASCombatImpactContext ImpactContext = ASWeaponAttackExecutionPrivate::MakeImpactContext(
+		Context, SpawnLocation, Direction);
+	ImpactContext.Preset = SniperProfile->ImpactPreset;
+	Projectile->InitSniperPiercing(Context.Weapon, Context.AbilitySystem, SniperProfile->MaxPierceTargets,
+		SniperProfile->PierceDamageMultipliers, SniperProfile->TraceRadius);
+	Projectile->InitProjectile(TArray<FGameplayEffectSpecHandle>(), Context.Avatar, Direction,
+		SniperProfile->ProjectileSpeed, ProjectileRange, -1, false, ImpactContext);
+	Projectile->FinishSpawning(SpawnTransform);
 }

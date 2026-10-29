@@ -13,6 +13,16 @@ class UMassSpawnerSubsystem;
 class AActor;
 struct FMassEntityManager;
 
+/** Read-only Mass target data for a combat query that needs more than one ordered target. */
+struct FASMassMonsterTargetSnapshot
+{
+	uint64 TargetId = 0;
+	uint32 NetworkId = 0;
+	FVector Location = FVector::ZeroVector;
+	float HitRadius = 0.0f;
+	float SortKey = 0.0f;
+};
+
 /** 낮 필드 스폰포인트가 Entity별 Home Fragment에 덮어쓸 설정. */
 USTRUCT(BlueprintType)
 struct APOCALYPSESURVIVAL_API FASMassMonsterHomeSettings
@@ -153,6 +163,10 @@ public:
 		const FVector& PreferredLocation, uint64& OutTargetId, FVector& OutLocation,
 		float& OutHitRadius) const;
 
+	/** Alive Mass targets intersecting a 2D swept segment, sorted from Start to End. */
+	void FindAliveMonsterTargetsAlongSegment(const FVector& Start, const FVector& End,
+		float SweepRadius, TArray<FASMassMonsterTargetSnapshot>& OutTargets) const;
+
 	/** 익명 Target Id가 아직 살아 있는 관리 몬스터인지 확인하고 최신 위치를 반환한다. */
 	bool GetAliveMonsterTarget(uint64 TargetId, FVector& OutLocation, float& OutHitRadius) const;
 
@@ -163,6 +177,9 @@ public:
 	/** Target Id로 지정한 살아 있는 Mass 몬스터 하나에 서버 피해를 적용한다. */
 	int32 ApplyDamageToTarget(uint64 TargetId, float Damage, AActor* DamageInstigator,
 		const FASCombatImpactContext& ImpactContext = FASCombatImpactContext());
+
+	/** Normal 저항 Mass 몬스터 하나를 서버 권한으로 이동시킨다. 0은 이동하지 않는다. */
+	bool ApplyImpactKnockbackToTarget(uint64 TargetId, const FASCombatImpactContext& ImpactContext);
 
 	/** Actor 충돌체가 없는 Mass 몬스터에 원형 서버 피해를 적용한다. 반환값은 실제 피격 수다. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Mass|Monster|Combat")

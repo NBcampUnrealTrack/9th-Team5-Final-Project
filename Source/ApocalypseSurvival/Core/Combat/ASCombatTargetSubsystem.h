@@ -4,6 +4,7 @@
 #include "Core/Combat/ASCombatImpactTypes.h"
 #include "GameplayEffectTypes.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "TimerManager.h"
 #include "ASCombatTargetSubsystem.generated.h"
 
 class AActor;
@@ -125,6 +126,10 @@ class APOCALYPSESURVIVAL_API UASCombatTargetSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	/** Preserve the caller's hit/lifetime logic while waiting for a writable Mass phase. */
+	bool DeferUntilMassIdle(FTimerHandle& PendingTimer, FTimerDelegate Callback);
+	void AddMassTickPrerequisites(FTickFunction& TickFunction);
+
 	static bool IsValidActorTarget(const AActor* Target, const AActor* Instigator, bool bCanHitPlayers);
 	static int32 ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Target);
 	static int32 ApplyEffectSpecsToActor(TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Target,
@@ -135,6 +140,10 @@ public:
 
 	/** Query의 공간·생존·진영 규칙으로 Actor 후보만 찾는다. */
 	TArray<AActor*> FindActorTargets(const FASCombatTargetQuery& Query) const;
+
+	/** Segment 위의 Actor와 Mass 후보를 앞에서부터 정렬해 반환한다. 피해 적용은 호출자가 한다. */
+	void FindTargetsAlongSegment(const FASCombatTargetQuery& Query,
+		TArray<FASCombatTargetRef>& OutTargets) const;
 
 	/**
 	 * Query로 Actor/Mass를 함께 판정하고 EffectSpec을 적용한다.
@@ -164,6 +173,10 @@ public:
 
 	FASCombatApplyResult ApplyEffectSpecsToTarget(const FASCombatTargetRef& Target,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator,
+		const FASCombatImpactContext& ImpactContext);
+
+	/** Damage 없이 이미 적중한 단일 대상에만 실제 위치 이동 넉백을 적용한다. */
+	bool ApplyImpactKnockbackToTarget(const FASCombatTargetRef& Target,
 		const FASCombatImpactContext& ImpactContext);
 
 	UE_DEPRECATED(5.8, "Use FindActorTargets with FASCombatTargetQuery instead.")

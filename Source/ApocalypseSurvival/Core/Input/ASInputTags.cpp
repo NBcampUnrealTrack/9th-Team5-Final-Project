@@ -3,7 +3,6 @@
 namespace ASGameplayTags
 {
 	UE_DEFINE_GAMEPLAY_TAG(InputTag_Attack_Prepare, "InputTag.Attack.Prepare");
-
 	UE_DEFINE_GAMEPLAY_TAG(InputTag_Attack_Primary, "InputTag.Attack.Primary");
 
 	UE_DEFINE_GAMEPLAY_TAG(InputTag_Dodge, "InputTag.Dodge");
