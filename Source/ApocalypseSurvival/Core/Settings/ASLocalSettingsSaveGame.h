@@ -16,4 +16,8 @@ public:
 
 	UPROPERTY()
 	TMap<FString, FKey> KeyOverrides;
+	
+	/** 몬스터 우클릭 시 공격 여부. false면 우클릭은 항상 이동만 한다. */
+	UPROPERTY()
+	bool bRightClickAttackEnabled = true;
 };
