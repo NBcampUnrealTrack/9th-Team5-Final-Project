@@ -22,6 +22,9 @@ namespace ASGameplayTags
 
 	//일반 시전 조준 중 (좌클릭이 기본 공격 대신 조준 확정이 됨, 로컬 전용)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Targeting);
+
+	//방향 일반 공격 조준 중. State.Targeting의 하위 태그라 좌클릭 확정 흐름은 공통으로 사용한다.
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Targeting_DirectionalAttack);
 	
 	//스킬 쿨타임 태그
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Skill_Slash);
