@@ -610,8 +610,16 @@ void AASPlayerController::OnMoveStarted()
 		return;
 	}
 	
-	// 몬스터를 우클릭하면 그 몬스터를 1회 공격한다 (사거리 밖이면 다가감). 상호작용이 우선이다.
-	if (AttackMoveComponent->StartTargetAttack(Destination))
+	// 설정에서 켜져 있을 때만, 몬스터를 우클릭하면 그 몬스터를 1회 공격한다 (사거리 밖이면 다가감). 상호작용이 우선이다.
+	bool bRightClickAttackEnabled = true;
+	if (const ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (const UASLocalSettingsSubsystem* LocalSettings = LocalPlayer->GetSubsystem<UASLocalSettingsSubsystem>())
+		{
+			bRightClickAttackEnabled = LocalSettings->IsRightClickAttackEnabled();
+		}
+	}
+	if (bRightClickAttackEnabled && AttackMoveComponent->StartTargetAttack(Destination))
 	{
 		return;
 	}
@@ -621,6 +629,18 @@ void AASPlayerController::OnMoveStarted()
 	if (IsValid(MoveCursorFX))
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, MoveCursorFX, Destination);
+	}
+}
+
+void AASPlayerController::DebugSetRightClickAttack(const bool bEnabled)
+{
+	if (const ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UASLocalSettingsSubsystem* LocalSettings = LocalPlayer->GetSubsystem<UASLocalSettingsSubsystem>())
+		{
+			LocalSettings->SetRightClickAttackEnabled(bEnabled);
+			UE_LOG(LogTemp, Log, TEXT("[Settings] 우클릭 공격: %s"), bEnabled ? TEXT("켬") : TEXT("끔"));
+		}
 	}
 }
 

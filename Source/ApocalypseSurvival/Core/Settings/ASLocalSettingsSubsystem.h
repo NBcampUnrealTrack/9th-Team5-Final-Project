@@ -23,6 +23,11 @@ public:
 	bool SetMappedKey(UInputMappingContext* Source, int32 MappingIndex, FKey Key, FText& Error);
 	float GetMasterVolume() const;
 	void SetMasterVolume(float Volume);
+	UFUNCTION(BlueprintPure, Category = "Settings|Gameplay")
+	bool IsRightClickAttackEnabled() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings|Gameplay")
+	void SetRightClickAttackEnabled(bool bEnabled);
 	void ResetMappedKeys(UInputMappingContext* Source);
 
 private:

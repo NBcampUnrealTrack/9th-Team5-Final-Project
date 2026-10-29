@@ -115,6 +115,10 @@ public:
 	/** CheatManager가 요청한 무기 1개를 서버에서 검증 후 지급한다. */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveWeapon(FName WeaponName);
+	
+	/** 테스트용: 콘솔에서 우클릭 공격 설정을 바꾼다. 예) DebugSetRightClickAttack 0 */
+	UFUNCTION(Exec)
+	void DebugSetRightClickAttack(bool bEnabled);
 
 protected:
 	virtual void PostInitializeComponents() override;
@@ -122,7 +126,7 @@ protected:
 	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 	virtual void ReceivedPlayer() override;
 	virtual void PlayerTick(float DeltaTime) override;
-
+	
 private:
 	bool bBossIntroInputBlocked = false;
 	bool bFullTickBeforeBossIntro = false;
