@@ -1,11 +1,13 @@
 ﻿#include "Skills/Projectile/ASSkillProjectileActor.h"
 
 #include "Skills/Debug/ASSkillDamageDebug.h"
+#include "Skills/ASSkillFX.h"
 #include "Core/Combat/ASCombatDiagnostics.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Particles/ParticleSystem.h"
 #include "TimerManager.h"
 
 AASSkillProjectileActor::AASSkillProjectileActor()
@@ -262,6 +264,17 @@ void AASSkillProjectileActor::OnProjectileEnd_Implementation()
 {
 }
 
+void AASSkillProjectileActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	//서버가 투사체를 지울 때 각 화면에서 직접 재생 (클라이언트는 복제된 투사체가 사라질 때, 레벨 종료 등은 제외)
+	if (EndPlayReason == EEndPlayReason::Destroyed && ImpactFX && GetNetMode() != NM_DedicatedServer)
+	{
+		ASSkillFX::SpawnAtLocation(this, ImpactFX, GetActorLocation(), GetActorRotation(), FVector(ImpactFXScale));
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AASSkillProjectileActor::EndProjectile()
 {
 	if (bEnded)
@@ -274,6 +287,7 @@ void AASSkillProjectileActor::EndProjectile()
 	GetWorldTimerManager().ClearTimer(DeferredHitTimer);
 	GetWorldTimerManager().ClearTimer(DeferredEndTimer);
 
+	OnProjectileFinishedNative();
 	OnProjectileEnd();
 	Destroy();
 }

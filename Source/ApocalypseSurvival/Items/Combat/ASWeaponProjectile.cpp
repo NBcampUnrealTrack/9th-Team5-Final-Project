@@ -120,9 +120,11 @@ void AASWeaponProjectile::Impact(const bool bHasTarget)
 	if (bHasTarget && CombatTargets)
 	{
 		// 유도 중 유지한 확정 대상에만 피해를 적용한다. 위치 기반 재검색은 하지 않는다.
+		const FASCombatImpactContext ResolvedImpactContext = ResolveImpactContextForTarget(Target, ImpactContext);
 		bHit = CombatTargets->ApplyEffectSpecsToTarget(
-			Target, DamageSpecs, InstigatorAvatar.Get(), ImpactContext).HasAnyHit();
+			Target, DamageSpecs, InstigatorAvatar.Get(), ResolvedImpactContext).HasAnyHit();
 	}
+	OnHomingProjectileFinished(bHit);
 
 #if !UE_BUILD_SHIPPING
 	const TCHAR* TargetKind = Target.IsMass() ? TEXT("Mass")
@@ -142,6 +144,12 @@ void AASWeaponProjectile::Impact(const bool bHasTarget)
 	// 명중 알림이 클라이언트에 도착할 시간을 두고 사라진다. 그동안은 숨긴다.
 	SetActorHiddenInGame(true);
 	SetLifeSpan(0.2f);
+}
+
+FASCombatImpactContext AASWeaponProjectile::ResolveImpactContextForTarget(
+	const FASCombatTargetRef& InTarget, const FASCombatImpactContext& BaseContext) const
+{
+	return BaseContext;
 }
 
 void AASWeaponProjectile::MulticastImpact_Implementation(const FVector ImpactLocation, const bool bHit)

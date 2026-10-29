@@ -171,24 +171,27 @@ void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
 	if (bBossIntroInputBlocked || IsResultPhase()) return;
 	if (IsInGameMenuOpen()) return;
-	// A는 일반 공격 어빌리티를 즉시 발동하지 않고, 다음 좌클릭을 기다리는 공격 명령으로 해석한다.
-	// 준비가 실제로 시작된 뒤에만 공격 이동 상태를 바꾼다. 발동 실패(쿨타임·비용 등)는
-	// 이전 이동/공격 이동 명령을 그대로 유지해야 한다.
+	// 현재 Ability Set에 장착된 일반 공격 GA 하나만 A 입력을 받는다.
+	// Attack Move GA만 컴포넌트를 무장하며, Directional Attack은 이동·타깃 탐색을 전혀 시작하지 않는다.
 	if (InputTag.MatchesTagExact(ASGameplayTags::InputTag_Attack_Prepare))
 	{
 		if (UASAbilitySystemComponent* AbilitySystemComponent = GetPawnAbilitySystemComponent())
 		{
 			const bool bWasTargeting = AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting);
-			AbilitySystemComponent->AbilityInputTagPressed(InputTag);
-
 			if (bWasTargeting)
 			{
-				// A를 다시 누르는 것은 현재 조준/공격 이동 명령 취소다.
+				// 준비 입력을 다시 누르면 현재 어느 종류의 조준이든 취소한다.
 				AttackMoveComponent->CancelAttackMove();
+				AbilitySystemComponent->LocalInputCancel();
+				return;
 			}
-			else if (AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
+
+			AbilitySystemComponent->AbilityInputTagPressed(InputTag);
+
+			if (AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting)
+				&& !AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Targeting_DirectionalAttack))
 			{
-				// Primary Attack이 실제로 조준 상태에 들어간 경우에만 준비 상태를 만든다.
+				// Attack Move GA가 실제로 조준 상태에 들어간 경우에만 이동 컴포넌트를 무장한다.
 				AttackMoveComponent->ArmAttackMove();
 			}
 		}
@@ -260,7 +263,7 @@ void AASPlayerController::OnAbilityInputReleased(const FGameplayTag InputTag)
 	}
 }
 
-void AASPlayerController::ASEquipWeapon()
+void AASPlayerController::DebugEquipWeapon()
 {
 	for (const UASItemInstance* Item : InventoryComponent->GetItemInstances())
 	{
@@ -276,7 +279,7 @@ void AASPlayerController::ASEquipWeapon()
 	UE_LOG(LogTemp, Warning, TEXT("[Equip] 인벤토리에 무기가 없다. 상자에서 먼저 주워야 한다."));
 }
 
-void AASPlayerController::ASUnequipWeapon()
+void AASPlayerController::DebugUnequipWeapon()
 {
 	ItemInteractionComponent->RequestUnequipItem();
 }
@@ -290,6 +293,20 @@ bool AASPlayerController::IsPawnDead() const
 UASAbilitySystemComponent* AASPlayerController::GetPawnAbilitySystemComponent() const
 {
 	return Cast<UASAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetPawn()));
+}
+
+bool AASPlayerController::IsPrimaryAttackReady() const
+{
+	const UWorld* World = GetWorld();
+	return !World || World->GetTimeSeconds() >= NextPrimaryAttackTime;
+}
+
+void AASPlayerController::StartPrimaryAttackCooldown(const float AttackInterval)
+{
+	if (const UWorld* World = GetWorld())
+	{
+		NextPrimaryAttackTime = World->GetTimeSeconds() + FMath::Max(0.01f, AttackInterval);
+	}
 }
 
 void AASPlayerController::CancelMovementForCommittedAbility()
@@ -342,8 +359,9 @@ void AASPlayerController::TryActivatePrimaryAttack()
 
 	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
 	{
-		if (!Spec.IsActive() && Spec.Ability
-			&& Spec.Ability->GetClass()->IsChildOf(UASGameplayAbility_CharacterPrimaryAttack::StaticClass()))
+		const UASGameplayAbility_CharacterPrimaryAttack* PrimaryAttack =
+			Cast<UASGameplayAbility_CharacterPrimaryAttack>(Spec.Ability);
+		if (!Spec.IsActive() && PrimaryAttack && PrimaryAttack->IsAttackMoveAbility())
 		{
 			AbilitySystemComponent->TryActivateAbility(Spec.Handle);
 			return;
@@ -592,8 +610,16 @@ void AASPlayerController::OnMoveStarted()
 		return;
 	}
 	
-	// 몬스터를 우클릭하면 그 몬스터를 1회 공격한다 (사거리 밖이면 다가감). 상호작용이 우선이다.
-	if (AttackMoveComponent->StartTargetAttack(Destination))
+	// 설정에서 켜져 있을 때만, 몬스터를 우클릭하면 그 몬스터를 1회 공격한다 (사거리 밖이면 다가감). 상호작용이 우선이다.
+	bool bRightClickAttackEnabled = true;
+	if (const ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (const UASLocalSettingsSubsystem* LocalSettings = LocalPlayer->GetSubsystem<UASLocalSettingsSubsystem>())
+		{
+			bRightClickAttackEnabled = LocalSettings->IsRightClickAttackEnabled();
+		}
+	}
+	if (bRightClickAttackEnabled && AttackMoveComponent->StartTargetAttack(Destination))
 	{
 		return;
 	}
@@ -603,6 +629,18 @@ void AASPlayerController::OnMoveStarted()
 	if (IsValid(MoveCursorFX))
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, MoveCursorFX, Destination);
+	}
+}
+
+void AASPlayerController::DebugSetRightClickAttack(const bool bEnabled)
+{
+	if (const ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UASLocalSettingsSubsystem* LocalSettings = LocalPlayer->GetSubsystem<UASLocalSettingsSubsystem>())
+		{
+			LocalSettings->SetRightClickAttackEnabled(bEnabled);
+			UE_LOG(LogTemp, Log, TEXT("[Settings] 우클릭 공격: %s"), bEnabled ? TEXT("켬") : TEXT("끔"));
+		}
 	}
 }
 

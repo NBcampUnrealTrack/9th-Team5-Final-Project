@@ -103,7 +103,7 @@ bool IsMultiplayerRules() const;
 	void DebugSkipPhase();
 	
 	UFUNCTION(Exec)
-	void DebugKillEnemy();
+	void DebugAddKillCount();
 	
 	UFUNCTION(Exec)
 	void DebugKillBoss();

@@ -136,6 +136,7 @@ void UASSettingsWidget::RefreshSettings()
 				MasterVolumeSlider->SetValue(Local->GetMasterVolume());
 				HandleVolumeChanged(Local->GetMasterVolume());
 			}
+			if (RightClickAttackCheckBox) RightClickAttackCheckBox->SetIsChecked(Local->IsRightClickAttackEnabled());
 		}
 	}
 	bUpdatingUI = false;
@@ -218,6 +219,7 @@ void UASSettingsWidget::ApplyGameSettings()
 		if (UASLocalSettingsSubsystem* Local = Player->GetSubsystem<UASLocalSettingsSubsystem>())
 		{
 			if (MasterVolumeSlider) Local->SetMasterVolume(MasterVolumeSlider->GetValue());
+			if (RightClickAttackCheckBox) Local->SetRightClickAttackEnabled(RightClickAttackCheckBox->IsChecked());
 		}
 	}
 	RefreshSettings();

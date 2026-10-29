@@ -6,6 +6,7 @@
 #include "GameplayEffectTypes.h"
 #include "ASSkillProjectileActor.generated.h"
 
+class UFXSystemAsset;
 class UProjectileMovementComponent;
 class USphereComponent;
 
@@ -44,6 +45,14 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	//사라질 때 각 화면에서 재생할 이펙트 (Niagara·Cascade, 비우면 안 함). 적중·사거리 끝 모두
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Projectile|VFX")
+	TObjectPtr<UFXSystemAsset> ImpactFX;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AS|Skill|Projectile|VFX", meta = (ClampMin = "0.01"))
+	float ImpactFXScale = 1.0f;
 
 	// Actor 전용 레거시 훅. 효과 적용은 UASCombatTargetSubsystem이 담당한다.
 	UFUNCTION(BlueprintNativeEvent, Category = "AS|Skill|Projectile", meta = (DeprecatedFunction, DeprecationMessage = "Use the unified combat target path. This event is no longer called by AASSkillProjectileActor."))
@@ -61,6 +70,9 @@ protected:
 
 	//적을 맞힌 순간 (서버). 자식 클래스에서 퍼짐·폭발 등 확장용. HitLocation = 맞힌 순간 투사체 위치
 	virtual void OnTargetsHit(const FASCombatApplyResult& Result, const FVector& HitLocation) {}
+
+	/** Native lifecycle hook that cannot be skipped by a Blueprint OnProjectileEnd override. */
+	virtual void OnProjectileFinishedNative() {}
 
 	bool CanHitPlayers() const { return bCanHitPlayers; }
 

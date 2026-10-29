@@ -1064,7 +1064,7 @@ float AASGameMode::GetSpawnHeightOffset(AController* Controller)
 
 // 디버그
 
-void AASGameMode::DebugKillEnemy()
+void AASGameMode::DebugAddKillCount()
 {
 	OnEnemyKilled(nullptr);
 	if (const AASGameState* GS = GetASGameState())

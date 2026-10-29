@@ -53,6 +53,9 @@ protected:
 	TObjectPtr<UComboBoxString> SmartCastComboBox;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCheckBox> VSyncCheckBox;
+	/** 몬스터 우클릭 공격 켜기/끄기. WBP에 같은 이름의 체크박스가 있을 때만 사용한다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCheckBox> RightClickAttackCheckBox;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USlider> MasterVolumeSlider;
 	UPROPERTY(BlueprintReadOnly, Category = "Settings", meta = (BindWidgetOptional))

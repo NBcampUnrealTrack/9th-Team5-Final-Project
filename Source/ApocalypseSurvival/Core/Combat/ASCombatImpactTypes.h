@@ -60,5 +60,9 @@ struct APOCALYPSESURVIVAL_API FASCombatImpactContext
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Impact")
 	FVector_NetQuantizeNormal HitDirection = FVector::ForwardVector;
 
+	/** Normal 저항 몬스터에만 적용하는 서버 권한 위치 이동 거리. 0이면 물리 넉백 없음. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Impact", meta = (ClampMin = "0.0", Units = "cm"))
+	float KnockbackDistance = 0.0f;
+
 	bool RequestsControlReaction() const { return Preset != EASImpactPreset::None; }
 };

@@ -28,7 +28,7 @@
 namespace ASMapManagerPrivate
 {
 	static TAutoConsoleVariable<bool> CVarDebugDraw(
-		TEXT("AS.Map.DebugDraw"),
+		TEXT("DebugDrawMap"),
 		false,
 		TEXT("Draw zone areas, adjacency links, danger on the server."),
 		ECVF_Cheat);

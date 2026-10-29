@@ -65,6 +65,18 @@ void UASLocalSettingsSubsystem::SetMasterVolume(const float Volume)
 	SaveSettings();
 }
 
+bool UASLocalSettingsSubsystem::IsRightClickAttackEnabled() const
+{
+	return Settings ? Settings->bRightClickAttackEnabled : true;
+}
+
+void UASLocalSettingsSubsystem::SetRightClickAttackEnabled(const bool bEnabled)
+{
+	if (!Settings) return;
+	Settings->bRightClickAttackEnabled = bEnabled;
+	SaveSettings();
+}
+
 void UASLocalSettingsSubsystem::ApplyMasterVolume()
 {
 	UWorld* World = GetLocalPlayer()->GetWorld();

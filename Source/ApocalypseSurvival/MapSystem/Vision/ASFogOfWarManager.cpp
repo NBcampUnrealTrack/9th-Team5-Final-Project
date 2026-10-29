@@ -34,6 +34,7 @@ void AASFogOfWarManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AASFogOfWarManager, VisionDefinition);
 	DOREPLIFETIME(AASFogOfWarManager, bWallOcclusionEnabled);
+	DOREPLIFETIME(AASFogOfWarManager, bDebugMapRevealed);
 	DOREPLIFETIME(AASFogOfWarManager, ExploredResetCount);
 	DOREPLIFETIME(AASFogOfWarManager, NightBlend);
 }
@@ -62,6 +63,22 @@ void AASFogOfWarManager::SetWallOcclusionEnabled(bool bEnabled)
 	OnWallOcclusionChanged.Broadcast(bEnabled);
 	ForceNetUpdate();
 	UE_LOG(LogApocalypseSurvival, Log, TEXT("Wall occlusion %s."), bEnabled ? TEXT("enabled") : TEXT("disabled"));
+}
+
+void AASFogOfWarManager::SetDebugMapRevealed(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING
+	if (!HasAuthority() || bDebugMapRevealed == bEnabled) return;
+	bDebugMapRevealed = bEnabled;
+	OnRep_DebugMapRevealed();
+	if (HasActorBegunPlay()) TickVision();
+	ForceNetUpdate();
+#endif
+}
+
+void AASFogOfWarManager::OnRep_DebugMapRevealed()
+{
+	FogDisplayComponent->SetDebugMapRevealed(bDebugMapRevealed);
 }
 
 void AASFogOfWarManager::SetNight(bool bNight, bool bImmediate)
@@ -295,6 +312,7 @@ bool AASFogOfWarManager::IsLocationVisibleLocally(const FVector& Location) const
 
 bool AASFogOfWarManager::IsLocationConcealedByBushLocally(const FVector& Location) const
 {
+	if (bDebugMapRevealed) return false;
 	if (!VisionDefinition)
 	{
 		return false;

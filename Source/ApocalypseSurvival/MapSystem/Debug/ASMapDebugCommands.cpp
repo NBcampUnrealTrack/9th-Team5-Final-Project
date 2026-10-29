@@ -37,7 +37,7 @@ namespace ASMapDebugCommandsPrivate
 	}
 
 	static FAutoConsoleCommandWithWorldAndArgs MapDumpCommand(
-		TEXT("AS.Map.Dump"),
+		TEXT("DebugShowMap"),
 		TEXT("Log zone dangers and seed."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
@@ -48,8 +48,8 @@ namespace ASMapDebugCommandsPrivate
 		}));
 
 	static FAutoConsoleCommandWithWorldAndArgs MapStepCommand(
-		TEXT("AS.Map.Step"),
-		TEXT("AS.Map.Step <Day> <Day|Night>: send a step directly (bypasses the GameMode clock)."),
+		TEXT("DebugSetMapPhase"),
+		TEXT("DebugSetMapPhase <Day> <Day|Night>: send a step directly (bypasses the GameMode clock)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			AASMapSystemManager* Manager = FindMapManager(World);
@@ -63,7 +63,7 @@ namespace ASMapDebugCommandsPrivate
 			if (Context.Day < 1
 				|| (!Args[1].Equals(TEXT("Day"), ESearchCase::IgnoreCase) && !Args[1].Equals(TEXT("Night"), ESearchCase::IgnoreCase)))
 			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Map.Step <Day >= 1> <Day|Night>"));
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: DebugSetMapPhase <Day >= 1> <Day|Night>"));
 				return;
 			}
 			Context.DayPhase = Args[1].Equals(TEXT("Night"), ESearchCase::IgnoreCase) ? EASDayPhase::Night : EASDayPhase::Day;
@@ -71,7 +71,7 @@ namespace ASMapDebugCommandsPrivate
 		}));
 
 	static FAutoConsoleCommandWithWorldAndArgs ZoneEffectDumpCommand(
-		TEXT("AS.Zone.EffectDump"),
+		TEXT("DebugShowZoneEffects"),
 		TEXT("Log tracked zone effects on the server/host."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
@@ -88,8 +88,8 @@ namespace ASMapDebugCommandsPrivate
 		}));
 
 	static FAutoConsoleCommandWithWorldAndArgs VisionWallCommand(
-		TEXT("AS.Vision.WallOcclusion"),
-		TEXT("AS.Vision.WallOcclusion [0|1]: toggle wall occlusion for all players (default 1)."),
+		TEXT("DebugSetWallOcclusion"),
+		TEXT("DebugSetWallOcclusion [0|1]: toggle wall occlusion for all players (default 1)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			AASFogOfWarManager* Manager = FindFogManager(World);
@@ -99,15 +99,30 @@ namespace ASMapDebugCommandsPrivate
 			}
 			if (Args.Num() > 1 || (Args.Num() == 1 && Args[0] != TEXT("0") && Args[0] != TEXT("1")))
 			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Vision.WallOcclusion [0|1]"));
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: DebugSetWallOcclusion [0|1]"));
 				return;
 			}
 			Manager->SetWallOcclusionEnabled(Args.Num() == 0 || Args[0] == TEXT("1"));
 		}));
 
+	static FAutoConsoleCommandWithWorldAndArgs RevealMapCommand(
+		TEXT("DebugRevealMap"),
+		TEXT("DebugRevealMap <0|1>: reveal the whole map for all players; 0 restores normal vision."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			AASFogOfWarManager* Manager = FindFogManager(World);
+			if (!Manager) return;
+			if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1")))
+			{
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: DebugRevealMap <0|1>"));
+				return;
+			}
+			Manager->SetDebugMapRevealed(Args[0] == TEXT("1"));
+		}));
+
 	static FAutoConsoleCommandWithWorldAndArgs VisionNightCommand(
-		TEXT("AS.Vision.Night"),
-		TEXT("AS.Vision.Night <0|1>: blend day/night vision on the server."),
+		TEXT("DebugSetNightVision"),
+		TEXT("DebugSetNightVision <0|1>: blend day/night vision on the server."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			AASFogOfWarManager* Manager = FindFogManager(World);
@@ -117,7 +132,7 @@ namespace ASMapDebugCommandsPrivate
 			}
 			if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1")))
 			{
-				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: AS.Vision.Night <0|1>"));
+				UE_LOG(LogApocalypseSurvival, Warning, TEXT("Usage: DebugSetNightVision <0|1>"));
 				return;
 			}
 			Manager->SetNight(Args[0] == TEXT("1"));

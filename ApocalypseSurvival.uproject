@@ -16,6 +16,10 @@
 	],
 	"Plugins": [
 		{
+			"Name": "Fab",
+			"Enabled": false
+		},
+		{
 			"Name": "SheetAssetImporter",
 			"Enabled": true,
 			"TargetAllowList": [

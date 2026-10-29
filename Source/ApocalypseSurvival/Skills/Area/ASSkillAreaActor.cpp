@@ -1,6 +1,7 @@
 ﻿#include "Skills/Area/ASSkillAreaActor.h"
 
 #include "Skills/Debug/ASSkillDamageDebug.h"
+#include "Skills/ASSkillFX.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -8,6 +9,8 @@
 #include "DrawDebugHelpers.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Particles/ParticleSystem.h"
+#include "Particles/ParticleSystemComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -116,6 +119,7 @@ void AASSkillAreaActor::BeginPlay()
 	{
 		//클라이언트는 이펙트만
 		StartLocalPulseVFX();
+		StartLoopFX();
 		return;
 	}
 
@@ -144,6 +148,46 @@ void AASSkillAreaActor::BeginPlay()
 
 	//리슨서버 호스트 화면 이펙트 (따라가기 위치를 맞춘 뒤)
 	StartLocalPulseVFX();
+	StartLoopFX();
+}
+
+void AASSkillAreaActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopLoopFX();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AASSkillAreaActor::StartLoopFX()
+{
+	//데디서버는 화면이 없음
+	if (!LoopFX || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	//장판 소유가 아닌 컴포넌트로 만들어서 붙임 (장판이 사라져도 바로 지워지지 않고 서서히 꺼지게)
+	const float Scale = Radius / FMath::Max(1.0f, LoopFXBaseRadius);
+	LoopFXComponent = ASSkillFX::SpawnAtLocation(this, LoopFX, GetFXLocation(), FRotator::ZeroRotator, FVector(Scale));
+	if (LoopFXComponent)
+	{
+		//SpawnAtLocation은 절대 좌표로 고정돼서 붙여도 안 따라옴 -> 상대 좌표로 풀고 붙임
+		LoopFXComponent->SetAbsolute(false, false, false);
+		LoopFXComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+	}
+}
+
+void AASSkillAreaActor::StopLoopFX()
+{
+	if (!LoopFXComponent)
+	{
+		return;
+	}
+
+	//새 입자만 멈추고 남은 입자는 끝까지 재생 (다 끝나면 자동 삭제)
+	LoopFXComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	LoopFXComponent->Deactivate();
+	LoopFXComponent = nullptr;
 }
 
 void AASSkillAreaActor::StartLocalPulseVFX()
@@ -180,7 +224,7 @@ void AASSkillAreaActor::PlayLocalPulseVFX()
 
 	//클라이언트는 복제된 위치 (따라가는 장판도 같이 움직임)
 	const float Scale = Radius / FMath::Max(1.0f, PulseNiagaraBaseRadius);
-	UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, PulseNiagara, GetActorLocation(), FRotator::ZeroRotator, FVector(Scale));
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, PulseNiagara, GetFXLocation(), FRotator::ZeroRotator, FVector(Scale));
 
 	if (VFXPulsesRemaining <= 0)
 	{
@@ -229,7 +273,7 @@ void AASSkillAreaActor::DoDamageTick()
 		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext);
 	}
 
-	//AS.Debug.SkillDamage 1
+	//DebugShowSkillDamage 1
 	ASSkillDamageDebug::Report(this, EffectSpecs, ApplyResult, Center);
 	
 	if (ShouldDrawDebug())
@@ -250,6 +294,29 @@ void AASSkillAreaActor::DoDamageTick()
 bool AASSkillAreaActor::ShouldDrawDebug() const
 {
 	return bDrawDebug && ASSkillDamageDebug::IsSkillDrawEnabled();
+}
+
+FVector AASSkillAreaActor::GetFXLocation() const
+{
+	FVector Location = GetActorLocation();
+
+	//지형(WorldStatic)만 검사해서 몬스터·캐릭터 위에 뜨지 않게
+	if (bSnapFXToGround && GetWorld())
+	{
+		FHitResult Hit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(ASSkillAreaFXGround), false, this);
+		Params.AddIgnoredActor(InstigatorAvatar.Get());
+		const FVector Start = Location + FVector(0.0f, 0.0f, 100.0f);
+		const FVector End = Location - FVector(0.0f, 0.0f, 500.0f);
+
+		if (GetWorld()->LineTraceSingleByObjectType(Hit, Start, End, FCollisionObjectQueryParams(ECC_WorldStatic), Params))
+		{
+			Location.Z = Hit.ImpactPoint.Z;
+		}
+	}
+
+	Location.Z += FXHeightOffset;
+	return Location;
 }
 
 void AASSkillAreaActor::ExecuteCueAt(const FGameplayTag& CueTag, const FVector& Location, float Magnitude) const

@@ -689,6 +689,31 @@ void AASMonsterCharacter::ApplyImpactReaction(const FASCombatImpactContext& Impa
    }
 }
 
+void AASMonsterCharacter::ApplyImpactKnockback(const FASCombatImpactContext& ImpactContext)
+{
+   if (!HasAuthority() || IsDead() || !MonsterDefinition
+      || MonsterDefinition->StaggerResistance != EASStaggerResistance::Normal
+      || ImpactContext.KnockbackDistance <= 0.0f)
+   {
+      return;
+   }
+
+   const FVector Direction = ImpactContext.HitDirection.GetSafeNormal2D();
+   if (Direction.IsNearlyZero())
+   {
+      return;
+   }
+
+   if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+   {
+      MovementComponent->StopMovementImmediately();
+   }
+
+   FHitResult BlockingHit;
+   SetActorLocation(GetActorLocation() + Direction * ImpactContext.KnockbackDistance,
+      true, &BlockingHit, ETeleportType::None);
+}
+
 bool AASMonsterCharacter::ApplyHitReact(const EASResolvedHitReaction Reaction)
 {
    if (!HasAuthority() || IsDead() || !MonsterDefinition || !MonsterDefinition->HitReactEffect)

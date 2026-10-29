@@ -6,8 +6,18 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameplayEffect.h"
+#include "Net/UnrealNetwork.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Skills/ASSkillTags.h"
 #include "Skills/Debug/ASSkillDamageDebug.h"
+
+void AASZeroGravityAreaActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AASZeroGravityAreaActor, ReplicatedBurstRadius);
+}
 
 void AASZeroGravityAreaActor::InitZeroGravity(
 	const FGameplayEffectSpecHandle& InStunSpec,
@@ -34,6 +44,9 @@ void AASZeroGravityAreaActor::InitZeroGravity(
 void AASZeroGravityAreaActor::OnAreaTick(const FASCombatApplyResult& Result, const FVector& Center)
 {
 	LastHitCount = Result.GetTotalHitCount();
+
+	//클라이언트도 폭발 크기를 알 수 있게 (폭발은 마지막 틱 기준이라 값이 같음)
+	ReplicatedBurstRadius = CalcBurstRadius(LastHitCount);
 
 	for (AActor* Target : Result.ActorTargets)
 	{
@@ -100,9 +113,15 @@ void AASZeroGravityAreaActor::TryStun(AActor* Target)
 void AASZeroGravityAreaActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	//시간이 다 돼서 사라질 때만 폭발 (레벨 종료 등은 제외)
-	if (HasAuthority() && EndPlayReason == EEndPlayReason::Destroyed)
+	if (EndPlayReason == EEndPlayReason::Destroyed)
 	{
-		DoBurst();
+		if (HasAuthority())
+		{
+			DoBurst();
+		}
+
+		//폭발 이펙트는 각 화면에서 직접 (클라이언트는 서버가 장판을 지울 때 같이 사라짐)
+		SpawnBurstVFX();
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -126,7 +145,8 @@ void AASZeroGravityAreaActor::DoBurst()
 	//모인 수만큼 강화 (최대 MaxBurstTargets명까지)
 	const int32 Count = FMath::Min(LastHitCount, MaxBurstTargets);
 	const float DamageMultiplier = 1.0f + BurstBonusPerTarget * Count;
-	const float BurstRadius = GetRadius() * (1.0f + BurstRadiusPerTarget * Count);
+	const float BurstRadius = CalcBurstRadius(LastHitCount);
+	ReplicatedBurstRadius = BurstRadius;
 
 	//원본 Spec은 그대로 두고 복사해서 피해만 바꿈
 	FGameplayEffectSpecHandle ScaledSpec(new FGameplayEffectSpec(*BurstSpec.Data.Get()));
@@ -148,7 +168,6 @@ void AASZeroGravityAreaActor::DoBurst()
 	const FASCombatApplyResult Result = CombatTargets->ResolveAndApply(Query, Specs, BurstContext);
 
 	ASSkillDamageDebug::Report(this, Specs, Result, Center);
-	ExecuteCueAt(BurstCueTag, Center, BurstRadius);
 
 	if (ShouldDrawDebug())
 	{
@@ -156,4 +175,23 @@ void AASZeroGravityAreaActor::DoBurst()
 		DrawDebugString(World, Center + FVector(0.0f, 0.0f, 150.0f),
 			FString::Printf(TEXT("BURST x%.1f (%d)"), DamageMultiplier, Count), nullptr, FColor::Purple, 1.5f, true, 1.4f);
 	}
+}
+
+float AASZeroGravityAreaActor::CalcBurstRadius(int32 HitCount) const
+{
+	const int32 Count = FMath::Min(HitCount, MaxBurstTargets);
+	return GetRadius() * (1.0f + BurstRadiusPerTarget * Count);
+}
+
+void AASZeroGravityAreaActor::SpawnBurstVFX() const
+{
+	//데디서버는 화면이 없음
+	if (!BurstNiagara || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const float BurstRadius = ReplicatedBurstRadius > 0.0f ? ReplicatedBurstRadius : GetRadius();
+	const float Scale = BurstRadius / FMath::Max(1.0f, BurstNiagaraBaseRadius);
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, BurstNiagara, GetFXLocation(), FRotator::ZeroRotator, FVector(Scale));
 }
