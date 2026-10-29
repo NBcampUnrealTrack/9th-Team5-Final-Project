@@ -97,7 +97,7 @@ void UASVisionEvaluatorComponent::ServerEvaluateVisibility()
 
 	for (UASVisibilityComponent* Target : Subsystem->GetVisibilityTargets())
 	{
-		if (Target->IsAlwaysVisible())
+		if (Manager->IsDebugMapRevealed() || Target->IsAlwaysVisible())
 		{
 			Target->ServerSetVisibleTeamMask(0xFF);
 			continue;
