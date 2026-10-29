@@ -177,7 +177,7 @@ protected:
     /** 서버 전용. Definition의 HitReactEffect에 전역 지속 시간을 주입하고 진행 중인 공격을 취소한다. */
     bool ApplyHitReact(EASResolvedHitReaction Reaction);
 
-    /** 사망을 GameMode에 보고한다. 기본 몬스터는 처치 수를 올리고, 엘리트 BP는 보스 처치로 오버라이드한다. */
+    /** 처치 집계 후 추가로 GameMode에 보고한다. 기본 구현은 보스 처치만 보고한다. (처치 수 집계는 HandleDeath에서 항상 처리) */
     UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Death")
     void ReportDeathToGameMode();
     virtual void ReportDeathToGameMode_Implementation();

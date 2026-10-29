@@ -604,7 +604,13 @@ void AASMonsterCharacter::HandleDeath()
        DropSubsystem->SpawnDrops(MonsterDefinition ? MonsterDefinition->DropGroup : FDataTableRowHandle(),
           GetActorLocation(), LastDamageKillerController.Get());
     }
-    ReportDeathToGameMode();
+   // 웨이브 처치 집계는 BP 오버라이드와 관계없이 항상 보고한다.
+   if (AASGameMode* KillGameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
+   {
+      KillGameMode->OnEnemyKilled(LastDamageKillerController.Get());
+   }
+   // 보스 처치 등 추가 보고 (BP에서 오버라이드 가능)
+   ReportDeathToGameMode();
 
     FGameplayTagContainer AttackAbilityTags;
     AttackAbilityTags.AddTag(ASGameplayTags::Ability_Monster_Attack);
@@ -652,7 +658,6 @@ void AASMonsterCharacter::ReportDeathToGameMode_Implementation()
 {
     if (AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>())
     {
-       GameMode->OnEnemyKilled(LastDamageKillerController.Get());
        if (GameMode->IsActiveBoss(this)) GameMode->OnBossDefeated();
     }
 }
