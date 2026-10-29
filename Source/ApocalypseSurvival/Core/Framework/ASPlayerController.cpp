@@ -698,6 +698,20 @@ void AASPlayerController::OnCameraCenterCompleted()
 	}
 }
 
+void AASPlayerController::DebugUnlockZoom(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING
+	if (IsLocalController())
+	{
+		if (AASPlayerCameraManager* CameraManager = Cast<AASPlayerCameraManager>(PlayerCameraManager))
+		{
+			CameraManager->SetDebugZoomUnlocked(bEnabled);
+			ClientMessage(bEnabled ? TEXT("[DebugUnlockZoom] Zoom limits disabled.") : TEXT("[DebugUnlockZoom] Zoom limits restored."));
+		}
+	}
+#endif
+}
+
 void AASPlayerController::OnCameraZoom(const FInputActionValue& Value)
 {
 	if (AASPlayerCameraManager* CameraManager = GetASPlayerCameraManager())
