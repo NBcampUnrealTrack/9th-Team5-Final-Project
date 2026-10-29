@@ -87,6 +87,10 @@ public:
 	bool ConsumeAttackMoveRequest(AActor*& OutTarget, FVector& OutTargetLocation,
 		uint32& OutMassTargetNetworkId);
 
+	/** Attack Move와 Directional Attack이 공유하는 일반 공격 간격 게이트다. */
+	bool IsPrimaryAttackReady() const;
+	void StartPrimaryAttackCooldown(float AttackInterval);
+
 	/**
 	 * 로컬 플레이어가 조종하는 폰이 바뀌었을 때. 이 머신의 화면을 가진 컨트롤러에서만 방송한다.
 	 * HUD 가 새 폰의 ASC 로 다시 연결할 때 쓴다. 빙의가 풀리면 NewPawn 은 null 이다.
@@ -176,6 +180,9 @@ private:
 	/** A + 클릭 명령을 해석한다. 공격 피해·비용은 GAS가 계속 담당한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASPlayerAttackMoveComponent> AttackMoveComponent;
+
+	/** GA를 바꿔 공격 간격을 우회하지 않기 위한 로컬/서버 공통 기준 시각이다. */
+	double NextPrimaryAttackTime = 0.0;
 
 	// ── 입력 ──────────────────────────────────────────────
 	// C++ 에서 에셋을 직접 참조하지 않는다. BP 자식에서 지정한다.

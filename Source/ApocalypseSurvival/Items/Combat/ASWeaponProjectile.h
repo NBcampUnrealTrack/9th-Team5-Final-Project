@@ -32,6 +32,13 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	/** Lets specialized homing projectiles replace the per-hit reaction without changing damage specs. */
+	virtual FASCombatImpactContext ResolveImpactContextForTarget(
+		const FASCombatTargetRef& InTarget, const FASCombatImpactContext& BaseContext) const;
+
+	/** Called exactly once on authority when the homing projectile resolves as a hit or miss. */
+	virtual void OnHomingProjectileFinished(bool bHit) {}
+
 	/** 명중하거나 대상을 잃고 사라질 때 모든 머신에서 불린다. 명중 이펙트·사운드는 BP 에서 붙인다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Projectile")
 	void OnProjectileImpact(FVector ImpactLocation, bool bHit);

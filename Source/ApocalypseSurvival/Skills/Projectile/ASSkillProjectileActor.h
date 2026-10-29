@@ -62,6 +62,9 @@ protected:
 	//적을 맞힌 순간 (서버). 자식 클래스에서 퍼짐·폭발 등 확장용. HitLocation = 맞힌 순간 투사체 위치
 	virtual void OnTargetsHit(const FASCombatApplyResult& Result, const FVector& HitLocation) {}
 
+	/** Native lifecycle hook that cannot be skipped by a Blueprint OnProjectileEnd override. */
+	virtual void OnProjectileFinishedNative() {}
+
 	bool CanHitPlayers() const { return bCanHitPlayers; }
 
 	//false = 지나가는 길의 적 판정을 안 함 (유도 구체처럼 자식 클래스가 직접 피해를 줄 때)

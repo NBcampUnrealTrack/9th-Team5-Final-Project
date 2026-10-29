@@ -141,6 +141,10 @@ public:
 	/** Query의 공간·생존·진영 규칙으로 Actor 후보만 찾는다. */
 	TArray<AActor*> FindActorTargets(const FASCombatTargetQuery& Query) const;
 
+	/** Segment 위의 Actor와 Mass 후보를 앞에서부터 정렬해 반환한다. 피해 적용은 호출자가 한다. */
+	void FindTargetsAlongSegment(const FASCombatTargetQuery& Query,
+		TArray<FASCombatTargetRef>& OutTargets) const;
+
 	/**
 	 * Query로 Actor/Mass를 함께 판정하고 EffectSpec을 적용한다.
 	 * 투사체·돌진처럼 여러 프레임에 걸쳐 같은 대상을 한 번만 맞혀야 하면 InOutHitTargets를 전달한다.
@@ -169,6 +173,10 @@ public:
 
 	FASCombatApplyResult ApplyEffectSpecsToTarget(const FASCombatTargetRef& Target,
 		TConstArrayView<FGameplayEffectSpecHandle> EffectSpecs, AActor* Instigator,
+		const FASCombatImpactContext& ImpactContext);
+
+	/** Damage 없이 이미 적중한 단일 대상에만 실제 위치 이동 넉백을 적용한다. */
+	bool ApplyImpactKnockbackToTarget(const FASCombatTargetRef& Target,
 		const FASCombatImpactContext& ImpactContext);
 
 	UE_DEPRECATED(5.8, "Use FindActorTargets with FASCombatTargetQuery instead.")

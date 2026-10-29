@@ -74,6 +74,9 @@ public:
     /** 서버 전용. 공격이 명시적으로 전달한 충격 프리셋으로 실제 경직 여부를 판정한다. */
     void ApplyImpactReaction(const FASCombatImpactContext& ImpactContext);
 
+    /** Normal 저항 몬스터만 충돌을 고려해 HitDirection 방향으로 실제 이동시킨다. */
+    void ApplyImpactKnockback(const FASCombatImpactContext& ImpactContext);
+
     /** SpawnSubsystem이 FinishSpawning 전에 설정하는 낮 시간 행동 정책. */
     void SetDayBehavior(EASMonsterDayBehavior InDayBehavior) { DayBehavior = InDayBehavior; }
 
