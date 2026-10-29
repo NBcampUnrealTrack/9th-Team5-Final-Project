@@ -180,3 +180,5 @@ Plugins/**/Intermediate/*
 # Local benchmark outputs and documentation
 /Content/ApocalypseSurvival/Tests/ActorBenchmark/Results/
 /Docs/
+
+/Content/FAB/
