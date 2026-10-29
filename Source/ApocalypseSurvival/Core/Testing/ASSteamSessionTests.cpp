@@ -28,7 +28,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FASSteamSessionSettingsTest,
 
 bool FASSteamSessionSettingsTest::RunTest(const FString& Parameters)
 {
-	const FOnlineSessionSettings Steam = UASSessionSubsystem::MakeSessionSettings(true, 4, TEXT("Test Room"), true);
+	const FOnlineSessionSettings Steam = UASSessionSubsystem::MakeSessionSettings(true, 4, TEXT("Test Room"), TEXT("123456"), true);
 	TestFalse(TEXT("Steam sessions must use internet matchmaking"), Steam.bIsLANMatch);
 	TestFalse(TEXT("Host is a listen server"), Steam.bIsDedicated);
 	TestTrue(TEXT("Steam presence and lobbies must both be enabled"), Steam.bUsesPresence && Steam.bUseLobbiesIfAvailable);
@@ -37,7 +37,7 @@ bool FASSteamSessionSettingsTest::RunTest(const FString& Parameters)
 	bool bPassword = false;
 	TestTrue(TEXT("Password requirement is advertised"), Steam.Get(FName(TEXT("RequiresPassword")), bPassword) && bPassword);
 	TestFalse(TEXT("Actual password is never advertised"), Steam.Settings.Contains(FName(TEXT("RoomPassword"))));
-	const FOnlineSessionSettings LAN = UASSessionSubsystem::MakeSessionSettings(false, 4, TEXT("LAN"), false);
+	const FOnlineSessionSettings LAN = UASSessionSubsystem::MakeSessionSettings(false, 4, TEXT("LAN"), TEXT("123456"), false);
 	TestTrue(TEXT("LAN fallback remains LAN"), LAN.bIsLANMatch);
 	TestFalse(TEXT("LAN does not request Steam lobbies or invites"), LAN.bUseLobbiesIfAvailable || LAN.bUsesPresence || LAN.bAllowInvites);
 	FOnlineSessionSearch Search;
@@ -62,14 +62,14 @@ bool FASSteamInviteValidationTest::RunTest(const FString& Parameters)
 	FOnlineSessionSearchResult Result;
 	Result.Session.OwningUserId = FUniqueNetIdString::Create(TEXT("TestHost"), FName(TEXT("NULL")));
 	Result.Session.SessionInfo = MakeShared<FASTestSessionInfo>();
-	Result.Session.SessionSettings = UASSessionSubsystem::MakeSessionSettings(true, 4, TEXT("Invite Room"), true);
+	Result.Session.SessionSettings = UASSessionSubsystem::MakeSessionSettings(true, 4, TEXT("Invite Room"), TEXT("123456"), true);
 	TestTrue(TEXT("Our open room is compatible"), UASSessionSubsystem::IsCompatibleSession(Result));
 	Result.Session.SessionSettings.Set(FName(TEXT("LobbyOpen")), false);
 	TestFalse(TEXT("A game already starting cannot be joined by invite"), UASSessionSubsystem::IsCompatibleSession(Result));
 	Result.Session.SessionSettings.Set(FName(TEXT("LobbyOpen")), true);
 	Result.Session.SessionSettings.Set(FName(TEXT("ASGame")), 123);
 	TestFalse(TEXT("Other games on App ID 480 are rejected"), UASSessionSubsystem::IsCompatibleSession(Result));
-	Result.Session.SessionSettings = UASSessionSubsystem::MakeSessionSettings(true, 4, TEXT("Invite Room"), true);
+	Result.Session.SessionSettings = UASSessionSubsystem::MakeSessionSettings(true, 4, TEXT("Invite Room"), TEXT("123456"), true);
 	UGameInstance* Instance = NewObject<UGameInstance>();
 	UASSessionSubsystem* Sessions = NewObject<UASSessionSubsystem>(Instance);
 	Sessions->PendingInvite = Result;
