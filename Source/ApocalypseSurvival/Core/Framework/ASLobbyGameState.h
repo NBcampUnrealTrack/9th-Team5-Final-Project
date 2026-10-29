@@ -40,6 +40,9 @@ class APOCALYPSESURVIVAL_API AASLobbyGameState : public AGameStateBase
 public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	void UpdateLobby(const TArray<FASLobbyPlayerInfo>& Players, bool bCanStart, bool bStarting);
+	void SetRoomCode(const FString& Code);
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Lobby, Category = "Lobby")
+	FString RoomCode;
 	void BeginCharacterSelection(const UASCharacterRoster* Roster, float Duration);
 	void MarkTravelling();
 	UFUNCTION(BlueprintPure, Category = "CharacterSelect")

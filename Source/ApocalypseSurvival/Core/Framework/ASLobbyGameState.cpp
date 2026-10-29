@@ -6,6 +6,7 @@ void AASLobbyGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AASLobbyGameState, LobbyPlayers);
+	DOREPLIFETIME(AASLobbyGameState, RoomCode);
 	DOREPLIFETIME(AASLobbyGameState, bCanStartGame);
 	DOREPLIFETIME(AASLobbyGameState, bGameStarting);
 	DOREPLIFETIME(AASLobbyGameState, LobbyPhase);
@@ -19,6 +20,14 @@ void AASLobbyGameState::UpdateLobby(const TArray<FASLobbyPlayerInfo>& Players, c
 	LobbyPlayers = Players;
 	bCanStartGame = bCanStart;
 	bGameStarting = bStarting;
+	ForceNetUpdate();
+	OnRep_Lobby();
+}
+
+void AASLobbyGameState::SetRoomCode(const FString& Code)
+{
+	if (!HasAuthority() || RoomCode == Code) return;
+	RoomCode = Code;
 	ForceNetUpdate();
 	OnRep_Lobby();
 }

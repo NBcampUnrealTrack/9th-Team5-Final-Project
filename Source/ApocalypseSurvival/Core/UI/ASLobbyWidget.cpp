@@ -14,6 +14,21 @@
 void UASLobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (!RoomCodeText)
+	{
+		if (UCanvasPanel* Canvas = Cast<UCanvasPanel>(GetRootWidget()))
+		{
+			RoomCodeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("RoomCodeText"));
+			RoomCodeText->SetJustification(ETextJustify::Right);
+			RoomCodeText->SetVisibility(ESlateVisibility::HitTestInvisible);
+			UCanvasPanelSlot* CodeSlot = Canvas->AddChildToCanvas(RoomCodeText);
+			CodeSlot->SetAnchors(FAnchors(1, 0));
+			CodeSlot->SetAlignment(FVector2D(1, 0));
+			CodeSlot->SetPosition(FVector2D(-24, 88));
+			CodeSlot->SetSize(FVector2D(320, 48));
+			CodeSlot->SetZOrder(10);
+		}
+	}
 	if (!InviteFriendsButton)
 	{
 		if (UCanvasPanel* Canvas = Cast<UCanvasPanel>(GetRootWidget()))
@@ -138,6 +153,11 @@ void UASLobbyWidget::ConfirmLeaveRoom()
 void UASLobbyWidget::HandleLobbyUpdated()
 {
 	const AASLobbyGameState* State = GetLobbyState();
+	if (RoomCodeText)
+	{
+		RoomCodeText->SetText(State && !State->RoomCode.IsEmpty()
+			? FText::FromString(FString::Printf(TEXT("방 코드: %s"), *State->RoomCode)) : FText::GetEmpty());
+	}
 	if (ReadyButton) ReadyButton->SetIsEnabled(State && !State->bGameStarting);
 	if (StartGameButton) StartGameButton->SetIsEnabled(State && IsLocalHost() && State->bCanStartGame);
 	if (StartGameButton) StartGameButton->SetVisibility(IsLocalHost() ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);

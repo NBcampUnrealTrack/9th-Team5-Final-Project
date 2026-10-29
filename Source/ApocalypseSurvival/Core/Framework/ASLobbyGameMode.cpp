@@ -92,6 +92,10 @@ void AASLobbyGameMode::RefreshLobby(AController* ExcludedPlayer)
 {
 	AASLobbyGameState* State = GetGameState<AASLobbyGameState>();
 	if (!State) return;
+	if (const UASSessionSubsystem* Sessions = GetGameInstance()->GetSubsystem<UASSessionSubsystem>())
+	{
+		State->SetRoomCode(Sessions->GetHostedRoomCode());
+	}
 	TArray<FASLobbyPlayerInfo> Players;
 	bool bAllReady = true;
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)

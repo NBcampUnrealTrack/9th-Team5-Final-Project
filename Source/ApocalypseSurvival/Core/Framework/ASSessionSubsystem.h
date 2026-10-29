@@ -69,6 +69,7 @@ public:
 	void JoinSessionByIndex(int32 ResultIndex, const FString& Password = TEXT(""));
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void JoinSessionByRoomCode(const FString& RoomCode, const FString& Password = TEXT(""));
+	static bool IsValidRoomCode(const FString& RoomCode);
 
 	UFUNCTION(BlueprintPure, Category = "Session|Steam")
 	bool IsSteamSession() const;
@@ -120,6 +121,8 @@ private:
 	friend class FASJoinCancellationTest;
 	friend class FASSteamSessionSettingsTest;
 	friend class FASSteamInviteValidationTest;
+	friend class FASRoomCodeTest;
+	void StartSessionSearch(const FUniqueNetIdRepl& UserId, int32 MaxResults);
 	static FOnlineSessionSettings MakeSessionSettings(bool bSteam, int32 PublicConnections, const FString& RoomName, const FString& RoomCode, bool bRequiresPassword);
 	static void ConfigureSearch(FOnlineSessionSearch& Search, bool bSteam, int32 MaxResults);
 	static bool IsCompatibleSession(const FOnlineSessionSearchResult& Result);

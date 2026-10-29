@@ -44,6 +44,8 @@ protected:
 	TObjectPtr<UTextBlock> PlayerListText;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> LobbyStatusText;
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RoomCodeText;
 
 private:
 	void ConfirmLeaveRoom();

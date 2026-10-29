@@ -103,13 +103,22 @@ bool UASSessionSubsystem::IsSteamSession() const
 bool UASSessionSubsystem::IsSessionServiceReady() const
 {
 	if (!SessionInterface.IsValid()) return false;
-	if (!IsSteamSession()) return GIsEditor || FParse::Param(FCommandLine::Get(), TEXT("nosteam"));
+	if (!IsSteamSession()) return (GetWorld() && GetWorld()->WorldType == EWorldType::PIE)
+		|| FParse::Param(FCommandLine::Get(), TEXT("nosteam"));
 	const IOnlineIdentityPtr Identity = Online::GetSubsystem(GetWorld())->GetIdentityInterface();
 	return Identity.IsValid() && Identity->GetLoginStatus(0) == ELoginStatus::LoggedIn;
 }
 
 FText UASSessionSubsystem::GetConnectionStatusText() const
 {
+	if (!IsSteamSession() && GetWorld() && GetWorld()->WorldType == EWorldType::PIE)
+	{
+		return FText::FromString(TEXT("에디터 내부 플레이는 LAN 모드입니다. Steam 테스트는 독립 실행형 게임으로 실행해 주세요."));
+	}
+	if (!IsSteamSession() && !FParse::Param(FCommandLine::Get(), TEXT("nosteam")))
+	{
+		return FText::FromString(TEXT("Steam 초기화 실패: Steam 로그인 및 게임 실행 방식을 확인해 주세요. 로그의 LogSteamShared 오류를 확인해 주세요."));
+	}
 	if (!IsSessionServiceReady()) return FText::FromString(TEXT("Steam 연결 실패: Steam에 로그인한 후 게임을 다시 실행해 주세요."));
 	return FText::FromString(IsSteamSession() ? TEXT("Steam 온라인 · 친구 초대 사용 가능") : TEXT("LAN 테스트 모드 · Steam 초대 사용 불가"));
 }
@@ -285,7 +294,8 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 		return;
 	}
 
-	HostedRoomCode = FString::Printf(TEXT("%06d"), FMath::RandRange(0, 999999));
+	// Independent entropy per host, including when processes start with the same random seed.
+	HostedRoomCode = FString::Printf(TEXT("%06u"), FGuid::NewGuid().A % 1000000u);
 	const FOnlineSessionSettings SessionSettings = MakeSessionSettings(IsSteamSession(), PublicConnections, RoomName, HostedRoomCode, bUsePassword);
 	HostPassword = bUsePassword ? Password : FString();
 	ReturnToMenuMessage = FText::GetEmpty();
@@ -301,6 +311,7 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 	{
 		SessionInterface->OnCreateSessionCompleteDelegates.RemoveAll(this);
 		bCreatingSession = false;
+		HostedRoomCode.Reset();
 		OnSessionCreated.Broadcast(false);
 	}
 }
@@ -320,8 +331,17 @@ void UASSessionSubsystem::FindSessions(const int32 MaxResults)
 		return;
 	}
 
+	StartSessionSearch(UserId, MaxResults);
+}
+
+void UASSessionSubsystem::StartSessionSearch(const FUniqueNetIdRepl& UserId, const int32 MaxResults)
+{
 	SessionSearch = MakeShared<FOnlineSessionSearch>();
 	ConfigureSearch(*SessionSearch, IsSteamSession(), MaxResults);
+	if (IsSteamSession() && !PendingRoomCode.IsEmpty())
+	{
+		SessionSearch->QuerySettings.Set(RoomCodeKey, PendingRoomCode, EOnlineComparisonOp::Equals);
+	}
 
 	SessionInterface->OnFindSessionsCompleteDelegates.RemoveAll(this);
 	SessionInterface->OnFindSessionsCompleteDelegates.AddUObject(
@@ -333,8 +353,7 @@ void UASSessionSubsystem::FindSessions(const int32 MaxResults)
 	{
 		SessionInterface->OnFindSessionsCompleteDelegates.RemoveAll(this);
 		SessionSearch.Reset();
-		bFindingSessions = false;
-		OnSessionsFound.Broadcast(false, TArray<FASSessionSearchResult>());
+		HandleFindSessionsComplete(false);
 	}
 }
 
@@ -351,9 +370,9 @@ void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FStr
 void UASSessionSubsystem::JoinSessionByRoomCode(const FString& RoomCode, const FString& Password)
 {
 	const FString Code = RoomCode.TrimStartAndEnd();
-	if (Code.Len() != 6 || !Code.IsNumeric())
+	if (!IsValidRoomCode(Code))
 	{
-		OnSessionJoined.Broadcast(false, TEXT("諛⑹퐫드는 6자리 숫자입니다."));
+		OnSessionJoined.Broadcast(false, TEXT("방 코드는 숫자 6자리로 입력해 주세요."));
 		return;
 	}
 	if (!Password.IsEmpty() && !IsValidRoomPassword(Password))
@@ -361,9 +380,40 @@ void UASSessionSubsystem::JoinSessionByRoomCode(const FString& RoomCode, const F
 		OnSessionJoined.Broadcast(false, TEXT("비밀번호는 숫자 4자리로 입력해 주세요."));
 		return;
 	}
+	if (bLeavingRoom || bDestroyingSession || bJoiningSession || bCreatingSession || bFindingSessions)
+	{
+		OnSessionJoined.Broadcast(false, TEXT("이전 요청을 처리 중입니다. 잠시 후 다시 시도해 주세요."));
+		return;
+	}
+	if (!IsSessionServiceReady())
+	{
+		OnSessionJoined.Broadcast(false, GetConnectionStatusText().ToString());
+		return;
+	}
+	const FUniqueNetIdRepl UserId = GetLocalUserId();
+	if (!UserId.IsValid() || SessionInterface->GetNamedSession(NAME_GameSession))
+	{
+		OnSessionJoined.Broadcast(false, TEXT("이미 방에 참가했거나 플레이어 정보를 확인할 수 없습니다."));
+		return;
+	}
 	PendingRoomCode = Code;
 	PendingRoomCodePassword = Password;
-	FindSessions(1000);
+	GetGameInstance()->GetTimerManager().SetTimer(JoinTimeoutTimer, this, &ThisClass::HandleJoinTimeout, 30.0f, false);
+	if (UASLoadingScreenSubsystem* Loading = GetGameInstance()->GetSubsystem<UASLoadingScreenSubsystem>())
+	{
+		Loading->ShowLoadingScreen(FSimpleDelegate::CreateUObject(this, &ThisClass::CancelJoin));
+	}
+	StartSessionSearch(UserId, 1000);
+}
+
+bool UASSessionSubsystem::IsValidRoomCode(const FString& RoomCode)
+{
+	if (RoomCode.Len() != 6) return false;
+	for (const TCHAR Character : RoomCode)
+	{
+		if (Character < TEXT('0') || Character > TEXT('9')) return false;
+	}
+	return true;
 }
 
 void UASSessionSubsystem::JoinSessionResult(const FOnlineSessionSearchResult& SearchResult, const FString& Password)
@@ -443,6 +493,8 @@ void UASSessionSubsystem::StopJoinAttempt()
 	bJoiningSession = false;
 	bJoinTravelPending = false;
 	PendingJoinPassword.Reset();
+	PendingRoomCode.Reset();
+	PendingRoomCodePassword.Reset();
 	GetGameInstance()->GetTimerManager().ClearTimer(JoinTimeoutTimer);
 	if (SessionInterface.IsValid()) SessionInterface->OnJoinSessionCompleteDelegates.RemoveAll(this);
 	GetGameInstance()->GetSubsystem<UASLoadingScreenSubsystem>()->HideLoadingScreen();
@@ -455,12 +507,12 @@ void UASSessionSubsystem::LeaveRoom()
 
 void UASSessionSubsystem::CancelJoin()
 {
-	if (bJoiningSession) ReturnToMenuWithError(FText::FromString(TEXT("방 참가를 취소했습니다.")));
+	if (bJoiningSession || !PendingRoomCode.IsEmpty()) ReturnToMenuWithError(FText::FromString(TEXT("방 참가를 취소했습니다.")));
 }
 
 void UASSessionSubsystem::HandleJoinTimeout()
 {
-	if (bJoiningSession) ReturnToMenuWithError(FText::FromString(TEXT("30초 안에 서버에 연결하지 못했습니다. 다시 검색하여 참가해 주세요.")));
+	if (bJoiningSession || !PendingRoomCode.IsEmpty()) ReturnToMenuWithError(FText::FromString(TEXT("30초 안에 서버에 연결하지 못했습니다. 다시 검색하여 참가해 주세요.")));
 }
 
 void UASSessionSubsystem::HandleDestroyTimeout()
@@ -574,6 +626,7 @@ void UASSessionSubsystem::HandleCreateSessionComplete(
 	}
 
 	bCreatingSession = false;
+	if (!bWasSuccessful) HostedRoomCode.Reset();
 	UE_LOG(LogTemp, Log, TEXT("[Session] 세션 생성: %s"), bWasSuccessful ? TEXT("성공") : TEXT("실패"));
 	OnSessionCreated.Broadcast(bWasSuccessful);
 }
@@ -607,19 +660,26 @@ void UASSessionSubsystem::HandleFindSessionsComplete(const bool bWasSuccessful)
 	}
 	if (!PendingRoomCode.IsEmpty())
 	{
+		GetGameInstance()->GetTimerManager().ClearTimer(JoinTimeoutTimer);
+		if (UASLoadingScreenSubsystem* Loading = GetGameInstance()->GetSubsystem<UASLoadingScreenSubsystem>()) Loading->HideLoadingScreen();
 		const FString RequestedCode = PendingRoomCode;
 		const FString Password = PendingRoomCodePassword;
 		PendingRoomCode.Reset();
 		PendingRoomCodePassword.Reset();
-		const FOnlineSessionSearchResult* Match = bWasSuccessful && SessionSearch.IsValid()
-			? SessionSearch->SearchResults.FindByPredicate([&RequestedCode](const FOnlineSessionSearchResult& Candidate)
+		TArray<FOnlineSessionSearchResult> Matches;
+		if (bWasSuccessful && SessionSearch.IsValid())
+		{
+			Matches = SessionSearch->SearchResults.FilterByPredicate([&RequestedCode](const FOnlineSessionSearchResult& Candidate)
 			{
 				FString CandidateCode;
 				return IsCompatibleSession(Candidate) && Candidate.Session.SessionSettings.Get(RoomCodeKey, CandidateCode)
-					&& CandidateCode == RequestedCode && Candidate.Session.NumOpenPublicConnections > 0;
-			}) : nullptr;
-		if (Match) JoinSessionResult(*Match, Password);
-		else OnSessionJoined.Broadcast(false, TEXT("해당 방 코드를 찾을 수 없거나 방이 가득 찼습니다."));
+					&& CandidateCode == RequestedCode;
+			});
+		}
+		if (Matches.Num() == 1 && Matches[0].Session.NumOpenPublicConnections > 0) JoinSessionResult(Matches[0], Password);
+		else OnSessionJoined.Broadcast(false, !bWasSuccessful ? TEXT("방 코드 검색에 실패했습니다. 연결 상태를 확인한 후 다시 시도해 주세요.")
+			: Matches.Num() > 1 ? TEXT("같은 코드의 방이 여러 개입니다. 방 목록을 이용하거나 방장에게 재생성을 요청해 주세요.")
+			: Matches.Num() == 1 ? TEXT("방이 가득 찼습니다.") : TEXT("해당 코드의 열린 방을 찾을 수 없습니다. 코드를 확인해 주세요."));
 		return;
 	}
 
@@ -683,6 +743,7 @@ void UASSessionSubsystem::HandleDestroySessionComplete(
 		if (!bWasSuccessful) SessionInterface->RemoveNamedSession(NAME_GameSession);
 	}
 	HostPassword.Reset();
+	HostedRoomCode.Reset();
 	UE_LOG(LogTemp, Log, TEXT("[Session] 세션 종료: %s"), bWasSuccessful ? TEXT("성공") : TEXT("실패"));
 	OnSessionDestroyed.Broadcast(bWasSuccessful);
 	FinishLeavingRoom();

@@ -46,6 +46,11 @@ protected:
 	TObjectPtr<UButton> JoinByCodeButton;
 
 private:
+	void EnsureRoomCodeControls();
+	UPROPERTY(Transient)
+	TObjectPtr<UEditableTextBox> CodePasswordTextBox;
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> CodeStatusText;
 	UFUNCTION()
 	void HandleRoomSelectionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 	void UpdatePasswordVisibility();
