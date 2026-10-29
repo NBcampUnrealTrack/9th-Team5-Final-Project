@@ -20,6 +20,9 @@ class APOCALYPSESURVIVAL_API UASGameplayAbility_CharacterPrimaryAttack : public 
 public:
 	UASGameplayAbility_CharacterPrimaryAttack();
 
+	/** Attack Move를 시작해야 하는 GA인지 판단한다. Controller가 방향 공격 GA를 제외할 때 사용한다. */
+	virtual bool IsAttackMoveAbility() const { return true; }
+
 	/** 현재 장착 무기의 일반 공격 사거리. 타게팅 인디케이터 표시에 사용한다. */
 	UFUNCTION(BlueprintPure, Category = "Attack|Targeting")
 	float GetCurrentAttackRange() const;
@@ -30,6 +33,12 @@ public:
 		FGameplayAbilityActivationInfo ActivationInfo) override;
 	virtual void EndAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo, bool bReplicatedEndAbility, bool bWasCancelled) override;
+
+protected:
+	/** 자식 GA는 조준 방식과 조준 상태 태그만 바꾼다. 실제 공격 실행은 이 클래스를 공통으로 사용한다. */
+	virtual EASPrimaryAttackMode GetAttackMode() const { return EASPrimaryAttackMode::AttackMove; }
+	virtual FGameplayTag GetTargetingStateTag() const;
+	virtual bool ShouldConsumeAttackMoveRequest() const { return true; }
 
 private:
 	FTimerHandle DeferredHitTimer;
@@ -97,4 +106,5 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> ActiveMontage;
 	FGameplayTag ActiveHitEventTag;
+	FGameplayTag ActiveTargetingStateTag;
 };

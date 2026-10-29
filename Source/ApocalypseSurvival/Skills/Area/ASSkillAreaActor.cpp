@@ -273,7 +273,7 @@ void AASSkillAreaActor::DoDamageTick()
 		ApplyResult = CombatTargets->ResolveAndApply(Query, EffectSpecs, ImpactContext);
 	}
 
-	//AS.Debug.SkillDamage 1
+	//DebugShowSkillDamage 1
 	ASSkillDamageDebug::Report(this, EffectSpecs, ApplyResult, Center);
 	
 	if (ShouldDrawDebug())

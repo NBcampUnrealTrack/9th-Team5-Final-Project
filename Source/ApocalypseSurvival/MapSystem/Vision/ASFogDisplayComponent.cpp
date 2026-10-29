@@ -219,8 +219,16 @@ FASFogMaterialState UASFogDisplayComponent::GetMaterialState() const
 	State.LocalVisionCenter = LocalVisionCenter;
 	State.LocalVisionRadius = LocalVisionRadius;
 	State.LocalVisionSoftness = LocalVisionSoftness;
-	State.bHasLocalVisionMask = bHasLocalVisionMask;
+	State.bHasLocalVisionMask = HasLocalVisionMask();
 	return State;
+}
+
+void UASFogDisplayComponent::SetDebugMapRevealed(bool bEnabled)
+{
+	if (bDebugMapRevealed == bEnabled) return;
+	bDebugMapRevealed = bEnabled;
+	// Only override the uploaded texture; keep the real exploration and visibility masks intact.
+	UploadTexture({FIntRect(0, 0, ResolutionX, ResolutionY)});
 }
 
 void UASFogDisplayComponent::UpdateWorldFog()
@@ -914,18 +922,21 @@ int32 UASFogDisplayComponent::GridIndexAt(const FVector& Location) const
 
 bool UASFogDisplayComponent::IsLocationExplored(const FVector& Location) const
 {
+	if (bDebugMapRevealed) return true;
 	const int32 Index = GridIndexAt(Location);
 	return ExploredCells.IsValidIndex(Index) && ExploredCells[Index] != 0;
 }
 
 bool UASFogDisplayComponent::IsLocationVisibleLocally(const FVector& Location) const
 {
+	if (bDebugMapRevealed) return true;
 	const int32 Index = GridIndexAt(Location);
 	return VisibleCells.IsValidIndex(Index) && VisibleCells[Index] != 0;
 }
 
 bool UASFogDisplayComponent::IsLocationInLocalVisionBuffer(const FVector& Location) const
 {
+	if (bDebugMapRevealed) return true;
 	const int32 Index = GridIndexAt(Location);
 	return MassVisibilityBufferCells.IsValidIndex(Index) && MassVisibilityBufferCells[Index] != 0;
 }
@@ -1105,6 +1116,12 @@ void UASFogDisplayComponent::UploadTexture(const TArray<FIntRect>& DirtyRegions)
 			for (int32 X = 0; X < Dirty.Width(); ++X)
 			{
 				uint8* Pixel = Pixels + ((SourceY + Y) * PitchWidth + X) * 4;
+				if (bDebugMapRevealed)
+				{
+					Pixel[0] = 255;
+					Pixel[1] = Pixel[2] = Pixel[3] = 0;
+					continue;
+				}
 				const int32 GridX = Dirty.Min.X + X;
 				const int32 GridY = Dirty.Min.Y + Y;
 				const int32 Index = GridY * ResolutionX + GridX;

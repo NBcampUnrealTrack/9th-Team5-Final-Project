@@ -64,7 +64,7 @@ public:
 			FOnSpawnTab::CreateStatic(&SheetImportEditor::SpawnDashboard))
 			.SetDisplayName(NSLOCTEXT("SheetAssetImporter", "DashboardTitle", "구글 시트 가져오기"))
 			.SetMenuType(ETabSpawnerMenuType::Hidden);
-		OpenCommand = MakeUnique<FAutoConsoleCommand>(TEXT("SheetAssetImporter.Open"), TEXT("Open the sheet import dashboard."),
+		OpenCommand = MakeUnique<FAutoConsoleCommand>(TEXT("DebugOpenSheetImporter"), TEXT("Open the sheet import dashboard."),
 			FConsoleCommandDelegate::CreateLambda([] { FGlobalTabmanager::Get()->TryInvokeTab(SheetImportEditor::DashboardTabId); }));
 		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
 		for (UClass* Class : { USheetImportProfile::StaticClass(), USheetImportPlan::StaticClass() })

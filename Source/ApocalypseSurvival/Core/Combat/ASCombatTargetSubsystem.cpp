@@ -208,6 +208,7 @@ int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActor(
 		if (AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(Target))
 		{
 			Monster->ApplyImpactReaction(ImpactContext);
+			Monster->ApplyImpactKnockback(ImpactContext);
 		}
 		else if (AASPlayerCharacter* Player = Cast<AASPlayerCharacter>(Target))
 		{
@@ -304,6 +305,54 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTarget
 		return GetQuerySortKey(Query, Left.GetActorLocation()) < GetQuerySortKey(Query, Right.GetActorLocation());
 	});
 	return Targets;
+}
+
+void UASCombatTargetSubsystem::FindTargetsAlongSegment(
+	const FASCombatTargetQuery& Query, TArray<FASCombatTargetRef>& OutTargets) const
+{
+	OutTargets.Reset();
+	if (Query.Shape != EASCombatTargetShape::Segment || Query.SearchRadius < 0.0f)
+	{
+		return;
+	}
+
+	if (Query.Domain != EASCombatTargetDomain::MassOnly)
+	{
+		for (AActor* Actor : FindActorTargets(Query))
+		{
+			FASCombatTargetRef& Target = OutTargets.AddDefaulted_GetRef();
+			Target.Actor = Actor;
+			Target.Location = Actor->GetActorLocation();
+		}
+	}
+
+	if (Query.Domain != EASCombatTargetDomain::ActorOnly)
+	{
+		if (const UASMassMonsterSubsystem* MassMonsters = GetWorld()
+			? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>() : nullptr)
+		{
+			TArray<FASMassMonsterTargetSnapshot> MassTargets;
+			MassMonsters->FindAliveMonsterTargetsAlongSegment(
+				Query.SearchOrigin, Query.EndLocation, Query.SearchRadius, MassTargets);
+			for (const FASMassMonsterTargetSnapshot& MassTarget : MassTargets)
+			{
+				FASCombatTargetRef& Target = OutTargets.AddDefaulted_GetRef();
+				Target.MassTargetId = MassTarget.TargetId;
+				Target.MassNetworkId = MassTarget.NetworkId;
+				Target.Location = MassTarget.Location;
+				Target.HitRadius = MassTarget.HitRadius;
+			}
+		}
+	}
+
+	OutTargets.Sort([this, &Query](const FASCombatTargetRef& Left, const FASCombatTargetRef& Right)
+	{
+		return GetQuerySortKey(Query, Left.GetLocation()) < GetQuerySortKey(Query, Right.GetLocation());
+	});
+	if (Query.MaxTargets > 0 && OutTargets.Num() > Query.MaxTargets)
+	{
+		OutTargets.SetNum(Query.MaxTargets);
+	}
 }
 
 bool UASCombatTargetSubsystem::FindBestTarget(
@@ -492,6 +541,10 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApplyBestTarget(
 	{
 		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
 			BestTarget.GetMassTargetId(), Damage, const_cast<AActor*>(Query.Instigator), ImpactContext);
+		if (Result.NonActorHitCount > 0)
+		{
+			MassMonsters->ApplyImpactKnockbackToTarget(BestTarget.GetMassTargetId(), ImpactContext);
+		}
 	}
 	return Result;
 }
@@ -539,12 +592,51 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
 	{
 		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
 			RefreshedTarget.GetMassTargetId(), Damage, Instigator, ImpactContext);
+		if (Result.NonActorHitCount > 0)
+		{
+			MassMonsters->ApplyImpactKnockbackToTarget(
+				RefreshedTarget.GetMassTargetId(), ImpactContext);
+		}
 	}
 	if (ASCombatDiagnostics::IsEnabled())
 	{
 		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Target.MassResult Damage=%.3f Hits=%d"), Damage, Result.NonActorHitCount));
 	}
 	return Result;
+}
+
+bool UASCombatTargetSubsystem::ApplyImpactKnockbackToTarget(
+	const FASCombatTargetRef& Target, const FASCombatImpactContext& ImpactContext)
+{
+	if (ImpactContext.KnockbackDistance <= 0.0f)
+	{
+		return false;
+	}
+
+	FASCombatTargetRef RefreshedTarget = Target;
+	FASCombatTargetQuery ValidationQuery;
+	if (!RefreshTarget(ValidationQuery, RefreshedTarget))
+	{
+		return false;
+	}
+
+	if (AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(RefreshedTarget.GetActor()))
+	{
+		Monster->ApplyImpactKnockback(ImpactContext);
+		return true;
+	}
+
+	if (!RefreshedTarget.IsMass())
+	{
+		return false;
+	}
+	if (UASMassMonsterSubsystem* MassMonsters = GetWorld()
+		? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>() : nullptr)
+	{
+		return MassMonsters->ApplyImpactKnockbackToTarget(
+			RefreshedTarget.GetMassTargetId(), ImpactContext);
+	}
+	return false;
 }
 
 int32 UASCombatTargetSubsystem::ApplyEffectSpecsToActors(

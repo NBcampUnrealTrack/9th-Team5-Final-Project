@@ -287,6 +287,7 @@ void AASSkillProjectileActor::EndProjectile()
 	GetWorldTimerManager().ClearTimer(DeferredHitTimer);
 	GetWorldTimerManager().ClearTimer(DeferredEndTimer);
 
+	OnProjectileFinishedNative();
 	OnProjectileEnd();
 	Destroy();
 }
