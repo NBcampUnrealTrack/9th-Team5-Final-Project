@@ -50,6 +50,7 @@ public:
 	 * @param AxisValue  마우스 휠 칸 수. 양수가 확대다.
 	 */
 	void AddZoomInput(float AxisValue);
+	void SetDebugZoomUnlocked(bool bEnabled);
 
 	/** 0은 MinCameraDistance, 1은 MaxCameraDistance다. */
 	float GetZoomAlpha() const;
@@ -64,7 +65,9 @@ protected:
 	virtual void UpdateViewTargetInternal(FTViewTarget& OutVT, float DeltaTime) override;
 
 private:
+	friend class FASDebugZoomLimitsTest;
 	friend class FASBossCameraRestoreTest;
+	bool bDebugZoomUnlocked = false;
 	bool IsFollowingPawn() const { return bLockedToPawn || bCentering; }
 	
 	/* 관전 중 대상을 계속 따라간다 */

@@ -120,6 +120,10 @@ public:
 	UFUNCTION(Exec)
 	void DebugSetRightClickAttack(bool bEnabled);
 
+	/** Local camera only. 1 unlocks zoom, 0 restores the configured limits. */
+	UFUNCTION(Exec)
+	void DebugUnlockZoom(bool bEnabled);
+
 protected:
 	virtual void PostInitializeComponents() override;
 	virtual void SetupInputComponent() override;
