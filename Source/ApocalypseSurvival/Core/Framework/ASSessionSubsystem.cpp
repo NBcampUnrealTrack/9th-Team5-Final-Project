@@ -25,6 +25,7 @@
 namespace
 {
 	const FName RoomNameKey(TEXT("RoomName"));
+	const FName RoomCodeKey(TEXT("RoomCode"));
 	const FName RequiresPasswordKey(TEXT("RequiresPassword"));
 	const FName GameIdKey(TEXT("ASGame"));
 	const FName LobbyOpenKey(TEXT("LobbyOpen"));
@@ -114,7 +115,7 @@ FText UASSessionSubsystem::GetConnectionStatusText() const
 }
 
 FOnlineSessionSettings UASSessionSubsystem::MakeSessionSettings(const bool bSteam, const int32 PublicConnections,
-	const FString& RoomName, const bool bRequiresPassword)
+	const FString& RoomName, const FString& RoomCode, const bool bRequiresPassword)
 {
 	FOnlineSessionSettings Settings;
 	Settings.NumPublicConnections = FMath::Clamp(PublicConnections, 2, 250);
@@ -127,6 +128,7 @@ FOnlineSessionSettings UASSessionSubsystem::MakeSessionSettings(const bool bStea
 	Settings.bUsesPresence = bSteam;
 	Settings.bUseLobbiesIfAvailable = bSteam;
 	Settings.Set(RoomNameKey, RoomName, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	Settings.Set(RoomCodeKey, RoomCode, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	Settings.Set(RequiresPasswordKey, bRequiresPassword, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	Settings.Set(GameIdKey, GameProtocolId, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	Settings.Set(LobbyOpenKey, true, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
@@ -283,7 +285,8 @@ void UASSessionSubsystem::CreateSession(const int32 PublicConnections, const FSt
 		return;
 	}
 
-	const FOnlineSessionSettings SessionSettings = MakeSessionSettings(IsSteamSession(), PublicConnections, RoomName, bUsePassword);
+	HostedRoomCode = FString::Printf(TEXT("%06d"), FMath::RandRange(0, 999999));
+	const FOnlineSessionSettings SessionSettings = MakeSessionSettings(IsSteamSession(), PublicConnections, RoomName, HostedRoomCode, bUsePassword);
 	HostPassword = bUsePassword ? Password : FString();
 	ReturnToMenuMessage = FText::GetEmpty();
 	ClearMatchCharacters();
@@ -343,6 +346,24 @@ void UASSessionSubsystem::JoinSessionByIndex(const int32 ResultIndex, const FStr
 		return;
 	}
 	JoinSessionResult(SessionSearch->SearchResults[ResultIndex], Password);
+}
+
+void UASSessionSubsystem::JoinSessionByRoomCode(const FString& RoomCode, const FString& Password)
+{
+	const FString Code = RoomCode.TrimStartAndEnd();
+	if (Code.Len() != 6 || !Code.IsNumeric())
+	{
+		OnSessionJoined.Broadcast(false, TEXT("諛⑹퐫드는 6자리 숫자입니다."));
+		return;
+	}
+	if (!Password.IsEmpty() && !IsValidRoomPassword(Password))
+	{
+		OnSessionJoined.Broadcast(false, TEXT("비밀번호는 숫자 4자리로 입력해 주세요."));
+		return;
+	}
+	PendingRoomCode = Code;
+	PendingRoomCodePassword = Password;
+	FindSessions(1000);
 }
 
 void UASSessionSubsystem::JoinSessionResult(const FOnlineSessionSearchResult& SearchResult, const FString& Password)
@@ -577,11 +598,29 @@ void UASSessionSubsystem::HandleFindSessionsComplete(const bool bWasSuccessful)
 			Result.Index = Index;
 			Result.RoomName = SearchResult.Session.OwningUserName;
 			SearchResult.Session.SessionSettings.Get(RoomNameKey, Result.RoomName);
+			SearchResult.Session.SessionSettings.Get(RoomCodeKey, Result.RoomCode);
 			Result.MaxPlayers = SearchResult.Session.SessionSettings.NumPublicConnections;
 			SearchResult.Session.SessionSettings.Get(RequiresPasswordKey, Result.bRequiresPassword);
 			Result.CurrentPlayers = Result.MaxPlayers - SearchResult.Session.NumOpenPublicConnections;
 			Results.Add(Result);
 		}
+	}
+	if (!PendingRoomCode.IsEmpty())
+	{
+		const FString RequestedCode = PendingRoomCode;
+		const FString Password = PendingRoomCodePassword;
+		PendingRoomCode.Reset();
+		PendingRoomCodePassword.Reset();
+		const FOnlineSessionSearchResult* Match = bWasSuccessful && SessionSearch.IsValid()
+			? SessionSearch->SearchResults.FindByPredicate([&RequestedCode](const FOnlineSessionSearchResult& Candidate)
+			{
+				FString CandidateCode;
+				return IsCompatibleSession(Candidate) && Candidate.Session.SessionSettings.Get(RoomCodeKey, CandidateCode)
+					&& CandidateCode == RequestedCode && Candidate.Session.NumOpenPublicConnections > 0;
+			}) : nullptr;
+		if (Match) JoinSessionResult(*Match, Password);
+		else OnSessionJoined.Broadcast(false, TEXT("해당 방 코드를 찾을 수 없거나 방이 가득 찼습니다."));
+		return;
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Session] 세션 검색: %d개"), Results.Num());

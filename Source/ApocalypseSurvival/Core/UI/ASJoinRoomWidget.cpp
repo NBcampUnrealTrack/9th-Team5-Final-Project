@@ -17,6 +17,7 @@ void UASJoinRoomWidget::NativeConstruct()
 	}
 	if (SearchRoomsButton) SearchRoomsButton->OnClicked.AddUniqueDynamic(this, &ThisClass::SearchRooms);
 	if (JoinRoomButton) JoinRoomButton->OnClicked.AddUniqueDynamic(this, &ThisClass::JoinSelectedRoom);
+	if (JoinByCodeButton) JoinByCodeButton->OnClicked.AddUniqueDynamic(this, &ThisClass::JoinRoomByCode);
 	if (RoomComboBox) RoomComboBox->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleRoomSelectionChanged);
 	if (PasswordTextBox)
 	{
@@ -25,6 +26,11 @@ void UASJoinRoomWidget::NativeConstruct()
 		PasswordTextBox->SetText(FText::GetEmpty());
 		LastValidPassword.Reset();
 		PasswordTextBox->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandlePasswordChanged);
+	}
+	if (RoomCodeTextBox)
+	{
+		RoomCodeTextBox->SetHintText(FText::FromString(TEXT("방 코드 6자리")));
+		RoomCodeTextBox->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandleRoomCodeChanged);
 	}
 	UpdatePasswordVisibility();
 	UpdateButtons();
@@ -39,9 +45,31 @@ void UASJoinRoomWidget::NativeDestruct()
 	}
 	if (SearchRoomsButton) SearchRoomsButton->OnClicked.RemoveDynamic(this, &ThisClass::SearchRooms);
 	if (JoinRoomButton) JoinRoomButton->OnClicked.RemoveDynamic(this, &ThisClass::JoinSelectedRoom);
+	if (JoinByCodeButton) JoinByCodeButton->OnClicked.RemoveDynamic(this, &ThisClass::JoinRoomByCode);
 	if (RoomComboBox) RoomComboBox->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleRoomSelectionChanged);
 	if (PasswordTextBox) PasswordTextBox->OnTextChanged.RemoveDynamic(this, &ThisClass::HandlePasswordChanged);
+	if (RoomCodeTextBox) RoomCodeTextBox->OnTextChanged.RemoveDynamic(this, &ThisClass::HandleRoomCodeChanged);
 	Super::NativeDestruct();
+}
+
+void UASJoinRoomWidget::JoinRoomByCode()
+{
+	if (bSearching || bJoining || !SessionSubsystem || !RoomCodeTextBox) return;
+	const FString Password = PasswordTextBox ? PasswordTextBox->GetText().ToString() : FString();
+	bJoining = true;
+	UpdateButtons();
+	SetStatus(TEXT("방 코드를 확인하는 중..."));
+	SessionSubsystem->JoinSessionByRoomCode(RoomCodeTextBox->GetText().ToString(), Password);
+}
+
+void UASJoinRoomWidget::HandleRoomCodeChanged(const FText& Text)
+{
+	FString Input = Text.ToString();
+	Input.RemoveSpacesInline();
+	bool bValid = Input.Len() <= 6;
+	for (const TCHAR Character : Input) bValid &= Character >= TEXT('0') && Character <= TEXT('9');
+	if (bValid) LastValidRoomCode = Input;
+	else RoomCodeTextBox->SetText(FText::FromString(LastValidRoomCode));
 }
 
 void UASJoinRoomWidget::SearchRooms()

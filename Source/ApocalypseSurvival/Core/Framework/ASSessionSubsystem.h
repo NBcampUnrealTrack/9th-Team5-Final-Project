@@ -20,6 +20,8 @@ struct FASSessionSearchResult
 
 	UPROPERTY(BlueprintReadOnly, Category = "Session")
 	FString RoomName;
+	UPROPERTY(BlueprintReadOnly, Category = "Session")
+	FString RoomCode;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Session")
 	int32 CurrentPlayers = 0;
@@ -55,6 +57,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void CreateSession(int32 PublicConnections, const FString& RoomName, bool bUsePassword = false, const FString& Password = TEXT(""));
+	UFUNCTION(BlueprintPure, Category = "Session")
+	FString GetHostedRoomCode() const { return HostedRoomCode; }
 	static bool IsValidRoomPassword(const FString& Password);
 	bool ValidateRoomPassword(const FString& Password) const;
 
@@ -63,6 +67,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void JoinSessionByIndex(int32 ResultIndex, const FString& Password = TEXT(""));
+	UFUNCTION(BlueprintCallable, Category = "Session")
+	void JoinSessionByRoomCode(const FString& RoomCode, const FString& Password = TEXT(""));
 
 	UFUNCTION(BlueprintPure, Category = "Session|Steam")
 	bool IsSteamSession() const;
@@ -114,7 +120,7 @@ private:
 	friend class FASJoinCancellationTest;
 	friend class FASSteamSessionSettingsTest;
 	friend class FASSteamInviteValidationTest;
-	static FOnlineSessionSettings MakeSessionSettings(bool bSteam, int32 PublicConnections, const FString& RoomName, bool bRequiresPassword);
+	static FOnlineSessionSettings MakeSessionSettings(bool bSteam, int32 PublicConnections, const FString& RoomName, const FString& RoomCode, bool bRequiresPassword);
 	static void ConfigureSearch(FOnlineSessionSearch& Search, bool bSteam, int32 MaxResults);
 	static bool IsCompatibleSession(const FOnlineSessionSearchResult& Result);
 	void JoinSessionResult(const FOnlineSessionSearchResult& SearchResult, const FString& Password);
@@ -136,6 +142,9 @@ private:
 	void HandleConnectionFailure(UWorld* World, const FString& Error);
 	bool bJoinTravelPending = false;
 	FString HostPassword;
+	FString HostedRoomCode;
+	FString PendingRoomCode;
+	FString PendingRoomCodePassword;
 	FString PendingJoinPassword;
 	bool bLeavingRoom = false;
 	bool bJoiningSession = false;

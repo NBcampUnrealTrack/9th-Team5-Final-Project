@@ -19,6 +19,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Session")
 	void JoinSelectedRoom();
 	UFUNCTION(BlueprintCallable, Category = "Session")
+	void JoinRoomByCode();
+	UFUNCTION(BlueprintCallable, Category = "Session")
 	void JoinRoom(int32 ResultIndex);
 	UPROPERTY(BlueprintReadOnly, Category = "Session")
 	TArray<FASSessionSearchResult> AvailableRooms;
@@ -38,6 +40,10 @@ protected:
 	TObjectPtr<UTextBlock> RoomStatusText;
 	UPROPERTY(BlueprintReadOnly, Category = "Session", meta = (BindWidgetOptional))
 	TObjectPtr<UEditableTextBox> PasswordTextBox;
+	UPROPERTY(BlueprintReadOnly, Category = "Session", meta = (BindWidgetOptional))
+	TObjectPtr<UEditableTextBox> RoomCodeTextBox;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> JoinByCodeButton;
 
 private:
 	UFUNCTION()
@@ -45,7 +51,10 @@ private:
 	void UpdatePasswordVisibility();
 	UFUNCTION()
 	void HandlePasswordChanged(const FText& Text);
+	UFUNCTION()
+	void HandleRoomCodeChanged(const FText& Text);
 	FString LastValidPassword;
+	FString LastValidRoomCode;
 	UFUNCTION()
 	void HandleSessionsFound(bool bSuccess, const TArray<FASSessionSearchResult>& Results);
 	UFUNCTION()
