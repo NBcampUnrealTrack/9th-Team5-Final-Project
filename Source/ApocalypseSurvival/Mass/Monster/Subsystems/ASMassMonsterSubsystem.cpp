@@ -18,6 +18,7 @@
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Combat/ASCombatImpactSettings.h"
 #include "StructUtils/StructView.h"
 #include "TimerManager.h"
@@ -1131,6 +1132,7 @@ bool UASMassMonsterSubsystem::CanMutateEntities(FString& OutError) const
 	}
 	if (SpawnerSubsystem->GetEntityManagerChecked().IsProcessing())
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Mass.MutationRejected EntityManagerIsProcessing"));
 		OutError = TEXT("Mass Entity processing is active; defer this mutation until processing completes.");
 		return false;
 	}

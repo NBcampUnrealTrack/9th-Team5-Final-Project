@@ -6,6 +6,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
+#include "Core/Combat/ASCombatDiagnostics.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
@@ -158,6 +159,11 @@ void UASSkillAbility::EndCastMovementLock()
 
 void UASSkillAbility::StartSkill(const FVector& AimDirection, const FVector& TargetLocation)
 {
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Skill.Start Aim=%s Target=%s Montage=%s HitTag=%s Authority=%d"),
+			*AimDirection.ToString(), *TargetLocation.ToString(), *GetNameSafe(AnimMontage), *HitEventTag.ToString(), HasSkillAuthority()));
+	}
 	const bool bHasMontage = AnimMontage != nullptr;
 	const bool bWaitForHitEvent = bHasMontage && HitEventTag.IsValid();
 
@@ -1024,12 +1030,14 @@ void UASSkillAbility::ApplySkillDamage(AActor* Target)
 
 void UASSkillAbility::HandleHitEvent(FGameplayEventData Payload)
 {
+	ASCombatDiagnostics::Record(this, TEXT("Skill.HitEvent"));
 	bHitEventReceived = true;
 	OnSkillEffect();
 }
 
 void UASSkillAbility::OnMontageCompleted()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Skill.MontageCompleted"));
 	if (!bEndAbilityManually)
 	{
 		FinishSkill(false);
@@ -1038,6 +1046,7 @@ void UASSkillAbility::OnMontageCompleted()
 
 void UASSkillAbility::OnMontageInterrupted()
 {
+	ASCombatDiagnostics::Record(this, TEXT("Skill.MontageInterrupted"));
 	FinishSkill(true);
 }
 

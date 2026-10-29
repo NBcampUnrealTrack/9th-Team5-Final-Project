@@ -1,6 +1,7 @@
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 
 #include <GAS/ASAbilityTags.h>
+#include "Core/Combat/ASCombatDiagnostics.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -9,6 +10,9 @@
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "MassEntitySubsystem.h"
+#include "MassEntityManager.h"
+#include "MassSimulationSubsystem.h"
 #include "GameFramework/Pawn.h"
 #include "GenericTeamAgentInterface.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
@@ -38,6 +42,32 @@ namespace
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed)
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead);
+	}
+}
+
+bool UASCombatTargetSubsystem::DeferUntilMassIdle(FTimerHandle& PendingTimer, FTimerDelegate Callback)
+{
+	UMassEntitySubsystem* Entities = GetWorld()->GetSubsystem<UMassEntitySubsystem>();
+	if (!Entities || !Entities->GetEntityManager().IsProcessing()) return false;
+	if (!GetWorld()->GetTimerManager().IsTimerActive(PendingTimer))
+	{
+		PendingTimer = GetWorld()->GetTimerManager().SetTimerForNextTick(MoveTemp(Callback));
+		ASCombatDiagnostics::Record(this, TEXT("Combat.DeferredUntilMassIdle"));
+	}
+	return true;
+}
+
+void UASCombatTargetSubsystem::AddMassTickPrerequisites(FTickFunction& TickFunction)
+{
+	TickFunction.TickGroup = TG_PostUpdateWork;
+	TickFunction.EndTickGroup = TG_LastDemotable;
+	if (UMassSimulationSubsystem* Simulation = GetWorld()->GetSubsystem<UMassSimulationSubsystem>())
+	{
+		FMassProcessingPhaseManager& Phases = Simulation->GetMutablePhaseManager();
+		for (uint8 Index = 0; Index < static_cast<uint8>(EMassProcessingPhase::MAX); ++Index)
+		{
+			TickFunction.AddPrerequisite(Simulation, Phases.GetProcessingPhaseTickFunction(static_cast<EMassProcessingPhase>(Index)));
+		}
 	}
 }
 
@@ -480,6 +510,7 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
 	AActor* Instigator,
 	const FASCombatImpactContext& ImpactContext)
 {
+	ASCombatDiagnostics::Record(this, TEXT("Target.Apply"));
 	FASCombatApplyResult Result;
 	FASCombatTargetRef RefreshedTarget = Target;
 	FASCombatTargetQuery ValidationQuery;
@@ -487,6 +518,7 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
 	ValidationQuery.MaxTargets = 1;
 	if (!RefreshTarget(ValidationQuery, RefreshedTarget))
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Target.Rejected RefreshFailed"));
 		return Result;
 	}
 
@@ -507,6 +539,10 @@ FASCombatApplyResult UASCombatTargetSubsystem::ApplyEffectSpecsToTarget(
 	{
 		Result.NonActorHitCount = MassMonsters->ApplyDamageToTarget(
 			RefreshedTarget.GetMassTargetId(), Damage, Instigator, ImpactContext);
+	}
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Target.MassResult Damage=%.3f Hits=%d"), Damage, Result.NonActorHitCount));
 	}
 	return Result;
 }
@@ -609,6 +645,13 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
 	const FASCombatImpactContext& ImpactContext,
 	FASCombatTargetHitSet* InOutHitTargets)
 {
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Query.Begin Shape=%d Domain=%d Origin=%s End=%s Aim=%s Radius=%.2f Angle=%.2f Specs=%d Damage=%.3f"),
+			static_cast<int32>(Query.Shape), static_cast<int32>(Query.Domain), *Query.SearchOrigin.ToString(),
+			*Query.EndLocation.ToString(), *Query.Direction.ToString(), Query.SearchRadius, Query.AngleDegrees,
+			EffectSpecs.Num(), CalculateDamageMagnitude(EffectSpecs)));
+	}
 	FASCombatApplyResult Result;
 	if (Query.SearchRadius < 0.0f)
 	{
@@ -650,6 +693,7 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
 	UASMassMonsterSubsystem* MassMonsters = GetWorld() ? GetWorld()->GetSubsystem<UASMassMonsterSubsystem>() : nullptr;
 	if (!MassMonsters || Damage <= 0.0f)
 	{
+		ASCombatDiagnostics::Record(this, TEXT("Query.MassRejected MissingSubsystemOrDamage"));
 		return Result;
 	}
 
@@ -692,6 +736,11 @@ FASCombatApplyResult UASCombatTargetSubsystem::ResolveAndApply(
 		break;
 	}
 
+	if (ASCombatDiagnostics::IsEnabled())
+	{
+		ASCombatDiagnostics::Record(this, FString::Printf(TEXT("Query.Result ActorHits=%d MassHits=%d"),
+			Result.ActorTargets.Num(), Result.NonActorHitCount));
+	}
 	return Result;
 }
 
