@@ -36,7 +36,22 @@ void AASPlayerCameraManager::AddPanInput(const FVector2D& Direction, const float
 void AASPlayerCameraManager::AddZoomInput(const float AxisValue)
 {
 	// 확대(양수)는 거리를 줄이는 것이라 뺀다.
-	TargetCameraDistance = FMath::Clamp(TargetCameraDistance - AxisValue * ZoomStep, MinCameraDistance, MaxCameraDistance);
+	const float RequestedDistance = TargetCameraDistance - AxisValue * ZoomStep;
+	TargetCameraDistance = bDebugZoomUnlocked
+		? FMath::Max(1.0f, RequestedDistance)
+		: FMath::Clamp(RequestedDistance, MinCameraDistance, MaxCameraDistance);
+}
+
+void AASPlayerCameraManager::SetDebugZoomUnlocked(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING
+	bDebugZoomUnlocked = bEnabled;
+	if (!bEnabled)
+	{
+		TargetCameraDistance = FMath::Clamp(TargetCameraDistance, MinCameraDistance, MaxCameraDistance);
+		ViewCameraDistance = FMath::Clamp(ViewCameraDistance, MinCameraDistance, MaxCameraDistance);
+	}
+#endif
 }
 
 float AASPlayerCameraManager::GetZoomAlpha() const
