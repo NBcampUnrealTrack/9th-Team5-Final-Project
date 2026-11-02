@@ -28,8 +28,6 @@ public:
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Lobby", meta = (ClampMin = "1"))
 	int32 MinimumPlayers = 2;
-	UPROPERTY(EditDefaultsOnly, Category = "Lobby")
-	FString GameMapPath = TEXT("/Game/ApocalypseSurvival/Maps/Map_Proto");
 	UPROPERTY(EditDefaultsOnly, Category = "Lobby|CharacterSelect")
 	TObjectPtr<const UASCharacterRoster> CharacterRoster;
 	UPROPERTY(EditDefaultsOnly, Category = "Lobby|CharacterSelect", meta = (ClampMin = "1.0", Units = "s"))

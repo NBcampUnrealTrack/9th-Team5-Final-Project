@@ -41,8 +41,8 @@ void UASGrenadeUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Hand
 		ASGameplayTags::Data_Item_ThrowRange, ASItemMagnitudeDefaults::ThrowRange) : 0.0f;
 	const float ExplosionRadius = Definition ? Definition->GetEffectMagnitude(
 		ASGameplayTags::Data_Item_ExplosionRadius, ASItemMagnitudeDefaults::ExplosionRadius) : 0.0f;
-	if (!World || !ASC || !Definition || !ActorInfo->PlayerController.IsValid() || !GrenadeClass
-		|| GrenadeClass->HasAnyClassFlags(CLASS_Abstract)
+	if (!World || !ASC || !Definition || !ActorInfo->PlayerController.IsValid() || !GrenadeClass.Get()
+		|| GrenadeClass.Get()->HasAnyClassFlags(CLASS_Abstract)
 		|| !FMath::IsFinite(ThrowRange) || ThrowRange <= 0.0f
 		|| !FMath::IsFinite(ExplosionRadius) || ExplosionRadius <= 0.0f
 		|| !FMath::IsFinite(ThrowFlightTime) || ThrowFlightTime < 0.05f
@@ -79,7 +79,7 @@ void UASGrenadeUseAbility::BeginTargeting()
 {
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	APawn* Avatar = Cast<APawn>(GetAvatarActorFromActorInfo());
-	TSubclassOf<AASSkillRangeIndicatorActor> IndicatorClass = RangeIndicatorClass;
+	TSubclassOf<AASSkillRangeIndicatorActor> IndicatorClass = RangeIndicatorClass.Get();
 	if (!IndicatorClass)
 	{
 		// Reuse authored visuals through asset references already on the character, without hardcoding content paths.
@@ -124,7 +124,7 @@ void UASGrenadeUseAbility::BeginTargeting()
 	RangeIndicator->InitIndicator(Avatar, Settings);
 	TrajectoryPreview = GetWorld()->SpawnActor<AASGrenadeTrajectoryPreview>(
 		AASGrenadeTrajectoryPreview::StaticClass(), Avatar->GetActorTransform(), Params);
-	if (!TrajectoryPreview || !TrajectoryPreview->InitializePreview(Avatar, GrenadeClass, ThrowFlightTime, SpawnOffset, RangeIndicator))
+	if (!TrajectoryPreview || !TrajectoryPreview->InitializePreview(Avatar, GrenadeClass.Get(), ThrowFlightTime, SpawnOffset, RangeIndicator))
 	{
 		OnLocalCancel();
 		return;
@@ -212,7 +212,7 @@ void UASGrenadeUseAbility::ThrowAtLocation(const FVector& DesiredLocation)
 		OnTargetDataCancelled();
 		return;
 	}
-	AASGrenadeActor* Grenade = World->SpawnActorDeferred<AASGrenadeActor>(GrenadeClass, SpawnTransform,
+	AASGrenadeActor* Grenade = World->SpawnActorDeferred<AASGrenadeActor>(GrenadeClass.Get(), SpawnTransform,
 		Avatar, Avatar, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding);
 	if (Grenade)
 	{

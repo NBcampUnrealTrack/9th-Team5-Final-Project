@@ -42,7 +42,7 @@ public:
 #endif
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
-	TSubclassOf<UASWeaponAttackExecution> ExecutionClass;
+	TSoftClassPtr<UASWeaponAttackExecution> ExecutionClass;
 
 	/** Single damages one best target; Area damages every valid target in the attack area. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
@@ -53,7 +53,7 @@ public:
 	EASImpactPreset ImpactPreset = EASImpactPreset::None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Animation")
-	TObjectPtr<UAnimMontage> AttackMontage;
+	TSoftObjectPtr<UAnimMontage> AttackMontage;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Animation", meta = (Categories = "Event"))
 	FGameplayTag HitEventTag;
@@ -84,11 +84,11 @@ public:
 
 	/** Instant Blueprint GE with an Add (Base) Stamina modifier using Data.StaminaCost SetByCaller. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee")
-	TSubclassOf<UGameplayEffect> StaminaCostEffect;
+	TSoftClassPtr<UGameplayEffect> StaminaCostEffect;
 
 	/** Optional duration effect (for example GE_StaminaRegen_Delay) applied after paying stamina. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee")
-	TSubclassOf<UGameplayEffect> StaminaRegenDelayEffect;
+	TSoftClassPtr<UGameplayEffect> StaminaRegenDelayEffect;
 
 	/** 캐릭터 앞쪽 부채꼴 판정의 전체 각도 (임시값). 반경은 무기의 AttackRange */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Melee", meta = (ClampMin = "1.0", ClampMax = "360.0", Units = "deg"))
@@ -113,7 +113,7 @@ public:
 #endif
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged")
-	TObjectPtr<UASItemDefinition> AmmoDefinition;
+	TSoftObjectPtr<UASItemDefinition> AmmoDefinition;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged", meta = (ClampMin = "1"))
 	int32 AmmoPerShot = 1;
@@ -128,7 +128,7 @@ public:
 	/** 타겟 지정(A+클릭) 모드의 유도 투사체 (Single 모드). 비어 있으면 기존 즉시 판정 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Homing",
 		meta = (EditCondition = "bUseAttackMoveTargeting", EditConditionHides))
-	TSubclassOf<AASWeaponProjectile> HomingProjectileClass;
+	TSoftClassPtr<AASWeaponProjectile> HomingProjectileClass;
 
 	/** 유도 투사체 속도 (임시값) */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Homing",
@@ -137,12 +137,12 @@ public:
 
 	/** Directional Attack에서만 쓰는 직선 투사체 클래스. 유도 투사체의 시각 BP와 분리한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Directional")
-	TSubclassOf<AASSkillProjectileActor> DirectionalProjectileClass;
+	TSoftClassPtr<AASSkillProjectileActor> DirectionalProjectileClass;
 
 	/** 방향성 투사체 모드에서만 쓰는 발사체 클래스. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
 		meta = (EditCondition = "!bUseAttackMoveTargeting", EditConditionHides))
-	TSubclassOf<AASSkillProjectileActor> ProjectileClass;
+	TSoftClassPtr<AASSkillProjectileActor> ProjectileClass;
 
 	/** 직선 투사체 속도. Directional Attack에서는 bUseAttackMoveTargeting 값과 무관하게 사용한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Ranged|Projectile",
@@ -237,7 +237,7 @@ public:
 
 	/** Must derive from AASShotgunPelletProjectile to preserve one-knockback-per-target behavior. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Shotgun")
-	TSubclassOf<AASShotgunPelletProjectile> PelletProjectileClass;
+	TSoftClassPtr<AASShotgunPelletProjectile> PelletProjectileClass;
 };
 
 /** Sniper-only ordered piercing rules. Damage multipliers are indexed by hit order. */
@@ -263,5 +263,5 @@ public:
 
 	/** Must derive from AASSniperPiercingProjectile to preserve ordered, unique pierce behavior. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Sniper")
-	TSubclassOf<AASSniperPiercingProjectile> SniperProjectileClass;
+	TSoftClassPtr<AASSniperPiercingProjectile> SniperProjectileClass;
 };

@@ -232,7 +232,7 @@ void AASShotgunAttackSequence::SpawnPellets()
 		const FVector Direction = BaseDirection.RotateAngleAxis(YawOffset, FVector::UpVector).GetSafeNormal2D();
 		const FVector SpawnLocation = ResolveSpawnLocation(Direction);
 		const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
-		UClass* ProjectileClass = CurrentProfile->PelletProjectileClass
+		UClass* ProjectileClass = CurrentProfile->PelletProjectileClass.Get()
 			? CurrentProfile->PelletProjectileClass.Get()
 			: AASShotgunPelletProjectile::StaticClass();
 		AASShotgunPelletProjectile* Pellet = World->SpawnActorDeferred<AASShotgunPelletProjectile>(

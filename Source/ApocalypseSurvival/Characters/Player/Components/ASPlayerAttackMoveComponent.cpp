@@ -202,7 +202,7 @@ bool UASPlayerAttackMoveComponent::UsesAttackMoveTargeting() const
 	const UASEquipmentComponent* Equipment = Character ? Character->GetEquipmentComponent() : nullptr;
 	const UASItemInstance* Weapon = Equipment ? Equipment->GetEquippedItem() : nullptr;
 	const UASItemDefinition* Definition = Weapon ? Weapon->GetItemDefinition() : nullptr;
-	const UASRangedAttackProfile* RangedProfile = Definition ? Cast<UASRangedAttackProfile>(Definition->AttackProfile) : nullptr;
+	const UASRangedAttackProfile* RangedProfile = Definition ? Cast<UASRangedAttackProfile>(Definition->AttackProfile.Get()) : nullptr;
 
 	return !RangedProfile || RangedProfile->bUseAttackMoveTargeting;
 }

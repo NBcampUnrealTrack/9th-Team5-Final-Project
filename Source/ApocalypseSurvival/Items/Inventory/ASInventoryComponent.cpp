@@ -15,6 +15,8 @@
 #include "Items/Equipment/ASItemEquipmentInterface.h"
 #include "Items/Loot/ASDroppedItem.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "Core/Loading/ASLoadingFlowSubsystem.h"
 
 #include "GAS/ASAbilityTags.h"
 
@@ -31,6 +33,11 @@ UASInventoryComponent::UASInventoryComponent()
 void UASInventoryComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (UGameInstance* Instance = GetWorld()->GetGameInstance(); Instance && GetNetMode() != NM_DedicatedServer)
+	{
+		LoadingFlow = Instance->GetSubsystem<UASLoadingFlowSubsystem>();
+		if (LoadingFlow.IsValid()) LoadingFlow->OnLoadingStarted.AddUniqueDynamic(this, &ThisClass::HandleLoadingStarted);
+	}
 	PreloadItemAssets();
 	// Player inventory is the ten visible slots. Loot containers keep their configured limit.
 	if (Cast<APawn>(GetOwner()) || Cast<AController>(GetOwner()) || Cast<APlayerState>(GetOwner()))
@@ -573,6 +580,11 @@ void UASInventoryComponent::OnRep_Items()
 	OnInventoryChanged.Broadcast();
 }
 
+void UASInventoryComponent::HandleLoadingStarted()
+{
+	PreloadItemAssets();
+}
+
 void UASInventoryComponent::PreloadItemAssets()
 {
 	if (!GetWorld() || GetWorld()->bIsTearingDown) return;
@@ -586,6 +598,7 @@ void UASInventoryComponent::PreloadItemAssets()
 	{
 		if (GetWorld() && !GetWorld()->bIsTearingDown) OnInventoryChanged.Broadcast();
 	}));
+	InventoryAssetRequest.TrackLoadingScreen(this, NSLOCTEXT("ASItemLoading", "Inventory", "Preparing items and grenades..."));
 }
 
 void UASInventoryComponent::CancelPendingItemAction()
@@ -779,6 +792,8 @@ UActorComponent* UASInventoryComponent::GetEquipmentProvider() const
 
 void UASInventoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (LoadingFlow.IsValid()) LoadingFlow->OnLoadingStarted.RemoveDynamic(this, &ThisClass::HandleLoadingStarted);
+	LoadingFlow.Reset();
 	CancelPendingItemAction();
 	InventoryAssetRequest.Reset();
 	// Equipment owns teardown of its actors and GAS grants.

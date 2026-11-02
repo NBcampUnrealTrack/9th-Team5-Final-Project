@@ -4,6 +4,8 @@
 #include "Core/Framework/ASLobbyGameState.h"
 #include "Core/Framework/ASPlayerState.h"
 #include "Core/Framework/ASSessionSubsystem.h"
+#include "Core/Loading/ASLoadingFlowSubsystem.h"
+#include "Core/Loading/ASLoadingDefinition.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
@@ -116,7 +118,13 @@ void AASLobbyGameMode::TryStartGame(APlayerController* RequestingPlayer)
 	if (!RequestingPlayer || !RequestingPlayer->IsLocalController() || bStartingGame) return;
 	RefreshLobby();
 	const AASLobbyGameState* State = GetGameState<AASLobbyGameState>();
-	if (!State || !State->bCanStartGame || GameMapPath.IsEmpty()) return;
+	if (!State || !State->bCanStartGame) return;
+	const auto* Definition = GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>()->GetLoadingDefinition();
+	if (!Definition || Definition->LoadingMap.IsNull() || Definition->DefaultGameMap.IsNull())
+	{
+		AbortCharacterSelection(FText::FromString(TEXT("GameInstance에 연결된 로딩 DA에서 로딩 맵과 게임 맵을 지정해 주세요.")));
+		return;
+	}
 	const int32 DefaultIndex = ResolveCharacterIndex(CharacterRoster, INDEX_NONE);
 	if (DefaultIndex == INDEX_NONE)
 	{
@@ -228,10 +236,10 @@ void AASLobbyGameMode::FinishCharacterSelection(AController* ExcludedPlayer)
 	}
 	GetWorldTimerManager().ClearTimer(CharacterSelectionTimer);
 	State->MarkTravelling();
-	UE_LOG(LogTemp, Log, TEXT("[Lobby] Starting game: %s"), *GameMapPath);
-	// Absolute travel clears old options, so listen must be supplied again for non-seamless travel.
-	const FString TravelURL = GameMapPath + TEXT("?listen");
-	if (!GetWorld()->ServerTravel(TravelURL, true))
+	const auto* Definition = GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>()->GetLoadingDefinition();
+	const FString DestinationMap = Definition ? Definition->DefaultGameMap.ToSoftObjectPath().GetLongPackageName() : FString();
+	UE_LOG(LogTemp, Log, TEXT("[Lobby] Starting game: %s"), *DestinationMap);
+	if (!GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>()->TravelThroughLoadingLevel(DestinationMap))
 	{
 		UE_LOG(LogTemp, Error, TEXT("[CharacterSelect] Game map travel request failed."));
 		AbortCharacterSelection(FText::FromString(TEXT("게임 맵으로 이동하지 못했습니다. 맵 설정을 확인한 후 다시 방을 생성해 주세요.")));

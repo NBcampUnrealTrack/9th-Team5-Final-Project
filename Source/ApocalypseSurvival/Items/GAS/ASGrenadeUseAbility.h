@@ -25,11 +25,11 @@ protected:
 		FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade")
-	TSubclassOf<AASGrenadeActor> GrenadeClass;
+	TSoftClassPtr<AASGrenadeActor> GrenadeClass;
 
 	/** Optional visual override. Empty reuses the equipped character's E skill indicator, then another configured skill. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Targeting")
-	TSubclassOf<AASSkillRangeIndicatorActor> RangeIndicatorClass;
+	TSoftClassPtr<AASSkillRangeIndicatorActor> RangeIndicatorClass;
 
 	/** Ballistic flight time to the selected ground point when unobstructed. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade", meta = (ClampMin = "0.05", Units = "s"))

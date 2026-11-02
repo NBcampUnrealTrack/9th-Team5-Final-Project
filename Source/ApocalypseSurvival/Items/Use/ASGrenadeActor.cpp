@@ -6,6 +6,7 @@
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/AssetManager.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
@@ -19,7 +20,6 @@
 #include "Net/UnrealNetwork.h"
 #include "Skills/ASSkillTags.h"
 #include "TimerManager.h"
-#include "UObject/ConstructorHelpers.h"
 
 AASGrenadeActor::AASGrenadeActor()
 {
@@ -34,12 +34,8 @@ AASGrenadeActor::AASGrenadeActor()
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	MeshComponent->SetupAttachment(CollisionComponent);
 	MeshComponent->SetIsReplicated(true);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> DefaultMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	if (DefaultMesh.Succeeded())
-	{
-		MeshComponent->SetStaticMesh(DefaultMesh.Object);
-		MeshComponent->SetRelativeScale3D(FVector(0.12f));
-	}
+	MeshAsset = FSoftObjectPath(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	MeshComponent->SetRelativeScale3D(FVector(0.12f));
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->SetUpdatedComponent(CollisionComponent);
 	ProjectileMovement->bAutoActivate = false;
@@ -108,9 +104,22 @@ void AASGrenadeActor::ConfigureCollision()
 void AASGrenadeActor::BeginPlay()
 {
 	Super::BeginPlay();
+	ResourceRequest.Request(ASItemAssetLoading::GatherObject(*this),
+		FStreamableDelegate::CreateWeakLambda(this, [this]() { ApplyLoadedResources(); }));
+	ResourceRequest.TrackLoadingScreen(this, NSLOCTEXT("ASItemLoading", "GrenadeResources", "Preparing grenade resources..."));
+	ApplyLoadedResources();
 	ConfigureCollision();
 	// Clients display replicated server movement instead of running a second projectile simulation.
 	ProjectileMovement->Deactivate();
+	UpdateFlightFeedback();
+}
+
+void AASGrenadeActor::ApplyLoadedResources()
+{
+	if (IsActorBeingDestroyed()) return;
+	const UASItemDefinition* Definition = SourceItem ? SourceItem->GetItemDefinition() : nullptr;
+	UStaticMesh* Mesh = Definition && Definition->WorldMesh.Get() ? Definition->WorldMesh.Get() : MeshAsset.Get();
+	if (Mesh) MeshComponent->SetStaticMesh(Mesh);
 	UpdateFlightFeedback();
 }
 
@@ -118,8 +127,8 @@ bool AASGrenadeActor::InitializeGrenade(UAbilitySystemComponent* SourceASC, UASI
 	const FVector& Velocity)
 {
 	if (!HasAuthority() || bInitialized || !IsValid(SourceASC) || !IsValid(InSourceItem)
-		|| !IsValid(InSourceItem->GetItemDefinition()) || !DamageEffectClass
-		|| DamageEffectClass->HasAnyClassFlags(CLASS_Abstract)
+		|| !IsValid(InSourceItem->GetItemDefinition()) || !DamageEffectClass.Get()
+		|| DamageEffectClass.Get()->HasAnyClassFlags(CLASS_Abstract)
 		|| !FMath::IsFinite(FuseTime) || FuseTime <= 0.0f
 		|| !FMath::IsFinite(Damage) || Damage < 0.0f || Velocity.ContainsNaN()) return false;
 	const UASItemDefinition* Definition = InSourceItem->GetItemDefinition();
@@ -134,7 +143,7 @@ bool AASGrenadeActor::InitializeGrenade(UAbilitySystemComponent* SourceASC, UASI
 	if (ItemDamage && *ItemDamage > 0.0f) return false;
 	FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
 	Context.AddSourceObject(InSourceItem);
-	DamageSpec = SourceASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, Context);
+	DamageSpec = SourceASC->MakeOutgoingSpec(DamageEffectClass.Get(), 1.0f, Context);
 	if (!DamageSpec.IsValid()) return false;
 	DamageSpec.Data->SetSetByCallerMagnitude(ASGameplayTags::Data_Damage, -Damage);
 	for (const auto& Magnitude : Definition->EffectMagnitudes)
@@ -159,6 +168,7 @@ bool AASGrenadeActor::InitializeGrenade(UAbilitySystemComponent* SourceASC, UASI
 					MeshComponent->SetRelativeScale3D(FVector::OneVector);
 				}
 			}));
+		MeshAssetRequest.TrackLoadingScreen(this, NSLOCTEXT("ASItemLoading", "Grenade", "Preparing grenade appearance..."));
 	}
 	SourceItem = InSourceItem;
 	InstigatorAvatar = SourceASC->GetAvatarActor();
@@ -180,7 +190,7 @@ void AASGrenadeActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 
 void AASGrenadeActor::HandleBounce(const FHitResult& ImpactResult, const FVector& ImpactVelocity)
 {
-	if (!HasAuthority() || !bThrown || bExploded || !BounceSound
+	if (!HasAuthority() || !bThrown || bExploded || !BounceSound.Get()
 		|| ImpactVelocity.ContainsNaN() || ImpactResult.ImpactNormal.ContainsNaN()) return;
 	const float ImpactSpeed = FMath::Abs(FVector::DotProduct(ImpactVelocity, ImpactResult.ImpactNormal.GetSafeNormal()));
 	const double Now = GetWorld()->GetTimeSeconds();
@@ -213,11 +223,11 @@ void AASGrenadeActor::UpdateFlightFeedback()
 		ProjectileMovement->Deactivate();
 	}
 	if (GetNetMode() == NM_DedicatedServer) return;
-	if (bThrown && bInFlight && !bExploded && TrailEffect)
+	if (bThrown && bInFlight && !bExploded && TrailEffect.Get())
 	{
 		if (!IsValid(TrailComponent))
 		{
-			TrailComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(TrailEffect, CollisionComponent,
+			TrailComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(TrailEffect.Get(), CollisionComponent,
 				NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset,
 				true, true, ENCPoolMethod::None, false);
 		}
@@ -233,24 +243,24 @@ void AASGrenadeActor::UpdateFlightFeedback()
 void AASGrenadeActor::MulticastThrowFeedback_Implementation(const FVector_NetQuantize Location)
 {
 	if (GetNetMode() == NM_DedicatedServer) return;
-	if (PinPullSound)
+	if (PinPullSound.Get())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, PinPullSound, Location,
-			1.0f, 1.0f, 0.0f, SoundAttenuation);
+		UGameplayStatics::PlaySoundAtLocation(this, PinPullSound.Get(), Location,
+			1.0f, 1.0f, 0.0f, SoundAttenuation.Get());
 	}
-	if (ThrowSound)
+	if (ThrowSound.Get())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, ThrowSound, Location,
-			1.0f, 1.0f, 0.0f, SoundAttenuation);
+		UGameplayStatics::PlaySoundAtLocation(this, ThrowSound.Get(), Location,
+			1.0f, 1.0f, 0.0f, SoundAttenuation.Get());
 	}
 }
 
 void AASGrenadeActor::MulticastBounceFeedback_Implementation(const FVector_NetQuantize Location, const float Volume)
 {
-	if (GetNetMode() != NM_DedicatedServer && BounceSound)
+	if (GetNetMode() != NM_DedicatedServer && BounceSound.Get())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, BounceSound, Location,
-			Volume, FMath::FRandRange(0.95f, 1.05f), 0.0f, SoundAttenuation);
+		UGameplayStatics::PlaySoundAtLocation(this, BounceSound.Get(), Location,
+			Volume, FMath::FRandRange(0.95f, 1.05f), 0.0f, SoundAttenuation.Get());
 	}
 }
 
@@ -300,15 +310,24 @@ void AASGrenadeActor::MulticastExplosion_Implementation(const FVector_NetQuantiz
 	bInFlight = false;
 	UpdateFlightFeedback();
 	if (GetNetMode() == NM_DedicatedServer) return;
-	if (ExplosionEffect)
-	{
-		const float ReferenceRadius = FMath::IsFinite(ExplosionEffectReferenceRadius)
-			? FMath::Max(ExplosionEffectReferenceRadius, 1.0f) : 100.0f;
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ExplosionEffect, Location,
-			FRotator::ZeroRotator, FVector(ExplosionRadius / ReferenceRadius));
-	}
-	if (ExplosionSound) UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, Location,
-		1.0f, 1.0f, 0.0f, SoundAttenuation);
+	const float ReferenceRadius = FMath::IsFinite(ExplosionEffectReferenceRadius)
+		? FMath::Max(ExplosionEffectReferenceRadius, 1.0f) : 100.0f;
+	TArray<FSoftObjectPath> FeedbackPaths;
+	for (const auto& Path : { ExplosionEffect.ToSoftObjectPath(), ExplosionSound.ToSoftObjectPath(), SoundAttenuation.ToSoftObjectPath() })
+		if (!Path.IsNull()) FeedbackPaths.AddUnique(Path);
+	// The grenade can be destroyed before a late-relevant client finishes loading cosmetics.
+	// Keep this request independent of the actor; never delay authoritative damage/fuse timing.
+	FStreamableDelegate Feedback = FStreamableDelegate::CreateLambda(
+		[World = TWeakObjectPtr<UWorld>(GetWorld()), Effect = ExplosionEffect, Sound = ExplosionSound,
+		 Attenuation = SoundAttenuation, Position = FVector(Location), Scale = ExplosionRadius / ReferenceRadius]()
+		{
+			UWorld* CurrentWorld = World.Get();
+			if (!CurrentWorld || CurrentWorld->bIsTearingDown) return;
+			if (Effect.Get()) UNiagaraFunctionLibrary::SpawnSystemAtLocation(CurrentWorld, Effect.Get(), Position, FRotator::ZeroRotator, FVector(Scale));
+			if (Sound.Get()) UGameplayStatics::PlaySoundAtLocation(CurrentWorld, Sound.Get(), Position, 1.f, 1.f, 0.f, Attenuation.Get());
+		});
+	if (ASItemAssetLoading::AreLoaded(FeedbackPaths)) Feedback.ExecuteIfBound();
+	else UAssetManager::GetStreamableManager().RequestAsyncLoad(FeedbackPaths, MoveTemp(Feedback));
 	if (bDrawDebugExplosion)
 	{
 		DrawDebugSphere(GetWorld(), Location, ExplosionRadius, 24, FColor::Orange, false, 1.0f);
@@ -318,6 +337,7 @@ void AASGrenadeActor::MulticastExplosion_Implementation(const FVector_NetQuantiz
 void AASGrenadeActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	MeshAssetRequest.Reset();
+	ResourceRequest.Reset();
 	GetWorldTimerManager().ClearTimer(FuseTimerHandle);
 	if (IsValid(TrailComponent)) TrailComponent->DeactivateImmediate();
 	Super::EndPlay(EndPlayReason);

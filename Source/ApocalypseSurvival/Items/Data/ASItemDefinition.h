@@ -76,7 +76,7 @@ public:
 	/** Defines melee/ranged cost, hit behavior, and attack animation for the character-owned attack GA. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Attack",
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
-	TObjectPtr<UASWeaponAttackProfile> AttackProfile;
+	TSoftObjectPtr<UASWeaponAttackProfile> AttackProfile;
 
 	/** Must derive from ASItemUseAbility; CommitAbility consumes UseQuantity. Null uses the default data-driven ability. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",
