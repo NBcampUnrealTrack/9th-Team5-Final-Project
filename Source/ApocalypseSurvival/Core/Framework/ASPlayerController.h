@@ -11,6 +11,7 @@ class UASAbilitySystemComponent;
 class UASPlayerAttackMoveComponent;
 class UASInputConfig;
 class UASInventoryComponent;
+class UASCraftingComponent;
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraSystem;
@@ -76,6 +77,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Crafting")
+	UASCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }
+
+	/** Also callable from the console while testing without an input asset. */
+	UFUNCTION(BlueprintCallable, Exec, Category = "Crafting")
+	void ToggleCrafting();
 
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	UASPlayerAttackMoveComponent* GetAttackMoveComponent() const { return AttackMoveComponent; }
@@ -184,6 +192,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASInventoryComponent> InventoryComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASCraftingComponent> CraftingComponent;
 
 	/** A + 클릭 명령을 해석한다. 공격 피해·비용은 GAS가 계속 담당한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))

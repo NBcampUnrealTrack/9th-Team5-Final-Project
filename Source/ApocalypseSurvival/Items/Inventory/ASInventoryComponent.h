@@ -4,6 +4,8 @@
 #include "Components/ActorComponent.h"
 #include "Engine/DataTable.h"
 #include "Items/Data/ASItemAssetLoading.h"
+#include "Items/Data/ASItemGrant.h"
+#include "Items/Inventory/ASInventoryExchangeTypes.h"
 #include "ASInventoryComponent.generated.h"
 
 class UASItemDefinition;
@@ -12,6 +14,7 @@ class APawn;
 class UASItemUseComponent;
 class AASDroppedItem;
 class UASLoadingFlowSubsystem;
+struct FASInventoryMutationPlan;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASInventoryChangedSignature);
 
@@ -123,6 +126,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	bool HasItem(const UASItemDefinition* ItemDefinition, int32 RequiredQuantity = 1) const;
 
+	/** Read-only preview using backpack contents, including slots freed by consuming the inputs. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Exchange")
+	EASInventoryExchangeResult CanExchangeItems(const TArray<FASItemGrant>& Costs, const TArray<FASItemGrant>& Rewards) const;
+
+	/** Server-only all-or-nothing exchange. No callbacks or live mutations occur until the plan succeeds. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Exchange")
+	EASInventoryExchangeResult TryExchangeItems(const TArray<FASItemGrant>& Costs, const TArray<FASItemGrant>& Rewards);
+
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UASItemInstance* FindFirstItem(const UASItemDefinition* ItemDefinition) const;
 
@@ -148,6 +159,9 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	int32 GetBackpackSlotLimit() const;
+	/** Apply a freshly built plan without broadcasting. Callers publish only after setting their own state. */
+	bool ApplyMutationPlan(const FASInventoryMutationPlan& Plan);
 	AASDroppedItem* DropSlotInternal(int32 SlotIndex, FGuid ExpectedItem, APawn* Avatar, bool bSingleItem);
 	APawn* GetInventoryAvatar() const;
 	UActorComponent* GetEquipmentProvider() const;

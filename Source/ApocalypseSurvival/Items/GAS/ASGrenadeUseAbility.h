@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Items/GAS/ASItemUseAbility.h"
+#include "Items/GAS/ASTargetedItemUseAbility.h"
 #include "ASGrenadeUseAbility.generated.h"
 
 class AASGrenadeActor;
@@ -10,15 +10,12 @@ class AASSkillRangeIndicatorActor;
 
 /** Cursor-targeted consumable. Previews the bouncing trajectory and blast, then commits inventory cost on the server. */
 UCLASS(Blueprintable)
-class APOCALYPSESURVIVAL_API UASGrenadeUseAbility : public UASItemUseAbility
+class APOCALYPSESURVIVAL_API UASGrenadeUseAbility : public UASTargetedItemUseAbility
 {
 	GENERATED_BODY()
 
 public:
 	UASGrenadeUseAbility();
-	virtual bool RequiresUseEffects() const override { return false; }
-	virtual void EndAbility(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 protected:
 	virtual void ActivateItemUse(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -43,19 +40,11 @@ protected:
 	FVector SpawnOffset = FVector(50.0f, 0.0f, 30.0f);
 
 private:
-	void BeginTargeting();
+	virtual void BeginTargeting() override;
+	virtual float GetTargetRange() const override;
+	virtual void ExecuteAtLocation(const FVector& Location) override;
+	virtual void CleanupTargetingVisuals() override;
 	void ThrowAtLocation(const FVector& DesiredLocation);
-	void StopTargeting();
-	void CheckPendingUse();
-	void OnOtherAbilityActivated(UGameplayAbility* Ability);
-	void OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
-	void OnTargetDataCancelled();
-
-	UFUNCTION()
-	void OnLocalConfirm();
-
-	UFUNCTION()
-	void OnLocalCancel();
 
 	UPROPERTY(Transient)
 	TObjectPtr<AASSkillRangeIndicatorActor> RangeIndicator;
@@ -63,11 +52,4 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AASGrenadeTrajectoryPreview> TrajectoryPreview;
 
-	FTimerHandle PendingUseTimer;
-	FDelegateHandle OtherAbilityActivatedHandle;
-	TWeakObjectPtr<APawn> TargetingAvatar;
-	double TargetingStartedAt = 0.0;
-	bool bTargeting = false;
-	bool bAddedTargetingTag = false;
-	bool bSubmittedTarget = false;
 };
