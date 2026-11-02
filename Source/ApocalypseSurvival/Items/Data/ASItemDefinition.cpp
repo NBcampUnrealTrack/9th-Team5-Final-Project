@@ -31,11 +31,11 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 	{
 		if (MaxStackSize != 1) Error(TEXT("Weapons must have MaxStackSize=1 to keep equipped instances independent."));
 		if (WeaponType == EASWeaponType::None) Error(TEXT("WeaponType must be Melee or Ranged."));
-		if (!IsValid(AttackProfile))
+		if (!IsValid(AttackProfile.LoadSynchronous()))
 		{
 			Error(TEXT("Weapons require an AttackProfile."));
 		}
-		else if (AttackProfile->ValidateForItem(*this, Context) == EDataValidationResult::Invalid)
+		else if (AttackProfile.LoadSynchronous()->ValidateForItem(*this, Context) == EDataValidationResult::Invalid)
 		{
 			bValid = false;
 		}

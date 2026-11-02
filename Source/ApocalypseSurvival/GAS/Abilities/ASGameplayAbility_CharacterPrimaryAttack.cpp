@@ -20,6 +20,7 @@
 #include "Items/ASItemInstance.h"
 #include "Items/Combat/ASWeaponAttackProfile.h"
 #include "Items/Data/ASItemDefinition.h"
+#include "Items/Data/ASItemAssetLoading.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "MapSystem/Vision/ASVisionSourceComponent.h"
@@ -322,7 +323,8 @@ bool UASGameplayAbility_CharacterPrimaryAttack::BuildExecutionContext(
 		return false;
 	}
 
-	const UASWeaponAttackProfile* Profile = Definition->AttackProfile;
+	if (!ASItemAssetLoading::AreLoaded(ASItemAssetLoading::Gather(*Definition, false))) return false;
+	const UASWeaponAttackProfile* Profile = Definition->AttackProfile.Get();
 	UClass* ExecutionClass = Profile ? Profile->ExecutionClass.Get() : nullptr;
 	OutExecution = ExecutionClass ? ExecutionClass->GetDefaultObject<UASWeaponAttackExecution>() : nullptr;
 	if (!OutExecution)
@@ -350,7 +352,7 @@ void UASGameplayAbility_CharacterPrimaryAttack::ResolveAnimation(
 	OutHitEventTag = ASGameplayTags::Event_Skill_Hit;
 	bOutScaleToInterval = true;
 	if (!Context.Profile) return;
-	OutMontage = Context.Profile->AttackMontage;
+	OutMontage = Context.Profile->AttackMontage.Get();
 	OutHitEventTag = Context.Profile->HitEventTag;
 	bOutScaleToInterval = Context.Profile->bScaleMontageToAttackInterval;
 }

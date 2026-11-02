@@ -89,6 +89,48 @@ void UASItemUseAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 {
 	bItemCostPaid = false;
 	CacheSourceItem();
+	const uint64 Serial = ++PreparationSerial;
+	UseAssetRequest.Reset();
+	bHasPendingUseEvent = TriggerEventData != nullptr;
+	PendingUseEvent = TriggerEventData ? *TriggerEventData : FGameplayEventData();
+	TArray<FSoftObjectPath> Paths = ASItemAssetLoading::GatherObject(*this);
+	if (const UASItemDefinition* Definition = GetSourceItemDefinition())
+		for (const auto& Path : ASItemAssetLoading::Gather(*Definition, false)) Paths.AddUnique(Path);
+	if (ASItemAssetLoading::AreLoaded(Paths))
+	{
+		// Consuming the final inventory unit can release its preload lease during CommitAbility.
+		// Keep this activation's resources alive until EndAbility even on the warm-cache path.
+		UseAssetRequest.Request(Paths, FStreamableDelegate());
+		StartPreparedUse(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+		return;
+	}
+	const bool bRequested = UseAssetRequest.Request(Paths, FStreamableDelegate::CreateWeakLambda(this,
+		[this, Serial, Handle, Paths]()
+		{
+			if (Serial != PreparationSerial || !IsActive() || CurrentSpecHandle != Handle || !CurrentActorInfo) return;
+			if (!CurrentActorInfo->AvatarActor.IsValid() || !ASItemAssetLoading::AreLoaded(Paths))
+			{
+				EndAbility(Handle, CurrentActorInfo, CurrentActivationInfo, true, true);
+				return;
+			}
+			StartPreparedUse(Handle, CurrentActorInfo, CurrentActivationInfo, bHasPendingUseEvent ? &PendingUseEvent : nullptr);
+		}));
+	UseAssetRequest.TrackLoadingScreen(this, NSLOCTEXT("ASItemLoading", "Use", "Preparing item use..."));
+	if (!bRequested) EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+}
+
+void UASItemUseAbility::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+	++PreparationSerial;
+	UseAssetRequest.Reset();
+	bHasPendingUseEvent = false;
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void UASItemUseAbility::StartPreparedUse(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
+{
 	if (bHasBlueprintActivate)
 	{
 		Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);

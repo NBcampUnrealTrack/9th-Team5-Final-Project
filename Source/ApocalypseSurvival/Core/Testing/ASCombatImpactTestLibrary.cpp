@@ -178,8 +178,8 @@ namespace ASCombatImpactTestPrivate
 
 	EASImpactPreset GetWeaponImpactPreset(const UASItemDefinition* WeaponDefinition)
 	{
-		return WeaponDefinition && WeaponDefinition->AttackProfile
-			? WeaponDefinition->AttackProfile->ImpactPreset
+		return WeaponDefinition && WeaponDefinition->AttackProfile.Get()
+			? WeaponDefinition->AttackProfile.Get()->ImpactPreset
 			: EASImpactPreset::None;
 	}
 
@@ -240,7 +240,7 @@ bool UASCombatImpactTestLibrary::RunMeleeExecuteHit(APawn* Player, UASItemDefini
 	UASInventoryComponent* Inventory = Controller ? Controller->GetInventoryComponent() : nullptr;
 	UASItemInstance* Weapon = Inventory ? Inventory->FindFirstItem(WeaponDefinition) : nullptr;
 	UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Player);
-	const UASWeaponAttackProfile* Profile = WeaponDefinition->AttackProfile;
+	const UASWeaponAttackProfile* Profile = WeaponDefinition->AttackProfile.Get();
 	UClass* ExecutionClass = Profile ? Profile->ExecutionClass.Get() : nullptr;
 	const UASWeaponAttackExecution* Execution = ExecutionClass
 		? ExecutionClass->GetDefaultObject<UASWeaponAttackExecution>()

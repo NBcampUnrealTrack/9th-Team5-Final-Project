@@ -11,6 +11,7 @@ class UASItemInstance;
 class APawn;
 class UASItemUseComponent;
 class AASDroppedItem;
+class UASLoadingFlowSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASInventoryChangedSignature);
 
@@ -158,6 +159,8 @@ private:
 
 	UFUNCTION()
 	void OnRep_Items();
+	UFUNCTION()
+	void HandleLoadingStarted();
 
 	bool HasFreeSlot() const;
 	int32 FindFreeSlotIndex() const;
@@ -185,6 +188,7 @@ private:
 
 	bool bChangingEquipment = false;
 	bool bInitialItemsGranted = false;
+	TWeakObjectPtr<UASLoadingFlowSubsystem> LoadingFlow;
 	FASItemAssetRequest InventoryAssetRequest;
 	FASItemAssetRequest ActionAssetRequest;
 	uint64 PendingActionSerial = 0;

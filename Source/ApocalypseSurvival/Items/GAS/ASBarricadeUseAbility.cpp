@@ -39,8 +39,8 @@ void UASBarricadeUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Ha
 		ASGameplayTags::Data_Item_BarricadeHealth, ASItemMagnitudeDefaults::BarricadeHealth) : 0.0f;
 	const float Lifetime = Definition ? Definition->GetEffectMagnitude(
 		ASGameplayTags::Data_Item_BarricadeLifetime, ASItemMagnitudeDefaults::BarricadeLifetime) : 0.0f;
-	if (!World || !ASC || !Definition || !ActorInfo->PlayerController.IsValid() || !BarricadeClass
-		|| BarricadeClass->HasAnyClassFlags(CLASS_Abstract)
+	if (!World || !ASC || !Definition || !ActorInfo->PlayerController.IsValid() || !BarricadeClass.Get()
+		|| BarricadeClass.Get()->HasAnyClassFlags(CLASS_Abstract)
 		|| !FMath::IsFinite(Range) || Range <= 0.0f
 		|| !FMath::IsFinite(Health) || Health <= 0.0f
 		|| !FMath::IsFinite(Lifetime) || Lifetime < 0.0f
@@ -78,7 +78,7 @@ void UASBarricadeUseAbility::BeginTargeting()
 	APawn* Avatar = Cast<APawn>(GetAvatarActorFromActorInfo());
 	ASC->LocalInputCancel();
 	if (APlayerController* PC = CurrentActorInfo->PlayerController.Get()) PC->StopMovement();
-	PreviewActor = GetWorld()->SpawnActorDeferred<AASBarricadeActor>(BarricadeClass, Avatar->GetActorTransform(),
+	PreviewActor = GetWorld()->SpawnActorDeferred<AASBarricadeActor>(BarricadeClass.Get(), Avatar->GetActorTransform(),
 		Avatar, Avatar, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!PreviewActor)
 	{
@@ -189,7 +189,7 @@ void UASBarricadeUseAbility::PlaceAtLocation(const FVector& DesiredLocation)
 	Params.Owner = Avatar;
 	Params.Instigator = Avatar;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AASBarricadeActor* Barricade = World->SpawnActor<AASBarricadeActor>(BarricadeClass, Avatar->GetActorTransform(), Params);
+	AASBarricadeActor* Barricade = World->SpawnActor<AASBarricadeActor>(BarricadeClass.Get(), Avatar->GetActorTransform(), Params);
 	const float Range = Definition->GetEffectMagnitude(ASGameplayTags::Data_Item_PlacementRange, ASItemMagnitudeDefaults::PlacementRange);
 	const float Health = Definition->GetEffectMagnitude(ASGameplayTags::Data_Item_BarricadeHealth, ASItemMagnitudeDefaults::BarricadeHealth);
 	const float Lifetime = Definition->GetEffectMagnitude(ASGameplayTags::Data_Item_BarricadeLifetime, ASItemMagnitudeDefaults::BarricadeLifetime);

@@ -23,7 +23,7 @@ protected:
 		FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Barricade")
-	TSubclassOf<AASBarricadeActor> BarricadeClass;
+	TSoftClassPtr<AASBarricadeActor> BarricadeClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Item|Barricade", meta = (ClampMin = "1", Units = "s"))
 	float TargetingTimeout = 30.0f;
