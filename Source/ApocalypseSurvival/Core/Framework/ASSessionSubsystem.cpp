@@ -271,7 +271,7 @@ void UASSessionSubsystem::StopJoinAttempt()
 	GetGameInstance()->GetTimerManager().ClearTimer(JoinTimeoutTimer);
 	if (SessionInterface.IsValid()) SessionInterface->OnJoinSessionCompleteDelegates.RemoveAll(this);
 	const auto* Flow = GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>();
-	// Connection readiness alone must not uncover assets/PSOs still preparing locally.
+	// The loading level owns its preparation screen until that world is left.
 	if (!Flow || (!Flow->IsLoading() && Flow->GetStatus().Phase != EASLoadingPhase::Failed))
 		GetGameInstance()->GetSubsystem<UASLoadingScreenSubsystem>()->HideLoadingScreen();
 }

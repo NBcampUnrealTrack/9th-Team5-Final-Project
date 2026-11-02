@@ -5,7 +5,7 @@
 #include "Core/Loading/ASLoadingFlowSubsystem.h"
 #include "Misc/ScopeLock.h"
 
-/** MoviePlayer's Slate thread only reads this snapshot, never live UObjects. */
+/** Slate reads this status snapshot without accessing live UObjects. */
 struct FASLoadingScreenModel
 {
 	void Update(const FASLoadingStatus& Value) { FScopeLock Lock(&Mutex); Status = Value; }

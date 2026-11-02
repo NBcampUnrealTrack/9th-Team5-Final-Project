@@ -2,7 +2,27 @@
 
 이 시스템은 에셋을 로딩하지 않습니다. 각 기능이 기존 비동기 로딩 코드를 그대로 사용하고,
 공용 화면에는 준비 작업의 시작·완료·실패만 알려줍니다. 에셋 참조와 로딩 핸들 수명도 호출자가 관리합니다.
-Boot 맵, 로딩 프로필, RequiredAssets 등록은 필요 없습니다. 기본 실행 맵은 기존 MainMenu_Proto입니다.
+기본 실행 맵은 MainMenu_Proto이며, 로비의 게임 시작은 실제 Loading_Proto 레벨을 거칩니다.
+로딩 프로필이나 RequiredAssets 목록을 등록할 필요는 없습니다.
+
+```text
+로비에서 캐릭터 선택 완료
+→ Loading_Proto로 서버·클라이언트 모두 이동
+→ 로딩 레벨 안에서 OnLoadingStarted 호출
+→ 각 팀원의 비동기 작업 + PSO 준비 완료
+→ 서버가 모든 참가자의 준비 완료를 확인
+→ 로딩 레벨을 떠날 때 화면 종료
+→ 목적지 게임 레벨로 모두 이동 및 플레이
+```
+
+Loading_Proto는 ASLoadingLevelGameMode를 사용하는 독립적인 작은 맵입니다.
+엔진이 내부적으로 사용하는 Seamless Travel의 중간 월드와는 별개입니다.
+`Core/Loading/DA_LoadingDefinition`에서 `Loading Map`, `Default Game Map`, `Timeout Seconds`를 지정합니다.
+맵 참조는 소프트 참조이므로 DA를 읽어도 맵 자체가 로딩되지는 않습니다.
+`Core/Framework/BP_GameInstance`의 Class Defaults → Loading → `Loading Definition`에 사용할 DA를 연결합니다.
+게임이 사용하는 GameInstance는 이미 이 Blueprint로 연결되어 있습니다. 맵 전환 중에도 같은 DA를 유지합니다.
+로비의 게임 목적지도 DA의 `Default Game Map`을 사용합니다. C++이나 별도 프로젝트 설정에 맵 경로를 중복 지정하지 않습니다.
+진입 시 필요한 맵 설정이 없거나 잘못되어 있으면 이동을 중단하고 오류를 알립니다.
 
 ## 팀원이 사용하는 API
 
@@ -13,12 +33,15 @@ Blueprint: Get Game Instance Subsystem → ASLoadingFlowSubsystem.
 3. 완료 콜백에서 실제 성공 여부를 확인합니다.
 4. 성공하면 `CompleteTask(TaskId)`, 실패하면 `FailTask(TaskId, Error)`를 호출합니다.
 
-BeginTask는 화면이 없으면 자동으로 새 로딩 화면을 엽니다. 여러 팀원이 동시에 작업을 등록해도
-마지막 작업까지 모두 완료되어야 닫힙니다. 이미 끝나거나 취소된 TaskId는 새 작업에 영향을 주지 않습니다.
+BeginTask는 로딩 레벨의 준비 단계에서만 작업을 등록합니다. 다른 레벨에서는 무효 TaskId를 반환하며 화면을 열지 않습니다.
+여러 팀원이 등록한 작업을 모두 기다리고, 서버의 전체 준비 확인 후 로딩 레벨을 떠날 때 화면을 종료합니다.
+게임 레벨에 진입한 뒤 추가 비동기 요청이나 PSO 때문에 로딩 화면을 다시 표시하거나 유지하지 않습니다.
+이미 끝나거나 취소된 TaskId는 새 작업에 영향을 주지 않습니다.
 
 ```cpp
 #include "Core/Loading/ASLoadingFlowSubsystem.h"
 
+// OnLoadingStarted에 연결한 함수 안에서:
 auto* Flow = GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>();
 const FGuid Task = Flow->BeginTask(FText::FromString(TEXT("Preparing items...")), this);
 
@@ -37,9 +60,12 @@ Actor 대신 GameInstanceSubsystem 등 전환을 넘어 살아 있는 객체를 
 
 ## 로딩 시작 시점에 팀별 작업 실행
 
-GameInstanceSubsystem 같은 오래 살아 있는 객체에서 `OnLoadingStarted`에 바인딩합니다.
+GameInstanceSubsystem 같은 오래 살아 있는 객체, 또는 로딩 레벨 Actor의 BeginPlay에서
+`OnLoadingStarted`에 바인딩합니다. 준비 이벤트는 실제 로딩 레벨에 도착한 다음 호출됩니다.
+`IsPreparingInLoadingLevel()`로 이 단계인지 확인하고, `GetDestinationMap()`으로 목적지를 확인할 수 있습니다.
 서브시스템 Initialize에서 구독한다면 `Collection.InitializeDependency<UASLoadingFlowSubsystem>()`를
-먼저 호출합니다. 맵 Actor의 BeginPlay에서 구독하면 해당 맵의 로딩 시작 이벤트는 이미 지났을 수 있습니다.
+먼저 호출합니다. 로딩 레벨의 BeginPlay에서는 이벤트를 구독하고, 이벤트 안에서 작업을 등록하세요.
+비동기 결과를 게임 레벨에서도 사용할 경우 핸들과 준비된 결과를 GameInstanceSubsystem 등에 유지하세요.
 
 ```text
 OnLoadingStarted
@@ -54,16 +80,17 @@ OnLoadingStarted
 한 번 호출됩니다. 이벤트 안에서 BeginTask를 호출해도 다시 이벤트가 발생하지 않습니다.
 일반 플레이 중 아이콘 하나를 로딩하는 등 전체 화면이 필요 없는 요청에는 작업을 등록하지 않습니다.
 
-## 맵 전환과 수동 표시
+## 맵 전환
 
-기존 OpenLevel / ServerTravel / ClientTravel 경로에서 로딩 화면이 자동 표시됩니다.
-이때 OnLoadingStarted가 호출되며 목적지 월드와 등록된 작업, 현재 PSO 요청의 완료를 기다립니다.
-Seamless Travel의 중간 월드는 목적지 준비 완료로 취급하지 않습니다.
-기존 세션 이동 API를 사용하세요. 이 시스템은 맵 이동이나 서버의 매치 시작을 실행하지 않습니다.
+로비의 게임 시작은 설정에서 결정한 목적지로 `TravelThroughLoadingLevel(DestinationMap)`을 호출합니다.
+새로운 게임 진입 경로도 서버에서 이 API를 사용하면 로딩 레벨을 거칩니다.
+일반 OpenLevel / ServerTravel 및 메뉴·로비 진입에는 로딩 UI를 자동 표시하지 않습니다.
+로딩 레벨의 GameState가 목적지와 여행 ID를 복제하고 소유 PlayerController가 로컬 준비 결과를 서버에 알립니다.
+서버 준비와 모든 참가자의 응답이 확인되기 전에는 목적지 ServerTravel을 실행하지 않습니다.
+실패·접속 종료·제한 시간 초과 시 게임으로 진행하지 않고 실패 화면을 유지합니다.
 
-맵 이동 없이 준비 구간을 명시적으로 열려면 `BeginLoading(Title, TimeoutSeconds, bWaitForPSO)`를
-사용하세요. 기본 제한 시간은 120초이고 PSO 대기는 켜져 있습니다. 진행 중에 다시 호출해도
-기존 작업을 초기화하지 않습니다. 작업이 없다면 준비 확인 후 자동으로 닫힙니다.
+로딩 화면을 사용하는 준비 작업은 실제 로딩 레벨의 OnLoadingStarted에서 시작합니다.
+게임 레벨에서 발생하는 일반 비동기 로딩은 각 기능이 백그라운드로 처리합니다.
 
 `CancelLoading`은 화면의 대기 작업만 정리합니다. 팀원이 시작한 요청이나 엔진 travel을 취소하지는
 않습니다. 접속 취소는 기존 SessionSubsystem의 CancelJoin을 사용합니다.
@@ -71,17 +98,18 @@ Seamless Travel의 중간 월드는 목적지 준비 완료로 취급하지 않�
 
 ## UI와 이벤트
 
-기본 UI는 제목, 작업 문구, 로딩 애니메이션을 표시합니다. 맵 로딩으로 게임 스레드가 막히는 구간에는
-MoviePlayer + Slate가 표시하고, 이후에는 viewport overlay가 남아 작업 완료까지 기다립니다.
+기본 UI는 실제 로딩 레벨의 viewport에서 제목, 작업 문구, 로딩 애니메이션을 표시합니다.
+GameInstance의 월드가 로딩 레벨에서 바뀌는 순간 UI를 제거하므로 목적지 BeginPlay 전에 화면이 종료됩니다.
+모든 맵 전환에 적용하던 MoviePlayer 및 자동 overlay 표시는 사용하지 않습니다.
 공용 화면은 특정 에셋의 개수나 진행률을 추측하지 않습니다.
 
 * OnLoadingStarted: 각 기능의 준비 작업을 등록할 시점.
 * OnStatusChanged / GetStatus: 단계·문구·대기 작업 수·PSO 수 확인.
-* OnLoadingCompleted: 해당 머신의 정상 로딩 완료.
+* OnLoadingCompleted: 준비 완료 후 해당 머신이 로딩 레벨을 떠날 때 호출.
 * OnLoadingFailed: 외부 작업 실패, Owner 종료, 제한 시간 초과.
 
 외부 작업은 공용 화면이 재실행할 수 없으므로 실패 화면에는 메뉴 복귀만 제공합니다.
-각 클라이언트의 완료를 모아 게임을 시작하는 정책은 서버에서 별도로 관리하세요.
+로딩 레벨의 클라이언트 준비 결과는 서버가 수집합니다. 목적지 맵에서의 별도 매치 시작 규칙은 기존 게임 로직을 따릅니다.
 PSO 0은 현재 제출된 요청의 완료이며 아직 로딩하지 않은 모든 콘텐츠의 준비 완료가 아닙니다.
 
 ## 아이템·수류탄 연결
@@ -105,9 +133,3 @@ PSO 0은 현재 제출된 요청의 완료이며 아직 로딩하지 않은 모�
 실행 중인 인벤토리 인스턴스, 컴포넌트, 동적 머티리얼 등의 소유 참조는 유지합니다.
 
 기존 에셋 설정의 소프트 참조 이전은 완료되어 있습니다. 팀원은 변환된 에셋을 그대로 사용하면 됩니다.
-
-## 검증 항목
-
-자동화 테스트: ApocalypseSurvival.Loading 및 ApocalypseSurvival.UI.LoadingDotsCycle.
-ScreenRendering은 렌더링 가능한 실행에서 Saved/Automation에 일반·실패 화면 PNG를 저장합니다.
-실제 패키지 첫 실행 PSO와 다중 클라이언트 이동은 별도 플레이 검증 대상입니다.
