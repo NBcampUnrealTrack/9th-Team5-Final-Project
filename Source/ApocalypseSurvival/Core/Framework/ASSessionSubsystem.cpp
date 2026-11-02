@@ -1,4 +1,5 @@
 #include "Core/Framework/ASSessionSubsystem.h"
+#include "Core/Loading/ASLoadingFlowSubsystem.h"
 
 #include "Engine/LocalPlayer.h"
 #include "Engine/Engine.h"
@@ -269,7 +270,10 @@ void UASSessionSubsystem::StopJoinAttempt()
 	PendingJoinPassword.Reset();
 	GetGameInstance()->GetTimerManager().ClearTimer(JoinTimeoutTimer);
 	if (SessionInterface.IsValid()) SessionInterface->OnJoinSessionCompleteDelegates.RemoveAll(this);
-	GetGameInstance()->GetSubsystem<UASLoadingScreenSubsystem>()->HideLoadingScreen();
+	const auto* Flow = GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>();
+	// Connection readiness alone must not uncover assets/PSOs still preparing locally.
+	if (!Flow || (!Flow->IsLoading() && Flow->GetStatus().Phase != EASLoadingPhase::Failed))
+		GetGameInstance()->GetSubsystem<UASLoadingScreenSubsystem>()->HideLoadingScreen();
 }
 
 void UASSessionSubsystem::LeaveRoom()
@@ -298,6 +302,7 @@ void UASSessionSubsystem::ReturnToMenuWithError(const FText& Message)
 	if (bLeavingRoom || !GetWorld()) return;
 	bLeavingRoom = true;
 	ReturnToMenuMessage = Message;
+	if (auto* Flow = GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>()) Flow->CancelLoading();
 	const bool bWasJoining = bJoiningSession;
 	StopJoinAttempt();
 	if (bWasJoining && GEngine)

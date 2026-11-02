@@ -62,6 +62,7 @@ public class ApocalypseSurvival : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"MoviePlayer",
+			"RenderCore",
 			"CoreOnline",
 			"EngineSettings",
 			"SlateCore",

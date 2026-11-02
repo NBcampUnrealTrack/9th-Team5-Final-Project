@@ -8,7 +8,10 @@
 class SWidget;
 class UGameViewportClient;
 class UNetDriver;
+class APlayerController;
 struct FWorldContext;
+struct FASLoadingStatus;
+struct FASLoadingScreenModel;
 
 UCLASS()
 class APOCALYPSESURVIVAL_API UASLoadingScreenSubsystem : public UGameInstanceSubsystem
@@ -20,6 +23,7 @@ public:
 	virtual void Deinitialize() override;
 	void ShowLoadingScreen(const FSimpleDelegate& OnCancel = FSimpleDelegate());
 	void HideLoadingScreen();
+	void UpdateLoadingStatus(const FASLoadingStatus& Status);
 
 private:
 	void HandlePreLoadMap(const FWorldContext& Context, const FString& MapName);
@@ -31,4 +35,7 @@ private:
 	TWeakObjectPtr<UGameViewportClient> LoadingViewport;
 	TWeakObjectPtr<UWorld> SourceWorld;
 	bool bOwnsMovieScreen = false;
+	TSharedPtr<FASLoadingScreenModel, ESPMode::ThreadSafe> ScreenModel;
+	TWeakObjectPtr<APlayerController> ErrorController;
+	bool bPreviousMouseCursor = false;
 };
