@@ -59,7 +59,8 @@ bool FASMonsterDropGroupRow::Validate(FString& OutError) const
 	for (const auto& Weight : CategoryWeights)
 	{
 		if ((Weight.Key != EASItemType::Weapon && Weight.Key != EASItemType::Ammo
-			&& Weight.Key != EASItemType::Consumable && Weight.Key != EASItemType::CraftingMaterial)
+			&& Weight.Key != EASItemType::Consumable && Weight.Key != EASItemType::CraftingMaterial
+			&& Weight.Key != EASItemType::Bag)
 			|| !FMath::IsFinite(Weight.Value) || Weight.Value < 0.0f)
 		{
 			OutError = TEXT("Category weights require a valid category and finite nonnegative multiplier.");

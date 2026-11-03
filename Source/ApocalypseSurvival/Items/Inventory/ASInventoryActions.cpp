@@ -26,7 +26,7 @@ AASDroppedItem* UASInventoryComponent::DropSlotInternal(const int32 SlotIndex, c
 	APawn* Avatar, const bool bSingleItem)
 {
 	if (!HasInventoryAuthority() || !IsValid(Avatar) || Avatar != GetInventoryAvatar()
-		|| SlotIndex < 0 || SlotIndex >= PlayerSlotCount || !GetWorld()) return nullptr;
+		|| !IsValidItemSlot(SlotIndex) || !GetWorld()) return nullptr;
 	UASItemInstance* Item = GetItemAtSlot(SlotIndex);
 	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(this, Avatar);
 	if (!Item || Item->GetInstanceId() != ExpectedItem || !ASC
@@ -152,6 +152,8 @@ bool UASInventoryComponent::PrepareItemAction(const FGuid InstanceId, APawn* Ava
 bool UASInventoryComponent::UseItem(const FGuid InstanceId, APawn* Avatar)
 {
 	if (!HasInventoryAuthority()) return false;
+	if (UASItemInstance* Item = FindItemById(InstanceId); Item && Item->GetItemDefinition()->ItemType == EASItemType::Bag)
+		return Item == GetEquippedBag() ? UnequipBag(Avatar) : EquipBag(InstanceId, Avatar);
 	bool bQueued = false;
 	if (!PrepareItemAction(InstanceId, Avatar, false, bQueued)) return false;
 	if (bQueued) return true;

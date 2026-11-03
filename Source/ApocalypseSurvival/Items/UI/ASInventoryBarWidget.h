@@ -9,7 +9,7 @@ class UASInventorySlotWidget;
 class UUniformGridPanel;
 class UBorder;
 
-/** Ten backpack positions and a separate weapon position, displayed at the bottom right. */
+/** Ten quick slots and a separate weapon position, displayed at the bottom right. */
 UCLASS(Blueprintable)
 class APOCALYPSESURVIVAL_API UASInventoryBarWidget : public UUserWidget
 {
@@ -26,9 +26,11 @@ public:
 	void EndItemDrag();
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
-	void RefreshSlots();
+	virtual void RefreshSlots();
 
 protected:
+	virtual void BuildSlotWidgets();
+	virtual UWidget* GetInventoryBounds() const;
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -44,9 +46,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Inventory")
 	TSubclassOf<UASInventorySlotWidget> SlotWidgetClass;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UASInventorySlotWidget>> Slots;
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UASInventoryComponent> Inventory;
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UASInventorySlotWidget>> Slots;
 };

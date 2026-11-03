@@ -31,12 +31,6 @@ void UASInventoryComponent::BeginPlay()
 		if (LoadingFlow.IsValid()) LoadingFlow->OnLoadingStarted.AddUniqueDynamic(this, &ThisClass::HandleLoadingStarted);
 	}
 	PreloadItemAssets();
-	// Player inventory is the ten visible slots. Loot containers keep their configured limit.
-	if (Cast<APawn>(GetOwner()) || Cast<AController>(GetOwner()) || Cast<APlayerState>(GetOwner()))
-	{
-		MaxSlots = PlayerSlotCount;
-	}
-
 	if (HasInventoryAuthority() && !InitialItemsPreset.IsNull())
 	{
 		FString Error;
@@ -311,7 +305,7 @@ TArray<UASItemInstance*> UASInventoryComponent::GetItems() const
 
 bool UASInventoryComponent::HasFreeSlot() const
 {
-	return MaxSlots <= 0 || GetUsedSlotCount() < MaxSlots;
+	return GetMaxSlots() <= 0 || GetUsedSlotCount() < GetMaxSlots();
 }
 
 int32 UASInventoryComponent::GetUsedSlotCount() const
@@ -324,7 +318,7 @@ int32 UASInventoryComponent::GetUsedSlotCount() const
 
 int32 UASInventoryComponent::FindFreeSlotIndex() const
 {
-	const int32 Limit = MaxSlots > 0 ? MaxSlots : Items.Num() + 1;
+	const int32 Limit = GetMaxSlots() > 0 ? GetMaxSlots() : Items.Num() + 1;
 	for (int32 Index = 0; Index < Limit; ++Index)
 	{
 		if (!GetItemAtSlot(Index)) return Index;
@@ -334,7 +328,7 @@ int32 UASInventoryComponent::FindFreeSlotIndex() const
 
 UASItemInstance* UASInventoryComponent::GetItemAtSlot(const int32 SlotIndex) const
 {
-	if ((SlotIndex < 0 && SlotIndex != WeaponSlotIndex) || (MaxSlots > 0 && SlotIndex >= MaxSlots)) return nullptr;
+	if (SlotIndex != WeaponSlotIndex && SlotIndex != BagSlotIndex && !IsValidItemSlot(SlotIndex)) return nullptr;
 	for (UASItemInstance* Item : Items)
 	{
 		if (IsValid(Item) && Item->IsValidItemInstance() && Item->InventorySlot == SlotIndex) return Item;
@@ -345,12 +339,19 @@ UASItemInstance* UASInventoryComponent::GetItemAtSlot(const int32 SlotIndex) con
 bool UASInventoryComponent::SwapSlots(const int32 FromSlot, const int32 ToSlot,
 	const FGuid ExpectedFromItem, const FGuid ExpectedToItem)
 {
-	if (!HasInventoryAuthority() || FromSlot == ToSlot || FromSlot < 0 || ToSlot < 0
-		|| FromSlot >= PlayerSlotCount || ToSlot >= PlayerSlotCount) return false;
+	if (!HasInventoryAuthority() || FromSlot == ToSlot
+		|| (FromSlot != BagSlotIndex && !IsValidItemSlot(FromSlot))
+		|| (ToSlot != BagSlotIndex && !IsValidItemSlot(ToSlot))) return false;
 	UASItemInstance* From = GetItemAtSlot(FromSlot);
 	UASItemInstance* To = GetItemAtSlot(ToSlot);
 	if (!From || From->GetInstanceId() != ExpectedFromItem
 		|| (To ? To->GetInstanceId() : FGuid()) != ExpectedToItem) return false;
+	if (ToSlot == BagSlotIndex) return EquipBag(ExpectedFromItem, GetInventoryAvatar());
+	if (FromSlot == BagSlotIndex)
+	{
+		if (To) return To->GetItemDefinition()->ItemType == EASItemType::Bag && EquipBag(ExpectedToItem, GetInventoryAvatar());
+		return UnequipBag(GetInventoryAvatar(), ToSlot);
+	}
 	if (To && To->GetItemDefinition() == From->GetItemDefinition()
 		&& To->GetItemDefinition()->MaxStackSize > 1)
 	{

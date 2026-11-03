@@ -121,13 +121,17 @@ void UASInventorySlotWidget::RefreshSlot()
 		FStreamableDelegate::CreateWeakLambda(this, [this] { RefreshSlot(); }));
 	UTexture2D* Icon = Definition ? Definition->Icon.Get() : nullptr;
 	const bool bWeaponSlot = SlotIndex == UASInventoryComponent::WeaponSlotIndex;
-	const bool bEquipped = Item && bWeaponSlot;
+	const bool bBagSlot = SlotIndex == UASInventoryComponent::BagSlotIndex;
+	const bool bQuickSlot = SlotIndex >= 0 && SlotIndex < UASInventoryComponent::QuickSlotCount;
+	const bool bEquipped = Item && (bWeaponSlot || bBagSlot);
 	if (RarityBackground)
 	{
 		if (Definition) RarityBackground->SetRarity(Definition->Rarity);
 		RarityBackground->SetVisibility(Definition ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
-	if (KeyText) KeyText->SetText(bWeaponSlot ? NSLOCTEXT("Items", "WeaponSlot", "Weapon") : FText::AsNumber((SlotIndex + 1) % 10));
+	if (KeyText) KeyText->SetText(bWeaponSlot ? NSLOCTEXT("Items", "WeaponSlot", "무기")
+		: bBagSlot ? NSLOCTEXT("Items", "BagSlot", "가방")
+		: bQuickSlot ? FText::AsNumber((SlotIndex + 1) % 10) : FText::GetEmpty());
 	if (ItemIcon)
 	{
 		ItemIcon->SetBrushFromTexture(Icon);
@@ -138,7 +142,10 @@ void UASInventorySlotWidget::RefreshSlot()
 	if (QuantityText) QuantityText->SetText(Item && Item->GetQuantity() > 1 ? FText::AsNumber(Item->GetQuantity()) : FText::GetEmpty());
 	if (EquippedText) EquippedText->SetText(bEquipped ? FText::FromString(TEXT("E")) : FText::GetEmpty());
 	if (SlotBorder) SlotBorder->SetBrushColor(bEquipped ? FLinearColor(0.15f, 0.4f, 0.65f, 0.95f) : FLinearColor(0.08f, 0.1f, 0.13f, 0.95f));
-	SetToolTipText(Definition ? Definition->DisplayName : FText::GetEmpty());
+	SetToolTipText(Definition && Definition->ItemType == EASItemType::Bag
+		? FText::Format(NSLOCTEXT("Items", "BagCapacityTooltip", "{0}\n장착 시 보관함 +{1}칸"),
+			Definition->DisplayName, FText::AsNumber(Definition->BagAdditionalSlots))
+		: Definition ? Definition->DisplayName : FText::GetEmpty());
 }
 
 FReply UASInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -157,7 +164,7 @@ FReply UASInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& Geometry
 	bPressed = true;
 	PressedItem = GetItem() ? GetItem()->GetInstanceId() : FGuid();
 	FReply Reply = FReply::Handled().CaptureMouse(TakeWidget());
-	return PressedItem.IsValid() && SlotIndex >= 0 ? Reply.DetectDrag(TakeWidget(), EKeys::LeftMouseButton) : Reply;
+	return PressedItem.IsValid() && (SlotIndex >= 0 || SlotIndex == UASInventoryComponent::BagSlotIndex) ? Reply.DetectDrag(TakeWidget(), EKeys::LeftMouseButton) : Reply;
 }
 
 FReply UASInventorySlotWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -174,7 +181,7 @@ void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, con
 {
 	bPressed = false;
 	UASItemInstance* Item = GetItem();
-	if (!Bar || !Item || SlotIndex < 0 || Item->GetInstanceId() != PressedItem) return;
+	if (!Bar || !Item || (SlotIndex < 0 && SlotIndex != UASInventoryComponent::BagSlotIndex) || Item->GetInstanceId() != PressedItem) return;
 	UASInventorySlotDragDrop* Drag = NewObject<UASInventorySlotDragDrop>();
 	Drag->Inventory = Bar->GetInventory();
 	Drag->SourceBar = Bar;

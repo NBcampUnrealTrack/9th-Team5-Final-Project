@@ -31,9 +31,13 @@ class APOCALYPSESURVIVAL_API UASInventoryComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
-	static constexpr int32 PlayerSlotCount = 10;
+	static constexpr int32 QuickSlotCount = 10;
+	static constexpr int32 BaseStorageSlotCount = 16;
+	/** Legacy name retained for existing quick-slot callers. Not the total inventory capacity. */
+	static constexpr int32 PlayerSlotCount = QuickSlotCount;
 	/** Dedicated weapon position; owned instances here remain replicated but do not use backpack capacity. */
 	static constexpr int32 WeaponSlotIndex = -2;
+	static constexpr int32 BagSlotIndex = -3;
 
 	UASInventoryComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -87,6 +91,21 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
 	AActor* GetEquippedActor() const;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Bag")
+	UASItemInstance* GetEquippedBag() const;
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Bag")
+	bool EquipBag(FGuid InstanceId, APawn* Avatar);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Bag")
+	bool UnequipBag(APawn* Avatar, int32 PreferredSlot = -1);
+
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	bool IsValidItemSlot(int32 SlotIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	int32 GetStorageSlotCount() const;
 
 	/**
 	 * Adds items using the supplied definition.
@@ -148,7 +167,7 @@ public:
 	int32 GetUsedSlotCount() const;
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
-	int32 GetMaxSlots() const { return MaxSlots; }
+	int32 GetMaxSlots() const;
 
 	/** Fired once after a successful public mutation. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory")
@@ -159,6 +178,8 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	bool IsPlayerInventory() const;
+	bool ChangeEquippedBag(UASItemInstance* NewBag, APawn* Avatar, int32 PreferredReturnSlot = INDEX_NONE);
 	int32 GetBackpackSlotLimit() const;
 	/** Apply a freshly built plan without broadcasting. Callers publish only after setting their own state. */
 	bool ApplyMutationPlan(const FASInventoryMutationPlan& Plan);
@@ -180,7 +201,7 @@ private:
 	int32 FindFreeSlotIndex() const;
 	void RemoveEmptyAndInvalidInstances();
 
-	/** Maximum number of item instances. Zero means unlimited. */
+	/** Container limit; zero is unlimited. Player capacity is always 10 quick + 16 base + equipped bag bonus. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0"))
 	int32 MaxSlots = 0;
 

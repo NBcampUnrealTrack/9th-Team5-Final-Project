@@ -85,6 +85,9 @@ public:
 	UFUNCTION(BlueprintCallable, Exec, Category = "Crafting")
 	void ToggleCrafting();
 
+	UFUNCTION(BlueprintCallable, Exec, Category = "Inventory")
+	void ToggleInventory();
+
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	UASPlayerAttackMoveComponent* GetAttackMoveComponent() const { return AttackMoveComponent; }
 

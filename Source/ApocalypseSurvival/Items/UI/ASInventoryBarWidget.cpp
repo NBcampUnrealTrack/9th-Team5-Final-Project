@@ -47,6 +47,13 @@ void UASInventoryBarWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	BuildSlotWidgets();
+	if (Inventory) Inventory->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::RefreshSlots);
+	RefreshSlots();
+}
+
+void UASInventoryBarWidget::BuildSlotWidgets()
+{
 	if (SlotsPanel)
 	{
 		SlotsPanel->ClearChildren();
@@ -61,8 +68,11 @@ void UASInventoryBarWidget::NativeConstruct()
 			SlotsPanel->AddChildToUniformGrid(Entry, Index < 0 ? 0 : Index / 5, Index < 0 ? 0 : Index % 5 + 1);
 		}
 	}
-	if (Inventory) Inventory->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::RefreshSlots);
-	RefreshSlots();
+}
+
+UWidget* UASInventoryBarWidget::GetInventoryBounds() const
+{
+	return SlotsPanel;
 }
 
 void UASInventoryBarWidget::NativeDestruct()
@@ -87,7 +97,8 @@ bool UASInventoryBarWidget::NativeOnDrop(const FGeometry& Geometry, const FDragD
 	UASInventorySlotDragDrop* Drag = Cast<UASInventorySlotDragDrop>(Operation);
 	if (!Drag || Drag->SourceBar != this || Drag->Inventory != Inventory || !IsValid(Inventory)) return false;
 	// Dropping in gaps or back onto the source slot is a no-op, not a discard.
-	if (!SlotsPanel || SlotsPanel->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition())) return true;
+	UWidget* Bounds = GetInventoryBounds();
+	if (!Bounds || Bounds->GetCachedGeometry().IsUnderLocation(Event.GetScreenSpacePosition())) return true;
 	if (GetOwningPlayer())
 	{
 		if (UASItemInteractionComponent* Interaction = GetOwningPlayer()->FindComponentByClass<UASItemInteractionComponent>())
@@ -98,9 +109,10 @@ bool UASInventoryBarWidget::NativeOnDrop(const FGeometry& Geometry, const FDragD
 
 bool UASInventoryBarWidget::IsCursorOverInventory() const
 {
-	return IsInViewport() && IsVisible() && SlotsPanel && SlotsPanel->IsVisible()
+	UWidget* Bounds = GetInventoryBounds();
+	return IsInViewport() && IsVisible() && Bounds && Bounds->IsVisible()
 		&& FSlateApplication::IsInitialized()
-		&& SlotsPanel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos());
+		&& Bounds->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos());
 }
 
 void UASInventoryBarWidget::SetInventory(UASInventoryComponent* InInventory)

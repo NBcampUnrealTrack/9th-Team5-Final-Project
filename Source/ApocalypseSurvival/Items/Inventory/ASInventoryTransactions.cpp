@@ -11,8 +11,7 @@
 
 int32 UASInventoryComponent::GetBackpackSlotLimit() const
 {
-	const bool bPlayerInventory = Cast<APawn>(GetOwner()) || Cast<AController>(GetOwner()) || Cast<APlayerState>(GetOwner());
-	return bPlayerInventory ? PlayerSlotCount : MaxSlots;
+	return GetMaxSlots();
 }
 
 bool UASInventoryComponent::ApplyMutationPlan(const FASInventoryMutationPlan& Plan)

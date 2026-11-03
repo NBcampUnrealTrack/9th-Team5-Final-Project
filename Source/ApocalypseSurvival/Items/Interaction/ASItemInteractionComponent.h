@@ -11,6 +11,9 @@ class UASInventoryComponent;
 class UASLootWidget;
 class UASInventoryBarWidget;
 class UInputComponent;
+class UASInventoryPanelWidget;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASInventoryActionFailedSignature, FText, Message);
 
 /** Controller-owned RPC bridge. Finds an existing player inventory; never creates one. */
 UCLASS(ClassGroup = (AS), meta = (BlueprintSpawnableComponent))
@@ -27,6 +30,15 @@ public:
 	bool HasPendingInteraction() const { return PendingTarget.IsValid(); }
 	bool IsLootOpen() const;
 	bool IsCursorOverInventory() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
+	void ToggleInventory();
+	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
+	void CloseInventory();
+	UFUNCTION(BlueprintPure, Category = "Item|Inventory")
+	bool IsInventoryOpen() const;
+	UPROPERTY(BlueprintAssignable, Category = "Item|Inventory")
+	FASInventoryActionFailedSignature OnInventoryActionFailed;
 	/** Only the nameplate can select a dropped item as a local hover target. */
 	void SetHoveredDroppedItemLabel(AASDroppedItem* Item, bool bHovered);
 
@@ -76,6 +88,8 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	UFUNCTION(Client, Reliable)
+	void ClientInventoryActionFailed(const FText& Message);
 	AASPlayerController* GetASController() const;
 	bool CanReachTarget(AActor* Target) const;
 	void InitializeInventoryBar();
@@ -136,6 +150,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASInventoryBarWidget> InventoryBar;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Item|Inventory")
+	TSubclassOf<UASInventoryPanelWidget> InventoryPanelClass;
+	UPROPERTY(Transient)
+	TObjectPtr<UASInventoryPanelWidget> InventoryPanel;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputComponent> InventoryInput;
