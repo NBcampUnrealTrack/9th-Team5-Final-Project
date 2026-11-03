@@ -117,9 +117,3 @@ bool FASMapRuleEngine::BeginStep(FASMapStateSnapshot& State, const FASMapPhaseCo
 	}
 	return true;
 }
-
-const FASZoneConfig* FASMapRuleEngine::FindZoneConfig(FName ZoneId) const
-{
-	const int32* Index = ZoneIndex.Find(ZoneId);
-	return Index ? &Zones[*Index] : nullptr;
-}

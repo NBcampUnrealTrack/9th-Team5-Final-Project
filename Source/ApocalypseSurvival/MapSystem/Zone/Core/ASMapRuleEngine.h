@@ -45,7 +45,6 @@ public:
 		const FASZoneDangerScheduleRow& Rule, const TMap<FName, FASZonePhaseCounts>& PhaseCounts,
 		FASMapEngineEvents& OutEvents);
 
-	const FASZoneConfig* FindZoneConfig(FName ZoneId) const;
 	bool IsZoneKnown(FName ZoneId) const { return ZoneIndex.Contains(ZoneId); }
 
 private:

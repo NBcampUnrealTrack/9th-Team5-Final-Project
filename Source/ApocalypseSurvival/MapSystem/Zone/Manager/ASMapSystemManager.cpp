@@ -4,14 +4,12 @@
 #include "AbilitySystemComponent.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Components/SceneComponent.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "GAS/ASAbilityTags.h"
-#include "HAL/IConsoleManager.h"
 #include "MapSystem/Shared/ASMapAbilityUtils.h"
 #include "MapSystem/Shared/ASMapShapeUtils.h"
 #include "MapSystem/Zone/Core/ASMapDefinition.h"
@@ -27,12 +25,6 @@
 
 namespace ASMapManagerPrivate
 {
-	static TAutoConsoleVariable<bool> CVarDebugDraw(
-		TEXT("DebugDrawMap"),
-		false,
-		TEXT("Draw zone areas, adjacency links, danger on the server."),
-		ECVF_Cheat);
-
 	static TArray<FVector> GetAliveMassMonsterLocations(UWorld* World)
 	{
 		TArray<FVector> Locations;
@@ -67,8 +59,7 @@ namespace ASMapManagerPrivate
 
 AASMapSystemManager::AASMapSystemManager()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.1f;
+	PrimaryActorTick.bCanEverTick = false;
 	SetReplicates(false);
 	bNetLoadOnClient = false;
 	SetCanBeDamaged(false);
@@ -315,16 +306,6 @@ void AASMapSystemManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void AASMapSystemManager::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-	// 스텝 규칙에는 주기 처리가 없다. PIE 연결선과 위험도만 잠깐씩 다시 그린다.
-	if (bMapRunning && ASMapManagerPrivate::CVarDebugDraw.GetValueOnGameThread())
-	{
-		DrawDebug();
-	}
-}
-
 void AASMapSystemManager::CommitEvents(const FASMapStateSnapshot& WorkingState, const FASMapEngineEvents& Events)
 {
 	WriteSnapshot(WorkingState);
@@ -569,55 +550,5 @@ void AASMapSystemManager::DumpState() const
 		const FASZonePhaseCounts ZoneCounts = Counts.FindRef(Zone.ZoneId);
 		UE_LOG(LogApocalypseSurvival, Log, TEXT("  %-12s danger=%d monsterCount=%d hasPlayers=%d"),
 			*Zone.ZoneId.ToString(), Zone.DangerLevel, ZoneCounts.MonsterCount, ZoneCounts.bHasPlayers ? 1 : 0);
-	}
-}
-
-void AASMapSystemManager::DrawDebug() const
-{
-	const UASMapStateComponent* State = MapState.Get();
-	const UASMapWorldSubsystem* Subsystem = UASMapWorldSubsystem::Get(this);
-	if (!State || !Subsystem || !MapDefinition)
-	{
-		return;
-	}
-
-	const float Duration = 0.15f;
-
-	for (const AASMapZone* Zone : Subsystem->GetZones())
-	{
-		const FASZoneRuntimeState* ZoneState = State->GetSnapshot().FindZone(Zone->GetZoneId());
-
-		FLinearColor Color = MapDefinition->GetDangerColor(ZoneState ? ZoneState->DangerLevel : 1);
-		const TArray<TArray<FVector2D>>& Outlines = Zone->GetAreaOutlines();
-		const float Z = Zone->GetActorLocation().Z;
-		for (const TArray<FVector2D>& Outline : Outlines)
-		{
-			for (int32 Index = 0; Index < Outline.Num(); ++Index)
-			{
-				const FVector A(Outline[Index], Z);
-				const FVector B(Outline[(Index + 1) % Outline.Num()], Z);
-				DrawDebugLine(GetWorld(), A, B, Color.ToFColor(true), false, Duration, 0, 10.0f);
-			}
-		}
-
-		const FString Label = FString::Printf(TEXT("%s  D%d"),
-			*Zone->GetZoneId().ToString(), ZoneState ? ZoneState->DangerLevel : Zone->GetInitialDangerLevel());
-
-		DrawDebugString(GetWorld(), Zone->GetZoneCenter() + FVector(0.0, 0.0, 300.0), Label, nullptr, Color.ToFColor(true), Duration, true, 1.4f);
-
-		// 초기화 때 규칙 엔진에 전달한 양방향 인접 관계를 그대로 표시한다.
-		if (const FASZoneConfig* Config = RuleEngine.FindZoneConfig(Zone->GetZoneId()))
-		{
-			for (const FName& AdjacentId : Config->AdjacentZoneIds)
-			{
-				if (Config->ZoneId.LexicalLess(AdjacentId))
-				{
-					if (const AASMapZone* AdjacentZone = Subsystem->FindZone(AdjacentId))
-					{
-						DrawDebugLine(GetWorld(), Zone->GetZoneCenter(), AdjacentZone->GetZoneCenter(), FColor::Cyan, false, Duration, 0, 2.0f);
-					}
-				}
-			}
-		}
 	}
 }
