@@ -1,68 +1,109 @@
 #include "Items/UI/ASCraftingWidget.h"
+#include "Items/UI/ASCraftingEntryWidget.h"
 #include "Items/UI/ViewModels/ASCraftingViewModel.h"
+#include "Items/UI/ViewModels/ASCraftingEntryViewModel.h"
 #include "Items/UI/ASItemViewBinding.h"
-
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
-#include "Components/ComboBoxString.h"
+#include "Components/PanelWidget.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
+
+UASCraftingWidget::UASCraftingWidget(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+{
+	DefaultRecipeEntryClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_CraftingRecipeEntry.WBP_CraftingRecipeEntry_C"));
+	DefaultMaterialEntryClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_CraftingMaterialEntry.WBP_CraftingMaterialEntry_C"));
+}
+
+void UASCraftingWidget::Populate(UPanelWidget* Panel, const TArray<TObjectPtr<UASCraftingEntryViewModel>>& Entries, TSubclassOf<UASCraftingEntryWidget> Class)
+{
+	if (!Panel || !Class) return;
+	Panel->ClearChildren();
+	for (UASCraftingEntryViewModel* Entry : Entries)
+	{
+		UASCraftingEntryWidget* Widget = nullptr;
+#if WITH_EDITOR
+		if (IsDesignTime())
+		{
+			Widget = NewObject<UASCraftingEntryWidget>(WidgetTree, Class);
+			Widget->SetDesignerFlags(GetDesignerFlags()); Widget->Initialize();
+		}
+		else
+#endif
+		Widget = CreateWidget<UASCraftingEntryWidget>(GetOwningPlayer(), Class);
+		if (Widget) { Widget->SetViewModel(Entry); Panel->AddChild(Widget); }
+	}
+}
+
+void UASCraftingWidget::NativePreConstruct()
+{
+	if (IsDesignTime())
+	{
+		TArray<TObjectPtr<UASCraftingEntryViewModel>> Recipes, Materials;
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			auto* Entry = NewObject<UASCraftingEntryViewModel>(this);
+			Entry->Initialize(nullptr, nullptr, NAME_None, NSLOCTEXT("ASCrafting", "PreviewWeapon", "무기 이름"), Index == 0 ? NSLOCTEXT("ASCrafting", "Melee", "근접 무기") : FText::GetEmpty());
+			Entry->Update(NSLOCTEXT("ASCrafting", "Available", "제작 가능"), true, true, Index == 0); Recipes.Add(Entry);
+		}
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			auto* Entry = NewObject<UASCraftingEntryViewModel>(this);
+			Entry->Initialize(nullptr, nullptr, NAME_None, NSLOCTEXT("ASCrafting", "PreviewMaterial", "재료 이름"));
+			Entry->Update(FText::FromString(TEXT("2 / 5")), false, true); Materials.Add(Entry);
+		}
+		Populate(RecipeList, Recipes, RecipeEntryClass ? RecipeEntryClass.Get() : DefaultRecipeEntryClass.LoadSynchronous());
+		Populate(MaterialList, Materials, MaterialEntryClass ? MaterialEntryClass.Get() : DefaultMaterialEntryClass.LoadSynchronous());
+		if (ResultIcon) ResultIcon->SetVisibility(ESlateVisibility::Collapsed);
+		if (ResultFallback) ResultFallback->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+	Super::NativePreConstruct();
+}
 
 void UASCraftingWidget::NativeConstruct()
 {
 	if (!ViewModel) ViewModel = NewObject<UASCraftingViewModel>(this);
 	ViewModel->Initialize(GetOwningPlayer());
-	// Authored Construct events can obtain the initialized VM through GetViewModel.
 	Super::NativeConstruct();
 	ASItemViewBinding::Set(this, TEXT("CraftingVM"), ViewModel);
-	if (RecipePicker) RecipePicker->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleSelection);
 	if (CraftButton) CraftButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Craft);
 	if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Close);
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	ViewModel->RemoveAllFieldValueChangedDelegates(this);
 	using FFields = UASCraftingViewModel::FFieldNotificationClassDescriptor;
-	for (UE::FieldNotification::FFieldId Field : {FFields::Recipes, FFields::SelectedRecipe, FFields::Details, FFields::Status, FFields::bCanCraft, FFields::bAwaitingResult})
+	for (UE::FieldNotification::FFieldId Field : {FFields::RecipeEntries, FFields::MaterialEntries, FFields::ResultIcon, FFields::SelectedRecipe})
 		ViewModel->AddFieldValueChangedDelegate(Field, INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateWeakLambda(this,
 			[this](UObject*, UE::FieldNotification::FFieldId) { Refresh(); }));
+	RenderedRecipes.Reset(); RenderedMaterials.Reset();
 	Refresh();
 }
 
 void UASCraftingWidget::NativeDestruct()
 {
-	if (RecipePicker) RecipePicker->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleSelection);
 	if (CraftButton) CraftButton->OnClicked.RemoveDynamic(this, &ThisClass::Craft);
 	if (CloseButton) CloseButton->OnClicked.RemoveDynamic(this, &ThisClass::Close);
 	if (ViewModel) { ViewModel->RemoveAllFieldValueChangedDelegates(this); ViewModel->Shutdown(); }
+	RenderedRecipes.Reset(); RenderedMaterials.Reset();
 	Super::NativeDestruct();
 }
 
 void UASCraftingWidget::Refresh()
 {
 	if (!ViewModel) return;
-	TGuardValue<bool> UpdatingView(bUpdatingView, true);
-	if (!ASItemViewBinding::HasView(this))
+	if (RenderedRecipes != ViewModel->RecipeEntries)
 	{
-		if (Details) Details->SetText(ViewModel->Details);
-		if (Status) Status->SetText(ViewModel->Status);
-		if (CraftButton) CraftButton->SetIsEnabled(ViewModel->bCanCraft);
+		Populate(RecipeList, ViewModel->RecipeEntries, RecipeEntryClass ? RecipeEntryClass.Get() : DefaultRecipeEntryClass.LoadSynchronous());
+		RenderedRecipes = ViewModel->RecipeEntries;
 	}
-	if (RecipePicker)
+	if (RenderedMaterials != ViewModel->MaterialEntries)
 	{
-		bool bOptionsChanged = RecipePicker->GetOptionCount() != ViewModel->Recipes.Num();
-		for (int32 Index = 0; !bOptionsChanged && Index < ViewModel->Recipes.Num(); ++Index)
-			bOptionsChanged = RecipePicker->GetOptionAtIndex(Index) != ViewModel->Recipes[Index];
-		if (bOptionsChanged)
-		{
-			RecipePicker->ClearOptions();
-			for (const FString& Recipe : ViewModel->Recipes) RecipePicker->AddOption(Recipe);
-		}
-		RecipePicker->SetIsEnabled(!ViewModel->bAwaitingResult);
-		const FString Selected = ViewModel->SelectedRecipe.IsNone() ? FString() : ViewModel->SelectedRecipe.ToString();
-		if (RecipePicker->GetSelectedOption() != Selected) RecipePicker->SetSelectedOption(Selected);
+		Populate(MaterialList, ViewModel->MaterialEntries, MaterialEntryClass ? MaterialEntryClass.Get() : DefaultMaterialEntryClass.LoadSynchronous());
+		RenderedMaterials = ViewModel->MaterialEntries;
 	}
+	if (EmptyRecipesText) EmptyRecipesText->SetVisibility(ViewModel->RecipeEntries.IsEmpty() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (ResultIcon) { ResultIcon->SetBrushFromTexture(ViewModel->ResultIcon); ResultIcon->SetVisibility(ViewModel->ResultIcon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed); }
+	if (ResultFallback) ResultFallback->SetVisibility(ViewModel->ResultIcon ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 }
 
-void UASCraftingWidget::HandleSelection(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (ViewModel && !bUpdatingView) ViewModel->SelectRecipe(FName(*SelectedItem));
-}
 void UASCraftingWidget::Craft() { if (ViewModel) ViewModel->Craft(); }
 void UASCraftingWidget::Close() { if (ViewModel) ViewModel->Close(); }

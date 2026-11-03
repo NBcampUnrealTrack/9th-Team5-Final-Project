@@ -11,6 +11,9 @@ class UASInventoryComponent;
 class UAbilitySystemComponent;
 class AASPlayerController;
 class AASGameState;
+class UASCraftingEntryViewModel;
+class UASCraftingRecipeDefinition;
+class UTexture2D;
 
 UCLASS(BlueprintType)
 class APOCALYPSESURVIVAL_API UASCraftingViewModel : public UMVVMViewModelBase
@@ -24,6 +27,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Crafting|ViewModel") void Refresh();
 	UFUNCTION(BlueprintCallable, Category="Crafting|ViewModel") void Craft();
 	UFUNCTION(BlueprintCallable, Category="Crafting|ViewModel") void Close();
+	void HandleEntryIconChanged(UASCraftingEntryViewModel* Entry);
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") TArray<TObjectPtr<UASCraftingEntryViewModel>> RecipeEntries;
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") TArray<TObjectPtr<UASCraftingEntryViewModel>> MaterialEntries;
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText SelectedName;
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText SelectedCategory;
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText WeaponStats;
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText OwnedResultText;
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText AvailabilityText;
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") TObjectPtr<UTexture2D> ResultIcon;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") TArray<FString> Recipes;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FName SelectedRecipe;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText Details;
@@ -31,6 +43,8 @@ public:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") bool bCanCraft = false;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") bool bAwaitingResult = false;
 private:
+	void BuildRecipeEntries();
+	void BuildMaterialEntries(const UASCraftingRecipeDefinition* Recipe);
 	void BindPlayerStateSources();
 	void UnbindPlayerStateSources();
 	void HandleDeadTagChanged(FGameplayTag Tag, int32 NewCount);
@@ -45,4 +59,6 @@ private:
 	TWeakObjectPtr<AASGameState> ObservedGameState;
 	FDelegateHandle DeadTagChangedHandle;
 	FName PendingRecipe;
+	TWeakObjectPtr<const UASCraftingRecipeDefinition> DisplayedRecipe;
+	TArray<int64> RequiredQuantities;
 };

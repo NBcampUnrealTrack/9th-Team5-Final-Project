@@ -11,9 +11,9 @@
 5. **Miscellaneous → Data Asset → ASCraftingCatalog**으로 공용 카탈로그(예: `DA_CraftingCatalog`)를 만든다. 카탈로그의 **Recipes**에 사용할 레시피를 등록한다. 같은 ID를 두 번 등록하면 해당 ID는 사용할 수 없다. 콘텐츠 브라우저의 Validate Assets로 빈 참조, 중복 ID, 잘못된 레시피 설정을 확인할 수 있다.
 6. 실제 게임에서 사용하는 PlayerController Blueprint의 **CraftingComponent → Catalog**에 이 카탈로그를 한 번 지정한다. 이후 새 레시피를 추가하거나 제거할 때는 카탈로그의 Recipes만 수정하면 된다. 여러 PlayerController Blueprint가 같은 카탈로그를 공유할 수도 있다.
 7. UI 버튼이나 Enhanced Input에서 PlayerController의 `ToggleCrafting`을 호출한다. 별도 입력 에셋 없이 시험하려면 PIE 콘솔에서 `ToggleCrafting`을 입력한다. 창의 `닫기` 버튼이나 Escape로 닫는다.
-8. 재료는 기존 전리품/시작 아이템 설정으로 지급한다. 제작 창에서 레시피 선택 → 보유/필요 수량 확인 → 제작을 누른다.
+8. 재료는 기존 전리품/시작 아이템 설정으로 지급한다. 제작 창의 왼쪽 무기 목록에서 선택 → 가운데 무기 정보와 오른쪽 재료별 보유/필요 수량 확인 → 제작을 누른다.
 
-실제 재료 종류와 무기 조합이 정해지지 않아 제작 재료·레시피 콘텐츠 에셋이나 기존 입력 매핑은 변경하지 않았다. 카탈로그를 지정하지 않았거나 레시피 목록이 비어 있으면 제작 창에 안내를 표시한다. 기본 창은 `WBP_Crafting`을 사용하며 UMG 디자이너에서 편집한다. 목록은 창을 열 때 카탈로그에서 읽으며, 서버도 자신에게 설정된 카탈로그로 제작 요청을 검증한다.
+실제 재료 종류와 무기 조합이 정해지지 않아 제작 재료·레시피 콘텐츠 에셋이나 기존 입력 매핑은 변경하지 않았다. 카탈로그를 지정하지 않았거나 레시피 목록이 비어 있으면 제작 창에 안내를 표시한다. 기본 창은 `WBP_Crafting`을 사용하며 UMG 디자이너에서 편집한다. 드롭다운 대신 상시 제작법 목록·무기 상세·재료 목록을 표시한다. 행 템플릿은 `WBP_CraftingRecipeEntry`와 `WBP_CraftingMaterialEntry`다. 목록은 창을 열 때 카탈로그에서 읽으며, 서버도 자신에게 설정된 카탈로그로 제작 요청을 검증한다.
 
 이전 방식으로 컴포넌트의 `Available Recipes` 배열에 설정한 값이 있다면, 해당 레시피들을 새 카탈로그의 Recipes로 옮기고 컴포넌트에 Catalog를 지정해야 한다. 기존 배열 값은 자동 이전되지 않는다. 기존 Blueprint에서 배열을 직접 읽었다면 `GetAvailableRecipes` 호출로 변경한다.
 
