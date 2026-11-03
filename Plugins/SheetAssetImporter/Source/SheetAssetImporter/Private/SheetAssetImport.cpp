@@ -35,6 +35,13 @@ namespace
 		int32 ColumnIndex = INDEX_NONE;
 	};
 
+	bool PropertyPathsOverlap(const FString& Left, const FString& Right)
+	{
+		return Left.Equals(Right, ESearchCase::IgnoreCase)
+			|| Left.StartsWith(Right + TEXT("."), ESearchCase::IgnoreCase)
+			|| Right.StartsWith(Left + TEXT("."), ESearchCase::IgnoreCase);
+	}
+
 	FString ObjectPath(const FString& PackagePath)
 	{
 		return PackagePath + TEXT(".") + FPackageName::GetLongPackageAssetName(PackagePath);
@@ -495,9 +502,7 @@ FSheetImportReport SheetAssetImport::Import(USheetImportProfile* Profile, const 
 			// Explicit mappings own their destination, including a struct's parent/child paths.
 			const bool bExplicitDestination = Profile->ColumnMappings.ContainsByPredicate([&Mapping](const FSheetColumnMapping& Explicit)
 			{
-				return Explicit.PropertyPath.Equals(Mapping.PropertyPath, ESearchCase::IgnoreCase)
-					|| Explicit.PropertyPath.StartsWith(Mapping.PropertyPath + TEXT("."), ESearchCase::IgnoreCase)
-					|| Mapping.PropertyPath.StartsWith(Explicit.PropertyPath + TEXT("."), ESearchCase::IgnoreCase);
+				return PropertyPathsOverlap(Explicit.PropertyPath, Mapping.PropertyPath);
 			});
 			if (bExplicitDestination) continue;
 			Mappings.Add({ Mapping, Pair.Value });
@@ -516,9 +521,7 @@ FSheetImportReport SheetAssetImport::Import(USheetImportProfile* Profile, const 
 	// Parent and child writes would otherwise depend on map iteration order.
 	for (int32 I = 0; I < PropertyPaths.Num(); ++I)
 		for (int32 J = I + 1; J < PropertyPaths.Num(); ++J)
-			if (PropertyPaths[I].Equals(PropertyPaths[J], ESearchCase::IgnoreCase)
-				|| PropertyPaths[I].StartsWith(PropertyPaths[J] + TEXT("."), ESearchCase::IgnoreCase)
-				|| PropertyPaths[J].StartsWith(PropertyPaths[I] + TEXT("."), ESearchCase::IgnoreCase))
+			if (PropertyPathsOverlap(PropertyPaths[I], PropertyPaths[J]))
 				return Fail(TEXT("Mappings overlap: ") + PropertyPaths[I] + TEXT(" and ") + PropertyPaths[J]);
 	TArray<FPreparedAsset> Prepared;
 	UDataTable* CandidateTable = nullptr;
