@@ -30,6 +30,9 @@ class APOCALYPSESURVIVAL_API UASCraftingComponent : public UActorComponent
 public:
 	UASCraftingComponent();
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Crafting|UI")
+	TSubclassOf<UASCraftingWidget> CraftingWidgetClass;
+
 	/** Assign once on the player-controller Blueprint; manage recipes in the shared catalog asset. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	TObjectPtr<UASCraftingCatalog> Catalog;
@@ -74,4 +77,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASCraftingWidget> CraftingWidget;
+	UPROPERTY()
+	TSoftClassPtr<UASCraftingWidget> DefaultCraftingWidgetClass;
 };

@@ -12,6 +12,7 @@ class UASLootWidget;
 class UASInventoryBarWidget;
 class UInputComponent;
 class UASInventoryPanelWidget;
+class UASInventoryViewModel;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASInventoryActionFailedSignature, FText, Message);
 
@@ -52,6 +53,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetPlayerInventory() const;
 
+	UFUNCTION(BlueprintPure, Category="Item|ViewModel")
+	UASInventoryViewModel* GetInventoryViewModel();
+
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void RequestLoot(AASLootChest* Chest, FGuid InstanceId, int32 Quantity);
 
@@ -88,6 +92,8 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	UPROPERTY(Transient)
+	TObjectPtr<UASInventoryViewModel> InventoryViewModel;
 	UFUNCTION(Client, Reliable)
 	void ClientInventoryActionFailed(const FText& Message);
 	AASPlayerController* GetASController() const;
@@ -140,19 +146,25 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Loot")
 	TSubclassOf<UASLootWidget> LootWidgetClass;
+	UPROPERTY()
+	TSoftClassPtr<UASLootWidget> DefaultLootWidgetClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASLootWidget> LootWidget;
 
-	/** Optional visual override. The native class works without any BP assets. */
+	/** Designer-authored quick-slot view; defaults to WBP_InventoryBar. */
 	UPROPERTY(EditDefaultsOnly, Category = "Item|Inventory")
 	TSubclassOf<UASInventoryBarWidget> InventoryBarClass;
+	UPROPERTY()
+	TSoftClassPtr<UASInventoryBarWidget> DefaultInventoryBarClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UASInventoryBarWidget> InventoryBar;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Item|Inventory")
 	TSubclassOf<UASInventoryPanelWidget> InventoryPanelClass;
+	UPROPERTY()
+	TSoftClassPtr<UASInventoryPanelWidget> DefaultInventoryPanelClass;
 	UPROPERTY(Transient)
 	TObjectPtr<UASInventoryPanelWidget> InventoryPanel;
 

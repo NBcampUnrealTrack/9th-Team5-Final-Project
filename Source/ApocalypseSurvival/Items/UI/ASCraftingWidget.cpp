@@ -1,204 +1,68 @@
 #include "Items/UI/ASCraftingWidget.h"
+#include "Items/UI/ViewModels/ASCraftingViewModel.h"
+#include "Items/UI/ASItemViewBinding.h"
 
-#include "Blueprint/WidgetTree.h"
-#include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
-#include "Components/HorizontalBox.h"
 #include "Components/TextBlock.h"
-#include "Components/VerticalBox.h"
-#include "Components/VerticalBoxSlot.h"
-#include "GameFramework/PlayerController.h"
-#include "AbilitySystemComponent.h"
-#include "Core/Framework/ASPlayerController.h"
-#include "Core/Framework/ASGameState.h"
-#include "Engine/World.h"
-#include "GAS/ASAbilityTags.h"
-#include "Items/Crafting/ASCraftingRecipeDefinition.h"
-#include "Items/Data/ASItemDefinition.h"
-#include "Items/Inventory/ASInventoryComponent.h"
-#include "Items/GAS/ASItemAbilityLibrary.h"
-
-TSharedRef<SWidget> UASCraftingWidget::RebuildWidget()
-{
-	if (WidgetTree && !WidgetTree->RootWidget)
-	{
-		UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>();
-		Canvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-		UBorder* Panel = WidgetTree->ConstructWidget<UBorder>();
-		Panel->SetBrushColor(FLinearColor(0.025f, 0.035f, 0.05f, 0.98f));
-		Panel->SetPadding(FMargin(20));
-		UCanvasPanelSlot* Position = Canvas->AddChildToCanvas(Panel);
-		Position->SetAnchors(FAnchors(0.5f, 0.5f));
-		Position->SetAlignment(FVector2D(0.5f, 0.5f));
-		Position->SetAutoSize(true);
-		UVerticalBox* Content = WidgetTree->ConstructWidget<UVerticalBox>();
-		Panel->SetContent(Content);
-		auto AddText = [&](const FText& Text)
-		{
-			UTextBlock* Block = WidgetTree->ConstructWidget<UTextBlock>();
-			Block->SetText(Text);
-			Block->SetWrapTextAt(420);
-			FSlateFontInfo Font = Block->GetFont();
-			Font.Size = 18;
-			Block->SetFont(Font);
-			Content->AddChildToVerticalBox(Block)->SetPadding(FMargin(0, 6));
-			return Block;
-		};
-		AddText(NSLOCTEXT("ASCrafting", "Title", "무기 제작"));
-		RecipePicker = WidgetTree->ConstructWidget<UComboBoxString>();
-		Content->AddChildToVerticalBox(RecipePicker)->SetPadding(FMargin(0, 8));
-		RecipePicker->OnSelectionChanged.AddDynamic(this, &ThisClass::HandleSelection);
-		Details = AddText(FText::GetEmpty());
-		Status = AddText(FText::GetEmpty());
-		UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>();
-		Content->AddChildToVerticalBox(Actions);
-		CraftButton = WidgetTree->ConstructWidget<UButton>();
-		UTextBlock* CraftLabel = WidgetTree->ConstructWidget<UTextBlock>();
-		CraftLabel->SetText(NSLOCTEXT("ASCrafting", "Craft", "제작"));
-		CraftButton->SetContent(CraftLabel);
-		CraftButton->OnClicked.AddDynamic(this, &ThisClass::Craft);
-		Actions->AddChildToHorizontalBox(CraftButton);
-		UButton* CloseButton = WidgetTree->ConstructWidget<UButton>();
-		UTextBlock* CloseLabel = WidgetTree->ConstructWidget<UTextBlock>();
-		CloseLabel->SetText(NSLOCTEXT("ASCrafting", "Close", "닫기"));
-		CloseButton->SetContent(CloseLabel);
-		CloseButton->OnClicked.AddDynamic(this, &ThisClass::Close);
-		Actions->AddChildToHorizontalBox(CloseButton);
-		WidgetTree->RootWidget = Canvas;
-	}
-	return Super::RebuildWidget();
-}
 
 void UASCraftingWidget::NativeConstruct()
 {
+	if (!ViewModel) ViewModel = NewObject<UASCraftingViewModel>(this);
+	ViewModel->Initialize(GetOwningPlayer());
+	// Authored Construct events can obtain the initialized VM through GetViewModel.
 	Super::NativeConstruct();
+	ASItemViewBinding::Set(this, TEXT("CraftingVM"), ViewModel);
+	if (RecipePicker) RecipePicker->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleSelection);
+	if (CraftButton) CraftButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Craft);
+	if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Close);
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	Crafting = GetOwningPlayer() ? GetOwningPlayer()->FindComponentByClass<UASCraftingComponent>() : nullptr;
-	Inventory = Crafting ? Crafting->GetInventory() : nullptr;
-	bAwaitingResult = false;
-	if (Crafting) Crafting->OnCraftingFinished.AddUniqueDynamic(this, &ThisClass::HandleFinished);
-	if (Inventory) Inventory->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::Refresh);
-	ObservedController = Cast<AASPlayerController>(GetOwningPlayer());
-	if (ObservedController.IsValid()) ObservedController->OnLocalPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePawnChanged);
-	BindPlayerStateSources();
-	RecipePicker->ClearOptions();
-	if (Crafting)
-	{
-		for (const UASCraftingRecipeDefinition* Recipe : Crafting->GetAvailableRecipes())
-			RecipePicker->AddOption(Recipe->RecipeId.ToString());
-	}
-	if (RecipePicker->GetOptionCount() > 0) RecipePicker->SetSelectedIndex(0);
-	Status->SetText(FText::GetEmpty());
+	ViewModel->RemoveAllFieldValueChangedDelegates(this);
+	using FFields = UASCraftingViewModel::FFieldNotificationClassDescriptor;
+	for (UE::FieldNotification::FFieldId Field : {FFields::Recipes, FFields::SelectedRecipe, FFields::Details, FFields::Status, FFields::bCanCraft, FFields::bAwaitingResult})
+		ViewModel->AddFieldValueChangedDelegate(Field, INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateWeakLambda(this,
+			[this](UObject*, UE::FieldNotification::FFieldId) { Refresh(); }));
 	Refresh();
 }
 
 void UASCraftingWidget::NativeDestruct()
 {
-	if (Crafting) Crafting->OnCraftingFinished.RemoveDynamic(this, &ThisClass::HandleFinished);
-	if (Inventory) Inventory->OnInventoryChanged.RemoveDynamic(this, &ThisClass::Refresh);
-	if (ObservedController.IsValid()) ObservedController->OnLocalPawnChanged.RemoveDynamic(this, &ThisClass::HandlePawnChanged);
-	ObservedController.Reset();
-	UnbindPlayerStateSources();
+	if (RecipePicker) RecipePicker->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleSelection);
+	if (CraftButton) CraftButton->OnClicked.RemoveDynamic(this, &ThisClass::Craft);
+	if (CloseButton) CloseButton->OnClicked.RemoveDynamic(this, &ThisClass::Close);
+	if (ViewModel) { ViewModel->RemoveAllFieldValueChangedDelegates(this); ViewModel->Shutdown(); }
 	Super::NativeDestruct();
-}
-
-void UASCraftingWidget::BindPlayerStateSources()
-{
-	UnbindPlayerStateSources();
-	// The controller also broadcasts when the pawn's ASC becomes ready after replication.
-	APawn* Pawn = GetOwningPlayer() ? GetOwningPlayer()->GetPawn() : nullptr;
-	ObservedASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(Inventory, Pawn);
-	if (ObservedASC.IsValid())
-	{
-		DeadTagChangedHandle = ObservedASC->RegisterGameplayTagEvent(ASGameplayTags::State_Dead,
-			EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleDeadTagChanged);
-	}
-	ObservedGameState = GetWorld() ? GetWorld()->GetGameState<AASGameState>() : nullptr;
-	if (ObservedGameState.IsValid()) ObservedGameState->OnPhaseChanged.AddUniqueDynamic(this, &ThisClass::HandlePhaseChanged);
-}
-
-void UASCraftingWidget::UnbindPlayerStateSources()
-{
-	if (ObservedASC.IsValid() && DeadTagChangedHandle.IsValid())
-		ObservedASC->RegisterGameplayTagEvent(ASGameplayTags::State_Dead,
-			EGameplayTagEventType::NewOrRemoved).Remove(DeadTagChangedHandle);
-	DeadTagChangedHandle.Reset();
-	ObservedASC.Reset();
-	if (ObservedGameState.IsValid()) ObservedGameState->OnPhaseChanged.RemoveDynamic(this, &ThisClass::HandlePhaseChanged);
-	ObservedGameState.Reset();
-}
-
-void UASCraftingWidget::HandlePawnChanged(APawn* NewPawn)
-{
-	BindPlayerStateSources();
-	Refresh();
-}
-
-void UASCraftingWidget::HandleDeadTagChanged(const FGameplayTag Tag, int32 NewCount)
-{
-	Refresh();
-}
-
-void UASCraftingWidget::HandlePhaseChanged(EGamePhase NewPhase)
-{
-	Refresh();
-}
-
-void UASCraftingWidget::HandleSelection(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (Status) Status->SetText(FText::GetEmpty());
-	Refresh();
 }
 
 void UASCraftingWidget::Refresh()
 {
-	if (!RecipePicker || !Details || !CraftButton) return;
-	const FName Id(*RecipePicker->GetSelectedOption());
-	const UASCraftingRecipeDefinition* Recipe = Crafting ? Crafting->FindRecipe(Id) : nullptr;
-	const EASCraftingResult Availability = Crafting ? Crafting->CanCraft(Id) : EASCraftingResult::InvalidPlayer;
-	CraftButton->SetIsEnabled(!bAwaitingResult && Availability == EASCraftingResult::Success);
-	if (!Recipe)
+	if (!ViewModel) return;
+	TGuardValue<bool> UpdatingView(bUpdatingView, true);
+	if (!ASItemViewBinding::HasView(this))
 	{
-		Details->SetText(NSLOCTEXT("ASCrafting", "Empty", "등록된 제작 레시피가 없습니다."));
-		return;
+		if (Details) Details->SetText(ViewModel->Details);
+		if (Status) Status->SetText(ViewModel->Status);
+		if (CraftButton) CraftButton->SetIsEnabled(ViewModel->bCanCraft);
 	}
-	FString Text = Recipe->DisplayName.IsEmpty() ? Id.ToString() : Recipe->DisplayName.ToString();
-	if (IsValid(Recipe->Result.ItemDefinition))
-		Text += FString::Printf(TEXT("\n결과: %s × %d\n"), *Recipe->Result.ItemDefinition->DisplayName.ToString(), Recipe->Result.Quantity);
-	TMap<UASItemDefinition*, int64> Totals;
-	for (const FASItemGrant& Ingredient : Recipe->Ingredients)
-		if (IsValid(Ingredient.ItemDefinition)) Totals.FindOrAdd(Ingredient.ItemDefinition) += Ingredient.Quantity;
-	for (const auto& Ingredient : Totals)
+	if (RecipePicker)
 	{
-		Text += FString::Printf(TEXT("\n%s: %d / %lld"), *Ingredient.Key->DisplayName.ToString(),
-			Inventory ? Inventory->GetItemCount(Ingredient.Key) : 0, Ingredient.Value);
+		bool bOptionsChanged = RecipePicker->GetOptionCount() != ViewModel->Recipes.Num();
+		for (int32 Index = 0; !bOptionsChanged && Index < ViewModel->Recipes.Num(); ++Index)
+			bOptionsChanged = RecipePicker->GetOptionAtIndex(Index) != ViewModel->Recipes[Index];
+		if (bOptionsChanged)
+		{
+			RecipePicker->ClearOptions();
+			for (const FString& Recipe : ViewModel->Recipes) RecipePicker->AddOption(Recipe);
+		}
+		RecipePicker->SetIsEnabled(!ViewModel->bAwaitingResult);
+		const FString Selected = ViewModel->SelectedRecipe.IsNone() ? FString() : ViewModel->SelectedRecipe.ToString();
+		if (RecipePicker->GetSelectedOption() != Selected) RecipePicker->SetSelectedOption(Selected);
 	}
-	if (Availability != EASCraftingResult::Success) Text += TEXT("\n\n") + UASCraftingComponent::GetResultText(Availability).ToString();
-	Details->SetText(FText::FromString(Text));
 }
 
-void UASCraftingWidget::Craft()
+void UASCraftingWidget::HandleSelection(FString SelectedItem, ESelectInfo::Type SelectionType)
 {
-	if (!Crafting || bAwaitingResult) return;
-	const FName Id(*RecipePicker->GetSelectedOption());
-	if (Crafting->CanCraft(Id) != EASCraftingResult::Success) { Refresh(); return; }
-	bAwaitingResult = true;
-	Status->SetText(NSLOCTEXT("ASCrafting", "Pending", "제작 중..."));
-	Refresh();
-	Crafting->RequestCraft(Id);
+	if (ViewModel && !bUpdatingView) ViewModel->SelectRecipe(FName(*SelectedItem));
 }
-
-void UASCraftingWidget::HandleFinished(FName RecipeId, EASCraftingResult Result)
-{
-	bAwaitingResult = false;
-	Status->SetText(UASCraftingComponent::GetResultText(Result));
-	Refresh();
-}
-
-void UASCraftingWidget::Close()
-{
-	if (Crafting) Crafting->CloseCrafting();
-}
+void UASCraftingWidget::Craft() { if (ViewModel) ViewModel->Craft(); }
+void UASCraftingWidget::Close() { if (ViewModel) ViewModel->Close(); }

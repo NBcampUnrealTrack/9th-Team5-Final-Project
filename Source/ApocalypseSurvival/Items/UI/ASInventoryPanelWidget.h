@@ -5,6 +5,7 @@
 #include "ASInventoryPanelWidget.generated.h"
 
 class UTextBlock;
+class UButton;
 
 /** Equipment above storage, with the same ten quick slots repeated below. */
 UCLASS(Blueprintable)
@@ -12,10 +13,10 @@ class APOCALYPSESURVIVAL_API UASInventoryPanelWidget : public UASInventoryBarWid
 {
 	GENERATED_BODY()
 public:
+	UASInventoryPanelWidget(const FObjectInitializer& ObjectInitializer);
 	virtual void RefreshSlots() override;
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void BuildSlotWidgets() override;
 	virtual UWidget* GetInventoryBounds() const override;
 	virtual void NativeConstruct() override;
@@ -28,18 +29,22 @@ private:
 	void Close();
 	UFUNCTION()
 	void OpenCrafting();
-	UFUNCTION()
-	void ShowActionFailure(FText Message);
 
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidget, AllowPrivateAccess="true"))
 	TObjectPtr<UBorder> WindowFrame;
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidget, AllowPrivateAccess="true"))
 	TObjectPtr<UUniformGridPanel> QuickSlotsPanel;
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidget, AllowPrivateAccess="true"))
 	TObjectPtr<UUniformGridPanel> EquipmentPanel;
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidget, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> CapacityText;
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidget, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> FeedbackText;
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidget, AllowPrivateAccess="true"))
+	TObjectPtr<UButton> CloseButton;
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidget, AllowPrivateAccess="true"))
+	TObjectPtr<UButton> CraftingButton;
+	UPROPERTY(EditDefaultsOnly, Category="Inventory|Layout", meta=(ClampMin="1", ClampMax="16"))
+	int32 StorageColumns = 8;
 	int32 RenderedStorageCount = INDEX_NONE;
 };

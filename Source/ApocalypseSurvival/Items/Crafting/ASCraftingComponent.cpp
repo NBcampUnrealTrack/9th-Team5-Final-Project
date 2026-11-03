@@ -28,6 +28,7 @@ namespace
 
 UASCraftingComponent::UASCraftingComponent()
 {
+	DefaultCraftingWidgetClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_Crafting.WBP_Crafting_C"));
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
 }
@@ -94,7 +95,7 @@ void UASCraftingComponent::ToggleCrafting()
 	APlayerController* Controller = Cast<APlayerController>(GetOwner());
 	if (!Controller || !Controller->IsLocalController()) return;
 	if (CraftingWidget && CraftingWidget->IsInViewport()) { CloseCrafting(); return; }
-	if (!CraftingWidget) CraftingWidget = CreateWidget<UASCraftingWidget>(Controller, UASCraftingWidget::StaticClass());
+	if (!CraftingWidget) CraftingWidget = CreateWidget<UASCraftingWidget>(Controller, CraftingWidgetClass ? CraftingWidgetClass.Get() : DefaultCraftingWidgetClass.LoadSynchronous());
 	if (CraftingWidget) CraftingWidget->AddToViewport(15);
 }
 

@@ -1,4 +1,6 @@
 #include "Items/Interaction/ASItemInteractionComponent.h"
+#include "Items/UI/ASInventoryPanelWidget.h"
+#include "Items/UI/ViewModels/ASInventoryViewModel.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Core/Framework/ASPlayerController.h"
@@ -34,6 +36,9 @@ namespace
 
 UASItemInteractionComponent::UASItemInteractionComponent()
 {
+	DefaultInventoryBarClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_InventoryBar.WBP_InventoryBar_C"));
+	DefaultInventoryPanelClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_InventoryPanel.WBP_InventoryPanel_C"));
+	DefaultLootWidgetClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_Loot.WBP_Loot_C"));
 	PrimaryComponentTick.bCanEverTick = true;
 	SetIsReplicatedByDefault(true);
 }
@@ -316,7 +321,7 @@ void UASItemInteractionComponent::InitializeInventoryBar()
 	if (!InventoryBar)
 	{
 		InventoryBar = CreateWidget<UASInventoryBarWidget>(PC,
-			InventoryBarClass ? InventoryBarClass.Get() : UASInventoryBarWidget::StaticClass());
+			InventoryBarClass ? InventoryBarClass.Get() : DefaultInventoryBarClass.LoadSynchronous());
 		if (InventoryBar)
 		{
 			InventoryBar->SetInventory(GetPlayerInventory());
@@ -416,7 +421,7 @@ void UASItemInteractionComponent::ClientOpenLoot_Implementation(AASLootChest* Ch
 		LootWidget->RemoveFromParent();
 	}
 	TSubclassOf<UASLootWidget> ActualClass = LootWidgetClass;
-	if (!ActualClass) ActualClass = UASLootWidget::StaticClass();
+	if (!ActualClass) ActualClass = DefaultLootWidgetClass.LoadSynchronous();
 	LootWidget = CreateWidget<UASLootWidget>(PC, ActualClass);
 	if (!IsValid(LootWidget)) return;
 	OpenChest = Chest;
@@ -485,5 +490,16 @@ void UASItemInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReas
 		LootWidget->RemoveFromParent();
 		LootWidget = nullptr;
 	}
+	if (InventoryViewModel) InventoryViewModel->Shutdown();
+	InventoryViewModel = nullptr;
 	Super::EndPlay(EndPlayReason);
+}
+
+UASInventoryViewModel* UASItemInteractionComponent::GetInventoryViewModel()
+{
+	UASInventoryComponent* Source = GetPlayerInventory();
+	if (!InventoryViewModel) InventoryViewModel = NewObject<UASInventoryViewModel>(this);
+	if (InventoryViewModel->GetInventory() != Source)
+		InventoryViewModel->Initialize(Source, Cast<APlayerController>(GetOwner()));
+	return InventoryViewModel;
 }

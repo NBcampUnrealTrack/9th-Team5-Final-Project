@@ -12,6 +12,7 @@ class UCanvasPanelSlot;
 class UPanelWidget;
 class UTextBlock;
 class AASLootChest;
+class UASInventoryViewModel;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FASLootClosedSignature);
 
@@ -22,6 +23,9 @@ class APOCALYPSESURVIVAL_API UASLootWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UASLootWidget(const FObjectInitializer& ObjectInitializer);
+	UFUNCTION(BlueprintPure, Category="Loot|ViewModel")
+	UASInventoryViewModel* GetViewModel() const { return ViewModel; }
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void SetLootContext(UASInventoryComponent* InLootInventory, UASInventoryComponent* InPlayerInventory);
 
@@ -32,7 +36,7 @@ public:
 	FASLootClosedSignature OnLootClosed;
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void NativeDestruct() override;
@@ -40,16 +44,13 @@ protected:
 	virtual bool NativeOnDrop(const FGeometry& Geometry, const FDragDropEvent& Event, UDragDropOperation* Operation) override;
 
 private:
-	void BuildDefaultWidgetTree();
 	void BindLootInventory();
 	void UnbindLootInventory();
 	void RefreshLootHeader();
 
-	UFUNCTION()
-	void HandleInventoryChanged();
-
-	UFUNCTION()
-	void HandleItemClicked(UASItemInstance* ItemInstance);
+	UPROPERTY(Transient)
+	TObjectPtr<UASInventoryViewModel> ViewModel;
+	int32 RenderedSlotCount = INDEX_NONE;
 
 	UFUNCTION()
 	void HandleCloseClicked();
@@ -62,24 +63,30 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Loot")
 	TSubclassOf<UASLootEntryWidget> EntryWidgetClass;
+	UPROPERTY()
+	TSoftClassPtr<UASLootEntryWidget> DefaultEntryWidgetClass;
+	UPROPERTY(EditDefaultsOnly, Category="Loot|Layout", meta=(ClampMin="1", ClampMax="12"))
+	int32 Columns = 4;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UPanelWidget> ItemList;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UButton> CloseButton;
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
+	TObjectPtr<UButton> HeaderCloseButton;
 
 	/** Transparent hit area behind LootPanel so outside mouse input reaches this widget. */
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UButton> OutsideCloseButton;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> LootTitleText;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> ItemCountText;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> EmptyText;
 
 	UPROPERTY(Transient)

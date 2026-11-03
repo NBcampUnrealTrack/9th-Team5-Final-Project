@@ -33,7 +33,7 @@ void UASItemInteractionComponent::ToggleInventory()
 	PC->GetCraftingComponent()->CloseCrafting();
 	if (!InventoryPanel)
 		InventoryPanel = CreateWidget<UASInventoryPanelWidget>(PC,
-			InventoryPanelClass ? InventoryPanelClass.Get() : UASInventoryPanelWidget::StaticClass());
+			InventoryPanelClass ? InventoryPanelClass.Get() : DefaultInventoryPanelClass.LoadSynchronous());
 	if (!InventoryPanel) return;
 	InventoryPanel->SetInventory(GetPlayerInventory());
 	InventoryPanel->AddToViewport(14);
