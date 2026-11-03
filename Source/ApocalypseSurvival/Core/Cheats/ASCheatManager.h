@@ -21,6 +21,12 @@ public:
 	UFUNCTION(Exec)
 	void DebugGiveWeapon(FName WeaponName = NAME_None);
 
+	/** 지정한 일반 아이템을 지급한다. 이름을 생략하면 지원 목록을 표시한다. */
+	UFUNCTION(Exec)
+	void DebugGiveItem(FName ItemName = NAME_None, int32 Quantity = 1);
+
+	static void GiveItemToPlayer(AASPlayerController* PlayerController, FName ItemName, int32 Quantity);
+
 	/** PlayerController의 RPC가 호출하는 서버 전용 지급 처리. */
 	static void GiveWeaponToPlayer(AASPlayerController* PlayerController, FName WeaponName);
 };

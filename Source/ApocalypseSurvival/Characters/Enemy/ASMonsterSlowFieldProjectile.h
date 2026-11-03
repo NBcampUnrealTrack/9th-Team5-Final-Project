@@ -33,6 +33,9 @@ protected:
 	void BP_OnProjectileImpact();
 
 private:
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastProjectileImpact(FVector_NetQuantize Location);
+
 	void ArriveAtImpact();
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
@@ -45,6 +48,7 @@ private:
 	float ElapsedTravelTime = 0.0f;
 	bool bInitialized = false;
 	bool bArrived = false;
+	bool bImpactFeedbackPlayed = false;
 
 	FGameplayEffectSpecHandle SlowEffectSpec;
 	TWeakObjectPtr<AActor> InstigatorAvatar;

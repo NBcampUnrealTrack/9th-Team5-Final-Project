@@ -40,6 +40,8 @@ void UASSettingsWidget::NativeConstruct()
 		if (Combo) Combo->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleIndividualQualityChanged);
 	}
 	if (MasterVolumeSlider) MasterVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleVolumeChanged);
+	if (BGMVolumeSlider) BGMVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleBGMVolumeChanged);
+	if (SFXVolumeSlider) SFXVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleSFXVolumeChanged);
 	RefreshSettings();
 }
 
@@ -55,6 +57,8 @@ void UASSettingsWidget::NativeDestruct()
 		if (Combo) Combo->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleIndividualQualityChanged);
 	}
 	if (MasterVolumeSlider) MasterVolumeSlider->OnValueChanged.RemoveDynamic(this, &ThisClass::HandleVolumeChanged);
+	if (BGMVolumeSlider) BGMVolumeSlider->OnValueChanged.RemoveDynamic(this, &ThisClass::HandleBGMVolumeChanged);
+	if (SFXVolumeSlider) SFXVolumeSlider->OnValueChanged.RemoveDynamic(this, &ThisClass::HandleSFXVolumeChanged);
 	CloseKeyBindings();
 	Super::NativeDestruct();
 }
@@ -137,6 +141,20 @@ void UASSettingsWidget::RefreshSettings()
 				HandleVolumeChanged(Local->GetMasterVolume());
 			}
 			if (RightClickAttackCheckBox) RightClickAttackCheckBox->SetIsChecked(Local->IsRightClickAttackEnabled());
+			if (BGMVolumeSlider)
+			{
+				BGMVolumeSlider->SetMinValue(0.0f);
+				BGMVolumeSlider->SetMaxValue(1.0f);
+				BGMVolumeSlider->SetValue(Local->GetBGMVolume());
+				HandleBGMVolumeChanged(Local->GetBGMVolume());
+			}
+			if (SFXVolumeSlider)
+			{
+				SFXVolumeSlider->SetMinValue(0.0f);
+				SFXVolumeSlider->SetMaxValue(1.0f);
+				SFXVolumeSlider->SetValue(Local->GetSFXVolume());
+				HandleSFXVolumeChanged(Local->GetSFXVolume());
+			}
 		}
 	}
 	bUpdatingUI = false;
@@ -171,6 +189,22 @@ void UASSettingsWidget::HandleVolumeChanged(const float Value)
 	if (MasterVolumePercentage)
 	{
 		MasterVolumePercentage->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(FMath::Clamp(Value, 0.0f, 1.0f) * 100.0f))));
+	}
+}
+
+void UASSettingsWidget::HandleBGMVolumeChanged(const float Value)
+{
+	if (BGMPercentage)
+	{
+		BGMPercentage->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(FMath::Clamp(Value, 0.0f, 1.0f) * 100.0f))));
+	}
+}
+
+void UASSettingsWidget::HandleSFXVolumeChanged(const float Value)
+{
+	if (SFXVolumePercentage)
+	{
+		SFXVolumePercentage->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(FMath::Clamp(Value, 0.0f, 1.0f) * 100.0f))));
 	}
 }
 
@@ -219,6 +253,8 @@ void UASSettingsWidget::ApplyGameSettings()
 		if (UASLocalSettingsSubsystem* Local = Player->GetSubsystem<UASLocalSettingsSubsystem>())
 		{
 			if (MasterVolumeSlider) Local->SetMasterVolume(MasterVolumeSlider->GetValue());
+			if (BGMVolumeSlider) Local->SetBGMVolume(BGMVolumeSlider->GetValue());
+			if (SFXVolumeSlider) Local->SetSFXVolume(SFXVolumeSlider->GetValue());
 			if (RightClickAttackCheckBox) Local->SetRightClickAttackEnabled(RightClickAttackCheckBox->IsChecked());
 		}
 	}
