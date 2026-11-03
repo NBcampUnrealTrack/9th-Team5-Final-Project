@@ -23,6 +23,10 @@ public:
 	bool SetMappedKey(UInputMappingContext* Source, int32 MappingIndex, FKey Key, FText& Error);
 	float GetMasterVolume() const;
 	void SetMasterVolume(float Volume);
+	float GetBGMVolume() const;
+	void SetBGMVolume(float Volume);
+	float GetSFXVolume() const;
+	void SetSFXVolume(float Volume);
 	UFUNCTION(BlueprintPure, Category = "Settings|Gameplay")
 	bool IsRightClickAttackEnabled() const;
 

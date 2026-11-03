@@ -73,14 +73,14 @@ void AASMonsterSlowFieldProjectile::InitializeProjectile(const FVector& InImpact
 
 void AASMonsterSlowFieldProjectile::ArriveAtImpact()
 {
-	if (bArrived)
+	if (!HasAuthority() || bArrived)
 	{
 		return;
 	}
 
 	bArrived = true;
 	SetActorLocation(ImpactLocation);
-	BP_OnProjectileImpact();
+	MulticastProjectileImpact(ImpactLocation);
 
 	UWorld* World = GetWorld();
 	if (World)
@@ -97,5 +97,17 @@ void AASMonsterSlowFieldProjectile::ArriveAtImpact()
 		}
 	}
 
-	Destroy();
+	// Keep the actor's channel alive briefly so relevant clients receive the impact event.
+	ForceNetUpdate();
+	SetLifeSpan(0.2f);
+}
+
+void AASMonsterSlowFieldProjectile::MulticastProjectileImpact_Implementation(const FVector_NetQuantize Location)
+{
+	if (bImpactFeedbackPlayed) return;
+	bImpactFeedbackPlayed = true;
+	SetActorLocation(Location);
+	SetActorTickEnabled(false);
+	if (GetNetMode() != NM_DedicatedServer) BP_OnProjectileImpact();
+	SetActorHiddenInGame(true);
 }

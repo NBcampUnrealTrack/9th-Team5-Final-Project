@@ -3,10 +3,12 @@
 #include "AbilitySystemComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Core/Audio/ASSoundSubsystem.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/AssetManager.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
@@ -14,7 +16,6 @@
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Data/ASItemTags.h"
 #include "Items/GAS/ASItemEffects.h"
-#include "Kismet/GameplayStatics.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -243,15 +244,15 @@ void AASGrenadeActor::UpdateFlightFeedback()
 void AASGrenadeActor::MulticastThrowFeedback_Implementation(const FVector_NetQuantize Location)
 {
 	if (GetNetMode() == NM_DedicatedServer) return;
+	UASSoundSubsystem* Audio = GetGameInstance()->GetSubsystem<UASSoundSubsystem>();
+	if (!Audio) return;
 	if (PinPullSound.Get())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, PinPullSound.Get(), Location,
-			1.0f, 1.0f, 0.0f, SoundAttenuation.Get());
+		Audio->PlayWorldSound(PinPullSound.Get(), Location, 1.0f, 1.0f, SoundAttenuation.Get());
 	}
 	if (ThrowSound.Get())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, ThrowSound.Get(), Location,
-			1.0f, 1.0f, 0.0f, SoundAttenuation.Get());
+		Audio->PlayWorldSound(ThrowSound.Get(), Location, 1.0f, 1.0f, SoundAttenuation.Get());
 	}
 }
 
@@ -259,8 +260,10 @@ void AASGrenadeActor::MulticastBounceFeedback_Implementation(const FVector_NetQu
 {
 	if (GetNetMode() != NM_DedicatedServer && BounceSound.Get())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, BounceSound.Get(), Location,
-			Volume, FMath::FRandRange(0.95f, 1.05f), 0.0f, SoundAttenuation.Get());
+		if (UASSoundSubsystem* Audio = GetGameInstance()->GetSubsystem<UASSoundSubsystem>())
+		{
+			Audio->PlayWorldSound(BounceSound.Get(), Location, Volume, FMath::FRandRange(0.95f, 1.05f), SoundAttenuation.Get());
+		}
 	}
 }
 
@@ -324,7 +327,16 @@ void AASGrenadeActor::MulticastExplosion_Implementation(const FVector_NetQuantiz
 			UWorld* CurrentWorld = World.Get();
 			if (!CurrentWorld || CurrentWorld->bIsTearingDown) return;
 			if (Effect.Get()) UNiagaraFunctionLibrary::SpawnSystemAtLocation(CurrentWorld, Effect.Get(), Position, FRotator::ZeroRotator, FVector(Scale));
-			if (Sound.Get()) UGameplayStatics::PlaySoundAtLocation(CurrentWorld, Sound.Get(), Position, 1.f, 1.f, 0.f, Attenuation.Get());
+			if (Sound.Get())
+			{
+				if (UGameInstance* GameInstance = CurrentWorld->GetGameInstance())
+				{
+					if (UASSoundSubsystem* Audio = GameInstance->GetSubsystem<UASSoundSubsystem>())
+					{
+						Audio->PlayWorldSound(Sound.Get(), Position, 1.0f, 1.0f, Attenuation.Get());
+					}
+				}
+			}
 		});
 	if (ASItemAssetLoading::AreLoaded(FeedbackPaths)) Feedback.ExecuteIfBound();
 	else UAssetManager::GetStreamableManager().RequestAsyncLoad(FeedbackPaths, MoveTemp(Feedback));

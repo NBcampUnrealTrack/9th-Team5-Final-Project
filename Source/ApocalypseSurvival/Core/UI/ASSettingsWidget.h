@@ -61,6 +61,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Settings", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> MasterVolumePercentage;
 	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USlider> BGMVolumeSlider;
+	UPROPERTY(BlueprintReadOnly, Category = "Settings", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> BGMPercentage;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USlider> SFXVolumeSlider;
+	UPROPERTY(BlueprintReadOnly, Category = "Settings", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SFXVolumePercentage;
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ApplyButton;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> KeyBindingsButton;
@@ -78,6 +86,10 @@ private:
 	void HandleIndividualQualityChanged(FString Item, ESelectInfo::Type SelectionType);
 	UFUNCTION()
 	void HandleVolumeChanged(float Value);
+	UFUNCTION()
+	void HandleBGMVolumeChanged(float Value);
+	UFUNCTION()
+	void HandleSFXVolumeChanged(float Value);
 	void PopulateOptions();
 	TArray<FIntPoint> Resolutions;
 	TArray<float> FrameRates;

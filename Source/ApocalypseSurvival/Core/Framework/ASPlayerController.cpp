@@ -453,6 +453,13 @@ void AASPlayerController::ServerDebugGiveWeapon_Implementation(FName WeaponName)
 #endif
 }
 
+void AASPlayerController::ServerDebugGiveItem_Implementation(FName ItemName, int32 Quantity)
+{
+#if !UE_BUILD_SHIPPING
+	UASCheatManager::GiveItemToPlayer(this, ItemName, Quantity);
+#endif
+}
+
 void AASPlayerController::PlayerTick(const float DeltaTime)
 {
 	if (bBossIntroInputBlocked) return;
