@@ -21,8 +21,11 @@ UASCraftingRecipeDefinition* UASCraftingCatalog::FindRecipe(FName RecipeId) cons
 TArray<UASCraftingRecipeDefinition*> UASCraftingCatalog::GetAvailableRecipes() const
 {
 	TArray<UASCraftingRecipeDefinition*> Result;
+	TMap<FName, int32> Counts;
+	for (const UASCraftingRecipeDefinition* Recipe : Recipes)
+		if (IsValid(Recipe) && !Recipe->RecipeId.IsNone()) ++Counts.FindOrAdd(Recipe->RecipeId);
 	for (UASCraftingRecipeDefinition* Recipe : Recipes)
-		if (IsValid(Recipe) && FindRecipe(Recipe->RecipeId) == Recipe) Result.Add(Recipe);
+		if (IsValid(Recipe) && Counts.FindRef(Recipe->RecipeId) == 1) Result.Add(Recipe);
 	return Result;
 }
 

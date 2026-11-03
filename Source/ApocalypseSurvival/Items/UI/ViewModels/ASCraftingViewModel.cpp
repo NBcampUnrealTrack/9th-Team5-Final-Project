@@ -22,13 +22,10 @@ void UASCraftingViewModel::Initialize(APlayerController* Controller)
 	ObservedController = Cast<AASPlayerController>(Controller);
 	if (ObservedController.IsValid()) ObservedController->OnLocalPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePawnChanged);
 	BindPlayerStateSources();
-	TArray<FString> Options;
-	if (Crafting.IsValid()) for (const UASCraftingRecipeDefinition* Recipe : Crafting->GetAvailableRecipes()) Options.Add(Recipe->RecipeId.ToString());
-	UE_MVVM_SET_PROPERTY_VALUE(Recipes, Options);
 	BuildRecipeEntries();
 	UE_MVVM_SET_PROPERTY_VALUE(bAwaitingResult, false);
 	UE_MVVM_SET_PROPERTY_VALUE(Status, FText::GetEmpty());
-	SelectRecipe(RecipeEntries.IsEmpty() ? NAME_None : RecipeEntries[0]->GetRecipeId());
+	UE_MVVM_SET_PROPERTY_VALUE(SelectedRecipe, RecipeEntries.IsEmpty() ? NAME_None : RecipeEntries[0]->GetRecipeId());
 	Refresh();
 }
 
@@ -50,7 +47,7 @@ void UASCraftingViewModel::BeginDestroy() { Shutdown(); Super::BeginDestroy(); }
 void UASCraftingViewModel::SelectRecipe(FName Id)
 {
 	if (bAwaitingResult || SelectedRecipe == Id) return;
-	if (!Id.IsNone() && !Recipes.Contains(Id.ToString())) return;
+	if (!Id.IsNone() && !RecipeEntries.ContainsByPredicate([Id](const UASCraftingEntryViewModel* Entry) { return Entry && Entry->GetRecipeId() == Id; })) return;
 	UE_MVVM_SET_PROPERTY_VALUE(SelectedRecipe, Id);
 	UE_MVVM_SET_PROPERTY_VALUE(Status, FText::GetEmpty());
 	Refresh();
@@ -184,13 +181,14 @@ void UASCraftingViewModel::HandleEntryIconChanged(UASCraftingEntryViewModel* Ent
 void UASCraftingViewModel::Refresh()
 {
 	const UASCraftingRecipeDefinition* Recipe = Crafting.IsValid() ? Crafting->FindRecipe(SelectedRecipe) : nullptr;
-	const EASCraftingResult Availability = Crafting.IsValid() ? Crafting->CanCraft(SelectedRecipe) : EASCraftingResult::InvalidPlayer;
+	const FASCraftingPreview Preview = Crafting.IsValid() ? Crafting->BuildPreview() : FASCraftingPreview();
+	const EASCraftingResult Availability = Crafting.IsValid() ? Preview.GetResult(SelectedRecipe) : EASCraftingResult::InvalidPlayer;
 	UE_MVVM_SET_PROPERTY_VALUE(bCanCraft, !bAwaitingResult && Availability == EASCraftingResult::Success);
 	UE_MVVM_SET_PROPERTY_VALUE(AvailabilityText, Availability == EASCraftingResult::Success ? FText::GetEmpty() : UASCraftingComponent::GetResultText(Availability));
 	if (DisplayedRecipe.Get() != Recipe || (!Recipe && !MaterialEntries.IsEmpty())) BuildMaterialEntries(Recipe);
 	for (UASCraftingEntryViewModel* Entry : RecipeEntries)
 	{
-		const EASCraftingResult Result = Crafting.IsValid() ? Crafting->CanCraft(Entry->GetRecipeId()) : EASCraftingResult::InvalidPlayer;
+		const EASCraftingResult Result = Crafting.IsValid() ? Preview.GetResult(Entry->GetRecipeId()) : EASCraftingResult::InvalidPlayer;
 		const FText Label = Result == EASCraftingResult::Success ? NSLOCTEXT("ASCrafting", "Available", "제작 가능")
 			: Result == EASCraftingResult::MissingMaterials ? NSLOCTEXT("ASCrafting", "Missing", "재료 부족")
 			: Result == EASCraftingResult::InventoryFull ? NSLOCTEXT("ASCrafting", "NoSpace", "공간 부족") : NSLOCTEXT("ASCrafting", "Unavailable", "제작 불가");
@@ -198,7 +196,7 @@ void UASCraftingViewModel::Refresh()
 	}
 	for (int32 Index = 0; Index < MaterialEntries.Num(); ++Index)
 	{
-		const int32 Owned = Inventory.IsValid() ? Inventory->GetItemCount(MaterialEntries[Index]->GetDefinition()) : 0;
+		const int64 Owned = Preview.GetItemCount(MaterialEntries[Index]->GetDefinition());
 		MaterialEntries[Index]->Update(FText::Format(NSLOCTEXT("ASCrafting", "MaterialQuantity", "{0} / {1}"), FText::AsNumber(Owned), FText::AsNumber(RequiredQuantities[Index])), Owned >= RequiredQuantities[Index], true);
 	}
 	UASItemDefinition* Item = Recipe ? Recipe->Result.ItemDefinition.Get() : nullptr;
@@ -210,7 +208,7 @@ void UASCraftingViewModel::Refresh()
 	if (Item)
 		Stats = FText::Format(NSLOCTEXT("ASCrafting", "WeaponStats", "기본 공격력   {0}\n공격 간격   {1}초\n사거리   {2}m"), FText::AsNumber(Item->BaseDamage), FText::AsNumber(Item->AttackInterval), FText::AsNumber(Item->AttackRange / 100.0f));
 	UE_MVVM_SET_PROPERTY_VALUE(WeaponStats, Stats);
-	UE_MVVM_SET_PROPERTY_VALUE(OwnedResultText, FText::Format(NSLOCTEXT("ASCrafting", "Owned", "인벤토리 내 아이템: {0}"), FText::AsNumber(Item && Inventory.IsValid() ? Inventory->GetItemCount(Item) : 0)));
+	UE_MVVM_SET_PROPERTY_VALUE(OwnedResultText, FText::Format(NSLOCTEXT("ASCrafting", "Owned", "인벤토리 내 아이템: {0}"), FText::AsNumber(Preview.GetItemCount(Item))));
 	UTexture2D* Icon = nullptr;
 	for (UASCraftingEntryViewModel* Entry : RecipeEntries) if (Entry->GetRecipeId() == SelectedRecipe) { Icon = Entry->Presentation.Icon; break; }
 	UE_MVVM_SET_PROPERTY_VALUE(ResultIcon, TObjectPtr<UTexture2D>(Icon));

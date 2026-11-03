@@ -9,10 +9,56 @@
 #include "Items/Crafting/ASCraftingCatalog.h"
 #include "Items/GAS/ASItemAbilityLibrary.h"
 #include "Items/Inventory/ASInventoryComponent.h"
+#include "Items/ASItemInstance.h"
+#include "Items/Data/ASItemDefinition.h"
 #include "Items/UI/ASCraftingWidget.h"
 
 namespace
 {
+	struct FMaterialStack
+	{
+		int64 EndQuantity;
+		int32 Slot;
+	};
+	struct FMaterialContents
+	{
+		int64 Quantity = 0;
+		TArray<FMaterialStack> Stacks;
+	};
+	struct FInventoryPreview
+	{
+		TMap<const UASItemDefinition*, FMaterialContents> Materials;
+		TMap<int32, int32> OccupantsPerSlot;
+		int32 SlotLimit = 0;
+		bool bHasFreeSlot = true;
+
+		EASCraftingResult Evaluate(const UASCraftingRecipeDefinition& Recipe) const
+		{
+			TMap<const UASItemDefinition*, int64> Required;
+			for (const FASItemGrant& Cost : Recipe.Ingredients) Required.FindOrAdd(Cost.ItemDefinition) += Cost.Quantity;
+			for (const auto& Cost : Required)
+			{
+				const FMaterialContents* Contents = Materials.Find(Cost.Key);
+				if (!Contents || Contents->Quantity < Cost.Value) return EASCraftingResult::MissingMaterials;
+			}
+			if (bHasFreeSlot) return EASCraftingResult::Success;
+
+			// Valid recipes grant one unstackable weapon. Only a free backpack slot is needed.
+			// Prefix quantities reproduce the transaction's stack consumption order without building a plan.
+			TMap<int32, int32> RemovedPerSlot;
+			for (const auto& Cost : Required)
+			{
+				for (const FMaterialStack& Stack : Materials.FindChecked(Cost.Key).Stacks)
+				{
+					if (Stack.EndQuantity > Cost.Value) break;
+					if (Stack.Slot < SlotLimit && ++RemovedPerSlot.FindOrAdd(Stack.Slot) == OccupantsPerSlot.FindChecked(Stack.Slot))
+						return EASCraftingResult::Success;
+				}
+			}
+			return EASCraftingResult::InventoryFull;
+		}
+	};
+
 	EASCraftingResult ToCraftingResult(EASInventoryExchangeResult Result)
 	{
 		switch (Result)
@@ -66,6 +112,42 @@ EASCraftingResult UASCraftingComponent::CanCraft(FName RecipeId) const
 	if (!Recipe->ValidateRecipe(Error)) return EASCraftingResult::InvalidRecipe;
 	if (!CanPlayerCraft()) return EASCraftingResult::InvalidPlayer;
 	return ToCraftingResult(GetInventory()->CanExchangeItems(Recipe->Ingredients, {Recipe->Result}));
+}
+
+FASCraftingPreview UASCraftingComponent::BuildPreview() const
+{
+	FASCraftingPreview Preview;
+	FInventoryPreview Contents;
+	if (const UASInventoryComponent* Inventory = GetInventory())
+	{
+		Contents.SlotLimit = Inventory->GetMaxSlots();
+		for (const UASItemInstance* Item : Inventory->GetItemInstances())
+		{
+			if (!IsValid(Item) || !Item->IsValidItemInstance()) continue;
+			const UASItemDefinition* Definition = Item->GetItemDefinition();
+			Preview.OwnedCounts.FindOrAdd(Definition) += Item->GetQuantity();
+			if (Item->GetInventorySlot() < 0) continue;
+			++Contents.OccupantsPerSlot.FindOrAdd(Item->GetInventorySlot());
+			if (Definition->ItemType == EASItemType::CraftingMaterial)
+			{
+				FMaterialContents& Material = Contents.Materials.FindOrAdd(Definition);
+				Material.Quantity += Item->GetQuantity();
+				Material.Stacks.Add({Material.Quantity, Item->GetInventorySlot()});
+			}
+		}
+		int32 FirstFree = 0;
+		while (Contents.OccupantsPerSlot.Contains(FirstFree)) ++FirstFree;
+		Contents.bHasFreeSlot = Contents.SlotLimit <= 0 || FirstFree < Contents.SlotLimit;
+	}
+	const bool bPlayerCanCraft = CanPlayerCraft();
+	for (const UASCraftingRecipeDefinition* Recipe : GetAvailableRecipes())
+	{
+		FString Error;
+		const EASCraftingResult Result = !Recipe->ValidateRecipe(Error) ? EASCraftingResult::InvalidRecipe
+			: !bPlayerCanCraft ? EASCraftingResult::InvalidPlayer : Contents.Evaluate(*Recipe);
+		Preview.Results.Add(Recipe->RecipeId, Result);
+	}
+	return Preview;
 }
 
 void UASCraftingComponent::RequestCraft(FName RecipeId)

@@ -36,7 +36,6 @@ public:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText OwnedResultText;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText AvailabilityText;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") TObjectPtr<UTexture2D> ResultIcon;
-	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") TArray<FString> Recipes;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FName SelectedRecipe;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText Details;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText Status;

@@ -8,6 +8,7 @@ class UASCraftingRecipeDefinition;
 class UASCraftingCatalog;
 class UASInventoryComponent;
 class UASCraftingWidget;
+class UASItemDefinition;
 
 UENUM(BlueprintType)
 enum class EASCraftingResult : uint8
@@ -18,6 +19,19 @@ enum class EASCraftingResult : uint8
 	InvalidPlayer,
 	MissingMaterials,
 	InventoryFull
+};
+
+/** One synchronous UI refresh. Never retained or used to authorize a transaction. */
+struct FASCraftingPreview
+{
+	TMap<const UASItemDefinition*, int64> OwnedCounts;
+	TMap<FName, EASCraftingResult> Results;
+	int64 GetItemCount(const UASItemDefinition* Item) const { return OwnedCounts.FindRef(Item); }
+	EASCraftingResult GetResult(FName Id) const
+	{
+		const EASCraftingResult* Result = Results.Find(Id);
+		return Result ? *Result : EASCraftingResult::UnknownRecipe;
+	}
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FASCraftingFinishedSignature, FName, RecipeId, EASCraftingResult, Result);
@@ -46,6 +60,9 @@ public:
 	/** Advisory local preview; authority checks everything again when committing. */
 	UFUNCTION(BlueprintPure, Category = "Crafting")
 	EASCraftingResult CanCraft(FName RecipeId) const;
+
+	/** Evaluate all recipe rows against one inventory snapshot and one player-state check. */
+	FASCraftingPreview BuildPreview() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Crafting")
 	void RequestCraft(FName RecipeId);
