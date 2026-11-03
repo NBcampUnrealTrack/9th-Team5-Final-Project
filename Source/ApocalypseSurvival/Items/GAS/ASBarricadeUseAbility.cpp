@@ -1,28 +1,20 @@
 #include "Items/GAS/ASBarricadeUseAbility.h"
 
 #include "AbilitySystemComponent.h"
-#include "Abilities/GameplayAbilityTargetTypes.h"
-#include "Core/Framework/ASPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/BoxComponent.h"
-#include "GAS/ASAbilityTags.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Data/ASItemTags.h"
-#include "Items/Inventory/ASInventoryComponent.h"
-#include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/Use/ASBarricadeActor.h"
 #include "Skills/ASSkillTags.h"
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
-#include "TimerManager.h"
 
 UASBarricadeUseAbility::UASBarricadeUseAbility()
 {
 	BarricadeClass = AASBarricadeActor::StaticClass();
-	// Inventory requests still start on the server; the owning client also runs the targeting UI.
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
 }
 
 void UASBarricadeUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Handle,
@@ -49,27 +41,7 @@ void UASBarricadeUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Ha
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-	bTargeting = true;
-	bSubmittedTarget = false;
-	TargetingAvatar = Avatar;
-	TargetingStartedAt = World->GetTimeSeconds();
-	OtherAbilityActivatedHandle = ASC->AbilityActivatedCallbacks.AddUObject(this, &ThisClass::OnOtherAbilityActivated);
-	World->GetTimerManager().SetTimer(PendingUseTimer, this, &ThisClass::CheckPendingUse, 0.03f, true);
-	if (ActorInfo->IsLocallyControlled())
-	{
-		BeginTargeting();
-	}
-	else if (ActorInfo->IsNetAuthority())
-	{
-		const FPredictionKey Key = ActivationInfo.GetActivationPredictionKey();
-		ASC->AbilityTargetDataSetDelegate(Handle, Key).AddUObject(this, &ThisClass::OnTargetDataReceived);
-		ASC->AbilityTargetDataCancelledDelegate(Handle, Key).AddUObject(this, &ThisClass::OnTargetDataCancelled);
-		ASC->CallReplicatedTargetDataDelegatesIfSet(Handle, Key);
-	}
-	else
-	{
-		OnLocalCancel();
-	}
+	StartTargeting(TargetingTimeout, 0.03f, true);
 }
 
 void UASBarricadeUseAbility::BeginTargeting()
@@ -88,10 +60,7 @@ void UASBarricadeUseAbility::BeginTargeting()
 	PreviewActor->SetReplicates(false);
 	PreviewActor->FinishSpawning(Avatar->GetActorTransform());
 	UpdatePlacementPreview();
-	ASC->AddLooseGameplayTag(ASGameplayTags::State_Targeting);
-	bAddedTargetingTag = true;
-	ASC->GenericLocalConfirmCallbacks.AddDynamic(this, &ThisClass::OnLocalConfirm);
-	ASC->GenericLocalCancelCallbacks.AddDynamic(this, &ThisClass::OnLocalCancel);
+	BindTargetingInput();
 }
 
 void UASBarricadeUseAbility::UpdatePlacementPreview()
@@ -114,64 +83,6 @@ void UASBarricadeUseAbility::UpdatePlacementPreview()
 	}
 	PreviewActor->SetActorTransform(Placement);
 	PreviewActor->SetPlacementPreview(bHasCursor && bCanPlace);
-}
-
-void UASBarricadeUseAbility::OnLocalConfirm()
-{
-	if (!bTargeting || bSubmittedTarget) return;
-	APawn* Avatar = Cast<APawn>(GetAvatarActorFromActorInfo());
-	FVector CursorLocation;
-	const AASPlayerController* PC = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get());
-	if ((PC && PC->GetItemInteractionComponent()->IsCursorOverInventory())
-		|| !AASSkillRangeIndicatorActor::GetCursorWorldLocation(Avatar, CursorLocation))
-	{
-		// LocalInputConfirm clears its callbacks before broadcasting. Keep aiming if the click has no ground target.
-		GetAbilitySystemComponentFromActorInfo()->GenericLocalConfirmCallbacks.AddUniqueDynamic(this, &ThisClass::OnLocalConfirm);
-		return;
-	}
-	FTransform Placement;
-	const float Range = GetSourceItemDefinition()->GetEffectMagnitude(
-		ASGameplayTags::Data_Item_PlacementRange, ASItemMagnitudeDefaults::PlacementRange);
-	if (!IsValid(PreviewActor) || !PreviewActor->TryGetPlacementTransform(Avatar, CursorLocation, Range, Placement))
-	{
-		GetAbilitySystemComponentFromActorInfo()->GenericLocalConfirmCallbacks.AddUniqueDynamic(this, &ThisClass::OnLocalConfirm);
-		return;
-	}
-	const FVector TargetLocation = AASSkillRangeIndicatorActor::ResolveTargetLocation(Avatar, CursorLocation, Range);
-	bSubmittedTarget = true;
-	StopTargeting();
-	if (CurrentActorInfo->IsNetAuthority())
-	{
-		PlaceAtLocation(TargetLocation);
-		return;
-	}
-	FGameplayAbilityTargetDataHandle Data;
-	FGameplayAbilityTargetData_LocationInfo* Location = new FGameplayAbilityTargetData_LocationInfo();
-	Location->TargetLocation.LocationType = EGameplayAbilityTargetingLocationType::LiteralTransform;
-	Location->TargetLocation.LiteralTransform = FTransform(TargetLocation);
-	Data.Add(Location);
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	ASC->CallServerSetReplicatedTargetData(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(),
-		Data, FGameplayTag(), ASC->ScopedPredictionKey);
-}
-
-void UASBarricadeUseAbility::OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag)
-{
-	// Copy before consuming the cached handle: the incoming reference may refer to that cache itself.
-	const FGameplayAbilityTargetDataHandle Received = Data;
-	GetAbilitySystemComponentFromActorInfo()->ConsumeClientReplicatedTargetData(
-		CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey());
-	if (!bTargeting || bSubmittedTarget) return;
-	const FGameplayAbilityTargetData* Target = Received.Get(0);
-	if (Received.Num() != 1 || !Target || Target->GetScriptStruct() != FGameplayAbilityTargetData_LocationInfo::StaticStruct()
-		|| !Target->HasEndPoint() || Target->GetEndPointTransform().ContainsNaN())
-	{
-		OnTargetDataCancelled();
-		return;
-	}
-	bSubmittedTarget = true;
-	StopTargeting();
-	PlaceAtLocation(Target->GetEndPointTransform().GetLocation());
 }
 
 void UASBarricadeUseAbility::PlaceAtLocation(const FVector& DesiredLocation)
@@ -212,72 +123,31 @@ void UASBarricadeUseAbility::PlaceAtLocation(const FVector& DesiredLocation)
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
-void UASBarricadeUseAbility::OnLocalCancel()
+
+float UASBarricadeUseAbility::GetTargetRange() const
 {
-	if (IsActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	return GetSourceItemDefinition()->GetEffectMagnitude(ASGameplayTags::Data_Item_PlacementRange, ASItemMagnitudeDefaults::PlacementRange);
 }
 
-void UASBarricadeUseAbility::OnTargetDataCancelled()
+void UASBarricadeUseAbility::ExecuteAtLocation(const FVector& Location)
 {
-	if (IsActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	PlaceAtLocation(Location);
 }
 
-void UASBarricadeUseAbility::OnOtherAbilityActivated(UGameplayAbility* Ability)
+bool UASBarricadeUseAbility::IsTargetLocationValid(const FVector& Location) const
 {
-	if (bTargeting && Ability != this) OnLocalCancel();
+	FTransform Placement;
+	return IsValid(PreviewActor) && PreviewActor->TryGetPlacementTransform(
+		Cast<APawn>(GetAvatarActorFromActorInfo()), Location, GetTargetRange(), Placement);
 }
 
-void UASBarricadeUseAbility::CheckPendingUse()
+void UASBarricadeUseAbility::UpdateTargetingPreview()
 {
-	const UASItemInstance* Item = GetSourceItem();
-	const UASInventoryComponent* Inventory = Item ? Item->GetTypedOuter<UASInventoryComponent>() : nullptr;
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!Item || !Inventory || Inventory->FindItemById(Item->GetInstanceId()) != Item
-		|| !TargetingAvatar.IsValid() || GetAvatarActorFromActorInfo() != TargetingAvatar.Get()
-		|| !ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
-		|| (CurrentActorInfo->IsNetAuthority() && !CheckCost(CurrentSpecHandle, CurrentActorInfo))
-		|| GetWorld()->GetTimeSeconds() - TargetingStartedAt >= TargetingTimeout)
-	{
-		OnLocalCancel();
-		return;
-	}
 	UpdatePlacementPreview();
 }
 
-void UASBarricadeUseAbility::StopTargeting()
+void UASBarricadeUseAbility::CleanupTargetingVisuals()
 {
-	bTargeting = false;
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-	{
-		ASC->GenericLocalConfirmCallbacks.RemoveDynamic(this, &ThisClass::OnLocalConfirm);
-		ASC->GenericLocalCancelCallbacks.RemoveDynamic(this, &ThisClass::OnLocalCancel);
-		if (bAddedTargetingTag) ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Targeting);
-	}
-	bAddedTargetingTag = false;
 	if (IsValid(PreviewActor)) PreviewActor->Destroy();
 	PreviewActor = nullptr;
-}
-
-void UASBarricadeUseAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	const bool bReplicateEndAbility, const bool bWasCancelled)
-{
-	if (!IsActive()) return;
-	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (ASC)
-	{
-		if (bWasCancelled && !bSubmittedTarget && !ActorInfo->IsNetAuthority())
-		{
-			ASC->ServerSetReplicatedTargetDataCancelled(Handle, ActivationInfo.GetActivationPredictionKey(), ASC->ScopedPredictionKey);
-		}
-		const FPredictionKey Key = ActivationInfo.GetActivationPredictionKey();
-		ASC->AbilityTargetDataSetDelegate(Handle, Key).RemoveAll(this);
-		ASC->AbilityTargetDataCancelledDelegate(Handle, Key).RemoveAll(this);
-		ASC->ConsumeClientReplicatedTargetData(Handle, Key);
-		ASC->AbilityActivatedCallbacks.Remove(OtherAbilityActivatedHandle);
-	}
-	OtherAbilityActivatedHandle.Reset();
-	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(PendingUseTimer);
-	StopTargeting();
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

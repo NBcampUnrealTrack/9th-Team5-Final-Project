@@ -25,6 +25,7 @@
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
+#include "Items/Crafting/ASCraftingComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "EnhancedInputComponent.h"
@@ -57,6 +58,7 @@ AASPlayerController::AASPlayerController()
 	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("PathFollowingComponent"));
 	ItemInteractionComponent = CreateDefaultSubobject<UASItemInteractionComponent>(TEXT("ItemInteractionComponent"));
 	InventoryComponent = CreateDefaultSubobject<UASInventoryComponent>(TEXT("InventoryComponent"));
+	CraftingComponent = CreateDefaultSubobject<UASCraftingComponent>(TEXT("CraftingComponent"));
 	AttackMoveComponent = CreateDefaultSubobject<UASPlayerAttackMoveComponent>(TEXT("AttackMoveComponent"));
 	PlayerCameraManagerClass = AASPlayerCameraManager::StaticClass();
 	InGameMenuWidgetClass = UASInGameMenuWidget::StaticClass();
@@ -65,6 +67,26 @@ AASPlayerController::AASPlayerController()
 
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Default;
+}
+
+void AASPlayerController::ToggleCrafting()
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen()) return;
+	if (!CraftingComponent->IsCraftingOpen())
+	{
+		OnStop();
+		OnMoveCompleted();
+		ItemInteractionComponent->CloseLoot();
+	}
+	ItemInteractionComponent->CloseInventory();
+	CraftingComponent->ToggleCrafting();
+}
+
+void AASPlayerController::ToggleInventory()
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen()) return;
+	OnMoveCompleted();
+	ItemInteractionComponent->ToggleInventory();
 }
 
 void AASPlayerController::PostInitializeComponents()
@@ -79,6 +101,8 @@ void AASPlayerController::PostInitializeComponents()
 
 void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
 {
+	ItemInteractionComponent->CloseInventory();
+	CraftingComponent->CloseCrafting();
 	AttackMoveComponent->CancelAttackMove();
 	ItemInteractionComponent->CancelPendingInteraction();
 	ItemInteractionComponent->CloseLoot();
@@ -159,8 +183,23 @@ void AASPlayerController::SetupInputComponent()
 bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	if (bBossIntroInputBlocked) return true;
+	if (IsLocalController() && Params.Key == EKeys::I && Params.Event == IE_Pressed && !IsResultPhase())
+	{
+		ToggleInventory();
+		return true;
+	}
 	if (IsLocalController() && Params.Key == EKeys::Escape && Params.Event == IE_Pressed && !IsResultPhase())
 	{
+		if (ItemInteractionComponent->IsInventoryOpen())
+		{
+			ItemInteractionComponent->CloseInventory();
+			return true;
+		}
+		if (CraftingComponent->IsCraftingOpen())
+		{
+			CraftingComponent->CloseCrafting();
+			return true;
+		}
 		ToggleInGameMenu();
 		return true;
 	}
@@ -169,6 +208,7 @@ bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
+	if (CraftingComponent->IsCraftingOpen() || ItemInteractionComponent->IsInventoryOpen()) return;
 	if (bBossIntroInputBlocked || IsResultPhase()) return;
 	if (IsInGameMenuOpen()) return;
 	// 현재 Ability Set에 장착된 일반 공격 GA 하나만 A 입력을 받는다.
@@ -419,6 +459,8 @@ void AASPlayerController::PlayerTick(const float DeltaTime)
 	Super::PlayerTick(DeltaTime);
 	if (IsResultPhase())
 	{
+		ItemInteractionComponent->CloseInventory();
+		CraftingComponent->CloseCrafting();
 		if (IsInGameMenuOpen()) CloseInGameMenu();
 		return;
 	}
@@ -427,7 +469,7 @@ void AASPlayerController::PlayerTick(const float DeltaTime)
 		return;
 	}
 
-	UpdateCameraEdgeScroll(DeltaTime);
+	if (!CraftingComponent->IsCraftingOpen() && !ItemInteractionComponent->IsInventoryOpen()) UpdateCameraEdgeScroll(DeltaTime);
 }
 
 bool AASPlayerController::IsInGameMenuOpen() const
@@ -451,6 +493,8 @@ void AASPlayerController::ToggleInGameMenu()
 		return;
 	}
 	if (IsResultPhase() || !InGameMenuWidgetClass) return;
+	ItemInteractionComponent->CloseInventory();
+	CraftingComponent->CloseCrafting();
 	InGameMenuWidget = CreateWidget<UASInGameMenuWidget>(this, InGameMenuWidgetClass);
 	if (!InGameMenuWidget) return;
 	bCursorVisibleBeforeMenu = bShowMouseCursor;
@@ -570,6 +614,7 @@ void AASPlayerController::ServerAcknowledgeBossIntro_Implementation(AASBossEncou
 void AASPlayerController::SetBossIntroInputBlocked(bool bBlocked)
 {
 	if (bBossIntroInputBlocked == bBlocked) return;
+	if (bBlocked) { CraftingComponent->CloseCrafting(); ItemInteractionComponent->CloseInventory(); }
 	if (bBlocked)
 	{
 		bFullTickBeforeBossIntro = bShouldPerformFullTickWhenPaused;
@@ -585,6 +630,7 @@ void AASPlayerController::SetBossIntroInputBlocked(bool bBlocked)
 
 void AASPlayerController::OnMoveStarted()
 {
+	if (CraftingComponent->IsCraftingOpen() || ItemInteractionComponent->IsInventoryOpen()) return;
 	if (IsInGameMenuOpen()) return;
 	bInteractionClickHeld = false;
 	if (IsPawnDead() || ItemInteractionComponent->IsLootOpen()) return;
@@ -646,6 +692,7 @@ void AASPlayerController::DebugSetRightClickAttack(const bool bEnabled)
 
 void AASPlayerController::OnMoveHeld()
 {
+	if (CraftingComponent->IsCraftingOpen() || ItemInteractionComponent->IsInventoryOpen()) return;
 	if (IsInGameMenuOpen()) return;
 	if (AttackMoveComponent->HasActiveCommand()) return;
 	if (IsPawnDead() || bInteractionClickHeld || ItemInteractionComponent->HasPendingInteraction() || ItemInteractionComponent->IsLootOpen()) return;

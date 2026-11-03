@@ -1,4 +1,6 @@
 #include "Items/Interaction/ASItemInteractionComponent.h"
+#include "Items/UI/ASInventoryPanelWidget.h"
+#include "Items/UI/ViewModels/ASInventoryViewModel.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Core/Framework/ASPlayerController.h"
@@ -11,7 +13,9 @@
 #include "Items/Loot/ASDroppedItem.h"
 #include "Items/UI/ASLootWidget.h"
 #include "Items/UI/ASInventoryBarWidget.h"
+#include "Items/UI/ASInventoryPanelWidget.h"
 #include "Items/Data/ASItemDefinition.h"
+#include "Items/GAS/ASTargetedItemUseAbility.h"
 #include "Components/InputComponent.h"
 #include "InputCoreTypes.h"
 #include "EngineUtils.h"
@@ -32,6 +36,9 @@ namespace
 
 UASItemInteractionComponent::UASItemInteractionComponent()
 {
+	DefaultInventoryBarClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_InventoryBar.WBP_InventoryBar_C"));
+	DefaultInventoryPanelClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_InventoryPanel.WBP_InventoryPanel_C"));
+	DefaultLootWidgetClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_Loot.WBP_Loot_C"));
 	PrimaryComponentTick.bCanEverTick = true;
 	SetIsReplicatedByDefault(true);
 }
@@ -98,14 +105,15 @@ bool UASItemInteractionComponent::RequestPickupDroppedItem(AASDroppedItem* Item)
 
 bool UASItemInteractionComponent::IsCursorOverInventory() const
 {
-	return IsValid(InventoryBar) && InventoryBar->IsCursorOverInventory();
+	return (IsValid(InventoryPanel) && InventoryPanel->IsCursorOverInventory())
+		|| (IsValid(InventoryBar) && InventoryBar->IsCursorOverInventory());
 }
 
 void UASItemInteractionComponent::HandleWorldRightClick()
 {
 	AASPlayerController* PC = GetASController();
 	if (!PC || !PC->IsLocalController() || IsDeadPawn(PC) || !IsValid(PC->GetPawn())
-		|| IsCursorOverInventory()) return;
+		|| IsInventoryOpen() || IsCursorOverInventory()) return;
 	if (UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(GetPlayerInventory(), PC->GetPawn());
 		ASC && ASC->HasMatchingGameplayTag(ASGameplayTags::State_Targeting))
 	{
@@ -162,7 +170,7 @@ void UASItemInteractionComponent::UpdateDroppedItemHover()
 	AASDroppedItem* Next = nullptr;
 	AASPlayerController* PC = GetASController();
 	if (bDroppedItemNamesVisible && PC && IsValid(PC->GetPawn()) && PC->bShowMouseCursor && !IsDeadPawn(PC)
-		&& !IsCursorOverInventory() && !IsLootOpen()
+		&& !IsCursorOverInventory() && !IsLootOpen() && !IsInventoryOpen()
 		&& FSlateApplication::IsInitialized() && !FSlateApplication::Get().IsDragDropping())
 	{
 		if (HoveredDroppedItemLabel.IsValid() && HoveredDroppedItemLabel->GetDroppedItem())
@@ -182,6 +190,7 @@ void UASItemInteractionComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	AASPlayerController* PC = GetASController();
 	if (!PC || !PC->IsLocalController()) return;
 	InitializeInventoryBar();
+	if (IsInventoryOpen() && (!PC->GetPawn() || IsDeadPawn(PC))) CloseInventory();
 	UpdateDroppedItemHover();
 	if (InventoryBar && InventoryBar->GetInventory() != GetPlayerInventory())
 		InventoryBar->SetInventory(GetPlayerInventory());
@@ -312,7 +321,7 @@ void UASItemInteractionComponent::InitializeInventoryBar()
 	if (!InventoryBar)
 	{
 		InventoryBar = CreateWidget<UASInventoryBarWidget>(PC,
-			InventoryBarClass ? InventoryBarClass.Get() : UASInventoryBarWidget::StaticClass());
+			InventoryBarClass ? InventoryBarClass.Get() : DefaultInventoryBarClass.LoadSynchronous());
 		if (InventoryBar)
 		{
 			InventoryBar->SetInventory(GetPlayerInventory());
@@ -323,6 +332,7 @@ void UASItemInteractionComponent::InitializeInventoryBar()
 
 void UASItemInteractionComponent::ActivateSlotFromKey(const int32 SlotIndex)
 {
+	if (IsInventoryOpen() || (GetASController() && GetASController()->IsInGameMenuOpen())) return;
 	UASInventoryComponent* Inventory = GetPlayerInventory();
 	UASItemInstance* Item = Inventory ? Inventory->GetItemAtSlot(SlotIndex) : nullptr;
 	if (Item) RequestActivateSlot(SlotIndex, Item->GetInstanceId());
@@ -330,50 +340,61 @@ void UASItemInteractionComponent::ActivateSlotFromKey(const int32 SlotIndex)
 
 void UASItemInteractionComponent::RequestActivateSlot(const int32 SlotIndex, const FGuid ExpectedItem)
 {
-	if (GetASController() && GetASController()->IsLocalController() && ExpectedItem.IsValid()
-		&& (SlotIndex == UASInventoryComponent::WeaponSlotIndex
-			|| (SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)))
+	UASInventoryComponent* Inventory = GetPlayerInventory();
+	if (GetASController() && GetASController()->IsLocalController() && Inventory && ExpectedItem.IsValid()
+		&& (Inventory->IsValidItemSlot(SlotIndex) || SlotIndex == UASInventoryComponent::WeaponSlotIndex
+			|| SlotIndex == UASInventoryComponent::BagSlotIndex))
+	{
+		UASItemInstance* Item = Inventory->GetItemAtSlot(SlotIndex);
+		UClass* UseClass = Item ? Item->GetItemDefinition()->UseAbility.Get() : nullptr;
+		if (Item && Item->GetInstanceId() == ExpectedItem && UseClass && UseClass->IsChildOf(UASTargetedItemUseAbility::StaticClass()))
+			CloseInventory();
 		ServerActivateSlot(SlotIndex, ExpectedItem);
+	}
 }
 
 void UASItemInteractionComponent::ServerActivateSlot_Implementation(const int32 SlotIndex, const FGuid ExpectedItem)
 {
 	UASInventoryComponent* Inventory = GetPlayerInventory();
-	if (!Inventory || (SlotIndex != UASInventoryComponent::WeaponSlotIndex
-		&& (SlotIndex < 0 || SlotIndex >= UASInventoryComponent::PlayerSlotCount))) return;
+	if (!Inventory || (!Inventory->IsValidItemSlot(SlotIndex) && SlotIndex != UASInventoryComponent::WeaponSlotIndex
+		&& SlotIndex != UASInventoryComponent::BagSlotIndex)) return;
 	UASItemInstance* Item = Inventory->GetItemAtSlot(SlotIndex);
 	if (!Item || Item->GetInstanceId() != ExpectedItem) return;
-	Inventory->UseItem(ExpectedItem, GetASController()->GetPawn());
+	if (!Inventory->UseItem(ExpectedItem, GetASController()->GetPawn()) && Item->GetItemDefinition()->ItemType == EASItemType::Bag)
+		ClientInventoryActionFailed(NSLOCTEXT("ASInventory", "BagChangeFailed", "??? ??? ? ????. ?? ??? ??? ??? ?????."));
 }
 
 void UASItemInteractionComponent::RequestSwapSlots(const int32 FromSlot, const int32 ToSlot,
 	const FGuid ExpectedFrom, const FGuid ExpectedTo)
 {
-	if (GetASController() && GetASController()->IsLocalController() && ExpectedFrom.IsValid()
-		&& FromSlot >= 0 && FromSlot < UASInventoryComponent::PlayerSlotCount
-		&& ToSlot >= 0 && ToSlot < UASInventoryComponent::PlayerSlotCount)
+	UASInventoryComponent* Inventory = GetPlayerInventory();
+	if (GetASController() && GetASController()->IsLocalController() && Inventory && ExpectedFrom.IsValid()
+		&& (Inventory->IsValidItemSlot(FromSlot) || FromSlot == UASInventoryComponent::BagSlotIndex)
+		&& (Inventory->IsValidItemSlot(ToSlot) || ToSlot == UASInventoryComponent::BagSlotIndex))
 		ServerSwapSlots(FromSlot, ToSlot, ExpectedFrom, ExpectedTo);
 }
 
 void UASItemInteractionComponent::ServerSwapSlots_Implementation(const int32 FromSlot, const int32 ToSlot,
 	const FGuid ExpectedFrom, const FGuid ExpectedTo)
 {
+	if (IsDeadPawn(GetASController())) return;
 	if (UASInventoryComponent* Inventory = GetPlayerInventory())
-		Inventory->SwapSlots(FromSlot, ToSlot, ExpectedFrom, ExpectedTo);
+		if (!Inventory->SwapSlots(FromSlot, ToSlot, ExpectedFrom, ExpectedTo))
+			ClientInventoryActionFailed(NSLOCTEXT("ASInventory", "MoveFailed", "???? ??? ? ????. ?? ??? ??? ?????."));
 }
 
 void UASItemInteractionComponent::RequestDropSlot(const int32 SlotIndex, const FGuid ExpectedItem)
 {
+	UASInventoryComponent* Inventory = GetPlayerInventory();
 	if (GetASController() && GetASController()->IsLocalController() && ExpectedItem.IsValid()
-		&& SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)
-		ServerDropSlot(SlotIndex, ExpectedItem);
+		&& Inventory && Inventory->IsValidItemSlot(SlotIndex)) ServerDropSlot(SlotIndex, ExpectedItem);
 }
 
 void UASItemInteractionComponent::RequestDropOneFromSlot(const int32 SlotIndex, const FGuid ExpectedItem)
 {
+	UASInventoryComponent* Inventory = GetPlayerInventory();
 	if (GetASController() && GetASController()->IsLocalController() && ExpectedItem.IsValid()
-		&& SlotIndex >= 0 && SlotIndex < UASInventoryComponent::PlayerSlotCount)
-		ServerDropOneFromSlot(SlotIndex, ExpectedItem);
+		&& Inventory && Inventory->IsValidItemSlot(SlotIndex)) ServerDropOneFromSlot(SlotIndex, ExpectedItem);
 }
 
 void UASItemInteractionComponent::ServerDropOneFromSlot_Implementation(const int32 SlotIndex, const FGuid ExpectedItem)
@@ -392,6 +413,7 @@ void UASItemInteractionComponent::ClientOpenLoot_Implementation(AASLootChest* Ch
 {
 	AASPlayerController* PC = GetASController();
 	if (!PC || !PC->IsLocalController() || !IsValid(Chest) || !GetPlayerInventory()) return;
+	CloseInventory();
 	// Remove the previous widget without sending a close RPC for the newly accepted server context.
 	if (IsValid(LootWidget))
 	{
@@ -399,7 +421,7 @@ void UASItemInteractionComponent::ClientOpenLoot_Implementation(AASLootChest* Ch
 		LootWidget->RemoveFromParent();
 	}
 	TSubclassOf<UASLootWidget> ActualClass = LootWidgetClass;
-	if (!ActualClass) ActualClass = UASLootWidget::StaticClass();
+	if (!ActualClass) ActualClass = DefaultLootWidgetClass.LoadSynchronous();
 	LootWidget = CreateWidget<UASLootWidget>(PC, ActualClass);
 	if (!IsValid(LootWidget)) return;
 	OpenChest = Chest;
@@ -446,6 +468,8 @@ void UASItemInteractionComponent::ServerCloseLoot_Implementation()
 
 void UASItemInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	CloseInventory();
+	InventoryPanel = nullptr;
 	if (HoveredDroppedItem.IsValid()) HoveredDroppedItem->SetWorldHovered(false);
 	HoveredDroppedItem.Reset();
 	HoveredDroppedItemLabel.Reset();
@@ -466,5 +490,16 @@ void UASItemInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReas
 		LootWidget->RemoveFromParent();
 		LootWidget = nullptr;
 	}
+	if (InventoryViewModel) InventoryViewModel->Shutdown();
+	InventoryViewModel = nullptr;
 	Super::EndPlay(EndPlayReason);
+}
+
+UASInventoryViewModel* UASItemInteractionComponent::GetInventoryViewModel()
+{
+	UASInventoryComponent* Source = GetPlayerInventory();
+	if (!InventoryViewModel) InventoryViewModel = NewObject<UASInventoryViewModel>(this);
+	if (InventoryViewModel->GetInventory() != Source)
+		InventoryViewModel->Initialize(Source, Cast<APlayerController>(GetOwner()));
+	return InventoryViewModel;
 }

@@ -3,12 +3,12 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/DragDropOperation.h"
-#include "Items/Data/ASItemAssetLoading.h"
 #include "ASInventorySlotWidget.generated.h"
 
 class UASInventoryBarWidget;
 class UASInventoryComponent;
-class UASItemInstance;
+class UASItemSlotViewModel;
+class UASInventoryViewModel;
 class UBorder;
 class UImage;
 class UTextBlock;
@@ -21,6 +21,8 @@ class APOCALYPSESURVIVAL_API UASInventorySlotDragDrop : public UDragDropOperatio
 public:
 	UPROPERTY()
 	TObjectPtr<UASInventoryComponent> Inventory;
+	UPROPERTY()
+	TObjectPtr<UASInventoryViewModel> ViewModel;
 	UPROPERTY()
 	TObjectPtr<UASInventoryBarWidget> SourceBar;
 	int32 FromSlot = INDEX_NONE;
@@ -36,9 +38,11 @@ class APOCALYPSESURVIVAL_API UASInventorySlotWidget : public UUserWidget
 public:
 	void InitializeSlot(UASInventoryBarWidget* InBar, int32 InSlotIndex);
 	void RefreshSlot();
+	UFUNCTION(BlueprintPure, Category="Inventory|ViewModel")
+	UASItemSlotViewModel* GetViewModel() const { return ViewModel; }
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
@@ -47,27 +51,33 @@ protected:
 	virtual void NativeOnDragCancelled(const FDragDropEvent& Event, UDragDropOperation* Operation) override;
 	virtual bool NativeOnDrop(const FGeometry& Geometry, const FDragDropEvent& Event, UDragDropOperation* Operation) override;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UBorder> SlotBorder;
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UASItemRarityBackground> RarityBackground;
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UImage> ItemIcon;
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> KeyText;
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> ItemNameText;
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> QuantityText;
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> EquippedText;
 
 private:
-	UASItemInstance* GetItem() const;
+	void ApplyPresentation();
+	UPROPERTY(Transient)
+	TObjectPtr<UASItemSlotViewModel> ViewModel;
 	UPROPERTY(Transient)
 	TObjectPtr<UASInventoryBarWidget> Bar;
 	int32 SlotIndex = INDEX_NONE;
 	FGuid PressedItem;
 	bool bPressed = false;
-	FASItemAssetRequest IconAssetRequest;
+	bool bCapturedSlotColor = false;
+	FLinearColor DefaultSlotColor;
+	UPROPERTY(EditDefaultsOnly, Category="Inventory|Appearance")
+	FLinearColor EquippedSlotColor = FLinearColor(0.15f, 0.4f, 0.65f, 0.95f);
+
 };

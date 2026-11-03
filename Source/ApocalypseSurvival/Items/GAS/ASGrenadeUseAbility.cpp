@@ -1,32 +1,24 @@
 #include "Items/GAS/ASGrenadeUseAbility.h"
 
 #include "AbilitySystemComponent.h"
-#include "Abilities/GameplayAbilityTargetTypes.h"
-#include "Core/Framework/ASPlayerController.h"
 #include "Core/Input/ASInputTags.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/SphereComponent.h"
-#include "GAS/ASAbilityTags.h"
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Data/ASItemTags.h"
-#include "Items/Inventory/ASInventoryComponent.h"
-#include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/Use/ASGrenadeActor.h"
 #include "Items/Use/ASGrenadeTrajectoryPreview.h"
 #include "Skills/ASSkillAbility.h"
 #include "Skills/ASSkillTags.h"
 #include "Skills/Indicator/ASSkillRangeIndicatorActor.h"
-#include "TimerManager.h"
 
 UASGrenadeUseAbility::UASGrenadeUseAbility()
 {
 	GrenadeClass = AASGrenadeActor::StaticClass();
-	// Inventory requests still start on the server; the owning client also runs the targeting UI.
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
 }
 
 void UASGrenadeUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Handle,
@@ -52,27 +44,7 @@ void UASGrenadeUseAbility::ActivateItemUse(const FGameplayAbilitySpecHandle Hand
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-	bTargeting = true;
-	bSubmittedTarget = false;
-	TargetingAvatar = Avatar;
-	TargetingStartedAt = World->GetTimeSeconds();
-	OtherAbilityActivatedHandle = ASC->AbilityActivatedCallbacks.AddUObject(this, &ThisClass::OnOtherAbilityActivated);
-	World->GetTimerManager().SetTimer(PendingUseTimer, this, &ThisClass::CheckPendingUse, 0.1f, true);
-	if (ActorInfo->IsLocallyControlled())
-	{
-		BeginTargeting();
-	}
-	else if (ActorInfo->IsNetAuthority())
-	{
-		const FPredictionKey Key = ActivationInfo.GetActivationPredictionKey();
-		ASC->AbilityTargetDataSetDelegate(Handle, Key).AddUObject(this, &ThisClass::OnTargetDataReceived);
-		ASC->AbilityTargetDataCancelledDelegate(Handle, Key).AddUObject(this, &ThisClass::OnTargetDataCancelled);
-		ASC->CallReplicatedTargetDataDelegatesIfSet(Handle, Key);
-	}
-	else
-	{
-		OnLocalCancel();
-	}
+	StartTargeting(TargetingTimeout, 0.1f, false);
 }
 
 void UASGrenadeUseAbility::BeginTargeting()
@@ -129,62 +101,7 @@ void UASGrenadeUseAbility::BeginTargeting()
 		OnLocalCancel();
 		return;
 	}
-	ASC->AddLooseGameplayTag(ASGameplayTags::State_Targeting);
-	bAddedTargetingTag = true;
-	ASC->GenericLocalConfirmCallbacks.AddDynamic(this, &ThisClass::OnLocalConfirm);
-	ASC->GenericLocalCancelCallbacks.AddDynamic(this, &ThisClass::OnLocalCancel);
-}
-
-void UASGrenadeUseAbility::OnLocalConfirm()
-{
-	if (!bTargeting || bSubmittedTarget) return;
-	APawn* Avatar = Cast<APawn>(GetAvatarActorFromActorInfo());
-	FVector CursorLocation;
-	const AASPlayerController* PC = Cast<AASPlayerController>(CurrentActorInfo->PlayerController.Get());
-	if ((PC && PC->GetItemInteractionComponent()->IsCursorOverInventory())
-		|| !AASSkillRangeIndicatorActor::GetCursorWorldLocation(Avatar, CursorLocation))
-	{
-		// LocalInputConfirm clears its callbacks before broadcasting. Keep aiming if the click has no ground target.
-		GetAbilitySystemComponentFromActorInfo()->GenericLocalConfirmCallbacks.AddUniqueDynamic(this, &ThisClass::OnLocalConfirm);
-		return;
-	}
-	const FVector TargetLocation = AASSkillRangeIndicatorActor::ResolveTargetLocation(
-		Avatar, CursorLocation, GetSourceItemDefinition()->GetEffectMagnitude(
-			ASGameplayTags::Data_Item_ThrowRange, ASItemMagnitudeDefaults::ThrowRange));
-	bSubmittedTarget = true;
-	StopTargeting();
-	if (CurrentActorInfo->IsNetAuthority())
-	{
-		ThrowAtLocation(TargetLocation);
-		return;
-	}
-	FGameplayAbilityTargetDataHandle Data;
-	FGameplayAbilityTargetData_LocationInfo* Location = new FGameplayAbilityTargetData_LocationInfo();
-	Location->TargetLocation.LocationType = EGameplayAbilityTargetingLocationType::LiteralTransform;
-	Location->TargetLocation.LiteralTransform = FTransform(TargetLocation);
-	Data.Add(Location);
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	ASC->CallServerSetReplicatedTargetData(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(),
-		Data, FGameplayTag(), ASC->ScopedPredictionKey);
-}
-
-void UASGrenadeUseAbility::OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag)
-{
-	// Copy before consuming the cached handle: the incoming reference may refer to that cache itself.
-	const FGameplayAbilityTargetDataHandle Received = Data;
-	GetAbilitySystemComponentFromActorInfo()->ConsumeClientReplicatedTargetData(
-		CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey());
-	if (!bTargeting || bSubmittedTarget) return;
-	const FGameplayAbilityTargetData* Target = Received.Get(0);
-	if (Received.Num() != 1 || !Target || Target->GetScriptStruct() != FGameplayAbilityTargetData_LocationInfo::StaticStruct()
-		|| !Target->HasEndPoint() || Target->GetEndPointTransform().ContainsNaN())
-	{
-		OnTargetDataCancelled();
-		return;
-	}
-	bSubmittedTarget = true;
-	StopTargeting();
-	ThrowAtLocation(Target->GetEndPointTransform().GetLocation());
+	BindTargetingInput();
 }
 
 void UASGrenadeUseAbility::ThrowAtLocation(const FVector& DesiredLocation)
@@ -243,71 +160,21 @@ void UASGrenadeUseAbility::ThrowAtLocation(const FVector& DesiredLocation)
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
-void UASGrenadeUseAbility::OnLocalCancel()
+
+float UASGrenadeUseAbility::GetTargetRange() const
 {
-	if (IsActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	return GetSourceItemDefinition()->GetEffectMagnitude(ASGameplayTags::Data_Item_ThrowRange, ASItemMagnitudeDefaults::ThrowRange);
 }
 
-void UASGrenadeUseAbility::OnTargetDataCancelled()
+void UASGrenadeUseAbility::ExecuteAtLocation(const FVector& Location)
 {
-	if (IsActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	ThrowAtLocation(Location);
 }
 
-void UASGrenadeUseAbility::OnOtherAbilityActivated(UGameplayAbility* Ability)
+void UASGrenadeUseAbility::CleanupTargetingVisuals()
 {
-	if (bTargeting && Ability != this) OnLocalCancel();
-}
-
-void UASGrenadeUseAbility::CheckPendingUse()
-{
-	const UASItemInstance* Item = GetSourceItem();
-	const UASInventoryComponent* Inventory = Item ? Item->GetTypedOuter<UASInventoryComponent>() : nullptr;
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!Item || !Inventory || Inventory->FindItemById(Item->GetInstanceId()) != Item
-		|| !TargetingAvatar.IsValid() || GetAvatarActorFromActorInfo() != TargetingAvatar.Get()
-		|| !ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
-		|| GetWorld()->GetTimeSeconds() - TargetingStartedAt >= TargetingTimeout)
-	{
-		OnLocalCancel();
-	}
-}
-
-void UASGrenadeUseAbility::StopTargeting()
-{
-	bTargeting = false;
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-	{
-		ASC->GenericLocalConfirmCallbacks.RemoveDynamic(this, &ThisClass::OnLocalConfirm);
-		ASC->GenericLocalCancelCallbacks.RemoveDynamic(this, &ThisClass::OnLocalCancel);
-		if (bAddedTargetingTag) ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Targeting);
-	}
-	bAddedTargetingTag = false;
 	if (IsValid(TrajectoryPreview)) TrajectoryPreview->Destroy();
 	TrajectoryPreview = nullptr;
 	if (IsValid(RangeIndicator)) RangeIndicator->Destroy();
 	RangeIndicator = nullptr;
-}
-
-void UASGrenadeUseAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	const bool bReplicateEndAbility, const bool bWasCancelled)
-{
-	if (!IsActive()) return;
-	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (ASC)
-	{
-		if (bWasCancelled && !bSubmittedTarget && !ActorInfo->IsNetAuthority())
-		{
-			ASC->ServerSetReplicatedTargetDataCancelled(Handle, ActivationInfo.GetActivationPredictionKey(), ASC->ScopedPredictionKey);
-		}
-		const FPredictionKey Key = ActivationInfo.GetActivationPredictionKey();
-		ASC->AbilityTargetDataSetDelegate(Handle, Key).RemoveAll(this);
-		ASC->AbilityTargetDataCancelledDelegate(Handle, Key).RemoveAll(this);
-		ASC->ConsumeClientReplicatedTargetData(Handle, Key);
-		ASC->AbilityActivatedCallbacks.Remove(OtherAbilityActivatedHandle);
-	}
-	OtherAbilityActivatedHandle.Reset();
-	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(PendingUseTimer);
-	StopTargeting();
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
