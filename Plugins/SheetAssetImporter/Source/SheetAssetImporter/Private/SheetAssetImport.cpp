@@ -1,4 +1,5 @@
 #include "SheetAssetImport.h"
+#include "SheetAssetIdResolver.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/DataTable.h"
@@ -170,14 +171,26 @@ namespace
 	}
 
 	bool ImportValue(FProperty* Property, void* Value, const FString& Cell, ESheetCellFormat Format,
-		UObject* Owner, const FPreviewAssets* Preview, FString& Error)
+		UObject* Owner, const FPreviewAssets* Preview, FSheetAssetIdResolver& References, FString& Error)
 	{
 		const FString Text = ResolvePreviewText(Cell, Preview);
 		if (Format == ESheetCellFormat::Auto)
 		{
+			const FString Trimmed = Text.TrimStartAndEnd();
+			if (FStructProperty* Struct = CastField<FStructProperty>(Property);
+				Struct && !Trimmed.StartsWith(TEXT("{")) && !Trimmed.StartsWith(TEXT("[")) && !Trimmed.StartsWith(TEXT("(")))
+			{
+				const FString ScalarPath = Struct->Struct->GetMetaData(TEXT("SheetScalarProperty"));
+				if (!ScalarPath.IsEmpty())
+				{
+					FProperty* ScalarProperty = nullptr;
+					void* ScalarValue = nullptr;
+					if (!ResolveProperty(Struct->Struct, Value, ScalarPath, ScalarProperty, ScalarValue, Error)) return false;
+					return ImportValue(ScalarProperty, ScalarValue, Cell, ESheetCellFormat::Auto, Owner, Preview, References, Error);
+				}
+			}
 			const bool bComposite = CastField<FStructProperty>(Property) || CastField<FArrayProperty>(Property)
 				|| CastField<FMapProperty>(Property) || CastField<FSetProperty>(Property);
-			const FString Trimmed = Text.TrimStartAndEnd();
 			Format = bComposite && (Trimmed.StartsWith(TEXT("{")) || Trimmed.StartsWith(TEXT("[")))
 				? ESheetCellFormat::Json : ESheetCellFormat::UnrealText;
 		}
@@ -194,9 +207,23 @@ namespace
 			{
 				if (Json->Type != EJson::Number && Json->Type != EJson::String) { Error = TEXT("Numeric JSON cell must be a number or numeric string."); return false; }
 				return ImportValue(Property, Value, Json->Type == EJson::String ? Json->AsString() : Text,
-					ESheetCellFormat::UnrealText, Owner, Preview, Error);
+					ESheetCellFormat::UnrealText, Owner, Preview, References, Error);
 			}
-			if (!FJsonObjectConverter::JsonValueToUProperty(Json, Property, Value, 0, CPF_Transient | CPF_Deprecated, true, &Reason))
+			FString ReferenceError;
+			const auto ImportReference = FJsonObjectConverter::CustomImportCallback::CreateLambda(
+				[&](const TSharedPtr<FJsonValue>& JsonValue, FProperty* Field, void* Destination)
+				{
+					if (JsonValue->Type != EJson::String) return false;
+					FString Failure;
+					const bool bHandled = References.TryImport(Field, Destination, JsonValue->AsString(), Failure);
+					if (ReferenceError.IsEmpty()) ReferenceError = Failure;
+					// A failed ID lookup must not fall back to interpreting the ID as an object path.
+					return bHandled;
+				});
+			const bool bImported = FJsonObjectConverter::JsonValueToUProperty(Json, Property, Value, 0,
+				CPF_Transient | CPF_Deprecated, true, &Reason, &ImportReference);
+			if (!ReferenceError.IsEmpty()) { Error = ReferenceError; return false; }
+			if (!bImported)
 			{
 				Error = Reason.ToString();
 				return false;
@@ -238,6 +265,7 @@ namespace
 			Error = TEXT("Numeric cell is invalid, non-finite, or outside the property's range.");
 			return false;
 		}
+		if (References.TryImport(Property, Value, Text, Error)) return Error.IsEmpty();
 		FStringOutputDevice Problems;
 		const TCHAR* End = Property->ImportText_Direct(*Text, Value, Owner, PPF_None, &Problems);
 		if (!End || !FString(End).TrimStartAndEnd().IsEmpty() || !Problems.IsEmpty())
@@ -329,7 +357,7 @@ namespace
 	}
 
 	bool ApplyRow(UStruct* Schema, void* Data, void* Defaults, const TArray<const TCHAR*>& Cells,
-		const TArray<FResolvedMapping>& Mappings, UObject* Owner, USheetImportProfile* Profile, const FPreviewAssets* Preview, FString& Error)
+		const TArray<FResolvedMapping>& Mappings, UObject* Owner, USheetImportProfile* Profile, const FPreviewAssets* Preview, FSheetAssetIdResolver& References, FString& Error)
 	{
 		for (const FResolvedMapping& Mapping : Mappings)
 		{
@@ -349,7 +377,7 @@ namespace
 				if (!ResolveProperty(Schema, Defaults, Mapping.Mapping.PropertyPath, DefaultProperty, DefaultValue, Error)) return false;
 				Property->CopyCompleteValue(Value, DefaultValue);
 			}
-			else if (!ImportValue(Property, Value, Cell, Mapping.Mapping.Format, Owner, Preview, Error))
+			else if (!ImportValue(Property, Value, Cell, Mapping.Mapping.Format, Owner, Preview, References, Error))
 			{
 				Error = Mapping.Mapping.Column + TEXT(" -> ") + Mapping.Mapping.PropertyPath + TEXT(": ") + Error;
 				return false;
@@ -384,6 +412,8 @@ FSheetImportReport SheetAssetImport::Import(USheetImportProfile* Profile, const 
 	if (Text.Len() && Text[0] == 0xFEFF) Text.RemoveAt(0);
 	if (Text.TrimStart().StartsWith(TEXT("<"))) return Fail(TEXT("Received HTML/XML instead of CSV. Check the export URL and sheet access."));
 	FString Error;
+	FSheetAssetIdResolver References(Profile, PreviewAssets);
+	if (!References.ValidateSettings(Error)) return Fail(Error);
 	if (!CheckCsv(Text, Error)) return Fail(Error);
 	FCsvParser Parser(MoveTemp(Text));
 	const FCsvParser::FRows& Rows = Parser.GetRows();
@@ -462,6 +492,14 @@ FSheetImportReport SheetAssetImport::Import(USheetImportProfile* Profile, const 
 			FSheetColumnMapping Mapping;
 			Mapping.Column = Pair.Key.ToString();
 			Mapping.PropertyPath = Property->GetName();
+			// Explicit mappings own their destination, including a struct's parent/child paths.
+			const bool bExplicitDestination = Profile->ColumnMappings.ContainsByPredicate([&Mapping](const FSheetColumnMapping& Explicit)
+			{
+				return Explicit.PropertyPath.Equals(Mapping.PropertyPath, ESearchCase::IgnoreCase)
+					|| Explicit.PropertyPath.StartsWith(Mapping.PropertyPath + TEXT("."), ESearchCase::IgnoreCase)
+					|| Mapping.PropertyPath.StartsWith(Explicit.PropertyPath + TEXT("."), ESearchCase::IgnoreCase);
+			});
+			if (bExplicitDestination) continue;
 			Mappings.Add({ Mapping, Pair.Value });
 			PropertyPaths.Add(Mapping.PropertyPath);
 		}
@@ -516,7 +554,7 @@ FSheetImportReport SheetAssetImport::Import(USheetImportProfile* Profile, const 
 			FStructOnScope Row(RowStruct);
 			if (ExistingTable && Profile->bPreserveUnmappedValues)
 				if (const uint8* const* ExistingRow = ExistingTable->GetRowMap().Find(Key)) RowStruct->CopyScriptStruct(Row.GetStructMemory(), *ExistingRow);
-			if (!ApplyRow(Schema, Row.GetStructMemory(), Defaults->GetStructMemory(), Cells, Mappings, CandidateTable, Profile, PreviewAssets, Error))
+			if (!ApplyRow(Schema, Row.GetStructMemory(), Defaults->GetStructMemory(), Cells, Mappings, CandidateTable, Profile, PreviewAssets, References, Error))
 				return Fail(FString::Printf(TEXT("Record %d (%s): %s"), RowIndex + 1, *KeyText, *Error));
 			CandidateTable->AddRow(Key, Row.GetStructMemory(), RowStruct);
 		}
@@ -532,7 +570,7 @@ FSheetImportReport SheetAssetImport::Import(USheetImportProfile* Profile, const 
 				? DuplicateObject<UDataAsset>(CastChecked<UDataAsset>(Existing), GetTransientPackage())
 				: NewObject<UDataAsset>(GetTransientPackage(), AssetClass);
 			Prepared.Add({ Path, TStrongObjectPtr<UObject>(Candidate), TStrongObjectPtr<UObject>(Existing) });
-			if (!ApplyRow(Schema, Candidate, AssetClass->GetDefaultObject(), Cells, Mappings, Candidate, Profile, PreviewAssets, Error))
+			if (!ApplyRow(Schema, Candidate, AssetClass->GetDefaultObject(), Cells, Mappings, Candidate, Profile, PreviewAssets, References, Error))
 				return Fail(FString::Printf(TEXT("Record %d (%s): %s"), RowIndex + 1, *KeyText, *Error));
 		}
 		++Report.RowCount;

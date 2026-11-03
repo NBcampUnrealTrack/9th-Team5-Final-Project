@@ -17,6 +17,14 @@
 
 이전 방식으로 컴포넌트의 `Available Recipes` 배열에 설정한 값이 있다면, 해당 레시피들을 새 카탈로그의 Recipes로 옮기고 컴포넌트에 Catalog를 지정해야 한다. 기존 배열 값은 자동 이전되지 않는다. 기존 Blueprint에서 배열을 직접 읽었다면 `GetAvailableRecipes` 호출로 변경한다.
 
+## 구글시트로 레시피 관리
+
+프로젝트의 `SheetAssetImporter`에서 레시피 DataAsset을 가져올 수 있다. 프로필의 **에셋 참조 ID 속성**을 `ItemId`로 설정하면 결과·재료 참조에 긴 에셋 경로 대신 아이템 ID를 입력한다. 재료 배열의 JSON 안에서도 `{"ItemDefinition":"Iron","Quantity":3}`처럼 사용한다. `Iron`은 에셋 이름이 아니라 해당 아이템 정의의 실제 `ItemId`여야 한다.
+
+Auto Map Columns를 켜면 `RecipeId`, `DisplayName`, `Result`, `Ingredients` 열을 별도 매핑 없이 가져온다. `Result`에는 결과 아이템 ID 하나를 입력하고, `Ingredients`에는 재료 JSON 배열을 입력한다. 일부 열만 직접 매핑하면 나머지 열은 자동으로 연결된다.
+
+레시피 클래스, 열 매핑, 예시 행, 검증과 카탈로그 등록 방법은 [Sheet Asset Importer 안내](../../../../Plugins/SheetAssetImporter/README.md)의 **제작 레시피: 에셋 경로 대신 ItemId로 참조하기**를 참고한다. 가져오기는 에디터에서 실행하며 기존 제작 코드와 UI는 저장된 레시피 에셋을 그대로 사용한다.
+
 ## Blueprint API
 
 - `GetCraftingComponent → GetAvailableRecipes()`: 컴포넌트에 지정된 카탈로그에서 UI용 목록을 가져온다. 빈 참조와 중복 ID는 목록에서 제외한다.
