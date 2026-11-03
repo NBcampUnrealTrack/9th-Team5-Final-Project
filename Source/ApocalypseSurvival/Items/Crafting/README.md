@@ -13,9 +13,19 @@
 7. UI 버튼이나 Enhanced Input에서 PlayerController의 `ToggleCrafting`을 호출한다. 별도 입력 에셋 없이 시험하려면 PIE 콘솔에서 `ToggleCrafting`을 입력한다. 창의 `닫기` 버튼이나 Escape로 닫는다.
 8. 재료는 기존 전리품/시작 아이템 설정으로 지급한다. 제작 창의 왼쪽 무기 목록에서 선택 → 가운데 무기 정보와 오른쪽 재료별 보유/필요 수량 확인 → 제작을 누른다.
 
-실제 재료 종류와 무기 조합이 정해지지 않아 제작 재료·레시피 콘텐츠 에셋이나 기존 입력 매핑은 변경하지 않았다. 카탈로그를 지정하지 않았거나 레시피 목록이 비어 있으면 제작 창에 안내를 표시한다. 기본 창은 `WBP_Crafting`을 사용하며 UMG 디자이너에서 편집한다. 드롭다운 대신 상시 제작법 목록·무기 상세·재료 목록을 표시한다. 행 템플릿은 `WBP_CraftingRecipeEntry`와 `WBP_CraftingMaterialEntry`다. 목록은 창을 열 때 카탈로그에서 읽으며, 서버도 자신에게 설정된 카탈로그로 제작 요청을 검증한다.
+카탈로그를 지정하지 않았거나 레시피 목록이 비어 있으면 제작 창에 안내를 표시한다. 기본 창은 `WBP_Crafting`을 사용하며 UMG 디자이너에서 편집한다. 드롭다운 대신 상시 제작법 목록·무기 상세·재료 목록을 표시한다. 행 템플릿은 `WBP_CraftingRecipeEntry`와 `WBP_CraftingMaterialEntry`다. 목록은 창을 열 때 카탈로그에서 읽으며, 서버도 자신에게 설정된 카탈로그로 제작 요청을 검증한다.
 
 이전 방식으로 컴포넌트의 `Available Recipes` 배열에 설정한 값이 있다면, 해당 레시피들을 새 카탈로그의 Recipes로 옮기고 컴포넌트에 Catalog를 지정해야 한다. 기존 배열 값은 자동 이전되지 않는다. 기존 Blueprint에서 배열을 직접 읽었다면 `GetAvailableRecipes` 호출로 변경한다.
+
+## 구글시트로 레시피 관리
+
+프로젝트의 `SheetAssetImporter`에서 레시피 DataAsset을 가져올 수 있다. 프로필의 **에셋 참조 ID 속성**을 `ItemId`로 설정하면 결과·재료 참조에 긴 에셋 경로 대신 아이템 ID를 입력한다. 재료 배열의 JSON 안에서도 `{"ItemDefinition":"Iron","Quantity":3}`처럼 사용한다. `Iron`은 에셋 이름이 아니라 해당 아이템 정의의 실제 `ItemId`여야 한다.
+
+현재 프로젝트의 `DA_Import_Recipe` 프로필은 `PDA_Recipe_` 접두사로 에셋을 생성하며, `DA_CraftingCatalog`도 같은 에셋을 참조한다. 같은 레시피를 `DA_Recipe_`와 `PDA_Recipe_` 이름으로 중복 생성하지 않는다.
+
+Auto Map Columns를 켜면 `RecipeId`, `DisplayName`, `Result`, `Ingredients` 열을 별도 매핑 없이 가져온다. `Result`에는 결과 아이템 ID 하나를 입력하고, `Ingredients`에는 재료 JSON 배열을 입력한다. 일부 열만 직접 매핑하면 나머지 열은 자동으로 연결된다.
+
+레시피 클래스, 열 매핑, 예시 행, 검증과 카탈로그 등록 방법은 [Sheet Asset Importer 안내](../../../../Plugins/SheetAssetImporter/README.md)의 **제작 레시피: 에셋 경로 대신 ItemId로 참조하기**를 참고한다. 가져오기는 에디터에서 실행하며 기존 제작 코드와 UI는 저장된 레시피 에셋을 그대로 사용한다.
 
 ## Blueprint API
 
@@ -30,6 +40,8 @@
 초기 아이템 지급과 제작 교환은 `ASInventoryMutationPlan`의 공통 배치 계산을 사용한다. 계획 계산은 실제 인벤토리를 변경하지 않으며, 적용과 변경 알림은 `ASInventoryTransactions.cpp`에서 처리한다. 장착·드롭·비동기 사용 요청 구현은 `ASInventoryActions.cpp`에 모았다.
 
 기본 제작 창의 계산과 이벤트 구독은 `UASCraftingViewModel`이 담당한다. 인벤토리 변경, 레시피 선택, 제작 응답, 플레이어의 ASC 준비/사망 상태, 게임 단계 변경 알림으로 갱신한다. 위젯은 FieldNotify를 받아 표시와 입력을 처리하며, 닫을 때 ViewModel의 구독을 해제한다. [UI MVVM 구조와 Blueprint 연결](../UI/README.md)을 참고한다.
+
+제작창의 일괄 미리보기는 `UASCraftingComponent::BuildPreview`를 사용한다. 한 번 집계한 보유 수량과 재료 스택의 소비 순서로 목록 전체를 평가하므로 행마다 인벤토리 교환 계획을 새로 만들지 않는다. 현재의 고정 규칙인 **재료 소비 → 겹쳐 쌓을 수 없는 무기 1개 지급**을 기준으로 공간을 판정한다. 제작 결과 종류나 수량 규칙을 확장할 때는 미리보기 판정도 함께 갱신해야 한다. `CanCraft`와 서버 제작 경로는 기존 검증·교환 계획을 유지한다. 카탈로그 목록도 ID 개수를 한 번 집계해 중복을 제외한다.
 
 ## 수동 확인 항목
 

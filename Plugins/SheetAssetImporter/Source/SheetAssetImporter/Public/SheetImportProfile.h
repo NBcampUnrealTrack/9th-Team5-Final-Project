@@ -110,11 +110,18 @@ public:
 	/** Empty detects Name, ID, ItemId, RowName, AssetName, then the first header. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Columns", AdvancedDisplay, meta = (DisplayName = "식별자 열 (빈 값이면 자동)"))
 	FString KeyColumn;
-	/** Matching headers automatically import top-level editable properties. Explicit mappings take priority. */
+	/** Automatically map remaining matching headers. Explicit columns and destination paths take priority. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Columns", AdvancedDisplay)
 	bool bAutoMapColumns = true;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Columns", AdvancedDisplay)
 	TArray<FSheetColumnMapping> ColumnMappings;
+
+	/** Optional FName/FString property on referenced DataAssets, e.g. ItemId. Empty retains path-only imports. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Columns", meta = (DisplayName = "에셋 참조 ID 속성"))
+	FName ReferenceIdProperty;
+	/** Search this content folder and its descendants for referenced IDs. Asset names are not used as IDs. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Columns", meta = (DisplayName = "참조 ID 검색 폴더"))
+	FString ReferenceSearchPath = TEXT("/Game");
 
 	/** Dashboard batches run smaller numbers first, then sort by asset path. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Import", meta = (DisplayName = "일괄 가져오기 순서", ClampMin = "0"))

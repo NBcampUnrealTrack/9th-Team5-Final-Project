@@ -6,7 +6,8 @@
 class UASItemDefinition;
 
 /** Designer-authored instruction describing an item and quantity to create. */
-USTRUCT(BlueprintType)
+// A scalar sheet cell updates the item reference while retaining the quantity.
+USTRUCT(BlueprintType, meta = (SheetScalarProperty = "ItemDefinition"))
 struct APOCALYPSESURVIVAL_API FASItemGrant
 {
 	GENERATED_BODY()
