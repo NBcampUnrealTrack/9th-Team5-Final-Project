@@ -2,6 +2,7 @@
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Characters/Enemy/BossSpider/ASBossSpiderWebTrap.h"
 #include "Characters/Player/Components/ASEquipmentComponent.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Characters/Player/Data/ASCharacterDefinition.h"
@@ -388,6 +389,10 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 		->RegisterGameplayTagEvent(ASGameplayTags::State_Staggered, EGameplayTagEventType::NewOrRemoved)
 		.AddUObject(this, &AASPlayerCharacter::HandleStaggeredTagChanged);
 
+	WebBoundTagChangedHandle = ASC
+		->RegisterGameplayTagEvent(ASGameplayTags::State_WebBound, EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(this, &AASPlayerCharacter::HandleWebBoundTagChanged);
+
 	// 늦게 접속한 클라이언트는 이미 죽어 있는 플레이어를 받을 수 있다. 태그 알림은 그때 오지 않는다.
 	if (IsDead())
 	{
@@ -403,6 +408,11 @@ void AASPlayerCharacter::OnAbilitySystemInitialized()
 	if (IsStaggered())
 	{
 		HandleStaggeredTagChanged(ASGameplayTags::State_Staggered, 1);
+	}
+
+	if (IsWebBound())
+	{
+		HandleWebBoundTagChanged(ASGameplayTags::State_WebBound, 1);
 	}
 
 	// 늦은 ASC 초기화나 리스폰 뒤에도 서버 Registry가 현재 상태와 일치해야 한다.
@@ -465,12 +475,20 @@ void AASPlayerCharacter::UnbindDeathDelegates()
 				->RegisterGameplayTagEvent(ASGameplayTags::State_Staggered, EGameplayTagEventType::NewOrRemoved)
 				.Remove(StaggeredTagChangedHandle);
 		}
+
+		if (WebBoundTagChangedHandle.IsValid())
+		{
+			ASC
+				->RegisterGameplayTagEvent(ASGameplayTags::State_WebBound, EGameplayTagEventType::NewOrRemoved)
+				.Remove(WebBoundTagChangedHandle);
+		}
 	}
 
 	HealthChangedHandle.Reset();
 	DeadTagChangedHandle.Reset();
 	DownedTagChangedHandle.Reset();
 	StaggeredTagChangedHandle.Reset();
+	WebBoundTagChangedHandle.Reset();
 }
 
 void AASPlayerCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
@@ -774,7 +792,7 @@ void AASPlayerCharacter::HandleDownedTagChanged(const FGameplayTag Tag, int32 Ne
 	else
 	{
 		// 부활이면 다시 걷는다. 시간 초과로 사망하는 중이면 사망 처리가 이동을 맡는다.
-		if (!IsDead() && !IsStaggered())
+		if (!IsDead() && !IsStaggered() && !IsWebBound())
 		{
 			MoveComp->SetMovementMode(MOVE_Walking);
 		}
@@ -802,11 +820,77 @@ void AASPlayerCharacter::HandleStaggeredTagChanged(const FGameplayTag Tag, int32
 	}
 	else
 	{
-		if (!IsDead() && !IsDowned())
+		if (!IsDead() && !IsDowned() && !IsWebBound())
 		{
 			MoveComp->SetMovementMode(MOVE_Walking);
 		}
 		OnStaggerChanged(false);
+	}
+}
+
+bool AASPlayerCharacter::IsWebBound() const
+{
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	return ASC && ASC->HasMatchingGameplayTag(ASGameplayTags::State_WebBound);
+}
+
+void AASPlayerCharacter::SetActiveWebTrap(AASBossSpiderWebTrap* InTrap)
+{
+	if (HasAuthority() && IsValid(InTrap))
+	{
+		ActiveWebTrap = InTrap;
+	}
+}
+
+void AASPlayerCharacter::ClearActiveWebTrap(AASBossSpiderWebTrap* ExpectedTrap)
+{
+	if (HasAuthority() && (!ExpectedTrap || ActiveWebTrap.Get() == ExpectedTrap))
+	{
+		ActiveWebTrap.Reset();
+	}
+}
+
+void AASPlayerCharacter::HandleWebBoundTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	if (!MoveComp)
+	{
+		return;
+	}
+
+	if (NewCount > 0)
+	{
+		// 이미 실행 중이던 공격/스킬도 속박 중에는 유지되면 안 된다.
+		// 사망·지속형 시스템 Ability만 기존 Death 처리와 같은 예외 규칙으로 남긴다.
+		if (HasAuthority())
+		{
+			if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+			{
+				FGameplayTagContainer SurvivingTags;
+				SurvivingTags.AddTag(ASGameplayTags::Ability_Behavior_SurvivesDeath);
+				ASC->CancelAbilities(nullptr, &SurvivingTags);
+			}
+		}
+
+		if (AController* OwnController = GetController())
+		{
+			OwnController->StopMovement();
+		}
+		MoveComp->StopMovementImmediately();
+		MoveComp->DisableMovement();
+		OnWebBoundChanged(true);
+	}
+	else
+	{
+		if (HasAuthority())
+		{
+			ActiveWebTrap.Reset();
+		}
+		if (!IsDead() && !IsDowned() && !IsStaggered())
+		{
+			MoveComp->SetMovementMode(MOVE_Walking);
+		}
+		OnWebBoundChanged(false);
 	}
 }
 
@@ -884,6 +968,10 @@ void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 			{
 				Subsystem->AddMappingContext(CharacterMappingContext, 1);
 			}
+			if (BreakFreeMappingContext)
+			{
+				Subsystem->AddMappingContext(BreakFreeMappingContext, 1);
+			}
 		}
 	}
 
@@ -897,12 +985,37 @@ void AASPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		{
 			EnhancedInput->BindAction(SpectateNextAction, ETriggerEvent::Started, this, &AASPlayerCharacter::OnSpectateNextPressed);
 		}
+		if (BreakFreeAction)
+		{
+			EnhancedInput->BindAction(BreakFreeAction, ETriggerEvent::Started, this, &AASPlayerCharacter::OnBreakFreePressed);
+		}
+	}
+}
+
+void AASPlayerCharacter::OnBreakFreePressed()
+{
+	if (IsWebBound())
+	{
+		ServerSubmitBreakFreeInput();
+	}
+}
+
+void AASPlayerCharacter::ServerSubmitBreakFreeInput_Implementation()
+{
+	if (!IsWebBound())
+	{
+		return;
+	}
+
+	if (AASBossSpiderWebTrap* Trap = ActiveWebTrap.Get())
+	{
+		Trap->ServerRegisterBreakFreeInput(this);
 	}
 }
 
 void AASPlayerCharacter::OnRevivePressed()
 {
-	if (IsDead() || IsDowned())
+	if (IsDead() || IsDowned() || IsWebBound())
 	{
 		return;
 	}
@@ -950,7 +1063,7 @@ AASPlayerCharacter* AASPlayerCharacter::FindReviveTarget() const
 void AASPlayerCharacter::ServerRequestRevive_Implementation(AASPlayerCharacter* Target)
 {
 	// 클라이언트 요청이라 서버에서 다시 확인한다.
-	if (!Target || Target == this || IsDead() || IsDowned())
+	if (!Target || Target == this || IsDead() || IsDowned() || IsWebBound())
 	{
 		return;
 	}
@@ -972,7 +1085,7 @@ void AASPlayerCharacter::ServerRequestRevive_Implementation(AASPlayerCharacter* 
 
 void AASPlayerCharacter::StartRevive(AASPlayerCharacter* Reviver)
 {
-	if (!HasAuthority() || !Reviver || !IsDowned() || IsDead() || bBeingRevived)
+	if (!HasAuthority() || !Reviver || !IsDowned() || IsDead() || bBeingRevived || Reviver->IsWebBound())
 	{
 		return;
 	}
@@ -1010,7 +1123,7 @@ void AASPlayerCharacter::TickRevive()
 	// 부활시키는 사람이 움직이거나, 멀어지거나, 쓰러지거나, 죽으면 취소. 범위와 속도에 약간 여유를 둔다.
 	constexpr float RangeMargin = 50.f;
 	constexpr float MoveSpeedThreshold = 50.f;
-	const bool bStillValid = IsDowned() && Reviver && !Reviver->IsDead() && !Reviver->IsDowned()
+	const bool bStillValid = IsDowned() && Reviver && !Reviver->IsDead() && !Reviver->IsDowned() && !Reviver->IsWebBound()
 		&& Reviver->GetVelocity().SizeSquared2D() <= FMath::Square(MoveSpeedThreshold)
 		&& FVector::DistSquared(Reviver->GetActorLocation(), GetActorLocation()) <= FMath::Square(ReviveRange + RangeMargin);
 
@@ -1175,6 +1288,13 @@ void AASPlayerCharacter::HandleDeadTagChanged(const FGameplayTag Tag, int32 NewC
 
 	if (NewCount > 0)
 	{
+		if (HasAuthority())
+		{
+			if (AASBossSpiderWebTrap* Trap = ActiveWebTrap.Get())
+			{
+				Trap->ReleaseCapturedPlayer(this);
+			}
+		}
 		ApplyLocalDeath();
 	}
 	else

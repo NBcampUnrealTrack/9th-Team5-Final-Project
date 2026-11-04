@@ -24,7 +24,8 @@ void UASAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& Input
 	// 어빌리티마다 차단 태그를 적지 않아도 되도록 입력 입구에서 한 번에 막는다.
 	if (!InputTag.IsValid() || IsDead()
 		|| HasMatchingGameplayTag(ASGameplayTags::State_Downed)
-		|| HasMatchingGameplayTag(ASGameplayTags::State_Staggered))
+		|| HasMatchingGameplayTag(ASGameplayTags::State_Staggered)
+		|| HasMatchingGameplayTag(ASGameplayTags::State_WebBound))
 	{
 		return;
 	}

@@ -8,8 +8,10 @@
 #include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
+#include "Components/CapsuleComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "MassEntitySubsystem.h"
 #include "MassEntityManager.h"
 #include "MassSimulationSubsystem.h"
@@ -17,6 +19,7 @@
 #include "GenericTeamAgentInterface.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterSubsystem.h"
 #include "Mass/Monster/Subsystems/ASMassMonsterTargetQuerySubsystem.h"
+#include "Mass/Monster/Targeting/ASMonsterTargetable.h"
 #include "MapSystem/Vision/ASVisionFunctionLibrary.h"
 #include "Skills/ASSkillTags.h"
 
@@ -42,6 +45,27 @@ namespace
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Downed)
 			&& !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead);
+	}
+
+	/**
+	 * Actor 대상도 Mass 대상처럼 외곽 반경을 공간 판정에 반영한다.
+	 * Overlap/Sweep은 후보를 넓게 찾을 뿐, Cone/Radius/Box의 최종 경계는 이 값 없이 Actor 중심만 검사했다.
+	 */
+	float GetActorTargetHitRadius(const AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return 0.0f;
+		}
+
+		if (Actor->GetClass()->ImplementsInterface(UASMonsterTargetable::StaticClass()))
+		{
+			return FMath::Max(0.0f, IASMonsterTargetable::Execute_GetMonsterTargetRadius(const_cast<AActor*>(Actor)));
+		}
+
+		const ACharacter* Character = Cast<ACharacter>(Actor);
+		const UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
+		return Capsule ? FMath::Max(0.0f, Capsule->GetScaledCapsuleRadius()) : 0.0f;
 	}
 }
 
@@ -271,7 +295,9 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTarget
 				&& IsActorTargetAllowed(Actor, Query)
 				&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
 				&& (!Query.bRequireVisibleToLocalTeam || UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor))
-				&& MatchesQueryShape(Query, Actor->GetActorLocation(), 0.0f))
+				// Segment Sweep은 이미 대상 Collision Shape을 포함해 검사하므로 반경을 중복 적용하지 않는다.
+				&& MatchesQueryShape(Query, Actor->GetActorLocation(),
+					Query.Shape == EASCombatTargetShape::Segment ? 0.0f : GetActorTargetHitRadius(Actor)))
 			{
 				Targets.AddUnique(Actor);
 			}
@@ -293,7 +319,7 @@ TArray<AActor*> UASCombatTargetSubsystem::FindActorTargets(const FASCombatTarget
 				&& IsActorTargetAllowed(Actor, Query)
 				&& (!Query.bRequireAlive || IsAliveActorTarget(Actor))
 				&& (!Query.bRequireVisibleToLocalTeam || UASVisionFunctionLibrary::IsActorVisibleToLocalTeam(Actor))
-				&& MatchesQueryShape(Query, Actor->GetActorLocation(), 0.0f))
+				&& MatchesQueryShape(Query, Actor->GetActorLocation(), GetActorTargetHitRadius(Actor)))
 			{
 				Targets.AddUnique(Actor);
 			}

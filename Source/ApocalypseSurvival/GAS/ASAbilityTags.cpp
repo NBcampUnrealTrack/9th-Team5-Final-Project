@@ -9,6 +9,7 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable, "State.Invulnerable");
 	UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable_Debug, "State.Invulnerable.Debug");
 	UE_DEFINE_GAMEPLAY_TAG(State_Staggered, "State.Staggered");
+	UE_DEFINE_GAMEPLAY_TAG(State_WebBound, "State.WebBound");
 	UE_DEFINE_GAMEPLAY_TAG(State_KnockedDown, "State.KnockedDown");
 	UE_DEFINE_GAMEPLAY_TAG(State_SuperArmor, "State.SuperArmor");
 	UE_DEFINE_GAMEPLAY_TAG(State_StaggerProtected, "State.StaggerProtected");

@@ -32,6 +32,7 @@ public class ApocalypseSurvival : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"StructUtils",
 
 			// Mass Framework
 			"MassCore",

@@ -4,6 +4,7 @@
 #include "Characters/Enemy/Components/ASMonsterCombatComponent.h"
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
+#include "Characters/Enemy/Data/ASMonsterPatternSet.h"
 #include "Characters/Enemy/Data/ASMonsterStatDefinition.h"
 #include "Core/Combat/ASCombatImpactSettings.h"
 #include "Core/Framework/ASGameState.h"
@@ -65,6 +66,22 @@ AASMonsterCharacter::AASMonsterCharacter()
 UAbilitySystemComponent* AASMonsterCharacter::GetAbilitySystemComponent() const
 {
     return OwnedAbilitySystemComponent;
+}
+
+void AASMonsterCharacter::SetMonsterMeshShadowEnabled(const bool bEnabled)
+{
+    if (HasAuthority())
+    {
+        MulticastSetMonsterMeshShadowEnabled(bEnabled);
+    }
+}
+
+void AASMonsterCharacter::MulticastSetMonsterMeshShadowEnabled_Implementation(const bool bEnabled)
+{
+    if (USkeletalMeshComponent* MeshComponent = GetMesh())
+    {
+        MeshComponent->SetCastShadow(bEnabled);
+    }
 }
 
 void AASMonsterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -530,22 +547,75 @@ void AASMonsterCharacter::ApplyMonsterDefinition()
        }
     }
 
-    TArray<FGameplayAbilitySpecHandle> PatternAbilityHandles;
-    PatternAbilityHandles.Reserve(MonsterDefinition->AttackPatterns.Num());
-    for (const FASMonsterAttackPattern& Pattern : MonsterDefinition->AttackPatterns)
+    FASResolvedMonsterPatternSet ResolvedPatternSet;
+    TArray<FASMonsterPatternEntry> ResolvedPatterns;
+    EASMonsterPatternSelectionPolicy SelectionPolicy = EASMonsterPatternSelectionPolicy::WeightedRandom;
+    float InterPatternDelay = 0.4f;
+    const bool bHasResolvedPatternSet = MonsterDefinition->PatternSet
+        && MonsterDefinition->PatternSet->ResolvePatternSet(ResolvedPatternSet);
+    if (bHasResolvedPatternSet)
     {
-       if (!Pattern.PatternId.IsValid() || !Pattern.AbilityClass)
+       ResolvedPatterns = ResolvedPatternSet.PatternEntries;
+       SelectionPolicy = ResolvedPatternSet.SelectionPolicy;
+       InterPatternDelay = ResolvedPatternSet.InterPatternDelay;
+    }
+    else
+    {
+       if (MonsterDefinition->PatternSet)
        {
-          UE_LOG(LogTemp, Warning, TEXT("[Monster] %s has an invalid attack pattern. PatternId and AbilityClass are required."),
+          UE_LOG(LogTemp, Error, TEXT("[Monster] %s failed to resolve PatternSet %s. Legacy AttackPatterns is used for compatibility."),
+             *GetNameSafe(MonsterDefinition), *GetNameSafe(MonsterDefinition->PatternSet));
+       }
+
+       ResolvedPatterns.Reserve(MonsterDefinition->AttackPatterns.Num());
+       for (const FASMonsterAttackPattern& LegacyPattern : MonsterDefinition->AttackPatterns)
+       {
+          FASMonsterPatternEntry& Pattern = ResolvedPatterns.AddDefaulted_GetRef();
+          Pattern.PatternId = LegacyPattern.PatternId;
+          Pattern.AbilityClass = LegacyPattern.AbilityClass;
+          Pattern.MinRange = LegacyPattern.MinRange;
+          Pattern.MaxRange = LegacyPattern.MaxRange;
+          Pattern.MaxGuaranteedTargetSurfaceDistance = LegacyPattern.MaxGuaranteedTargetSurfaceDistance;
+          Pattern.SelectionWeight = LegacyPattern.SelectionWeight;
+          Pattern.Cooldown = LegacyPattern.Cooldown;
+          Pattern.bCanStartDuringInterPatternDelay = LegacyPattern.bCanStartDuringInterPatternDelay;
+          Pattern.MinOwnerHealthPercent = LegacyPattern.MinOwnerHealthPercent;
+          Pattern.MaxOwnerHealthPercent = LegacyPattern.MaxOwnerHealthPercent;
+       }
+    }
+
+    TArray<FGameplayAbilitySpecHandle> PatternAbilityHandles;
+    PatternAbilityHandles.Reserve(ResolvedPatterns.Num());
+    for (const FASMonsterPatternEntry& Pattern : ResolvedPatterns)
+    {
+       if (!Pattern.bEnabled || !Pattern.PatternId.IsValid() || !Pattern.AbilityClass)
+       {
+          if (Pattern.bEnabled)
+          {
+             UE_LOG(LogTemp, Warning, TEXT("[Monster] %s has an invalid resolved attack pattern. PatternId and AbilityClass are required."),
              *GetNameSafe(MonsterDefinition));
+          }
           PatternAbilityHandles.Add(FGameplayAbilitySpecHandle());
           continue;
        }
 
-       PatternAbilityHandles.Add(OwnedAbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(Pattern.AbilityClass, 1)));
+       FGameplayAbilitySpec PatternSpec(Pattern.AbilityClass, 1);
+       PatternSpec.DynamicAbilityTags.AddTag(Pattern.PatternId);
+       PatternAbilityHandles.Add(OwnedAbilitySystemComponent->GiveAbility(PatternSpec));
     }
 
-    CombatComponent->ConfigurePatterns(MonsterDefinition->AttackPatterns, PatternAbilityHandles);
+    if (bHasResolvedPatternSet)
+    {
+       // PatternSet으로 이관된 몬스터는 Deprecated AttackPatterns의 Telegraph 설정을 런타임에 남기지 않는다.
+       const TArray<FASMonsterAttackPattern> NoLegacyTelegraphPatterns;
+       CombatComponent->ConfigureLegacyTelegraphPatterns(NoLegacyTelegraphPatterns);
+    }
+    else
+    {
+       CombatComponent->ConfigureLegacyTelegraphPatterns(MonsterDefinition->AttackPatterns);
+    }
+    CombatComponent->ConfigurePatterns(ResolvedPatterns, PatternAbilityHandles, SelectionPolicy);
+    CombatComponent->SetInterPatternDelay(InterPatternDelay);
 }
 
 void AASMonsterCharacter::OnRep_MonsterDisplayName()

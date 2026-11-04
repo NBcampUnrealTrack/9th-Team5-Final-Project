@@ -32,6 +32,9 @@ namespace ASGameplayTags
 	/** 플레이어가 피격 경직 또는 넉다운으로 조작을 잠시 잃은 상태. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
 
+	/** 거미줄 등 특수 기믹에 완전히 속박된 상태. 이동·일반 전투 입력을 막고 탈출 전용 입력만 허용한다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_WebBound);
+
 	/** State.Staggered 중 넉다운 연출을 구분하는 하위 상태. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_KnockedDown);
 

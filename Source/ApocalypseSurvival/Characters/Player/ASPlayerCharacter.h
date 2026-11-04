@@ -21,6 +21,7 @@ class UGameplayAbility;
 class UAnimInstance;
 class UAnimMontage;
 class UASItemDefinition;
+class AASBossSpiderWebTrap;
 struct FGameplayEventData;
 
 /**
@@ -89,6 +90,14 @@ public:
 	/** 피격 경직 또는 넉다운으로 조작이 잠시 제한되어 있는가. */
 	UFUNCTION(BlueprintPure, Category = "Combat|Impact")
 	bool IsStaggered() const;
+
+	/** 거미줄 등 특수 기믹에 완전히 속박되어 있는가. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Status")
+	bool IsWebBound() const;
+
+	/** 거미줄 Trap이 서버에서 속박을 적용할 때 현재 탈출 입력의 검증 주체를 연결한다. */
+	void SetActiveWebTrap(AASBossSpiderWebTrap* InTrap);
+	void ClearActiveWebTrap(AASBossSpiderWebTrap* ExpectedTrap);
 
 	/** 서버 전용. 피해가 정상 적용된 뒤, ImpactPreset에 따라 제어 반응을 적용한다. */
 	void ApplyImpactReaction(const FASCombatImpactContext& ImpactContext);
@@ -208,6 +217,10 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Impact")
 	void OnStaggerChanged(bool bStaggered);
 
+	/** 거미줄 속박 시작/종료 시 모든 머신에서 호출된다. 탈출 입력 UI와 구속 연출은 BP에서 붙인다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat|Status")
+	void OnWebBoundChanged(bool bWebBound);
+
 	/** 쓰러진 뒤 사망까지 걸리는 시간 (임시값) */
 	UPROPERTY(EditDefaultsOnly, Category = "Downed", meta = (ClampMin = "1.0", Units = "s"))
 	float DownedDuration = 30.f;
@@ -255,6 +268,14 @@ protected:
 	/* 관전 중 다음 파티원 화면으로 넘기기 (좌클릭) */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> SpectateNextAction;
+
+	/** WebBound 상태일 때만 직접 서버 RPC로 전달하는 탈출 입력이다. 일반 GAS 입력에는 넣지 않는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> BreakFreeAction;
+
+	/** IA_BreakFree를 포함한 별도 Mapping Context다. 일반 전투 입력과 분리한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputMappingContext> BreakFreeMappingContext;
 	
 	// 레벨업 순간 호출 (서버, 클라 모두). 화면 문구 같은 보이는 것은 BP에서 붙인다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Progression")
@@ -296,6 +317,13 @@ private:
 	/** 피격 경직 태그가 붙거나 떨어졌을 때. 모든 머신에서 이동과 연출을 맞춘다. */
 	void HandleStaggeredTagChanged(const FGameplayTag Tag, int32 NewCount);
 
+	/** 거미줄 속박 태그가 붙거나 떨어졌을 때. 모든 머신에서 이동과 연출을 맞춘다. */
+	void HandleWebBoundTagChanged(const FGameplayTag Tag, int32 NewCount);
+	void OnBreakFreePressed();
+
+	UFUNCTION(Server, Reliable)
+	void ServerSubmitBreakFreeInput();
+
 	/** 서버 전용. 경직/넉다운 태그를 제거한다. */
 	void ClearImpactReaction();
 
@@ -310,10 +338,12 @@ private:
 
 	FDelegateHandle DownedTagChangedHandle;
 	FDelegateHandle StaggeredTagChangedHandle;
+	FDelegateHandle WebBoundTagChangedHandle;
 	FTimerHandle BleedOutTimerHandle;
 	FTimerHandle ImpactReactionTimerHandle;
 	FTimerHandle StaggerProtectionTimerHandle;
 	FTimerHandle MeleeHitStopTimerHandle;
+	TWeakObjectPtr<AASBossSpiderWebTrap> ActiveWebTrap;
 	TWeakObjectPtr<UAnimInstance> HitStopAnimInstance;
 	TWeakObjectPtr<UAnimMontage> HitStopMontage;
 

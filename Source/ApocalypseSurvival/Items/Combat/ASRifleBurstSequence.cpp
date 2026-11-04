@@ -212,7 +212,7 @@ bool AASRifleBurstSequence::IsBurstStillValid() const
 	}
 	if (const AASPlayerCharacter* Character = Cast<AASPlayerCharacter>(CurrentAvatar))
 	{
-		return !Character->IsDead() && !Character->IsDowned();
+		return !Character->IsDead() && !Character->IsDowned() && !Character->IsWebBound();
 	}
 	return true;
 }

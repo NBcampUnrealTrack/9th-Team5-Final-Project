@@ -47,11 +47,12 @@ void AASMonsterAttackIndicatorActor::GetLifetimeReplicatedProps(TArray<FLifetime
     DOREPLIFETIME(AASMonsterAttackIndicatorActor, Length);
     DOREPLIFETIME(AASMonsterAttackIndicatorActor, Width);
     DOREPLIFETIME(AASMonsterAttackIndicatorActor, Duration);
+    DOREPLIFETIME(AASMonsterAttackIndicatorActor, AngleDegrees);
     DOREPLIFETIME(AASMonsterAttackIndicatorActor, StartServerTime);
 }
 
 void AASMonsterAttackIndicatorActor::InitializeIndicator(EASMonsterAttackIndicatorShape InShape, float InRadius,
-    float InLength, float InWidth, float InDuration)
+    float InLength, float InWidth, float InDuration, float InAngleDegrees)
 {
     if (!HasAuthority())
     {
@@ -63,12 +64,25 @@ void AASMonsterAttackIndicatorActor::InitializeIndicator(EASMonsterAttackIndicat
     Length = FMath::Max(0.0f, InLength);
     Width = FMath::Max(0.0f, InWidth);
     Duration = FMath::Max(0.01f, InDuration);
+    AngleDegrees = FMath::Clamp(InAngleDegrees, 0.0f, 360.0f);
     StartServerTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
     SetLifeSpan(Duration + 0.2f);
     ForceNetUpdate();
 }
 
 // --- 패턴 기반 장판 초기화 및 데미지 타격 구현 ---
+void AASMonsterAttackIndicatorActor::InitializeRectangleIndicator(float InLength, float InWidth, float InDuration)
+{
+    if (!HasAuthority())
+    {
+       return;
+    }
+
+    InitializeIndicator(EASMonsterAttackIndicatorShape::Rectangle, 0.0f, InLength, InWidth, InDuration);
+    // 서버는 OnRep이 호출되지 않으므로 BeginPlay 이후 초기화한 경우 직접 시각 초기화를 알린다.
+    NotifyIndicatorInitialized();
+}
+
 void AASMonsterAttackIndicatorActor::InitializeTelegraph(const FASMonsterAttackPattern& Pattern, AActor* MonsterOwner)
 {
     if (!HasAuthority())
@@ -81,12 +95,17 @@ void AASMonsterAttackIndicatorActor::InitializeTelegraph(const FASMonsterAttackP
     {
        IndicatorShape = EASMonsterAttackIndicatorShape::Circle;
     }
+    else if (Pattern.ShapeType == ETelegraphShape::Sector)
+    {
+       IndicatorShape = EASMonsterAttackIndicatorShape::Sector;
+    }
 
     float InLength = Pattern.BoxExtent.X * 2.0f;
     float InWidth = Pattern.BoxExtent.Y * 2.0f;
-    float InRadius = Pattern.BoxExtent.X;
+    const float InRadius = Pattern.ShapeType == ETelegraphShape::Sector ? Pattern.SectorRadius : Pattern.BoxExtent.X;
 
-    InitializeIndicator(IndicatorShape, InRadius, InLength, InWidth, Pattern.TelegraphDuration);
+    InitializeIndicator(IndicatorShape, InRadius, InLength, InWidth, Pattern.TelegraphDuration,
+       Pattern.SectorAngleDegrees);
 }
 
 void AASMonsterAttackIndicatorActor::ApplyDamageAndExecute(const FASMonsterAttackPattern& Pattern, AActor* MonsterOwner)
@@ -121,6 +140,11 @@ void AASMonsterAttackIndicatorActor::ApplyDamageAndExecute(const FASMonsterAttac
        FCollisionShape CollisionSphere = FCollisionShape::MakeSphere(Pattern.BoxExtent.X);
        bHit = World->OverlapMultiByChannel(OverlapResults, CenterLocation, Rotation, ECC_Pawn, CollisionSphere, QueryParams);
     }
+    else if (Pattern.ShapeType == ETelegraphShape::Sector)
+    {
+       FCollisionShape CollisionSphere = FCollisionShape::MakeSphere(FMath::Max(0.0f, Pattern.SectorRadius));
+       bHit = World->OverlapMultiByChannel(OverlapResults, CenterLocation, Rotation, ECC_Pawn, CollisionSphere, QueryParams);
+    }
 
     if (bHit)
     {
@@ -130,6 +154,17 @@ void AASMonsterAttackIndicatorActor::ApplyDamageAndExecute(const FASMonsterAttac
           if (!IsValid(HitActor) || HitActor == MonsterOwner)
           {
              continue;
+          }
+
+          if (Pattern.ShapeType == ETelegraphShape::Sector)
+          {
+             const FVector DirectionToTarget = (HitActor->GetActorLocation() - CenterLocation).GetSafeNormal2D();
+             const FVector ForwardDirection = MonsterOwner->GetActorForwardVector().GetSafeNormal2D();
+             const float HalfAngleRadians = FMath::DegreesToRadians(FMath::Clamp(Pattern.SectorAngleDegrees, 1.0f, 360.0f) * 0.5f);
+             if (FVector::DotProduct(ForwardDirection, DirectionToTarget) < FMath::Cos(HalfAngleRadians))
+             {
+                continue;
+             }
           }
 
           if (IAbilitySystemInterface* ASCInterface = Cast<IAbilitySystemInterface>(HitActor))

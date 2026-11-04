@@ -128,6 +128,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Enemy|Components")
     UASMonsterCombatComponent* GetCombatComponent() const { return CombatComponent; }
 
+    /** 서버가 호출하면 모든 클라이언트에서 본체 Mesh의 그림자 표시를 같은 값으로 맞춘다. */
+    void SetMonsterMeshShadowEnabled(bool bEnabled);
+
     /**
      * 월드 체력바 기능 자체를 켜거나 끈다.
      * 끄면 Widget과 WidgetComponent를 제거하므로 숨겨진 UI의 유지 비용도 남기지 않는다.
@@ -151,6 +154,9 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    UFUNCTION(NetMulticast, Unreliable)
+    void MulticastSetMonsterMeshShadowEnabled(bool bEnabled);
 
     /** 자기 체력 변화를 구독한다. 베이스가 ASC 연결을 마친 뒤 모든 머신에서 불린다. */
     virtual void OnAbilitySystemInitialized() override;

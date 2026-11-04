@@ -30,10 +30,12 @@ void UASMonsterCombatComponent::Configure(float InAttackRange, FGameplayTag InAt
     AttackAbilityTag = InAttackAbilityTag;
 }
 
-void UASMonsterCombatComponent::ConfigurePatterns(const TArray<FASMonsterAttackPattern>& InPatterns,
-    const TArray<FGameplayAbilitySpecHandle>& InAbilityHandles)
+void UASMonsterCombatComponent::ConfigurePatterns(const TArray<FASMonsterPatternEntry>& InPatterns,
+    const TArray<FGameplayAbilitySpecHandle>& InAbilityHandles,
+    const EASMonsterPatternSelectionPolicy InSelectionPolicy)
 {
     AttackPatterns = InPatterns;
+    PatternSelectionPolicy = InSelectionPolicy;
     PatternRuntime.Reset();
     PatternRuntime.Reserve(AttackPatterns.Num());
     NextAttackAllowedTime = 0.0;
@@ -46,6 +48,19 @@ void UASMonsterCombatComponent::ConfigurePatterns(const TArray<FASMonsterAttackP
        {
           Runtime.AbilityHandle = InAbilityHandles[PatternIndex];
        }
+    }
+}
+
+void UASMonsterCombatComponent::ConfigureLegacyTelegraphPatterns(const TArray<FASMonsterAttackPattern>& InPatterns)
+{
+    LegacyTelegraphPatterns = InPatterns;
+}
+
+void UASMonsterCombatComponent::SetInterPatternDelay(const float InInterPatternDelay)
+{
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+       PostAttackRecovery = FMath::Max(0.0f, InInterPatternDelay);
     }
 }
 
@@ -88,6 +103,46 @@ bool UASMonsterCombatComponent::IsTargetInAttackRange(const AActor* Target) cons
     return SurfaceDistance <= AttackRange;
 }
 
+bool UASMonsterCombatComponent::TryGetAutonomousPatternApproachRange(float& OutRange) const
+{
+    if (PatternSelectionPolicy == EASMonsterPatternSelectionPolicy::DirectorOnly)
+    {
+        OutRange = 0.0f;
+        return false;
+    }
+
+    float LargestEffectiveMaxRange = 0.0f;
+    bool bHasAutonomousPattern = false;
+
+    for (int32 PatternIndex = 0; PatternIndex < AttackPatterns.Num(); ++PatternIndex)
+    {
+        if (!PatternRuntime.IsValidIndex(PatternIndex))
+        {
+            continue;
+        }
+
+        const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
+        if (!Pattern.bEnabled || Pattern.SelectionWeight <= 0.0f
+            || !PatternRuntime[PatternIndex].AbilityHandle.IsValid())
+        {
+            continue;
+        }
+
+        const float MinRange = FMath::Max(0.0f, Pattern.MinRange);
+        float EffectiveMaxRange = FMath::Max(MinRange, Pattern.MaxRange);
+        if (Pattern.MaxGuaranteedTargetSurfaceDistance > 0.0f)
+        {
+            EffectiveMaxRange = FMath::Min(EffectiveMaxRange, Pattern.MaxGuaranteedTargetSurfaceDistance);
+        }
+
+        LargestEffectiveMaxRange = FMath::Max(LargestEffectiveMaxRange, EffectiveMaxRange);
+        bHasAutonomousPattern = true;
+    }
+
+    OutRange = LargestEffectiveMaxRange;
+    return bHasAutonomousPattern;
+}
+
 bool UASMonsterCombatComponent::CanRequestAttack(const AActor* Target) const
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Target))
@@ -100,6 +155,11 @@ bool UASMonsterCombatComponent::CanRequestAttack(const AActor* Target) const
        return IsTargetInAttackRange(Target);
     }
 
+    if (PatternSelectionPolicy == EASMonsterPatternSelectionPolicy::DirectorOnly)
+    {
+       return false;
+    }
+
     if (bWaitingForPatternAttackEnd)
     {
        return false;
@@ -108,12 +168,24 @@ bool UASMonsterCombatComponent::CanRequestAttack(const AActor* Target) const
     const double CurrentTime = GetWorldTimeSeconds();
     if (CurrentTime < NextAttackAllowedTime)
     {
+       for (int32 PatternIndex = 0; PatternIndex < AttackPatterns.Num(); ++PatternIndex)
+       {
+          const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
+          if (Pattern.bCanStartDuringInterPatternDelay
+             && IsPatternReady(PatternIndex, CurrentTime, true)
+             && IsPatternInRange(Pattern, Target))
+          {
+             return true;
+          }
+       }
+
        return false;
     }
 
     for (int32 PatternIndex = 0; PatternIndex < AttackPatterns.Num(); ++PatternIndex)
     {
-       if (IsPatternReady(PatternIndex, CurrentTime) && IsPatternInRange(AttackPatterns[PatternIndex], Target))
+       if (IsPatternReady(PatternIndex, CurrentTime, true)
+          && IsPatternInRange(AttackPatterns[PatternIndex], Target))
        {
           return true;
        }
@@ -152,6 +224,26 @@ bool UASMonsterCombatComponent::TryRequestAttack(AActor* Target)
     return AbilitySystemComponent->TryActivateAbilitiesByTag(AbilityTags, false);
 }
 
+bool UASMonsterCombatComponent::CanRequestPatternById(FGameplayTag PatternId, const AActor* Target) const
+{
+    if (!PatternId.IsValid())
+    {
+       return false;
+    }
+
+    return CanRequestPatternAtIndex(FindPatternIndexById(PatternId), Target, false);
+}
+
+bool UASMonsterCombatComponent::TryRequestPatternAttackById(FGameplayTag PatternId, AActor* Target)
+{
+    if (!PatternId.IsValid())
+    {
+       return false;
+    }
+
+    return TryRequestPatternAttackAtIndex(FindPatternIndexById(PatternId), Target, false);
+}
+
 bool UASMonsterCombatComponent::IsPatternAttackActive() const
 {
     if (!bWaitingForPatternAttackEnd)
@@ -176,7 +268,7 @@ void UASMonsterCombatComponent::NotifyPatternAttackFinished()
     NextAttackAllowedTime = GetWorldTimeSeconds() + FMath::Max(0.0f, PostAttackRecovery);
 }
 
-bool UASMonsterCombatComponent::IsPatternInRange(const FASMonsterAttackPattern& Pattern, const AActor* Target) const
+bool UASMonsterCombatComponent::IsPatternInRange(const FASMonsterPatternEntry& Pattern, const AActor* Target) const
 {
     const AActor* Owner = GetOwner();
     if (!IsValid(Owner) || !IsValid(Target))
@@ -187,32 +279,63 @@ bool UASMonsterCombatComponent::IsPatternInRange(const FASMonsterAttackPattern& 
     const float SurfaceDistance = FVector::Dist2D(Owner->GetActorLocation(), Target->GetActorLocation())
        - GetCapsuleRadius(Owner) - GetCapsuleRadius(Target);
     const float MinRange = FMath::Max(0.0f, Pattern.MinRange);
-    const float MaxRange = FMath::Max(MinRange, Pattern.MaxRange);
+    float MaxRange = FMath::Max(MinRange, Pattern.MaxRange);
+    if (Pattern.MaxGuaranteedTargetSurfaceDistance > 0.0f)
+    {
+       MaxRange = FMath::Min(MaxRange, Pattern.MaxGuaranteedTargetSurfaceDistance);
+    }
+
     return SurfaceDistance >= MinRange && SurfaceDistance <= MaxRange;
 }
 
-bool UASMonsterCombatComponent::IsPatternReady(int32 PatternIndex, double CurrentTime) const
+bool UASMonsterCombatComponent::IsPatternReady(int32 PatternIndex, double CurrentTime, const bool bRequireSelectionWeight) const
 {
     if (!AttackPatterns.IsValidIndex(PatternIndex) || !PatternRuntime.IsValidIndex(PatternIndex))
     {
        return false;
     }
 
-    const FASMonsterAttackPattern& Pattern = AttackPatterns[PatternIndex];
+    const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
     const FPatternRuntime& Runtime = PatternRuntime[PatternIndex];
     const float MinimumHealthPercent = FMath::Min(Pattern.MinOwnerHealthPercent, Pattern.MaxOwnerHealthPercent);
     const float MaximumHealthPercent = FMath::Max(Pattern.MinOwnerHealthPercent, Pattern.MaxOwnerHealthPercent);
     const float OwnerHealthPercent = GetHealthPercent();
-    return Pattern.SelectionWeight > 0.0f
+    return Pattern.bEnabled
+       && (!bRequireSelectionWeight || Pattern.SelectionWeight > 0.0f)
        && Runtime.AbilityHandle.IsValid()
        && CurrentTime >= Runtime.CooldownEndTime
        && OwnerHealthPercent >= MinimumHealthPercent
        && OwnerHealthPercent <= MaximumHealthPercent;
 }
 
-bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)
+int32 UASMonsterCombatComponent::FindPatternIndexById(const FGameplayTag PatternId) const
 {
-    if (!CanRequestAttack(Target))
+    return AttackPatterns.IndexOfByPredicate([PatternId](const FASMonsterPatternEntry& Pattern)
+    {
+       return Pattern.PatternId.MatchesTagExact(PatternId);
+    });
+}
+
+bool UASMonsterCombatComponent::CanRequestPatternAtIndex(const int32 PatternIndex, const AActor* Target,
+    const bool bRequireSelectionWeight) const
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Target)
+       || !AttackPatterns.IsValidIndex(PatternIndex) || bWaitingForPatternAttackEnd)
+    {
+       return false;
+    }
+
+    const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
+    const double CurrentTime = GetWorldTimeSeconds();
+    return (CurrentTime >= NextAttackAllowedTime || Pattern.bCanStartDuringInterPatternDelay)
+       && IsPatternReady(PatternIndex, CurrentTime, bRequireSelectionWeight)
+       && IsPatternInRange(AttackPatterns[PatternIndex], Target);
+}
+
+bool UASMonsterCombatComponent::TryRequestPatternAttackAtIndex(const int32 PatternIndex, AActor* Target,
+    const bool bRequireSelectionWeight)
+{
+    if (!CanRequestPatternAtIndex(PatternIndex, Target, bRequireSelectionWeight))
     {
        return false;
     }
@@ -221,6 +344,26 @@ bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)
     if (!IsValid(AbilitySystemComponent)
        || AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Dead)
        || AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_HitReact))
+    {
+       return false;
+    }
+
+    const double CurrentTime = GetWorldTimeSeconds();
+    FPatternRuntime& Runtime = PatternRuntime[PatternIndex];
+    if (!AbilitySystemComponent->TryActivateAbility(Runtime.AbilityHandle))
+    {
+       return false;
+    }
+
+    const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
+    Runtime.CooldownEndTime = CurrentTime + FMath::Max(0.0f, Pattern.Cooldown);
+    bWaitingForPatternAttackEnd = true;
+    return true;
+}
+
+bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)
+{
+    if (!CanRequestAttack(Target))
     {
        return false;
     }
@@ -253,16 +396,12 @@ bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)
        }
 
        const int32 PatternIndex = CandidateIndices[SelectedCandidateArrayIndex];
-       const FASMonsterAttackPattern& Pattern = AttackPatterns[PatternIndex];
-       const FPatternRuntime& Runtime = PatternRuntime[PatternIndex];
-       if (AbilitySystemComponent->TryActivateAbility(Runtime.AbilityHandle))
+       if (TryRequestPatternAttackAtIndex(PatternIndex, Target, true))
        {
-          PatternRuntime[PatternIndex].CooldownEndTime = CurrentTime + FMath::Max(0.0f, Pattern.Cooldown);
-          bWaitingForPatternAttackEnd = true;
           return true;
        }
 
-       TotalWeight -= Pattern.SelectionWeight;
+       TotalWeight -= AttackPatterns[PatternIndex].SelectionWeight;
        CandidateIndices.RemoveAtSwap(SelectedCandidateArrayIndex);
     }
 
@@ -272,14 +411,14 @@ bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)
 void UASMonsterCombatComponent::ShowTelegraphForPattern(int32 PatternIndex)
 {
     AActor* Owner = GetOwner();
-    if (!Owner || !Owner->HasAuthority() || !AttackPatterns.IsValidIndex(PatternIndex))
+    if (!Owner || !Owner->HasAuthority() || !LegacyTelegraphPatterns.IsValidIndex(PatternIndex))
     {
        return;
     }
 
     HideTelegraph();
 
-    const FASMonsterAttackPattern& Pattern = AttackPatterns[PatternIndex];
+    const FASMonsterAttackPattern& Pattern = LegacyTelegraphPatterns[PatternIndex];
     if (Pattern.ShapeType == ETelegraphShape::None)
     {
        return;
@@ -317,12 +456,12 @@ void UASMonsterCombatComponent::HideTelegraph()
 void UASMonsterCombatComponent::ApplyPatternDamage(int32 PatternIndex)
 {
     AActor* Owner = GetOwner();
-    if (!Owner || !Owner->HasAuthority() || !AttackPatterns.IsValidIndex(PatternIndex))
+    if (!Owner || !Owner->HasAuthority() || !LegacyTelegraphPatterns.IsValidIndex(PatternIndex))
     {
        return;
     }
 
-    const FASMonsterAttackPattern& Pattern = AttackPatterns[PatternIndex];
+    const FASMonsterAttackPattern& Pattern = LegacyTelegraphPatterns[PatternIndex];
     if (IsValid(CurrentTelegraphActor))
     {
        CurrentTelegraphActor->ApplyDamageAndExecute(Pattern, Owner);

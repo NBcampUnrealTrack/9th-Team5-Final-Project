@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
+#include "Characters/Enemy/Data/ASMonsterPatternSet.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayTagContainer.h"
 #include "ASMonsterCombatComponent.generated.h"
@@ -22,11 +23,25 @@ public:
 
     void Configure(float InAttackRange, FGameplayTag InAttackAbilityTag);
 
-    /** 패턴 Definition과 그 순서에 대응하는 Ability Spec Handle을 등록한다. */
-    void ConfigurePatterns(const TArray<FASMonsterAttackPattern>& InPatterns, const TArray<FGameplayAbilitySpecHandle>& InAbilityHandles);
+    /** Resolver가 확정한 PatternSet과 그 순서에 대응하는 Ability Spec Handle을 등록한다. */
+    void ConfigurePatterns(const TArray<FASMonsterPatternEntry>& InPatterns,
+        const TArray<FGameplayAbilitySpecHandle>& InAbilityHandles,
+        EASMonsterPatternSelectionPolicy InSelectionPolicy = EASMonsterPatternSelectionPolicy::WeightedRandom);
+
+    /** 기존 Blueprint Telegraph 래퍼의 직렬화 호환용이다. 새 PatternSet Ability는 사용하지 않는다. */
+    void ConfigureLegacyTelegraphPatterns(const TArray<FASMonsterAttackPattern>& InPatterns);
+
+    /** 보스 전용 Director가 일반 패턴 사이의 공통 대기 시간을 서버에서 설정한다. */
+    void SetInterPatternDelay(float InInterPatternDelay);
 
     UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
     float GetAttackRange() const { return AttackRange; }
+
+    /**
+     * 가중치 기반 일반 선택에 참여하는 Pattern의 유효 최대 표면 사거리다.
+     * false면 Director 전용 Pattern뿐이므로 기존 Definition 기반 이동 거리를 유지한다.
+     */
+    bool TryGetAutonomousPatternApproachRange(float& OutRange) const;
 
     UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
     FGameplayTag GetAttackAbilityTag() const { return AttackAbilityTag; }
@@ -54,6 +69,21 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Combat")
     bool TryRequestAttack(AActor* Target);
 
+    /**
+     * 서버 전용. PatternId에 해당하는 한 가지 패턴이 현재 실행 가능한지 검사한다.
+     * SelectionWeight가 0인 패턴도 검사한다. 보스 Director가 랜덤 후보에서 제외한 특수기를
+     * 정해진 전투 상황에만 실행할 때 사용한다.
+     */
+    UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
+    bool CanRequestPatternById(FGameplayTag PatternId, const AActor* Target) const;
+
+    /**
+     * 서버 전용. PatternId에 해당하는 패턴 하나만 활성화한다.
+     * 일반 TryRequestAttack과 달리 가중치 추첨을 하지 않으며, SelectionWeight가 0이어도 실행 가능하다.
+     */
+    UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Combat")
+    bool TryRequestPatternAttackById(FGameplayTag PatternId, AActor* Target);
+
     /** 패턴 Ability가 아직 실행 중인지. 즉발 패턴은 활성화 직후 false가 될 수 있다. */
     bool IsPatternAttackActive() const;
 
@@ -67,8 +97,11 @@ public:
 
 private:
     UASAbilitySystemComponent* GetOwnerAbilitySystemComponent() const;
-    bool IsPatternInRange(const FASMonsterAttackPattern& Pattern, const AActor* Target) const;
-    bool IsPatternReady(int32 PatternIndex, double CurrentTime) const;
+    bool IsPatternInRange(const FASMonsterPatternEntry& Pattern, const AActor* Target) const;
+    bool IsPatternReady(int32 PatternIndex, double CurrentTime, bool bRequireSelectionWeight = true) const;
+    int32 FindPatternIndexById(FGameplayTag PatternId) const;
+    bool CanRequestPatternAtIndex(int32 PatternIndex, const AActor* Target, bool bRequireSelectionWeight) const;
+    bool TryRequestPatternAttackAtIndex(int32 PatternIndex, AActor* Target, bool bRequireSelectionWeight);
     bool TryRequestPatternAttack(AActor* Target);
 
     double GetWorldTimeSeconds() const;
@@ -79,9 +112,11 @@ private:
     UPROPERTY(EditDefaultsOnly, Category = "Combat", meta = (Categories = "Ability.Monster"))
     FGameplayTag AttackAbilityTag;
 
-    /** 하나의 패턴이 끝난 뒤, 다른 패턴을 포함해 다음 공격까지 기다리는 시간. */
+    /** 하나의 패턴 Ability가 끝난 뒤, 다음 일반 패턴까지 기다리는 공통 숨 고르기 시간. */
     UPROPERTY(EditDefaultsOnly, Category = "Combat|Pattern", meta = (ClampMin = "0.0", Units = "s"))
     float PostAttackRecovery = 0.4f;
+
+    EASMonsterPatternSelectionPolicy PatternSelectionPolicy = EASMonsterPatternSelectionPolicy::WeightedRandom;
 
     struct FPatternRuntime
     {
@@ -89,8 +124,9 @@ private:
        double CooldownEndTime = 0.0;
     };
 
-    TArray<FASMonsterAttackPattern> AttackPatterns;
+    TArray<FASMonsterPatternEntry> AttackPatterns;
     TArray<FPatternRuntime> PatternRuntime;
+    TArray<FASMonsterAttackPattern> LegacyTelegraphPatterns;
     double NextAttackAllowedTime = 0.0;
     bool bWaitingForPatternAttackEnd = false;
 

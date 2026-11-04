@@ -10,6 +10,7 @@
 class UGameplayAbility;
 class UGameplayEffect;
 class UASMonsterHealthBarWidget;
+class UASMonsterPatternSet;
 class UASMonsterStatDefinition;
 class UStateTree;
 
@@ -19,7 +20,8 @@ enum class ETelegraphShape : uint8
 {
     None        UMETA(DisplayName = "None"),
     Rectangle   UMETA(DisplayName = "Rectangle"),
-    Radial      UMETA(DisplayName = "Radial")
+    Radial      UMETA(DisplayName = "Radial"),
+    Sector      UMETA(DisplayName = "Sector")
 };
 
 /** 몬스터가 상황에 따라 선택해서 실행하는 공격 패턴 하나. */
@@ -42,6 +44,14 @@ struct FASMonsterAttackPattern
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "cm"))
     float MaxRange = 200.0f;
 
+    /**
+     * 실제 타격/투사체/이동 Ability가 보장하는 최대 타깃 캡슐 표면 거리.
+     * 0이면 MaxRange만 사용한다. 0보다 크면 패턴 선택 시 MaxRange와 이 값 중 작은 값을 사용한다.
+     * 돌진처럼 Ability 내부 이동 거리가 있는 패턴은, 닿지 않는 거리에서 시전되지 않도록 실제 도달 가능 거리로 설정한다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern|Reach", meta = (ClampMin = "0.0", Units = "cm"))
+    float MaxGuaranteedTargetSurfaceDistance = 0.0f;
+
     /** 사용 가능한 패턴끼리 선택할 때의 상대 확률. 0이면 선택 후보에서 제외된다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0"))
     float SelectionWeight = 1.0f;
@@ -49,6 +59,14 @@ struct FASMonsterAttackPattern
     /** 동일 패턴을 다시 선택할 수 있기까지의 시간. Ability 활성화 성공 시점부터 잰다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "s"))
     float Cooldown = 1.0f;
+
+    /**
+     * 전역 패턴 간 딜레이 중에도 이 패턴을 시작할 수 있는지.
+     * 기본값 false는 일반 패턴이 보스의 숨 고르기 시간을 지키게 한다.
+     * Director가 명시적으로 호출하는 긴급/전환 패턴에만 true로 설정한다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern|Timing")
+    bool bCanStartDuringInterPatternDelay = false;
 
     /** 이 패턴을 선택할 수 있는 몬스터 체력 비율의 하한. 0이면 체력 조건이 없다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern|Phase", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -65,6 +83,14 @@ struct FASMonsterAttackPattern
     /** 장판의 크기 (Rectangle 기준 X: 전방 길이의 절반, Y: 좌우 폭의 절반, Z: 높이). */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Telegraph", meta = (EditCondition = "ShapeType == ETelegraphShape::Rectangle", EditConditionHides))
     FVector BoxExtent = FVector(150.0f, 75.0f, 100.0f);
+
+    /** Sector 기준 반경. Rectangle/ Radial은 기존 BoxExtent 값을 계속 사용한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Telegraph", meta = (EditCondition = "ShapeType == ETelegraphShape::Sector", EditConditionHides, ClampMin = "0.0", Units = "cm"))
+    float SectorRadius = 350.0f;
+
+    /** Sector 기준 전체 각도. 보스 정면을 중심으로 좌우에 균등하게 펼쳐진다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Telegraph", meta = (EditCondition = "ShapeType == ETelegraphShape::Sector", EditConditionHides, ClampMin = "1.0", ClampMax = "360.0", Units = "deg"))
+    float SectorAngleDegrees = 110.0f;
 
     /** 예고 장판이 바닥에 지속되는 선딜레이 시간 (초). */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Telegraph", meta = (ClampMin = "0.0", Units = "s"))
@@ -198,11 +224,15 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
     TArray<TSubclassOf<UGameplayAbility>> GrantedAbilities;
 
+    /** 모든 패턴의 유일한 데이터 원본. 보스/엘리트 전용 수치는 이 Asset에만 둔다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Pattern Set")
+    TObjectPtr<UASMonsterPatternSet> PatternSet;
+
     /**
-     * 엘리트·보스가 상황에 따라 선택하는 공격 목록. 비어 있으면 기존 AttackAbilityTag 단일 공격을 쓴다.
-     * 여기의 AbilityClass는 GrantedAbilities에 중복해서 넣지 않는다.
+     * Legacy 호환 경로. 새 몬스터와 이관 완료 보스는 PatternSet만 사용한다.
+     * 기존 Data Asset의 직렬화 데이터를 보존하기 위해 PatternSet 이관 확인 전까지 삭제하지 않는다.
      */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (TitleProperty = "PatternId"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Legacy", meta = (TitleProperty = "PatternId", DeprecationMessage = "Use PatternSet instead."))
     TArray<FASMonsterAttackPattern> AttackPatterns;
 
     /** 사망 시 충돌을 끈 뒤 월드에 남겨 둘 시간. 0이면 즉시 제거한다. */

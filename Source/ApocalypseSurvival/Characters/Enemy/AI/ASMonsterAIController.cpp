@@ -390,8 +390,15 @@ void AASMonsterAIController::UpdateAggroAndMovement()
     if (MoveTarget != Target || GetMoveStatus() != EPathFollowingStatus::Moving)
     {
        const UASMonsterCombatComponent* Combat = Monster->GetCombatComponent();
-       const float DefaultAcceptanceRadius = Combat ? FMath::Max(Combat->GetAttackRange(), 1.0f) : 100.0f;
-       const float AcceptanceRadius = Definition && Definition->PreferredCombatDistance > 0.0f
+       float PatternApproachRange = 0.0f;
+       const bool bUsesAutonomousPatternApproach = Combat
+          && Combat->TryGetAutonomousPatternApproachRange(PatternApproachRange);
+       const float DefaultAcceptanceRadius = bUsesAutonomousPatternApproach
+          ? FMath::Max(PatternApproachRange, 1.0f)
+          : (Combat ? FMath::Max(Combat->GetAttackRange(), 1.0f) : 100.0f);
+       // PatternSet 사용 몬스터는 Definition의 단일 거리 대신 활성 일반 Pattern의 유효 사거리까지 접근한다.
+       const float AcceptanceRadius = !bUsesAutonomousPatternApproach && Definition
+          && Definition->PreferredCombatDistance > 0.0f
           ? Definition->PreferredCombatDistance
           : DefaultAcceptanceRadius;
        MoveToActor(Target, AcceptanceRadius);

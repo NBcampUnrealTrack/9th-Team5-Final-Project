@@ -12,7 +12,8 @@ UENUM(BlueprintType)
 enum class EASMonsterAttackIndicatorShape : uint8
 {
     Circle,
-    Rectangle
+    Rectangle,
+    Sector
 };
 
 /**
@@ -33,7 +34,12 @@ public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     /** FinishSpawning 전에 서버가 한 번 호출한다. */
-    void InitializeIndicator(EASMonsterAttackIndicatorShape InShape, float InRadius, float InLength, float InWidth, float InDuration);
+    void InitializeIndicator(EASMonsterAttackIndicatorShape InShape, float InRadius, float InLength, float InWidth,
+        float InDuration, float InAngleDegrees = 0.0f);
+
+    /** Blueprint 능력이 이미 스폰된 인디케이터를 사각형 레인으로 초기화할 때 쓴다. 서버 전용. */
+    UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Indicator")
+    void InitializeRectangleIndicator(float InLength, float InWidth, float InDuration);
 
     // --- [추가 완료] 패턴 기반 장판 초기화 및 데미지 실행 함수 ---
     void InitializeTelegraph(const FASMonsterAttackPattern& Pattern, AActor* MonsterOwner);
@@ -56,6 +62,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Enemy|Indicator")
     float GetDuration() const { return Duration; }
+
+    /** Sector 인디케이터의 전체 각도. Circle/Rectangle일 때는 0이다. */
+    UFUNCTION(BlueprintPure, Category = "Enemy|Indicator")
+    float GetAngleDegrees() const { return AngleDegrees; }
 
 protected:
     /** Blueprint에서 Mesh/Decal/Niagara의 모양과 크기를 초기화한다. */
@@ -90,6 +100,9 @@ private:
 
     UPROPERTY(ReplicatedUsing = OnRep_IndicatorConfig)
     float Duration = 0.0f;
+
+    UPROPERTY(ReplicatedUsing = OnRep_IndicatorConfig)
+    float AngleDegrees = 0.0f;
 
     UPROPERTY(ReplicatedUsing = OnRep_IndicatorConfig)
     float StartServerTime = 0.0f;
