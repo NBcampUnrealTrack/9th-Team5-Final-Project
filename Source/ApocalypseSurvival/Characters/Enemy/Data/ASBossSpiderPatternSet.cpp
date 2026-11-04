@@ -32,40 +32,44 @@ EDataValidationResult UASBossSpiderPatternSet::IsDataValid(FDataValidationContex
         AddError(TEXT("Boss Spider OverlapResolution MaxResolutionPasses must be in [1, 4]."));
     }
 
-    const FASBossSpiderDirectorConfig* DirectorConfig =
-        ResolvedSet.SelectionPolicyConfig.GetPtr<FASBossSpiderDirectorConfig>();
-    if (!DirectorConfig)
+	const FASBossSpiderStateTreeConfig* StateTreeConfig =
+		ResolvedSet.SelectionPolicyConfig.GetPtr<FASBossSpiderStateTreeConfig>();
+	if (!StateTreeConfig)
     {
-        AddError(TEXT("Boss Spider PatternSet requires FASBossSpiderDirectorConfig in SelectionPolicyConfig."));
+		AddError(TEXT("Boss Spider PatternSet requires FASBossSpiderStateTreeConfig in SelectionPolicyConfig."));
     }
     else
     {
-        if (DirectorConfig->DecisionInterval <= 0.0f)
+		if (StateTreeConfig->DecisionInterval <= 0.0f)
         {
-            AddError(TEXT("Boss Spider Director DecisionInterval must be greater than zero."));
+			AddError(TEXT("Boss Spider StateTree DecisionInterval must be greater than zero."));
         }
-        if (!DirectorConfig->WebTrapPatternId.IsValid()
-            || !DirectorConfig->EggSummonPatternId.IsValid()
-            || !DirectorConfig->CeilingSlamPatternId.IsValid()
-            || !DirectorConfig->CaptureChargePatternId.IsValid())
+		if (!StateTreeConfig->FanPatternId.IsValid()
+			|| !StateTreeConfig->ChargePatternId.IsValid()
+			|| !StateTreeConfig->WebTrapPatternId.IsValid()
+			|| !StateTreeConfig->EggSummonPatternId.IsValid()
+			|| !StateTreeConfig->CeilingSlamPatternId.IsValid()
+			|| !StateTreeConfig->CaptureChargePatternId.IsValid())
         {
-            AddError(TEXT("Boss Spider Director pattern IDs must all be configured."));
+			AddError(TEXT("Boss Spider StateTree pattern IDs must all be configured."));
         }
 
-        const auto WarnIfDirectorPatternIsNotMigrated = [&ResolvedSet, &Context](const FGameplayTag PatternId,
+		const auto WarnIfStateTreePatternIsNotMigrated = [&ResolvedSet, &Context](const FGameplayTag PatternId,
             const TCHAR* PatternLabel)
         {
             if (PatternId.IsValid() && !ResolvedSet.FindPattern(PatternId))
             {
                 Context.AddWarning(FText::FromString(FString::Printf(
-                    TEXT("Boss Spider Director %s '%s' has no enabled PatternEntry yet. This is allowed during incremental pattern migration."),
+					TEXT("Boss Spider StateTree %s '%s' has no enabled PatternEntry yet. This is allowed during incremental pattern migration."),
                     PatternLabel, *PatternId.ToString())));
             }
         };
-        WarnIfDirectorPatternIsNotMigrated(DirectorConfig->WebTrapPatternId, TEXT("WebTrapPatternId"));
-        WarnIfDirectorPatternIsNotMigrated(DirectorConfig->EggSummonPatternId, TEXT("EggSummonPatternId"));
-        WarnIfDirectorPatternIsNotMigrated(DirectorConfig->CeilingSlamPatternId, TEXT("CeilingSlamPatternId"));
-        WarnIfDirectorPatternIsNotMigrated(DirectorConfig->CaptureChargePatternId, TEXT("CaptureChargePatternId"));
+		WarnIfStateTreePatternIsNotMigrated(StateTreeConfig->FanPatternId, TEXT("FanPatternId"));
+		WarnIfStateTreePatternIsNotMigrated(StateTreeConfig->ChargePatternId, TEXT("ChargePatternId"));
+		WarnIfStateTreePatternIsNotMigrated(StateTreeConfig->WebTrapPatternId, TEXT("WebTrapPatternId"));
+		WarnIfStateTreePatternIsNotMigrated(StateTreeConfig->EggSummonPatternId, TEXT("EggSummonPatternId"));
+		WarnIfStateTreePatternIsNotMigrated(StateTreeConfig->CeilingSlamPatternId, TEXT("CeilingSlamPatternId"));
+		WarnIfStateTreePatternIsNotMigrated(StateTreeConfig->CaptureChargePatternId, TEXT("CaptureChargePatternId"));
     }
 
     for (const FASMonsterPatternEntry& Entry : ResolvedSet.PatternEntries)

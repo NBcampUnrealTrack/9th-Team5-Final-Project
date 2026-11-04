@@ -113,3 +113,80 @@ struct APOCALYPSESURVIVAL_API FASMonsterHealthCondition : public FStateTreeCondi
 
 	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
 };
+
+/** PatternId 하나의 현재 실행 가능 여부를 확인하는 Condition 인스턴스 데이터. */
+USTRUCT()
+struct FASMonsterCanRequestPatternByIdInstanceData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UASMonsterCombatComponent> CombatComponent;
+
+	/** 지정하면 TargetingComponent보다 우선한다. Capture Event Payload Target을 바인딩할 때 사용한다. */
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<AActor> TargetActor;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UASMonsterTargetingComponent> TargetingComponent;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Categories = "Ability.Monster.Attack"))
+	FGameplayTag PatternId;
+
+	UPROPERTY(EditAnywhere, Category = "Parameter")
+	bool bInvert = false;
+};
+
+/** 거리, 개별 쿨다운, 공용 후딜을 포함한 특정 PatternId의 실행 가능 여부를 CombatComponent에 묻는다. */
+USTRUCT(meta = (DisplayName = "AS Monster Can Request Pattern By Id", Category = "AS|Monster"))
+struct APOCALYPSESURVIVAL_API FASMonsterCanRequestPatternByIdCondition : public FStateTreeConditionCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FASMonsterCanRequestPatternByIdInstanceData;
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
+};
+
+/** 공용 후딜·개별 쿨다운·체력 조건을 만족하고, 거리만 맞추면 되는 패턴인지 검사한다. */
+USTRUCT(meta = (DisplayName = "AS Monster Can Prepare Pattern By Id", Category = "AS|Monster"))
+struct APOCALYPSESURVIVAL_API FASMonsterCanPreparePatternByIdCondition : public FStateTreeConditionCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FASMonsterCanRequestPatternByIdInstanceData;
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
+};
+
+/** 쿨다운과 무관하게 특정 PatternId의 거리 조건만 확인하는 Condition 인스턴스 데이터. */
+USTRUCT()
+struct FASMonsterTargetInPatternRangeInstanceData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UASMonsterCombatComponent> CombatComponent;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<AActor> TargetActor;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UASMonsterTargetingComponent> TargetingComponent;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Categories = "Ability.Monster.Attack"))
+	FGameplayTag PatternId;
+
+	UPROPERTY(EditAnywhere, Category = "Parameter")
+	bool bInvert = false;
+};
+
+USTRUCT(meta = (DisplayName = "AS Monster Target In Pattern Range", Category = "AS|Monster"))
+struct APOCALYPSESURVIVAL_API FASMonsterTargetInPatternRangeCondition : public FStateTreeConditionCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FASMonsterTargetInPatternRangeInstanceData;
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
+};

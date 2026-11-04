@@ -2,15 +2,19 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Characters/Enemy/AI/ASMonsterAIController.h"
+#include "Characters/Enemy/AI/StateTree/ASBossSpiderStateTreeTypes.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
-#include "Characters/Enemy/Components/ASBossSpiderDirectorComponent.h"
 #include "Characters/Player/ASPlayerCharacter.h"
+#include "Components/StateTreeAIComponent.h"
 #include "Components/SceneComponent.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GAS/ASAbilityTags.h"
 #include "GameplayEffect.h"
 #include "Net/UnrealNetwork.h"
+#include "StateTreeEvents.h"
+#include "StructUtils/StructView.h"
 #include "TimerManager.h"
 
 AASBossSpiderWebTrap::AASBossSpiderWebTrap()
@@ -224,11 +228,10 @@ void AASBossSpiderWebTrap::ExpireTrap()
 bool AASBossSpiderWebTrap::TryCapturePlayer(AASPlayerCharacter& Player)
 {
     AASMonsterCharacter* Boss = BossMonster.Get();
-    UASBossSpiderDirectorComponent* Director = Boss ? Boss->FindComponentByClass<UASBossSpiderDirectorComponent>() : nullptr;
     UAbilitySystemComponent* SourceASC = Boss ? UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Boss) : nullptr;
     UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(&Player);
-    if (!Director || !SourceASC || !TargetASC || !ActiveConfig.WebBoundEffectClass
-        || !Director->TrySetCaptureTarget(&Player))
+    if (!SourceASC || !TargetASC || !ActiveConfig.WebBoundEffectClass
+		|| SourceASC->HasMatchingGameplayTag(ASGameplayTags::State_BossSpider_Capture_Active))
     {
         return false;
     }
@@ -238,7 +241,6 @@ bool AASBossSpiderWebTrap::TryCapturePlayer(AASPlayerCharacter& Player)
     FGameplayEffectSpecHandle Spec = SourceASC->MakeOutgoingSpec(ActiveConfig.WebBoundEffectClass, 1.0f, Context);
     if (!Spec.IsValid())
     {
-        Director->ClearCaptureTarget(&Player);
         return false;
     }
 
@@ -246,7 +248,6 @@ bool AASBossSpiderWebTrap::TryCapturePlayer(AASPlayerCharacter& Player)
     BoundEffectHandle = TargetASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
     if (!BoundEffectHandle.IsValid() || !TargetASC->HasMatchingGameplayTag(ASGameplayTags::State_WebBound))
     {
-        Director->ClearCaptureTarget(&Player);
         BoundEffectHandle.Invalidate();
         return false;
     }
@@ -255,15 +256,21 @@ bool AASBossSpiderWebTrap::TryCapturePlayer(AASPlayerCharacter& Player)
     Player.SetActiveWebTrap(this);
     EscapeInputCount = 0;
     EscapeEndServerTime = static_cast<float>(GetWorldTimeSeconds() + FMath::Max(0.05f, ActiveConfig.EscapeInputWindow));
+	RegisterBossCaptureState();
     SetTrapState(EASBossSpiderWebTrapState::Triggered);
     OnRep_EscapeProgress();
     ForceNetUpdate();
+	SendCaptureStateTreeEvent(ASGameplayTags::StateTreeEvent_BossSpider_CaptureReady, &Player);
     return true;
 }
 
 void AASBossSpiderWebTrap::ReleaseCapture(const bool bRemoveBoundEffect)
 {
     AASPlayerCharacter* Player = CapturedPlayer.Get();
+	if (bBossCaptureStateRegistered)
+	{
+		SendCaptureStateTreeEvent(ASGameplayTags::StateTreeEvent_BossSpider_CaptureCancelled, Player);
+	}
     if (IsValid(Player))
     {
         if (bRemoveBoundEffect)
@@ -276,22 +283,71 @@ void AASBossSpiderWebTrap::ReleaseCapture(const bool bRemoveBoundEffect)
         Player->ClearActiveWebTrap(this);
     }
 
-    if (IsValid(Player))
-    {
-        if (AASMonsterCharacter* Boss = BossMonster.Get())
-        {
-            if (UASBossSpiderDirectorComponent* Director = Boss->FindComponentByClass<UASBossSpiderDirectorComponent>())
-            {
-                Director->ClearCaptureTarget(Player);
-            }
-        }
-    }
-
+	ReleaseBossCaptureState();
     CapturedPlayer.Reset();
     BoundEffectHandle.Invalidate();
     EscapeInputCount = 0;
     EscapeEndServerTime = 0.0f;
     OnRep_EscapeProgress();
+}
+
+bool AASBossSpiderWebTrap::IsCaptureActiveFor(const AActor* Target) const
+{
+	return HasAuthority()
+		&& TrapState == EASBossSpiderWebTrapState::Triggered
+		&& IsValid(Target)
+		&& CapturedPlayer.Get() == Target
+		&& bBossCaptureStateRegistered;
+}
+
+void AASBossSpiderWebTrap::SendCaptureStateTreeEvent(const FGameplayTag& EventTag, AActor* Target) const
+{
+	const AASMonsterCharacter* Boss = BossMonster.Get();
+	const AASMonsterAIController* Controller = Boss ? Cast<AASMonsterAIController>(Boss->GetController()) : nullptr;
+	UStateTreeAIComponent* StateTree = Controller ? Controller->GetStateTreeAIComponent() : nullptr;
+	if (!HasAuthority() || !EventTag.IsValid() || !IsValid(StateTree) || !StateTree->IsRunning())
+	{
+		return;
+	}
+
+	FASBossSpiderCaptureEventPayload Payload;
+	Payload.Target = Target;
+	Payload.SourceTrap = const_cast<AASBossSpiderWebTrap*>(this);
+	StateTree->SendStateTreeEvent(EventTag, FConstStructView::Make(Payload), GetFName());
+}
+
+void AASBossSpiderWebTrap::RegisterBossCaptureState()
+{
+	if (bBossCaptureStateRegistered)
+	{
+		return;
+	}
+
+	AASMonsterCharacter* Boss = BossMonster.Get();
+	UAbilitySystemComponent* BossASC = Boss ? UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Boss) : nullptr;
+	if (IsValid(BossASC))
+	{
+		BossASC->AddLooseGameplayTag(ASGameplayTags::State_BossSpider_Capture_Active, 1,
+			EGameplayTagReplicationState::TagAndCountToAll);
+		bBossCaptureStateRegistered = true;
+	}
+}
+
+void AASBossSpiderWebTrap::ReleaseBossCaptureState()
+{
+	if (!bBossCaptureStateRegistered)
+	{
+		return;
+	}
+	bBossCaptureStateRegistered = false;
+
+	AASMonsterCharacter* Boss = BossMonster.Get();
+	UAbilitySystemComponent* BossASC = Boss ? UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Boss) : nullptr;
+	if (IsValid(BossASC))
+	{
+		BossASC->RemoveLooseGameplayTag(ASGameplayTags::State_BossSpider_Capture_Active, 1,
+			EGameplayTagReplicationState::TagAndCountToAll);
+	}
 }
 
 void AASBossSpiderWebTrap::SetTrapState(const EASBossSpiderWebTrapState NewState)

@@ -61,6 +61,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Boss Spider|Web Trap")
     float GetEscapeEndServerTime() const { return EscapeEndServerTime; }
 
+	/** Capture Event Payload가 아직 이 Trap의 유효한 완전 구속을 가리키는지 검사한다. */
+	bool IsCaptureActiveFor(const AActor* Target) const;
+
 protected:
     /** State가 바뀐 모든 머신에서 Decal/연출만 갱신한다. */
     UFUNCTION(BlueprintImplementableEvent, Category = "Boss Spider|Web Trap|Cosmetic")
@@ -81,6 +84,9 @@ private:
     void ExpireTrap();
     bool TryCapturePlayer(AASPlayerCharacter& Player);
     void ReleaseCapture(bool bRemoveBoundEffect);
+	void SendCaptureStateTreeEvent(const FGameplayTag& EventTag, AActor* Target) const;
+	void RegisterBossCaptureState();
+	void ReleaseBossCaptureState();
     void SetTrapState(EASBossSpiderWebTrapState NewState);
     bool IsPlayerEligible(const AASPlayerCharacter& Player) const;
     double GetWorldTimeSeconds() const;
@@ -114,4 +120,5 @@ private:
     FTimerHandle MonitorTimerHandle;
     FTimerHandle ExpireTimerHandle;
     bool bInitialized = false;
+	bool bBossCaptureStateRegistered = false;
 };

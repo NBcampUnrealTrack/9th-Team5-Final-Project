@@ -6,6 +6,7 @@
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
 #include "Characters/Enemy/Data/ASMonsterTags.h"
 #include "Characters/Enemy/ASMonsterAttackIndicatorActor.h"
+#include "Abilities/GameplayAbilityTypes.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/Character.h"
 #include "GAS/ASAbilitySystemComponent.h"
@@ -24,6 +25,17 @@ UASMonsterCombatComponent::UASMonsterCombatComponent()
     PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UASMonsterCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UASAbilitySystemComponent* ASC = BoundAbilitySystemComponent.Get(); ASC && AbilityEndedHandle.IsValid())
+	{
+		ASC->OnAbilityEnded.Remove(AbilityEndedHandle);
+	}
+	AbilityEndedHandle.Reset();
+	BoundAbilitySystemComponent.Reset();
+	Super::EndPlay(EndPlayReason);
+}
+
 void UASMonsterCombatComponent::Configure(float InAttackRange, FGameplayTag InAttackAbilityTag)
 {
     AttackRange = FMath::Max(0.0f, InAttackRange);
@@ -40,6 +52,10 @@ void UASMonsterCombatComponent::ConfigurePatterns(const TArray<FASMonsterPattern
     PatternRuntime.Reserve(AttackPatterns.Num());
     NextAttackAllowedTime = 0.0;
     bWaitingForPatternAttackEnd = false;
+	ActivePatternAbilityHandle = FGameplayAbilitySpecHandle();
+	LastStartedPatternId = FGameplayTag();
+	PatternStartSerial = 0;
+	EnsureAbilityEndedBinding();
 
     for (int32 PatternIndex = 0; PatternIndex < AttackPatterns.Num(); ++PatternIndex)
     {
@@ -105,7 +121,7 @@ bool UASMonsterCombatComponent::IsTargetInAttackRange(const AActor* Target) cons
 
 bool UASMonsterCombatComponent::TryGetAutonomousPatternApproachRange(float& OutRange) const
 {
-    if (PatternSelectionPolicy == EASMonsterPatternSelectionPolicy::DirectorOnly)
+	if (PatternSelectionPolicy == EASMonsterPatternSelectionPolicy::StateTreeDriven)
     {
         OutRange = 0.0f;
         return false;
@@ -155,7 +171,7 @@ bool UASMonsterCombatComponent::CanRequestAttack(const AActor* Target) const
        return IsTargetInAttackRange(Target);
     }
 
-    if (PatternSelectionPolicy == EASMonsterPatternSelectionPolicy::DirectorOnly)
+	if (PatternSelectionPolicy == EASMonsterPatternSelectionPolicy::StateTreeDriven)
     {
        return false;
     }
@@ -234,6 +250,16 @@ bool UASMonsterCombatComponent::CanRequestPatternById(FGameplayTag PatternId, co
     return CanRequestPatternAtIndex(FindPatternIndexById(PatternId), Target, false);
 }
 
+bool UASMonsterCombatComponent::CanPreparePatternById(const FGameplayTag PatternId, const AActor* Target) const
+{
+	if (!PatternId.IsValid())
+	{
+		return false;
+	}
+
+	return CanPreparePatternAtIndex(FindPatternIndexById(PatternId), Target, false);
+}
+
 bool UASMonsterCombatComponent::TryRequestPatternAttackById(FGameplayTag PatternId, AActor* Target)
 {
     if (!PatternId.IsValid())
@@ -244,16 +270,47 @@ bool UASMonsterCombatComponent::TryRequestPatternAttackById(FGameplayTag Pattern
     return TryRequestPatternAttackAtIndex(FindPatternIndexById(PatternId), Target, false);
 }
 
+bool UASMonsterCombatComponent::IsTargetInPatternRangeById(const FGameplayTag PatternId, const AActor* Target) const
+{
+	const int32 PatternIndex = FindPatternIndexById(PatternId);
+	return AttackPatterns.IsValidIndex(PatternIndex)
+		&& AttackPatterns[PatternIndex].bEnabled
+		&& IsPatternInRange(AttackPatterns[PatternIndex], Target);
+}
+
+bool UASMonsterCombatComponent::TryGetPatternRangeById(const FGameplayTag PatternId,
+	float& OutMinRange, float& OutMaxRange) const
+{
+	OutMinRange = 0.0f;
+	OutMaxRange = 0.0f;
+	const int32 PatternIndex = FindPatternIndexById(PatternId);
+	if (!AttackPatterns.IsValidIndex(PatternIndex) || !AttackPatterns[PatternIndex].bEnabled)
+	{
+		return false;
+	}
+
+	const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
+	OutMinRange = FMath::Max(0.0f, Pattern.MinRange);
+	OutMaxRange = FMath::Max(OutMinRange, Pattern.MaxRange);
+	if (Pattern.MaxGuaranteedTargetSurfaceDistance > 0.0f)
+	{
+		OutMaxRange = FMath::Min(OutMaxRange, Pattern.MaxGuaranteedTargetSurfaceDistance);
+	}
+	return OutMaxRange >= OutMinRange;
+}
+
 bool UASMonsterCombatComponent::IsPatternAttackActive() const
 {
-    if (!bWaitingForPatternAttackEnd)
+	if (!bWaitingForPatternAttackEnd || !ActivePatternAbilityHandle.IsValid())
     {
        return false;
     }
 
     const UASAbilitySystemComponent* AbilitySystemComponent = GetOwnerAbilitySystemComponent();
-    return IsValid(AbilitySystemComponent)
-       && AbilitySystemComponent->HasMatchingGameplayTag(ASGameplayTags::State_Monster_Attacking);
+	const FGameplayAbilitySpec* ActiveSpec = IsValid(AbilitySystemComponent)
+		? AbilitySystemComponent->FindAbilitySpecFromHandle(ActivePatternAbilityHandle)
+		: nullptr;
+	return ActiveSpec && ActiveSpec->IsActive();
 }
 
 void UASMonsterCombatComponent::NotifyPatternAttackFinished()
@@ -263,9 +320,10 @@ void UASMonsterCombatComponent::NotifyPatternAttackFinished()
        return;
     }
 
-    HideTelegraph();
-    bWaitingForPatternAttackEnd = false;
-    NextAttackAllowedTime = GetWorldTimeSeconds() + FMath::Max(0.0f, PostAttackRecovery);
+	if (!IsPatternAttackActive())
+	{
+		FinishPatternAttackLifecycle();
+	}
 }
 
 bool UASMonsterCombatComponent::IsPatternInRange(const FASMonsterPatternEntry& Pattern, const AActor* Target) const
@@ -316,7 +374,7 @@ int32 UASMonsterCombatComponent::FindPatternIndexById(const FGameplayTag Pattern
     });
 }
 
-bool UASMonsterCombatComponent::CanRequestPatternAtIndex(const int32 PatternIndex, const AActor* Target,
+bool UASMonsterCombatComponent::CanPreparePatternAtIndex(const int32 PatternIndex, const AActor* Target,
     const bool bRequireSelectionWeight) const
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Target)
@@ -328,8 +386,14 @@ bool UASMonsterCombatComponent::CanRequestPatternAtIndex(const int32 PatternInde
     const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
     const double CurrentTime = GetWorldTimeSeconds();
     return (CurrentTime >= NextAttackAllowedTime || Pattern.bCanStartDuringInterPatternDelay)
-       && IsPatternReady(PatternIndex, CurrentTime, bRequireSelectionWeight)
-       && IsPatternInRange(AttackPatterns[PatternIndex], Target);
+		&& IsPatternReady(PatternIndex, CurrentTime, bRequireSelectionWeight);
+}
+
+bool UASMonsterCombatComponent::CanRequestPatternAtIndex(const int32 PatternIndex, const AActor* Target,
+	const bool bRequireSelectionWeight) const
+{
+	return CanPreparePatternAtIndex(PatternIndex, Target, bRequireSelectionWeight)
+		&& IsPatternInRange(AttackPatterns[PatternIndex], Target);
 }
 
 bool UASMonsterCombatComponent::TryRequestPatternAttackAtIndex(const int32 PatternIndex, AActor* Target,
@@ -350,15 +414,69 @@ bool UASMonsterCombatComponent::TryRequestPatternAttackAtIndex(const int32 Patte
 
     const double CurrentTime = GetWorldTimeSeconds();
     FPatternRuntime& Runtime = PatternRuntime[PatternIndex];
+	TGuardValue<TWeakObjectPtr<AActor>> RequestedTargetGuard(RequestedPatternTarget, Target);
+	EnsureAbilityEndedBinding();
+	ActivePatternAbilityHandle = Runtime.AbilityHandle;
+	bWaitingForPatternAttackEnd = true;
     if (!AbilitySystemComponent->TryActivateAbility(Runtime.AbilityHandle))
     {
+		if (ActivePatternAbilityHandle == Runtime.AbilityHandle)
+		{
+			ActivePatternAbilityHandle = FGameplayAbilitySpecHandle();
+			bWaitingForPatternAttackEnd = false;
+		}
        return false;
     }
 
     const FASMonsterPatternEntry& Pattern = AttackPatterns[PatternIndex];
     Runtime.CooldownEndTime = CurrentTime + FMath::Max(0.0f, Pattern.Cooldown);
-    bWaitingForPatternAttackEnd = true;
+	LastStartedPatternId = Pattern.PatternId;
+	++PatternStartSerial;
+
+	// 즉발 Ability가 TryActivateAbility 내부에서 이미 종료됐는데 delegate를 받지 못한 예외도 정리한다.
+	if (bWaitingForPatternAttackEnd && !IsPatternAttackActive())
+	{
+		FinishPatternAttackLifecycle();
+	}
     return true;
+}
+
+void UASMonsterCombatComponent::EnsureAbilityEndedBinding()
+{
+	UASAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+	if (!IsValid(ASC) || (BoundAbilitySystemComponent.Get() == ASC && AbilityEndedHandle.IsValid()))
+	{
+		return;
+	}
+
+	if (UASAbilitySystemComponent* PreviousASC = BoundAbilitySystemComponent.Get(); PreviousASC && AbilityEndedHandle.IsValid())
+	{
+		PreviousASC->OnAbilityEnded.Remove(AbilityEndedHandle);
+	}
+
+	BoundAbilitySystemComponent = ASC;
+	AbilityEndedHandle = ASC->OnAbilityEnded.AddUObject(this, &ThisClass::HandleAbilityEnded);
+}
+
+void UASMonsterCombatComponent::HandleAbilityEnded(const FAbilityEndedData& EndedData)
+{
+	if (bWaitingForPatternAttackEnd && EndedData.AbilitySpecHandle == ActivePatternAbilityHandle)
+	{
+		FinishPatternAttackLifecycle();
+	}
+}
+
+void UASMonsterCombatComponent::FinishPatternAttackLifecycle()
+{
+	if (!bWaitingForPatternAttackEnd)
+	{
+		return;
+	}
+
+	HideTelegraph();
+	bWaitingForPatternAttackEnd = false;
+	ActivePatternAbilityHandle = FGameplayAbilitySpecHandle();
+	NextAttackAllowedTime = GetWorldTimeSeconds() + FMath::Max(0.0f, PostAttackRecovery);
 }
 
 bool UASMonsterCombatComponent::TryRequestPatternAttack(AActor* Target)

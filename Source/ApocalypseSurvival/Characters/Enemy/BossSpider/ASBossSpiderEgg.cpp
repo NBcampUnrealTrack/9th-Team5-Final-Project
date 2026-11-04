@@ -1,7 +1,9 @@
 #include "Characters/Enemy/BossSpider/ASBossSpiderEgg.h"
 
-#include "Characters/Enemy/Components/ASBossSpiderDirectorComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Engine/World.h"
+#include "GAS/ASAbilityTags.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -40,9 +42,11 @@ void AASBossSpiderEgg::BeginPlay()
         return;
     }
 
-    if (UASBossSpiderDirectorComponent* Director = Boss->FindComponentByClass<UASBossSpiderDirectorComponent>())
+	if (UAbilitySystemComponent* BossASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Boss))
     {
-        Director->RegisterActiveEgg(this);
+		BossASC->AddLooseGameplayTag(ASGameplayTags::State_BossSpider_Egg_Active, 1,
+			EGameplayTagReplicationState::TagAndCountToAll);
+		bEggActiveTagRegistered = true;
     }
 
     HatchEndServerTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.05f, ActiveConfig.HatchDelay);
@@ -59,7 +63,7 @@ void AASBossSpiderEgg::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         GetWorldTimerManager().ClearTimer(HatchTimerHandle);
         GetWorldTimerManager().ClearTimer(BossMonitorTimerHandle);
-        ReleaseDirectorRegistration();
+        ReleaseEggActiveTag();
     }
     Super::EndPlay(EndPlayReason);
 }
@@ -70,7 +74,7 @@ void AASBossSpiderEgg::HandleDeath()
     {
         GetWorldTimerManager().ClearTimer(HatchTimerHandle);
         GetWorldTimerManager().ClearTimer(BossMonitorTimerHandle);
-        ReleaseDirectorRegistration();
+        ReleaseEggActiveTag();
         SetEggState(EASBossSpiderEggState::Expired);
     }
     Super::HandleDeath();
@@ -95,7 +99,7 @@ void AASBossSpiderEgg::HatchEgg()
     }
 
     GetWorldTimerManager().ClearTimer(BossMonitorTimerHandle);
-    ReleaseDirectorRegistration();
+    ReleaseEggActiveTag();
     SetEggState(EASBossSpiderEggState::Hatched);
     if (ActiveConfig.HatchDespawnDelay <= 0.0f)
     {
@@ -129,7 +133,7 @@ void AASBossSpiderEgg::ExpireEgg()
 
     GetWorldTimerManager().ClearTimer(HatchTimerHandle);
     GetWorldTimerManager().ClearTimer(BossMonitorTimerHandle);
-    ReleaseDirectorRegistration();
+    ReleaseEggActiveTag();
     SetEggState(EASBossSpiderEggState::Expired);
     SetLifeSpan(0.2f);
 }
@@ -155,19 +159,20 @@ bool AASBossSpiderEgg::SpawnEliteMinion()
     return true;
 }
 
-void AASBossSpiderEgg::ReleaseDirectorRegistration()
+void AASBossSpiderEgg::ReleaseEggActiveTag()
 {
-    if (bReleasedDirectorRegistration)
+	if (!bEggActiveTagRegistered)
     {
         return;
     }
-    bReleasedDirectorRegistration = true;
+	bEggActiveTagRegistered = false;
 
     if (AASMonsterCharacter* Boss = BossMonster.Get())
     {
-        if (UASBossSpiderDirectorComponent* Director = Boss->FindComponentByClass<UASBossSpiderDirectorComponent>())
+		if (UAbilitySystemComponent* BossASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Boss))
         {
-            Director->UnregisterActiveEgg(this);
+			BossASC->RemoveLooseGameplayTag(ASGameplayTags::State_BossSpider_Egg_Active, 1,
+				EGameplayTagReplicationState::TagAndCountToAll);
         }
     }
 }

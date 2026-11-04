@@ -9,6 +9,7 @@
 #include "ASMonsterCombatComponent.generated.h"
 
 class UASAbilitySystemComponent;
+struct FAbilityEndedData;
 
 /**
  * 공격 사거리를 확인하고, 공격 Ability 의 활성화를 태그로 요청한다.
@@ -21,6 +22,11 @@ class APOCALYPSESURVIVAL_API UASMonsterCombatComponent : public UActorComponent
 public:
     UASMonsterCombatComponent();
 
+protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+public:
+
     void Configure(float InAttackRange, FGameplayTag InAttackAbilityTag);
 
     /** Resolver가 확정한 PatternSet과 그 순서에 대응하는 Ability Spec Handle을 등록한다. */
@@ -31,7 +37,7 @@ public:
     /** 기존 Blueprint Telegraph 래퍼의 직렬화 호환용이다. 새 PatternSet Ability는 사용하지 않는다. */
     void ConfigureLegacyTelegraphPatterns(const TArray<FASMonsterAttackPattern>& InPatterns);
 
-    /** 보스 전용 Director가 일반 패턴 사이의 공통 대기 시간을 서버에서 설정한다. */
+	/** PatternSet이 일반 패턴 사이의 공통 대기 시간을 서버에서 설정한다. */
     void SetInterPatternDelay(float InInterPatternDelay);
 
     UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
@@ -39,7 +45,7 @@ public:
 
     /**
      * 가중치 기반 일반 선택에 참여하는 Pattern의 유효 최대 표면 사거리다.
-     * false면 Director 전용 Pattern뿐이므로 기존 Definition 기반 이동 거리를 유지한다.
+	 * false면 StateTree 명시 요청 전용 Pattern뿐이므로 기존 Definition 기반 이동 거리를 유지한다.
      */
     bool TryGetAutonomousPatternApproachRange(float& OutRange) const;
 
@@ -71,11 +77,18 @@ public:
 
     /**
      * 서버 전용. PatternId에 해당하는 한 가지 패턴이 현재 실행 가능한지 검사한다.
-     * SelectionWeight가 0인 패턴도 검사한다. 보스 Director가 랜덤 후보에서 제외한 특수기를
+	 * SelectionWeight가 0인 패턴도 검사한다. StateTree가 랜덤 후보에서 제외한 특수기를
      * 정해진 전투 상황에만 실행할 때 사용한다.
      */
     UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
     bool CanRequestPatternById(FGameplayTag PatternId, const AActor* Target) const;
+
+	/**
+	 * 거리 조건만 제외하면 해당 패턴을 시작할 수 있는지 검사한다.
+	 * StateTree가 공용 후딜이나 개별 쿨다운 중인 패턴을 미리 위해 이동하는 것을 막는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
+	bool CanPreparePatternById(FGameplayTag PatternId, const AActor* Target) const;
 
     /**
      * 서버 전용. PatternId에 해당하는 패턴 하나만 활성화한다.
@@ -84,10 +97,26 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Combat")
     bool TryRequestPatternAttackById(FGameplayTag PatternId, AActor* Target);
 
+	/**
+	 * TryRequestPatternAttackById/TryRequestAttack이 Ability를 동기 활성화하는 동안의 정확한 요청 대상이다.
+	 * Ability는 활성화가 끝난 뒤 이 값을 보관하지 말고 자신의 Weak Target으로 스냅샷해야 한다.
+	 */
+	AActor* GetRequestedPatternTarget() const { return RequestedPatternTarget.Get(); }
+
+	/** StateTree가 성공한 패턴만 관찰해 그룹 실행 간격과 교대 상태를 갱신하는 데 사용한다. */
+	uint32 GetPatternStartSerial() const { return PatternStartSerial; }
+	FGameplayTag GetLastStartedPatternId() const { return LastStartedPatternId; }
+
+	/** 쿨다운과 무관하게 해당 PatternId의 거리 조건만 검사한다. */
+	bool IsTargetInPatternRangeById(FGameplayTag PatternId, const AActor* Target) const;
+
+	/** StateTree 이동이 접근과 후퇴를 모두 판단할 수 있게 패턴의 유효 표면 거리 범위를 반환한다. */
+	bool TryGetPatternRangeById(FGameplayTag PatternId, float& OutMinRange, float& OutMaxRange) const;
+
     /** 패턴 Ability가 아직 실행 중인지. 즉발 패턴은 활성화 직후 false가 될 수 있다. */
     bool IsPatternAttackActive() const;
 
-    /** StateTree가 패턴 Ability 종료를 확인했을 때 호출한다. 공용 후딜은 이 시점부터 시작한다. */
+	/** 기존 StateTree Task 호환용이다. 실제 종료와 공용 후딜은 OnAbilityEnded 경로가 소유한다. */
     void NotifyPatternAttackFinished();
 
     // --- 장판 표시 및 타격 래퍼 함수 선언 ---
@@ -100,9 +129,13 @@ private:
     bool IsPatternInRange(const FASMonsterPatternEntry& Pattern, const AActor* Target) const;
     bool IsPatternReady(int32 PatternIndex, double CurrentTime, bool bRequireSelectionWeight = true) const;
     int32 FindPatternIndexById(FGameplayTag PatternId) const;
+	bool CanPreparePatternAtIndex(int32 PatternIndex, const AActor* Target, bool bRequireSelectionWeight) const;
     bool CanRequestPatternAtIndex(int32 PatternIndex, const AActor* Target, bool bRequireSelectionWeight) const;
     bool TryRequestPatternAttackAtIndex(int32 PatternIndex, AActor* Target, bool bRequireSelectionWeight);
     bool TryRequestPatternAttack(AActor* Target);
+	void EnsureAbilityEndedBinding();
+	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
+	void FinishPatternAttackLifecycle();
 
     double GetWorldTimeSeconds() const;
 
@@ -129,6 +162,14 @@ private:
     TArray<FASMonsterAttackPattern> LegacyTelegraphPatterns;
     double NextAttackAllowedTime = 0.0;
     bool bWaitingForPatternAttackEnd = false;
+	FGameplayAbilitySpecHandle ActivePatternAbilityHandle;
+	FGameplayTag LastStartedPatternId;
+	uint32 PatternStartSerial = 0;
+	FDelegateHandle AbilityEndedHandle;
+	TWeakObjectPtr<UASAbilitySystemComponent> BoundAbilitySystemComponent;
+
+	/** TryActivateAbility 호출 범위 안에서만 유효하다. */
+	TWeakObjectPtr<AActor> RequestedPatternTarget;
 
     // --- 장판 인디케이터 관리용 변수 ---
     UPROPERTY(Transient)

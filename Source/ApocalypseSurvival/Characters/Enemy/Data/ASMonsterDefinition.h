@@ -5,6 +5,7 @@
 #include "Engine/DataAsset.h"
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
+#include "StateTreeReference.h"
 #include "ASMonsterDefinition.generated.h"
 
 class UGameplayAbility;
@@ -285,4 +286,11 @@ public:
     /** 몬스터의 전반 행동을 결정하는 StateTree. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI")
     TObjectPtr<UStateTree> StateTree;
+
+	/**
+	 * Main StateTree의 StateTree.Slot.Combat Linked Asset을 교체한다.
+	 * 비어 있으면 Main Tree에 지정한 기본 Combat Asset을 그대로 사용하므로 기존 몬스터는 호환된다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|StateTree")
+	FStateTreeReference CombatStateTree;
 };

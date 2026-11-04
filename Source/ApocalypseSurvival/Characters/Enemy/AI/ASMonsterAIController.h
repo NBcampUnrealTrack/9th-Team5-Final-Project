@@ -69,6 +69,7 @@ private:
     void RestoreReturningHealth(AASMonsterCharacter& Monster) const;
     void ApplyReturnMoveSpeed(AASMonsterCharacter& Monster);
     void RestoreMoveSpeed();
+	bool IsStateTreeDrivenPatternMonster(const AASMonsterCharacter& Monster) const;
     void HandleNightStarted(int32 Day, bool bBossNight);
     void HandleNightEnded(int32 Day);
 

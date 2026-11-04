@@ -52,7 +52,7 @@ private:
     void MonitorBossLifetime();
     void ExpireEgg();
     bool SpawnEliteMinion();
-    void ReleaseDirectorRegistration();
+    void ReleaseEggActiveTag();
     void SetEggState(EASBossSpiderEggState NewState);
 
     UPROPERTY(ReplicatedUsing = OnRep_EggState)
@@ -66,5 +66,5 @@ private:
     FTimerHandle HatchTimerHandle;
     FTimerHandle BossMonitorTimerHandle;
     bool bInitialized = false;
-    bool bReleasedDirectorRegistration = false;
+	bool bEggActiveTagRegistered = false;
 };

@@ -11,9 +11,9 @@ class AASBossSpiderEgg;
 class AASBossSpiderWebTrap;
 class UGameplayEffect;
 
-/** 보스 스파이더 Director가 사용하는 패턴 선택·페이즈 정책이다. SelectionPolicyConfig에만 저장한다. */
+/** 보스 스파이더 StateTree가 사용하는 패턴 선택·페이즈 정책이다. SelectionPolicyConfig에만 저장한다. */
 USTRUCT(BlueprintType)
-struct FASBossSpiderDirectorConfig : public FASMonsterPatternSelectionConfig
+struct FASBossSpiderStateTreeConfig : public FASMonsterPatternSelectionConfig
 {
     GENERATED_BODY()
 
@@ -28,6 +28,16 @@ struct FASBossSpiderDirectorConfig : public FASMonsterPatternSelectionConfig
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Timing", meta = (ClampMin = "0.0", Units = "s"))
     float WebTrapInterval = 8.0f;
+
+	/** false면 첫 Major 패턴은 CeilingSlam이고, 성공할 때마다 선호 패턴을 교대한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Patterns")
+	bool bPreferEggSummonFirst = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Patterns", meta = (Categories = "Ability.Monster.Attack"))
+	FGameplayTag FanPatternId;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Patterns", meta = (Categories = "Ability.Monster.Attack"))
+	FGameplayTag ChargePatternId;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Patterns", meta = (Categories = "Ability.Monster.Attack"))
     FGameplayTag WebTrapPatternId;

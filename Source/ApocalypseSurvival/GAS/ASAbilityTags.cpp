@@ -10,6 +10,10 @@ namespace ASGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable_Debug, "State.Invulnerable.Debug");
 	UE_DEFINE_GAMEPLAY_TAG(State_Staggered, "State.Staggered");
 	UE_DEFINE_GAMEPLAY_TAG(State_WebBound, "State.WebBound");
+	UE_DEFINE_GAMEPLAY_TAG(State_BossSpider_Capture_Active, "State.BossSpider.Capture.Active");
+	UE_DEFINE_GAMEPLAY_TAG(State_BossSpider_Egg_Active, "State.BossSpider.Egg.Active");
+	UE_DEFINE_GAMEPLAY_TAG(StateTreeEvent_BossSpider_CaptureReady, "StateTreeEvent.BossSpider.CaptureReady");
+	UE_DEFINE_GAMEPLAY_TAG(StateTreeEvent_BossSpider_CaptureCancelled, "StateTreeEvent.BossSpider.CaptureCancelled");
 	UE_DEFINE_GAMEPLAY_TAG(State_KnockedDown, "State.KnockedDown");
 	UE_DEFINE_GAMEPLAY_TAG(State_SuperArmor, "State.SuperArmor");
 	UE_DEFINE_GAMEPLAY_TAG(State_StaggerProtected, "State.StaggerProtected");

@@ -7,12 +7,12 @@
 #include "StructUtils/InstancedStruct.h"
 #include "ASMonsterPatternSet.generated.h"
 
-/** CombatComponent가 일반 선택과 Director 요청을 어떻게 조합할지 결정한다. */
+/** CombatComponent가 일반 선택과 StateTree의 명시적 요청을 어떻게 조합할지 결정한다. */
 UENUM(BlueprintType)
 enum class EASMonsterPatternSelectionPolicy : uint8
 {
     WeightedRandom UMETA(DisplayName = "Weighted Random"),
-    DirectorOnly UMETA(DisplayName = "Director Only"),
+	StateTreeDriven UMETA(DisplayName = "StateTree Driven"),
     Hybrid UMETA(DisplayName = "Hybrid")
 };
 
@@ -25,7 +25,7 @@ enum class EASMonsterPatternFacingPolicy : uint8
     None UMETA(DisplayName = "None")
 };
 
-/** 보스별 Director/선택 정책 구조체가 파생할 수 있는 공통 베이스다. */
+/** 보스별 StateTree/선택 정책 구조체가 파생할 수 있는 공통 베이스다. */
 USTRUCT(BlueprintType)
 struct FASMonsterPatternSelectionConfig
 {
@@ -142,7 +142,7 @@ public:
     /** 부모부터 명시적으로 병합해 실행 가능한 최종 PatternSet을 만든다. */
     bool ResolvePatternSet(FASResolvedMonsterPatternSet& OutResolved) const;
 
-    /** 단일 PatternId의 최종 설정만 읽는 Ability/Director용 편의 API다. */
+	/** 단일 PatternId의 최종 설정만 읽는 Ability/StateTree용 편의 API다. */
     bool ResolvePatternConfig(FGameplayTag PatternId, FASMonsterPatternEntry& OutConfig) const;
 
 #if WITH_EDITOR

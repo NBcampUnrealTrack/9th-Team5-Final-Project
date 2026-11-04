@@ -35,6 +35,18 @@ namespace ASGameplayTags
 	/** 거미줄 등 특수 기믹에 완전히 속박된 상태. 이동·일반 전투 입력을 막고 탈출 전용 입력만 허용한다. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_WebBound);
 
+	/** 보스 스파이더가 CaptureCharge로 연계할 수 있는 완전 구속 대상을 하나 보유 중이다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_BossSpider_Capture_Active);
+
+	/** 살아 있는 보스 스파이더 Egg 수를 Boss ASC의 태그 Count로 표현한다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_BossSpider_Egg_Active);
+
+	/** WebTrap이 완전 구속에 성공해 CaptureCharge 연계를 요청한다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(StateTreeEvent_BossSpider_CaptureReady);
+
+	/** 완전 구속이 풀리거나 WebTrap이 종료되어 CaptureCharge 연계를 취소한다. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(StateTreeEvent_BossSpider_CaptureCancelled);
+
 	/** State.Staggered 중 넉다운 연출을 구분하는 하위 상태. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_KnockedDown);
 

@@ -20,7 +20,7 @@
 
 namespace
 {
-    float GetActorCapsuleRadius(const AActor& Actor)
+    float GetFanActorCapsuleRadius(const AActor& Actor)
     {
         const ACharacter* Character = Cast<ACharacter>(&Actor);
         const UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
@@ -129,7 +129,7 @@ bool UASBossSpiderFanAbility::IsTargetInActivationRange(const AASMonsterCharacte
     const AActor& Target, const FASMonsterPatternEntry& Pattern) const
 {
     const float SurfaceDistance = FVector::Dist2D(Monster.GetActorLocation(), Target.GetActorLocation())
-        - GetActorCapsuleRadius(Monster) - GetActorCapsuleRadius(Target);
+        - GetFanActorCapsuleRadius(Monster) - GetFanActorCapsuleRadius(Target);
     const float MinRange = FMath::Max(0.0f, Pattern.MinRange);
     float MaxRange = FMath::Max(MinRange, Pattern.MaxRange);
     if (Pattern.MaxGuaranteedTargetSurfaceDistance > 0.0f)

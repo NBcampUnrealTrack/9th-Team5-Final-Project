@@ -1,9 +1,11 @@
 #include "Characters/Enemy/AI/ASMonsterAIController.h"
 
+#include "Characters/Enemy/AI/StateTree/ASMonsterStateTreeTags.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Enemy/Components/ASMonsterCombatComponent.h"
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
 #include "Characters/Enemy/Data/ASMonsterDefinition.h"
+#include "Characters/Enemy/Data/ASMonsterPatternSet.h"
 #include "Components/StateTreeAIComponent.h"
 #include "Core/Framework/ASGameMode.h"
 #include "Core/Framework/ASGameState.h"
@@ -101,6 +103,11 @@ void AASMonsterAIController::TryStartAI()
        }
     }
     StartAggroLoop();
+	if (IsStateTreeDrivenPatternMonster(*Monster))
+	{
+		// StateTree가 타깃 없음/전투 진입 상태도 소유하므로 첫 타깃을 기다리지 않고 시작한다.
+		StartStateTree();
+	}
     UpdateAggroAndMovement();
 }
 
@@ -119,7 +126,15 @@ void AASMonsterAIController::StartStateTree()
        return;
     }
 
+	// Controller는 Possess 재사용 시에도 이전 몬스터의 Combat Linked Asset을 남기지 않는다.
+	StateTreeAIComponent->RemoveLinkedStateTreeOverrides(ASStateTreeTags::Slot_Combat);
     StateTreeAIComponent->SetStateTree(Definition->StateTree);
+	if (Definition->CombatStateTree.IsValid())
+	{
+		// Main Tree의 StateTree.Slot.Combat Linked Asset만 몬스터별 전투 트리로 교체한다.
+		StateTreeAIComponent->AddLinkedStateTreeOverrides(
+			ASStateTreeTags::Slot_Combat, Definition->CombatStateTree);
+	}
     StateTreeAIComponent->StartLogic();
 }
 
@@ -351,14 +366,24 @@ void AASMonsterAIController::UpdateAggroAndMovement()
     // 플레이어 부활은 기존 Pawn을 파괴하고 새 Pawn을 빙의한다. 이동 루프는 새 타깃을
     // 바로 따라가지만, 실행 중인 StateTree의 공격 Task는 이전 Pawn 기준으로 남을 수 있다.
     // 대상 Actor가 바뀐 경우에만 트리를 재시작해 공격 조건을 새 Pawn 기준으로 재평가한다.
+	const bool bStateTreeDriven = IsStateTreeDrivenPatternMonster(*Monster);
     if (StateTreeTarget != Target)
     {
        StateTreeTarget = Target;
-       StopStateTree(TEXT("TargetChanged"));
+		if (!bStateTreeDriven)
+		{
+			StopStateTree(TEXT("TargetChanged"));
+		}
     }
 
     // 타깃을 얻은 뒤에만 StateTree를 시작한다. 빈 TargetActor가 Move To에 전달되는 것을 차단한다.
     StartStateTree();
+	if (bStateTreeDriven)
+	{
+		// 선택한 PatternId의 접근 이동은 StateTree Task가 담당한다.
+		MoveTarget.Reset();
+		return;
+	}
 
     const UASMonsterDefinition* Definition = Monster->GetMonsterDefinition();
     const float RetreatDistance = Definition ? FMath::Max(0.0f, Definition->RetreatDistance) : 0.0f;
@@ -404,6 +429,15 @@ void AASMonsterAIController::UpdateAggroAndMovement()
        MoveToActor(Target, AcceptanceRadius);
        MoveTarget = Target;
     }
+}
+
+bool AASMonsterAIController::IsStateTreeDrivenPatternMonster(const AASMonsterCharacter& Monster) const
+{
+	const UASMonsterDefinition* Definition = Monster.GetMonsterDefinition();
+	FASResolvedMonsterPatternSet ResolvedSet;
+	return Definition && Definition->PatternSet
+		&& Definition->PatternSet->ResolvePatternSet(ResolvedSet)
+		&& ResolvedSet.SelectionPolicy == EASMonsterPatternSelectionPolicy::StateTreeDriven;
 }
 
 void AASMonsterAIController::HandleNightStarted(int32 Day, bool bBossNight)

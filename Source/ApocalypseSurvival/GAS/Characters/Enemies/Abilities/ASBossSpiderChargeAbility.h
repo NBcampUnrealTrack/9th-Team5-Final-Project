@@ -33,7 +33,7 @@ public:
         bool bReplicatedEndAbility, bool bWasCancelled) override;
 
 protected:
-    /** CaptureCharge는 Director가 예약한 WebBound 타깃을 반환하도록 재정의한다. */
+    /** CaptureCharge는 CombatComponent가 이번 Pattern 요청에 실어 준 WebBound 타깃을 반환하도록 재정의한다. */
     virtual AActor* ResolveChargeTarget() const;
 
     /** Activate 전과 Windup 종료 시점에 타깃의 패턴별 전제 조건을 검증한다. */
