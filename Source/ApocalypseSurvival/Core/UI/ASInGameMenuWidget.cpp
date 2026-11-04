@@ -12,6 +12,8 @@
 #include "Core/Framework/ASSessionSubsystem.h"
 #include "Core/UI/ASSettingsWidget.h"
 #include "Core/UI/ASLeaveRoomConfirmationWidget.h"
+#include "Core/UI/ASUIManagerSubsystem.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/GameInstance.h"
 #include "InputCoreTypes.h"
 
@@ -141,11 +143,14 @@ void UASInGameMenuWidget::ShowMainMenu()
 void UASInGameMenuWidget::LeaveRoom()
 {
 	if (bLeavingRoom || (LeaveConfirmation && LeaveConfirmation->IsInViewport())) return;
-	LeaveConfirmation = CreateWidget<UASLeaveRoomConfirmationWidget>(GetOwningPlayer());
+	ULocalPlayer* Local = GetOwningLocalPlayer();
+	UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	if (!UI) return;
+	LeaveConfirmation = Cast<UASLeaveRoomConfirmationWidget>(UI->OpenScreen(TEXT("LeaveRoomConfirmation"),
+		UASLeaveRoomConfirmationWidget::StaticClass(), 200));
 	if (!LeaveConfirmation) return;
 	LeaveConfirmation->SetReturnFocusWidget(this);
 	LeaveConfirmation->OnConfirmed.BindUObject(this, &ThisClass::ConfirmLeaveRoom);
-	LeaveConfirmation->AddToViewport(200);
 	SetIsEnabled(false);
 	LeaveConfirmation->SetKeyboardFocus();
 }

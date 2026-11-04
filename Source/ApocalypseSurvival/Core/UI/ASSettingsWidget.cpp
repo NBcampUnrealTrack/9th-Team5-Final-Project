@@ -7,6 +7,7 @@
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
 #include "Core/UI/ASKeyBindingsWidget.h"
 #include "Core/UI/ASVideoModeConfirmationWidget.h"
+#include "Core/UI/ASUIManagerSubsystem.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Skills/Settings/ASSkillSettingsSubsystem.h"
@@ -230,12 +231,14 @@ void UASSettingsWidget::ApplyGameSettings()
 	Settings->ApplySettings(false);
 	if (PreviousResolution != Settings->GetScreenResolution() || PreviousMode != Settings->GetFullscreenMode())
 	{
-		VideoConfirmation = CreateWidget<UASVideoModeConfirmationWidget>(GetOwningPlayer());
+		ULocalPlayer* Local = GetOwningLocalPlayer();
+		UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+		VideoConfirmation = UI ? CreateWidget<UASVideoModeConfirmationWidget>(GetOwningPlayer()) : nullptr;
 		if (VideoConfirmation)
 		{
 			VideoConfirmation->SetSettingsOwner(this);
 			VideoConfirmation->OnClosed.BindUObject(this, &ThisClass::RefreshSettings);
-			VideoConfirmation->AddToViewport(300);
+			UI->ShowScreen(TEXT("VideoModeConfirmation"), VideoConfirmation, 300);
 		}
 		else
 		{
@@ -270,8 +273,11 @@ void UASSettingsWidget::OpenKeyBindings()
 		if (SettingsStatusText) SettingsStatusText->SetText(FText::FromString(TEXT("키 바인딩에 사용할 입력 매핑을 지정해 주세요.")));
 		return;
 	}
+	ULocalPlayer* Local = GetOwningLocalPlayer();
+	UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	if (!UI) return;
 	if (!KeyBindingsWidget) KeyBindingsWidget = CreateWidget<UASKeyBindingsWidget>(GetOwningPlayer());
 	if (!KeyBindingsWidget) return;
 	KeyBindingsWidget->SetMappingContext(KeyMappingContext);
-	if (!KeyBindingsWidget->IsInViewport()) KeyBindingsWidget->AddToViewport(100);
+	UI->ShowScreen(TEXT("KeyBindings"), KeyBindingsWidget, 100);
 }

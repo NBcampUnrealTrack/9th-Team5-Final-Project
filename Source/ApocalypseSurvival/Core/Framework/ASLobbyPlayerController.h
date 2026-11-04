@@ -53,7 +53,6 @@ private:
 	UFUNCTION()
 	void HandleLobbyPhaseChanged();
 	void HandleGameStateSet(AGameStateBase* State);
-	void ShowWidget(UUserWidget* Widget);
 	void RemoveOwnedWidgets(TSubclassOf<UUserWidget> WidgetClass);
 	void ClearLobbyScreens();
 	int32 CharacterIndexOnServer = INDEX_NONE;
