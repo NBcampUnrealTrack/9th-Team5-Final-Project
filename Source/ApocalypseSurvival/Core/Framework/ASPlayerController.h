@@ -126,6 +126,9 @@ public:
 	/** CheatManager가 요청한 무기 1개를 서버에서 검증 후 지급한다. */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveWeapon(FName WeaponName);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGiveItem(FName ItemName, int32 Quantity);
 	
 	/** 테스트용: 콘솔에서 우클릭 공격 설정을 바꾼다. 예) DebugSetRightClickAttack 0 */
 	UFUNCTION(Exec)

@@ -1,6 +1,8 @@
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
 
 #include "Core/Settings/ASLocalSettingsSaveGame.h"
+#include "Core/Audio/ASSoundSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "EnhancedInputSubsystems.h"
@@ -65,6 +67,30 @@ void UASLocalSettingsSubsystem::SetMasterVolume(const float Volume)
 	SaveSettings();
 }
 
+float UASLocalSettingsSubsystem::GetBGMVolume() const
+{
+	return Settings ? Settings->BGMVolume : 1.0f;
+}
+
+void UASLocalSettingsSubsystem::SetBGMVolume(const float Volume)
+{
+	Settings->BGMVolume = FMath::Clamp(Volume, 0.0f, 1.0f);
+	ApplyMasterVolume();
+	SaveSettings();
+}
+
+float UASLocalSettingsSubsystem::GetSFXVolume() const
+{
+	return Settings ? Settings->SFXVolume : 1.0f;
+}
+
+void UASLocalSettingsSubsystem::SetSFXVolume(const float Volume)
+{
+	Settings->SFXVolume = FMath::Clamp(Volume, 0.0f, 1.0f);
+	ApplyMasterVolume();
+	SaveSettings();
+}
+
 bool UASLocalSettingsSubsystem::IsRightClickAttackEnabled() const
 {
 	return Settings ? Settings->bRightClickAttackEnabled : true;
@@ -90,6 +116,20 @@ void UASLocalSettingsSubsystem::ApplyMasterVolume()
 		VolumeMix->FadeInTime = 0.0f;
 	}
 	UGameplayStatics::SetSoundMixClassOverride(World, VolumeMix, MasterClass, Settings->MasterVolume, 1.0f, 0.0f, true);
+	if (UASSoundSubsystem* Audio = GetLocalPlayer()->GetGameInstance()->GetSubsystem<UASSoundSubsystem>())
+	{
+		if (USoundClass* MusicClass = Audio->GetMusicSoundClass())
+		{
+			// BGM has its own root class so engine assets remain untouched. Include master volume explicitly.
+			UGameplayStatics::SetSoundMixClassOverride(World, VolumeMix, MusicClass,
+				Settings->MasterVolume * Settings->BGMVolume, 1.0f, 0.0f, true);
+		}
+		if (USoundClass* EffectsClass = Audio->GetEffectsSoundClass())
+		{
+			UGameplayStatics::SetSoundMixClassOverride(World, VolumeMix, EffectsClass,
+				Settings->MasterVolume * Settings->SFXVolume, 1.0f, 0.0f, true);
+		}
+	}
 	if (AudioWorld != World)
 	{
 		UGameplayStatics::PushSoundMixModifier(World, VolumeMix);
