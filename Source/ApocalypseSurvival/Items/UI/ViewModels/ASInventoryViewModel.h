@@ -35,6 +35,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Inventory|ViewModel") void Refresh();
 	UFUNCTION(BlueprintPure, Category="Inventory|ViewModel") UASItemSlotViewModel* GetSlot(int32 Index);
 	UASInventoryComponent* GetInventory() const { return Inventory.Get(); }
+	FText GetQuickSlotKeyText(int32 Index) const;
 	AASLootChest* GetLootChest() const;
 	UFUNCTION(BlueprintCallable, Category="Inventory|ViewModel") void ActivateSlot(int32 Slot, FGuid Expected);
 	UFUNCTION(BlueprintCallable, Category="Inventory|ViewModel") void DropSlot(int32 Slot, FGuid Expected, bool bSingle = false);

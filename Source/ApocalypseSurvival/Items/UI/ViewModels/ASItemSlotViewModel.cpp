@@ -50,7 +50,8 @@ void UASItemSlotViewModel::Refresh()
 	const bool bWeapon = SlotIndex == UASInventoryComponent::WeaponSlotIndex;
 	const bool bBag = SlotIndex == UASInventoryComponent::BagSlotIndex;
 	Value.Key = bWeapon ? NSLOCTEXT("Items", "WeaponSlot", "무기") : bBag ? NSLOCTEXT("Items", "BagSlot", "가방")
-		: SlotIndex >= 0 && SlotIndex < UASInventoryComponent::QuickSlotCount ? FText::AsNumber((SlotIndex + 1) % 10) : FText::GetEmpty();
+		: Inventory.IsValid() && SlotIndex >= 0 && SlotIndex < UASInventoryComponent::QuickSlotCount
+			? Inventory->GetQuickSlotKeyText(SlotIndex) : FText::GetEmpty();
 	if (Definition)
 	{
 		Value.ItemId = Item->GetInstanceId();

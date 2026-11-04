@@ -299,23 +299,10 @@ void UASItemInteractionComponent::InitializeInventoryBar()
 		InventoryInput = NewObject<UInputComponent>(PC, TEXT("InventorySlotInput"));
 		InventoryInput->RegisterComponent();
 		InventoryInput->Priority = 1;
-		const FKey Keys[] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five,
-			EKeys::Six, EKeys::Seven, EKeys::Eight, EKeys::Nine, EKeys::Zero };
-		for (int32 Index = 0; Index < UASInventoryComponent::PlayerSlotCount; ++Index)
-		{
-			FInputKeyBinding Binding(FInputChord(Keys[Index]), IE_Pressed);
-			Binding.bConsumeInput = true;
-			Binding.KeyDelegate.GetDelegateForManualSet().BindLambda([this, Index]() { ActivateSlotFromKey(Index); });
-			InventoryInput->KeyBindings.Add(Binding);
-		}
 		FInputKeyBinding RightClick(FInputChord(EKeys::RightMouseButton), IE_Pressed);
 		RightClick.bConsumeInput = true;
 		RightClick.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::HandleWorldRightClick);
 		InventoryInput->KeyBindings.Add(RightClick);
-		FInputKeyBinding ToggleNames(FInputChord(EKeys::Z), IE_Pressed);
-		ToggleNames.bConsumeInput = true;
-		ToggleNames.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::ToggleDroppedItemNames);
-		InventoryInput->KeyBindings.Add(ToggleNames);
 		PC->PushInputComponent(InventoryInput);
 	}
 	if (!InventoryBar)

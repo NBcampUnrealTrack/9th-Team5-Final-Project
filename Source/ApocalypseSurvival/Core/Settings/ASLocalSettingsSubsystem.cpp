@@ -187,6 +187,7 @@ bool UASLocalSettingsSubsystem::SetMappedKey(UInputMappingContext* Source, const
 		Input->RequestRebuildControlMappings();
 	}
 	SaveSettings();
+	OnKeyMappingsChanged.Broadcast();
 	return true;
 }
 
@@ -197,4 +198,5 @@ void UASLocalSettingsSubsystem::ResetMappedKeys(UInputMappingContext* Source)
 	if (const TObjectPtr<UInputMappingContext>* Runtime = RuntimeContexts.Find(Source)) RebuildMappingContext(Source, Runtime->Get());
 	if (UEnhancedInputLocalPlayerSubsystem* Input = GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>()) Input->RequestRebuildControlMappings();
 	SaveSettings();
+	OnKeyMappingsChanged.Broadcast();
 }

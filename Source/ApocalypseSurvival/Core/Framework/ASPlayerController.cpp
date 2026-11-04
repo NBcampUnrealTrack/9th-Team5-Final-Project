@@ -32,6 +32,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "Framework/Application/SlateApplication.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "MapSystem/UI/ASMapViewModel.h"
 #include "MapSystem/UI/ASMapViewModelSubsystem.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -67,6 +68,7 @@ AASPlayerController::AASPlayerController()
 
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Default;
+	QuickSlotActions.SetNum(UASInventoryComponent::QuickSlotCount);
 }
 
 void AASPlayerController::ToggleCrafting()
@@ -162,6 +164,16 @@ void AASPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(ToggleMapAction, ETriggerEvent::Started, this, &AASPlayerController::OnToggleMap);
 	}
 
+	if (ToggleInventoryAction)
+		EnhancedInputComponent->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &ThisClass::ToggleInventory);
+	if (ToggleItemNamesAction)
+		EnhancedInputComponent->BindAction(ToggleItemNamesAction, ETriggerEvent::Started, this, &ThisClass::OnToggleItemNames);
+	for (int32 Index = 0; Index < FMath::Min(QuickSlotActions.Num(), UASInventoryComponent::QuickSlotCount); ++Index)
+	{
+		if (QuickSlotActions[Index])
+			EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Started, this, &ThisClass::OnQuickSlotPressed, Index);
+	}
+
 	// 어빌리티 입력은 목록을 돌며 건다. 키마다 함수를 만들지 않고, 태그를 인자로 같이 넘긴다.
 	// Started 는 누른 순간 한 번이라 "한 번 누름 = 한 번 발동"이 된다.
 	if (IsValid(AbilityInputConfig))
@@ -183,11 +195,6 @@ void AASPlayerController::SetupInputComponent()
 bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	if (bBossIntroInputBlocked) return true;
-	if (IsLocalController() && Params.Key == EKeys::I && Params.Event == IE_Pressed && !IsResultPhase())
-	{
-		ToggleInventory();
-		return true;
-	}
 	if (IsLocalController() && Params.Key == EKeys::Escape && Params.Event == IE_Pressed && !IsResultPhase())
 	{
 		if (ItemInteractionComponent->IsInventoryOpen())
@@ -204,6 +211,45 @@ bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		return true;
 	}
 	return Super::InputKey(Params);
+}
+
+TArray<FKey> AASPlayerController::GetMappedActionKeys(const UInputAction* Action) const
+{
+	TArray<FKey> Keys;
+	if (!Action || !DefaultMappingContext) return Keys;
+	const UASLocalSettingsSubsystem* Settings = GetLocalPlayer() ? GetLocalPlayer()->GetSubsystem<UASLocalSettingsSubsystem>() : nullptr;
+	const TArray<FEnhancedActionKeyMapping>& Mappings = DefaultMappingContext->GetMappings();
+	for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+	{
+		if (Mappings[Index].Action == Action)
+			Keys.AddUnique(Settings ? Settings->GetMappedKey(DefaultMappingContext, Index) : Mappings[Index].Key);
+	}
+	return Keys;
+}
+
+bool AASPlayerController::IsInventoryToggleKey(FKey Key) const
+{
+	return GetMappedActionKeys(ToggleInventoryAction).Contains(Key);
+}
+
+FKey AASPlayerController::GetQuickSlotKey(int32 SlotIndex) const
+{
+	if (!QuickSlotActions.IsValidIndex(SlotIndex)) return FKey();
+	for (const FKey& Key : GetMappedActionKeys(QuickSlotActions[SlotIndex]))
+		if (Key.IsValid() && !Key.IsGamepadKey()) return Key;
+	return FKey();
+}
+
+void AASPlayerController::OnQuickSlotPressed(int32 SlotIndex)
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen() || CraftingComponent->IsCraftingOpen()) return;
+	ItemInteractionComponent->ActivateSlotFromKey(SlotIndex);
+}
+
+void AASPlayerController::OnToggleItemNames()
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen()) return;
+	ItemInteractionComponent->ToggleDroppedItemNames();
 }
 
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
