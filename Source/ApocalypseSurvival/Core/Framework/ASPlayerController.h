@@ -88,6 +88,10 @@ public:
 	UFUNCTION(BlueprintCallable, Exec, Category = "Inventory")
 	void ToggleInventory();
 
+	/** UI closes with the same remapped action key used to open it. */
+	bool IsInventoryToggleKey(FKey Key) const;
+	FKey GetQuickSlotKey(int32 SlotIndex) const;
+
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	UASPlayerAttackMoveComponent* GetAttackMoveComponent() const { return AttackMoveComponent; }
 
@@ -173,6 +177,9 @@ private:
 	void OnCameraCenterCompleted();
 	void OnCameraZoom(const FInputActionValue& Value);
 	void OnToggleMap();
+	void OnQuickSlotPressed(int32 SlotIndex);
+	void OnToggleItemNames();
+	TArray<FKey> GetMappedActionKeys(const UInputAction* Action) const;
 
 	/** 어빌리티 입력. 태그는 AbilityInputConfig 의 항목에서 바인딩할 때 같이 넘어온다. */
 	void OnAbilityInputPressed(FGameplayTag InputTag);
@@ -242,6 +249,16 @@ private:
 	/** 확장 맵을 열고 닫는다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> ToggleMapAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Inventory")
+	TObjectPtr<UInputAction> ToggleInventoryAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Inventory")
+	TObjectPtr<UInputAction> ToggleItemNamesAction;
+
+	/** Ordered by inventory slot index; keys are assigned in the mapping context. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Inventory", meta = (EditFixedSize))
+	TArray<TObjectPtr<UInputAction>> QuickSlotActions;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TEnumAsByte<ECollisionChannel> CursorTraceChannel = ECC_Visibility;

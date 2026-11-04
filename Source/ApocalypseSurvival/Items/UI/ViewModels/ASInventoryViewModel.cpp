@@ -6,6 +6,8 @@
 #include "Items/ASItemInstance.h"
 #include "Items/Loot/ASLootChest.h"
 #include "Core/Framework/ASPlayerController.h"
+#include "Core/Settings/ASLocalSettingsSubsystem.h"
+#include "Engine/LocalPlayer.h"
 
 bool FASInventoryPresentation::operator==(const FASInventoryPresentation& O) const
 {
@@ -18,6 +20,9 @@ void UASInventoryViewModel::Initialize(UASInventoryComponent* Source, APlayerCon
 	Shutdown();
 	Inventory = Source;
 	Player = Controller;
+	if (ULocalPlayer* Local = Controller ? Controller->GetLocalPlayer() : nullptr)
+		if (UASLocalSettingsSubsystem* Settings = Local->GetSubsystem<UASLocalSettingsSubsystem>())
+			Settings->OnKeyMappingsChanged.AddUObject(this, &ThisClass::Refresh);
 	Interaction = Controller ? Controller->FindComponentByClass<UASItemInteractionComponent>() : nullptr;
 	if (Source) Source->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::Refresh);
 	if (Interaction.IsValid() && IsPlayerSource()) Interaction->OnInventoryActionFailed.AddUniqueDynamic(this, &ThisClass::HandleActionFailed);
@@ -26,6 +31,9 @@ void UASInventoryViewModel::Initialize(UASInventoryComponent* Source, APlayerCon
 
 void UASInventoryViewModel::Shutdown()
 {
+	if (ULocalPlayer* Local = Player.IsValid() ? Player->GetLocalPlayer() : nullptr)
+		if (UASLocalSettingsSubsystem* Settings = Local->GetSubsystem<UASLocalSettingsSubsystem>())
+			Settings->OnKeyMappingsChanged.RemoveAll(this);
 	if (Inventory.IsValid()) Inventory->OnInventoryChanged.RemoveDynamic(this, &ThisClass::Refresh);
 	if (Interaction.IsValid()) Interaction->OnInventoryActionFailed.RemoveDynamic(this, &ThisClass::HandleActionFailed);
 	Inventory.Reset(); Player.Reset(); Interaction.Reset();
@@ -43,6 +51,13 @@ void UASInventoryViewModel::BeginDestroy()
 bool UASInventoryViewModel::IsPlayerSource() const
 {
 	return Inventory.IsValid() && Player.IsValid() && Inventory->GetOwner() == Player.Get();
+}
+
+FText UASInventoryViewModel::GetQuickSlotKeyText(int32 Index) const
+{
+	const AASPlayerController* PC = IsPlayerSource() ? Cast<AASPlayerController>(Player.Get()) : nullptr;
+	const FKey Key = PC ? PC->GetQuickSlotKey(Index) : FKey();
+	return Key.IsValid() ? Key.GetDisplayName() : FText::GetEmpty();
 }
 
 bool UASInventoryViewModel::IsExposedSlot(int32 Index) const

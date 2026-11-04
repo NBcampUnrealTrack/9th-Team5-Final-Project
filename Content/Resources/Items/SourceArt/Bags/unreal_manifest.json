@@ -1,0 +1,118 @@
+[
+  {
+    "bag": "Bag01",
+    "definition": "/Game/ApocalypseSurvival/Items/Definitions/PDA_Item_Bag01.PDA_Item_Bag01",
+    "icon": "/Game/Resources/Items/Icon/T_Icon_Bag01.T_Icon_Bag01",
+    "mesh": "/Game/Resources/Items/Mesh/Bags/SM_Bag01.SM_Bag01",
+    "lod_vertices": [
+      2918,
+      1773,
+      809
+    ],
+    "bounds_cm": {
+      "min": [
+        -6.927499771118164,
+        -9.000000953674316,
+        0.0
+      ],
+      "max": [
+        6.9275007247924805,
+        9.0,
+        7.199250221252441
+      ]
+    },
+    "preserved": {
+      "item_id": "Bag.Uncommon",
+      "rarity": "<ASLootRarity.UNCOMMON: 0>",
+      "bag_additional_slots": "8",
+      "max_stack_size": "1"
+    }
+  },
+  {
+    "bag": "Bag02",
+    "definition": "/Game/ApocalypseSurvival/Items/Definitions/PDA_Item_Bag02.PDA_Item_Bag02",
+    "icon": "/Game/Resources/Items/Icon/T_Icon_Bag02.T_Icon_Bag02",
+    "mesh": "/Game/Resources/Items/Mesh/Bags/SM_Bag02.SM_Bag02",
+    "lod_vertices": [
+      4812,
+      3153,
+      1153
+    ],
+    "bounds_cm": {
+      "min": [
+        -17.555002212524414,
+        -11.500000953674316,
+        0.0
+      ],
+      "max": [
+        17.555002212524414,
+        11.5,
+        16.5098934173584
+      ]
+    },
+    "preserved": {
+      "item_id": "Bag.Rare",
+      "rarity": "<ASLootRarity.RARE: 1>",
+      "bag_additional_slots": "16",
+      "max_stack_size": "1"
+    }
+  },
+  {
+    "bag": "Bag03",
+    "definition": "/Game/ApocalypseSurvival/Items/Definitions/PDA_Item_Bag03.PDA_Item_Bag03",
+    "icon": "/Game/Resources/Items/Icon/T_Icon_Bag03.T_Icon_Bag03",
+    "mesh": "/Game/Resources/Items/Mesh/Bags/SM_Bag03.SM_Bag03",
+    "lod_vertices": [
+      6243,
+      3807,
+      1638
+    ],
+    "bounds_cm": {
+      "min": [
+        -23.950002670288086,
+        -19.80000114440918,
+        0.0
+      ],
+      "max": [
+        23.950000762939453,
+        19.80000114440918,
+        23.800893783569336
+      ]
+    },
+    "preserved": {
+      "item_id": "Bag.Epic",
+      "rarity": "<ASLootRarity.EPIC: 2>",
+      "bag_additional_slots": "24",
+      "max_stack_size": "1"
+    }
+  },
+  {
+    "bag": "Bag04",
+    "definition": "/Game/ApocalypseSurvival/Items/Definitions/PDA_Item_Bag04.PDA_Item_Bag04",
+    "icon": "/Game/Resources/Items/Icon/T_Icon_Bag04.T_Icon_Bag04",
+    "mesh": "/Game/Resources/Items/Mesh/Bags/SM_Bag04.SM_Bag04",
+    "lod_vertices": [
+      11305,
+      7519,
+      2617
+    ],
+    "bounds_cm": {
+      "min": [
+        -27.425003051757812,
+        -18.568506240844727,
+        0.0
+      ],
+      "max": [
+        27.424999237060547,
+        18.568504333496094,
+        27.24989128112793
+      ]
+    },
+    "preserved": {
+      "item_id": "Bag.Legendary",
+      "rarity": "<ASLootRarity.LEGENDARY: 3>",
+      "bag_additional_slots": "32",
+      "max_stack_size": "1"
+    }
+  }
+]

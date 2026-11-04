@@ -1,0 +1,30 @@
+[
+  {
+    "asset": "Bag01",
+    "tool": "built-in image_gen",
+    "transparent_background": true,
+    "edit_reference": "Content/Resources/Items/Icon/T_Icon_Bag01.png",
+    "prompt": "Edit the provided inventory icon. Preserve this exact bag's recognizable design, colors, materials, stitching, hardware and pocket arrangement. A small, wide tan/brown canvas waist pouch with a single curved flap, dark snap button and belt loops. Preserve its naturally wide pouch proportions. Change the pose and camera to a STANDING UPRIGHT, almost frontal inventory product view: base at the bottom (6 o'clock), top/handle at the top (12 o'clock), front panel facing the viewer. Camera is slightly to the viewer's right and slightly above the bag, about 12 degrees right azimuth and 12 degrees above center. Show mostly the front, a narrow right side and a small amount of its top. Zero camera roll. Bag's vertical edges remain vertical. No diagonal in-plane rotation, no lying down, no overhead flat lay, no inverted bag. Entire isolated bag centered and generously filling about 85% of the square canvas, with clear even margins. Realistic textured game inventory icon, soft consistent studio lighting, crisp silhouette readable at small size. True transparent background. No floor, cast shadow on ground, text, labels, logos, borders or extra objects."
+  },
+  {
+    "asset": "Bag02",
+    "tool": "built-in image_gen",
+    "transparent_background": true,
+    "edit_reference": "Content/Resources/Items/Icon/T_Icon_Bag02.png",
+    "prompt": "Edit the provided inventory icon. Preserve this exact bag's recognizable design, colors, materials, stitching, hardware and pocket arrangement. A small brown canvas backpack with rounded top, one front zipper pocket, top handle and shoulder straps. Change the pose and camera to a STANDING UPRIGHT, almost frontal inventory product view: base at the bottom (6 o'clock), top/handle at the top (12 o'clock), front panel facing the viewer. Camera is slightly to the viewer's right and slightly above the bag, about 12 degrees right azimuth and 12 degrees above center. Show mostly the front, a narrow right side and a small amount of its top. Zero camera roll. Bag's vertical edges remain vertical. No diagonal in-plane rotation, no lying down, no overhead flat lay, no inverted bag. Entire isolated bag centered and generously filling about 85% of the square canvas, with clear even margins. Realistic textured game inventory icon, soft consistent studio lighting, crisp silhouette readable at small size. True transparent background. No floor, cast shadow on ground, text, labels, logos, borders or extra objects."
+  },
+  {
+    "asset": "Bag03",
+    "tool": "built-in image_gen",
+    "transparent_background": true,
+    "edit_reference": "Content/Resources/Items/Icon/T_Icon_Bag03.png",
+    "prompt": "Edit the provided inventory icon. Preserve this exact bag's recognizable design, colors, materials, stitching, hardware and pocket arrangement. A larger olive canvas hiking backpack with top lid, two compression straps/buckles, front pocket, side pockets and dark reinforced bottom. Change the pose and camera to a STANDING UPRIGHT, almost frontal inventory product view: base at the bottom (6 o'clock), top/handle at the top (12 o'clock), front panel facing the viewer. Camera is slightly to the viewer's right and slightly above the bag, about 12 degrees right azimuth and 12 degrees above center. Show mostly the front, a narrow right side and a small amount of its top. Zero camera roll. Bag's vertical edges remain vertical. No diagonal in-plane rotation, no lying down, no overhead flat lay, no inverted bag. Entire isolated bag centered and generously filling about 85% of the square canvas, with clear even margins. Realistic textured game inventory icon, soft consistent studio lighting, crisp silhouette readable at small size. True transparent background. No floor, cast shadow on ground, text, labels, logos, borders or extra objects."
+  },
+  {
+    "asset": "Bag04",
+    "tool": "built-in image_gen",
+    "transparent_background": true,
+    "edit_reference": "Content/Resources/Items/Icon/T_Icon_Bag04.png",
+    "prompt": "Edit the provided inventory icon. Preserve this exact bag's recognizable design, colors, materials, stitching, hardware and pocket arrangement. An olive tactical backpack with two stacked front pockets, MOLLE webbing, side compression straps and buckles, dark bottom and top handle. Change the pose and camera to a STANDING UPRIGHT, almost frontal inventory product view: base at the bottom (6 o'clock), top/handle at the top (12 o'clock), front panel facing the viewer. Camera is slightly to the viewer's right and slightly above the bag, about 12 degrees right azimuth and 12 degrees above center. Show mostly the front, a narrow right side and a small amount of its top. Zero camera roll. Bag's vertical edges remain vertical. No diagonal in-plane rotation, no lying down, no overhead flat lay, no inverted bag. Entire isolated bag centered and generously filling about 85% of the square canvas, with clear even margins. Realistic textured game inventory icon, soft consistent studio lighting, crisp silhouette readable at small size. True transparent background. No floor, cast shadow on ground, text, labels, logos, borders or extra objects."
+  }
+]

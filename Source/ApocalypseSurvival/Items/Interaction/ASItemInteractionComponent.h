@@ -27,6 +27,7 @@ public:
 	bool TryInteractWith(AActor* Target);
 	bool RequestPickupDroppedItem(AASDroppedItem* Item);
 	void HandleWorldRightClick();
+	void ActivateSlotFromKey(int32 SlotIndex);
 	void CancelPendingInteraction();
 	bool HasPendingInteraction() const { return PendingTarget.IsValid(); }
 	bool IsLootOpen() const;
@@ -99,7 +100,6 @@ private:
 	AASPlayerController* GetASController() const;
 	bool CanReachTarget(AActor* Target) const;
 	void InitializeInventoryBar();
-	void ActivateSlotFromKey(int32 SlotIndex);
 	void UpdateDroppedItemHover();
 
 	UFUNCTION(Server, Reliable)

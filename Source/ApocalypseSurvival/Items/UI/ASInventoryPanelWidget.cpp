@@ -5,6 +5,7 @@
 #include "Components/TextBlock.h"
 #include "Components/UniformGridPanel.h"
 #include "InputCoreTypes.h"
+#include "Core/Framework/ASPlayerController.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/UI/ViewModels/ASInventoryViewModel.h"
 #include "Items/UI/ASInventorySlotWidget.h"
@@ -65,10 +66,15 @@ void UASInventoryPanelWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-FReply UASInventoryPanelWidget::NativeOnKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
+FReply UASInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
 {
-	if (Event.GetKey() == EKeys::I || Event.GetKey() == EKeys::Escape) { Close(); return FReply::Handled(); }
-	return Super::NativeOnKeyDown(Geometry, Event);
+	const AASPlayerController* PC = Cast<AASPlayerController>(GetOwningPlayer());
+	if (Event.GetKey() == EKeys::Escape || (PC && PC->IsInventoryToggleKey(Event.GetKey())))
+	{
+		if (!Event.IsRepeat()) Close();
+		return FReply::Handled();
+	}
+	return Super::NativeOnPreviewKeyDown(Geometry, Event);
 }
 
 FReply UASInventoryPanelWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
