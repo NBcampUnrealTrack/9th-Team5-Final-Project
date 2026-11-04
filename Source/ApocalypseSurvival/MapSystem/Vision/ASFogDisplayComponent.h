@@ -99,6 +99,7 @@ private:
 	void UpdateLocalVisionParameters();
 	void UpdateShownAlpha(float Fraction);
 	void RebuildMassVisibilityBuffer();
+	void UploadLogicalChanges();
 	void UploadTexture(const TArray<FIntRect>& DirtyRegions);
 	FIntRect TileRegion(int32 TileIndex) const;
 	void MarkVisibleTiles(int32 MinX, int32 MinY, int32 MaxX, int32 MaxY);
@@ -117,12 +118,17 @@ private:
 	TObjectPtr<APostProcessVolume> WorldFogVolume;
 
 	TArray<uint8> VisibleCells;
+	/** 알파가 그대로여도 논리 시야 변경을 업로드한다. */
+	TArray<uint8> UploadedVisibleCells;
 	/** VisibleCells를 MassVisibilityBufferDistance만큼 확장한 로컬 표현 유지 영역. */
 	TArray<uint8> MassVisibilityBufferCells;
 	/** Mass Visibility Buffer를 선형 시간에 확장하기 위한 3-4 chamfer 거리 필드. */
 	TArray<int32> MassVisibilityDistanceScratch;
 	TArray<uint8> DisplayCells;
+	/** 기존 안개 알파와 탐색 기록에는 벽 표면 패딩을 유지한다. */
+	TArray<uint8> TeamDisplayCells;
 	TArray<uint8> OthersCells;
+	TArray<uint8> OthersVisibleCells;
 	TArray<uint8> ExploredCells;
 	TArray<uint8> RawAlpha;
 	TArray<uint8> TargetAlpha;
@@ -138,6 +144,7 @@ private:
 	TArray<uint8> OthersFadeFromAlpha;
 	TArray<uint8> BlurScratch;
 	TArray<FVector2D> OcclusionPoints;
+	TArray<FVector2D> DisplayOcclusionPoints;
 	TArray<FVector2D> ExtendedOcclusionPoints;
 	/** 래스터 경계를 기록하고 변경과 페이드를 16셀 단위로 추적한다. */
 	static constexpr int32 TileSize = 16;
@@ -152,6 +159,7 @@ private:
 	bool bHasPendingFade = false;
 	/** 타일 안에서 원본 알파가 실제로 바뀐 셀의 최소 사각형을 패스마다 재사용한다. */
 	TArray<FIntRect> RawChangedRegions;
+	TArray<FIntRect> LogicalChangedRegions;
 	TArray<FIntRect> ShownChangedRegions;
 	/** U는 월드 Y를, V는 월드 X를 따른다. */
 	int32 ResolutionX = 0;

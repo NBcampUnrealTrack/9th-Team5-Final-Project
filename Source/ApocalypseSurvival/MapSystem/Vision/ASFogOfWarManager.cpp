@@ -5,6 +5,7 @@
 #include "CoreGlobals.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "MapSystem/Vision/ASBushArea.h"
 #include "MapSystem/Vision/ASFogDisplayComponent.h"
 #include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "MapSystem/Vision/ASVisionDefinition.h"
@@ -213,6 +214,17 @@ bool AASFogOfWarManager::EnsureConfigured(bool bLogMissingDefinition)
 		return false;
 	}
 
+	if (HasAuthority())
+	{
+		if (const UASVisionWorldSubsystem* Subsystem = UASVisionWorldSubsystem::Get(this))
+		{
+			for (AASBushArea* Bush : Subsystem->GetBushes())
+			{
+				Bush->ValidateVisionWalls(*VisionDefinition);
+			}
+		}
+	}
+
 	if (HasAuthority() && !bWallOcclusionInitialized)
 	{
 		bWallOcclusionInitialized = true;
@@ -356,7 +368,7 @@ bool AASFogOfWarManager::IsLocationConcealedByBushLocally(const FVector& Locatio
 	{
 		return false;
 	}
-	// 작은 수풀 내부의 벽 추적은 대상별 매 프레임 비용 때문에 생략한다.
+	// 수풀 안에는 시야 벽이 없다는 배치 규칙에 의존해 벽 추적을 생략한다(ValidateVisionWalls에서 경계 중첩 경고).
 	if (const TArray<FLocalTeamBushSource>* Sources = LocalTeamBushSources.Find(BushId))
 	{
 		for (const FLocalTeamBushSource& Source : *Sources)
