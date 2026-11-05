@@ -49,10 +49,21 @@ void AASBossSpiderEgg::BeginPlay()
 		bEggActiveTagRegistered = true;
     }
 
-    HatchEndServerTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.05f, ActiveConfig.HatchDelay);
+    const float DescentDuration = FMath::Max(0.0f, ActiveConfig.EggDescentDuration);
+    SetDescentInvulnerable(true);
+    SetCanBeDamaged(false);
+    LandingEndServerTime = GetWorld()->GetTimeSeconds() + DescentDuration;
+    HatchEndServerTime = 0.0f;
     OnRep_EggState();
-    GetWorldTimerManager().SetTimer(HatchTimerHandle, this, &ThisClass::HatchEgg,
-        FMath::Max(0.05f, ActiveConfig.HatchDelay), false);
+    if (DescentDuration <= 0.0f)
+    {
+        LandEgg();
+    }
+    else
+    {
+        GetWorldTimerManager().SetTimer(LandingTimerHandle, this, &ThisClass::LandEgg,
+            DescentDuration, false);
+    }
     GetWorldTimerManager().SetTimer(BossMonitorTimerHandle, this, &ThisClass::MonitorBossLifetime, 0.1f, true);
     ForceNetUpdate();
 }
@@ -61,8 +72,10 @@ void AASBossSpiderEgg::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     if (HasAuthority())
     {
+        GetWorldTimerManager().ClearTimer(LandingTimerHandle);
         GetWorldTimerManager().ClearTimer(HatchTimerHandle);
         GetWorldTimerManager().ClearTimer(BossMonitorTimerHandle);
+        SetDescentInvulnerable(false);
         ReleaseEggActiveTag();
     }
     Super::EndPlay(EndPlayReason);
@@ -72,8 +85,10 @@ void AASBossSpiderEgg::HandleDeath()
 {
     if (HasAuthority())
     {
+        GetWorldTimerManager().ClearTimer(LandingTimerHandle);
         GetWorldTimerManager().ClearTimer(HatchTimerHandle);
         GetWorldTimerManager().ClearTimer(BossMonitorTimerHandle);
+        SetDescentInvulnerable(false);
         ReleaseEggActiveTag();
         SetEggState(EASBossSpiderEggState::Expired);
     }
@@ -83,6 +98,31 @@ void AASBossSpiderEgg::HandleDeath()
 void AASBossSpiderEgg::OnRep_EggState()
 {
     OnEggStateChanged(EggState);
+}
+
+void AASBossSpiderEgg::OnRep_LandingEndServerTime()
+{
+    if (LandingEndServerTime > 0.0f && EggState == EASBossSpiderEggState::Descending)
+    {
+        OnEggStateChanged(EggState);
+    }
+}
+
+void AASBossSpiderEgg::LandEgg()
+{
+    if (!HasAuthority() || EggState != EASBossSpiderEggState::Descending)
+    {
+        return;
+    }
+
+    GetWorldTimerManager().ClearTimer(LandingTimerHandle);
+    SetDescentInvulnerable(false);
+    SetCanBeDamaged(true);
+    LandingEndServerTime = 0.0f;
+    HatchEndServerTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.05f, ActiveConfig.HatchDelay);
+    SetEggState(EASBossSpiderEggState::Incubating);
+    GetWorldTimerManager().SetTimer(HatchTimerHandle, this, &ThisClass::HatchEgg,
+        FMath::Max(0.05f, ActiveConfig.HatchDelay), false);
 }
 
 void AASBossSpiderEgg::HatchEgg()
@@ -131,8 +171,10 @@ void AASBossSpiderEgg::ExpireEgg()
         return;
     }
 
+    GetWorldTimerManager().ClearTimer(LandingTimerHandle);
     GetWorldTimerManager().ClearTimer(HatchTimerHandle);
     GetWorldTimerManager().ClearTimer(BossMonitorTimerHandle);
+    SetDescentInvulnerable(false);
     ReleaseEggActiveTag();
     SetEggState(EASBossSpiderEggState::Expired);
     SetLifeSpan(0.2f);
@@ -177,6 +219,32 @@ void AASBossSpiderEgg::ReleaseEggActiveTag()
     }
 }
 
+void AASBossSpiderEgg::SetDescentInvulnerable(const bool bInvulnerable)
+{
+    if (bDescentInvulnerable == bInvulnerable)
+    {
+        return;
+    }
+
+    UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+    if (!ASC)
+    {
+        return;
+    }
+
+    bDescentInvulnerable = bInvulnerable;
+    if (bInvulnerable)
+    {
+        ASC->AddLooseGameplayTag(ASGameplayTags::State_Invulnerable, 1,
+            EGameplayTagReplicationState::TagAndCountToAll);
+    }
+    else
+    {
+        ASC->RemoveLooseGameplayTag(ASGameplayTags::State_Invulnerable, 1,
+            EGameplayTagReplicationState::TagAndCountToAll);
+    }
+}
+
 void AASBossSpiderEgg::SetEggState(const EASBossSpiderEggState NewState)
 {
     EggState = NewState;
@@ -191,5 +259,6 @@ void AASBossSpiderEgg::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(AASBossSpiderEgg, EggState);
+    DOREPLIFETIME(AASBossSpiderEgg, LandingEndServerTime);
     DOREPLIFETIME(AASBossSpiderEgg, HatchEndServerTime);
 }

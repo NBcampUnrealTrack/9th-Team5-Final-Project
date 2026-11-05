@@ -10,6 +10,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Core/Combat/ASCombatTargetSubsystem.h"
 #include "Engine/World.h"
+#include "GAS/Characters/Enemies/Abilities/ASBossSpiderPresentationTags.h"
 #include "GAS/Attributes/ASCombatAttributeSet.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -64,6 +65,7 @@ void UASBossSpiderFanAbility::ActivateAbility(const FGameplayAbilitySpecHandle H
     LockedTarget = Target;
     LockedFacing = InitialFacing;
     bHasActiveConfig = true;
+    bStrikeEffectApplied = false;
     LockedAttackOrigin = ResolveLockedAttackOrigin(*Monster);
     bCleanupComplete = false;
     StopAIMovement();
@@ -76,6 +78,7 @@ void UASBossSpiderFanAbility::ActivateAbility(const FGameplayAbilitySpecHandle H
     }
 
     SpawnFanIndicator();
+    StartWindupPresentation();
     OnFanWindupStarted();
     if (ActiveConfig.WindupTime <= 0.0f)
     {
@@ -93,6 +96,16 @@ void UASBossSpiderFanAbility::EndAbility(const FGameplayAbilitySpecHandle Handle
 {
     CleanupFan(bWasCancelled);
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
+}
+
+void UASBossSpiderFanAbility::StartWindupPresentation()
+{
+    PlayPresentationMontage(WindupMontageSection);
+}
+
+void UASBossSpiderFanAbility::StartActionPresentation()
+{
+    JumpPresentationMontageSection(ActionMontageSection);
 }
 
 bool UASBossSpiderFanAbility::ResolveFanConfig(FASBossSpiderFanConfig& OutConfig,
@@ -150,9 +163,54 @@ void UASBossSpiderFanAbility::BeginFanStrike()
 
     DestroyFanIndicator();
     UpdateFacing();
+    StartActionPresentation();
+
+    AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
+    if (!IsValid(Monster))
+    {
+        CancelFan();
+        return;
+    }
+
+    const float ActionDuration = FMath::Max(0.0f, ActiveConfig.ActionDuration);
+    const float HitDelay = FMath::Clamp(ActiveConfig.ActionHitDelay, 0.0f, ActionDuration);
+    if (HitDelay <= 0.0f)
+    {
+        ApplyFanStrikeEffect();
+    }
+    else
+    {
+        Monster->GetWorldTimerManager().SetTimer(ActionHitTimerHandle, this,
+            &ThisClass::ApplyFanStrikeEffect, HitDelay, false);
+    }
+
+    if (ActionDuration <= 0.0f)
+    {
+        BeginRecovery();
+        return;
+    }
+
+    Monster->GetWorldTimerManager().SetTimer(ActionDurationTimerHandle, this,
+        &ThisClass::BeginRecovery, ActionDuration, false);
+}
+
+void UASBossSpiderFanAbility::ApplyFanStrikeEffect()
+{
+    if (!IsActive() || !bHasActiveConfig || bStrikeEffectApplied)
+    {
+        return;
+    }
+
+    bStrikeEffectApplied = true;
     ApplyFanDamage();
+
+    FGameplayCueParameters CueParameters;
+    CueParameters.Location = LockedAttackOrigin;
+    CueParameters.Normal = LockedFacing;
+    CueParameters.RawMagnitude = ActiveConfig.SectorRadius;
+    ExecutePresentationCue(ASBossSpiderPresentationTags::Fan_Impact, CueParameters);
+
     OnFanStrike();
-    BeginRecovery();
 }
 
 void UASBossSpiderFanAbility::BeginRecovery()
@@ -203,6 +261,8 @@ void UASBossSpiderFanAbility::CleanupFan(const bool bWasCancelled)
         if (UWorld* World = Monster->GetWorld())
         {
             World->GetTimerManager().ClearTimer(WindupTimerHandle);
+            World->GetTimerManager().ClearTimer(ActionHitTimerHandle);
+            World->GetTimerManager().ClearTimer(ActionDurationTimerHandle);
             World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
             World->GetTimerManager().ClearTimer(FacingTimerHandle);
         }
@@ -214,6 +274,7 @@ void UASBossSpiderFanAbility::CleanupFan(const bool bWasCancelled)
     LockedTarget.Reset();
     LockedAttackOrigin = FVector::ZeroVector;
     bHasActiveConfig = false;
+    bStrikeEffectApplied = false;
     OnFanFinished(bWasCancelled);
 }
 

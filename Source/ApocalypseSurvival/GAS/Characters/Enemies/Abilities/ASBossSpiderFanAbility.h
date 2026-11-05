@@ -27,7 +27,10 @@ public:
         bool bReplicatedEndAbility, bool bWasCancelled) override;
 
 protected:
-    /** GA Blueprint Shell의 Montage, SFX, VFX만 이 Event에서 재생한다. */
+    virtual void StartWindupPresentation() override;
+    virtual void StartActionPresentation() override;
+
+    /** 마이그레이션 동안 유지하는 서버 전용 Legacy Event. 복제 연출은 Monster Presentation Helper를 사용한다. */
     UFUNCTION(BlueprintImplementableEvent, Category = "Boss Spider|Fan|Cosmetic")
     void OnFanWindupStarted();
 
@@ -37,11 +40,20 @@ protected:
     UFUNCTION(BlueprintImplementableEvent, Category = "Boss Spider|Fan|Cosmetic")
     void OnFanFinished(bool bWasCancelled);
 
+    /** Fan Montage가 시작할 Windup Section. 비어 있으면 Montage 처음부터 재생한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Fan|Presentation")
+    FName WindupMontageSection = TEXT("WindupStart");
+
+    /** Native 타격 시점에 전환할 Action Section. 없거나 비어 있으면 전환을 건너뛴다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Fan|Presentation")
+    FName ActionMontageSection = TEXT("Action");
+
 private:
     bool ResolveFanConfig(FASBossSpiderFanConfig& OutConfig, FASMonsterPatternEntry& OutPattern) const;
     bool IsTargetInActivationRange(const AASMonsterCharacter& Monster, const AActor& Target,
         const FASMonsterPatternEntry& Pattern) const;
     void BeginFanStrike();
+    void ApplyFanStrikeEffect();
     void BeginRecovery();
     void FinishFan();
     void CancelFan();
@@ -64,6 +76,8 @@ private:
     FVector LockedFacing = FVector::ForwardVector;
     FVector LockedAttackOrigin = FVector::ZeroVector;
     FTimerHandle WindupTimerHandle;
+    FTimerHandle ActionHitTimerHandle;
+    FTimerHandle ActionDurationTimerHandle;
     FTimerHandle RecoveryTimerHandle;
     FTimerHandle FacingTimerHandle;
     TEnumAsByte<EMovementMode> PreviousMovementMode = MOVE_Walking;
@@ -71,4 +85,5 @@ private:
     bool bHasActiveConfig = false;
     bool bMovementModeChanged = false;
     bool bCleanupComplete = true;
+    bool bStrikeEffectApplied = false;
 };

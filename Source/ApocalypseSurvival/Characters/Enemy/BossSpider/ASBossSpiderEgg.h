@@ -10,6 +10,7 @@ class AASBossSpiderEgg;
 UENUM(BlueprintType)
 enum class EASBossSpiderEggState : uint8
 {
+    Descending,
     Incubating,
     Hatched,
     Expired
@@ -35,6 +36,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Boss Spider|Egg")
     float GetHatchEndServerTime() const { return HatchEndServerTime; }
 
+    UFUNCTION(BlueprintPure, Category = "Boss Spider|Egg")
+    float GetLandingEndServerTime() const { return LandingEndServerTime; }
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -48,23 +52,33 @@ private:
     UFUNCTION()
     void OnRep_EggState();
 
+    UFUNCTION()
+    void OnRep_LandingEndServerTime();
+
+    void LandEgg();
     void HatchEgg();
     void MonitorBossLifetime();
     void ExpireEgg();
     bool SpawnEliteMinion();
     void ReleaseEggActiveTag();
+    void SetDescentInvulnerable(bool bInvulnerable);
     void SetEggState(EASBossSpiderEggState NewState);
 
     UPROPERTY(ReplicatedUsing = OnRep_EggState)
-    EASBossSpiderEggState EggState = EASBossSpiderEggState::Incubating;
+    EASBossSpiderEggState EggState = EASBossSpiderEggState::Descending;
+
+    UPROPERTY(ReplicatedUsing = OnRep_LandingEndServerTime)
+    float LandingEndServerTime = 0.0f;
 
     UPROPERTY(Replicated)
     float HatchEndServerTime = 0.0f;
 
     FASBossSpiderEggSummonConfig ActiveConfig;
     TWeakObjectPtr<AASMonsterCharacter> BossMonster;
+    FTimerHandle LandingTimerHandle;
     FTimerHandle HatchTimerHandle;
     FTimerHandle BossMonitorTimerHandle;
     bool bInitialized = false;
 	bool bEggActiveTagRegistered = false;
+    bool bDescentInvulnerable = false;
 };

@@ -23,6 +23,10 @@ public:
         bool bReplicatedEndAbility, bool bWasCancelled) override;
 
 protected:
+    virtual void StartWindupPresentation() override;
+    virtual void StartActionPresentation() override;
+    virtual void StartRecoveryPresentation() override;
+
     UFUNCTION(BlueprintImplementableEvent, Category = "Boss Spider|Egg Summon|Cosmetic")
     void OnEggSummonStarted();
 
@@ -32,6 +36,15 @@ protected:
     UFUNCTION(BlueprintImplementableEvent, Category = "Boss Spider|Egg Summon|Cosmetic")
     void OnEggSummonFinished(bool bWasCancelled);
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Egg Summon|Presentation")
+    FName WindupMontageSection = TEXT("Windup");
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Egg Summon|Presentation")
+    FName ActionMontageSection = TEXT("Action");
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Egg Summon|Presentation")
+    FName RecoveryMontageSection = TEXT("Recovery");
+
 private:
     bool ResolveEggSummonConfig(FASBossSpiderEggSummonConfig& OutConfig, FASMonsterPatternEntry& OutPattern) const;
     bool IsTargetInActivationRange(const AASMonsterCharacter& Monster, const AActor& Target,
@@ -39,6 +52,7 @@ private:
     int32 CalculateEggCount() const;
     bool FindEggSpawnLocation(const FVector& AnchorLocation, const TArray<FVector>& ExistingLocations,
         FVector& OutLocation) const;
+    void BeginEggSummonAction();
     void SpawnEggs();
     void BeginRecovery();
     void FinishEggSummon();
@@ -54,6 +68,8 @@ private:
     FVector LockedFacing = FVector::ForwardVector;
     FVector LockedTargetLocation = FVector::ZeroVector;
     FTimerHandle WindupTimerHandle;
+    FTimerHandle ActionSpawnTimerHandle;
+    FTimerHandle ActionDurationTimerHandle;
     FTimerHandle RecoveryTimerHandle;
     FTimerHandle FacingTimerHandle;
     TEnumAsByte<EMovementMode> PreviousMovementMode = MOVE_Walking;
@@ -61,4 +77,5 @@ private:
     bool bHasActiveConfig = false;
     bool bMovementModeChanged = false;
     bool bCleanupComplete = true;
+    bool bEggsSpawned = false;
 };

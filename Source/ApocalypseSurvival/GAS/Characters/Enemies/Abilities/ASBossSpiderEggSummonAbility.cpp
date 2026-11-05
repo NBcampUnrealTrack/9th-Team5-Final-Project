@@ -9,8 +9,10 @@
 #include "Components/CapsuleComponent.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+#include "GAS/Characters/Enemies/Abilities/ASBossSpiderPresentationTags.h"
 #include "GameFramework/Character.h"
 #include "GameplayAbilitySpec.h"
+#include "GameplayEffectTypes.h"
 #include "TimerManager.h"
 
 namespace
@@ -61,6 +63,7 @@ void UASBossSpiderEggSummonAbility::ActivateAbility(const FGameplayAbilitySpecHa
     LockedTargetLocation = Target->GetActorLocation();
     bHasActiveConfig = true;
     bCleanupComplete = false;
+    bEggsSpawned = false;
     StopAIMovement();
     ApplyLockedFacing();
     if (ActivePattern.FacingPolicy != EASMonsterPatternFacingPolicy::None)
@@ -68,14 +71,15 @@ void UASBossSpiderEggSummonAbility::ActivateAbility(const FGameplayAbilitySpecHa
         Monster->GetWorldTimerManager().SetTimer(FacingTimerHandle, this, &ThisClass::ApplyLockedFacing, 0.02f, true);
     }
 
+    StartWindupPresentation();
     OnEggSummonStarted();
     if (ActiveConfig.CastWindupTime <= 0.0f)
     {
-        SpawnEggs();
+        BeginEggSummonAction();
         return;
     }
 
-    Monster->GetWorldTimerManager().SetTimer(WindupTimerHandle, this, &ThisClass::SpawnEggs,
+    Monster->GetWorldTimerManager().SetTimer(WindupTimerHandle, this, &ThisClass::BeginEggSummonAction,
         ActiveConfig.CastWindupTime, false);
 }
 
@@ -85,6 +89,21 @@ void UASBossSpiderEggSummonAbility::EndAbility(const FGameplayAbilitySpecHandle 
 {
     CleanupEggSummon(bWasCancelled);
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
+}
+
+void UASBossSpiderEggSummonAbility::StartWindupPresentation()
+{
+    PlayPresentationMontage(WindupMontageSection);
+}
+
+void UASBossSpiderEggSummonAbility::StartActionPresentation()
+{
+    JumpPresentationMontageSection(ActionMontageSection);
+}
+
+void UASBossSpiderEggSummonAbility::StartRecoveryPresentation()
+{
+    JumpPresentationMontageSection(RecoveryMontageSection);
 }
 
 bool UASBossSpiderEggSummonAbility::ResolveEggSummonConfig(FASBossSpiderEggSummonConfig& OutConfig,
@@ -198,13 +217,52 @@ bool UASBossSpiderEggSummonAbility::FindEggSpawnLocation(const FVector& AnchorLo
     return false;
 }
 
-void UASBossSpiderEggSummonAbility::SpawnEggs()
+void UASBossSpiderEggSummonAbility::BeginEggSummonAction()
 {
     if (!IsActive() || !bHasActiveConfig)
     {
         CancelEggSummon();
         return;
     }
+
+    AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
+    if (!IsValid(Monster))
+    {
+        CancelEggSummon();
+        return;
+    }
+
+    StartActionPresentation();
+    const float ActionDuration = FMath::Max(0.0f, ActiveConfig.ActionDuration);
+    const float SpawnDelay = FMath::Clamp(ActiveConfig.ActionSpawnDelay, 0.0f, ActionDuration);
+    if (SpawnDelay <= 0.0f)
+    {
+        SpawnEggs();
+    }
+    else
+    {
+        Monster->GetWorldTimerManager().SetTimer(ActionSpawnTimerHandle, this,
+            &ThisClass::SpawnEggs, SpawnDelay, false);
+    }
+
+    if (ActionDuration <= 0.0f)
+    {
+        BeginRecovery();
+        return;
+    }
+
+    Monster->GetWorldTimerManager().SetTimer(ActionDurationTimerHandle, this,
+        &ThisClass::BeginRecovery, ActionDuration, false);
+}
+
+void UASBossSpiderEggSummonAbility::SpawnEggs()
+{
+    if (!IsActive() || !bHasActiveConfig || bEggsSpawned)
+    {
+        return;
+    }
+
+    bEggsSpawned = true;
 
     AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
     UWorld* World = Monster ? Monster->GetWorld() : nullptr;
@@ -243,7 +301,11 @@ void UASBossSpiderEggSummonAbility::SpawnEggs()
     }
 
     OnEggsSpawned(SpawnedEggCount);
-    BeginRecovery();
+    FGameplayCueParameters CueParameters;
+    CueParameters.Location = Monster->GetActorLocation();
+    CueParameters.Normal = LockedFacing;
+    CueParameters.RawMagnitude = static_cast<float>(SpawnedEggCount);
+    ExecutePresentationCue(ASBossSpiderPresentationTags::Egg_Spawn, CueParameters);
 }
 
 void UASBossSpiderEggSummonAbility::BeginRecovery()
@@ -254,6 +316,8 @@ void UASBossSpiderEggSummonAbility::BeginRecovery()
         CancelEggSummon();
         return;
     }
+
+    StartRecoveryPresentation();
 
     if (ActiveConfig.RecoveryTime <= 0.0f)
     {
@@ -294,6 +358,8 @@ void UASBossSpiderEggSummonAbility::CleanupEggSummon(const bool bWasCancelled)
         if (UWorld* World = Monster->GetWorld())
         {
             World->GetTimerManager().ClearTimer(WindupTimerHandle);
+            World->GetTimerManager().ClearTimer(ActionSpawnTimerHandle);
+            World->GetTimerManager().ClearTimer(ActionDurationTimerHandle);
             World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
             World->GetTimerManager().ClearTimer(FacingTimerHandle);
         }
@@ -302,6 +368,7 @@ void UASBossSpiderEggSummonAbility::CleanupEggSummon(const bool bWasCancelled)
     RestoreCharacterMovement();
     RestoreAIFacing();
     bHasActiveConfig = false;
+    bEggsSpawned = false;
     OnEggSummonFinished(bWasCancelled);
 }
 

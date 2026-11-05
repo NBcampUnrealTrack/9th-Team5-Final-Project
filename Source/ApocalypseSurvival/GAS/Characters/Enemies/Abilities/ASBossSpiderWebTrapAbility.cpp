@@ -1,6 +1,7 @@
 #include "GAS/Characters/Enemies/Abilities/ASBossSpiderWebTrapAbility.h"
 
 #include "AIController.h"
+#include "Characters/Enemy/ASMonsterAttackIndicatorActor.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Characters/Enemy/BossSpider/ASBossSpiderWebTrap.h"
 #include "Characters/Enemy/Components/ASMonsterTargetingComponent.h"
@@ -9,8 +10,10 @@
 #include "Components/CapsuleComponent.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+#include "GAS/Characters/Enemies/Abilities/ASBossSpiderPresentationTags.h"
 #include "GameFramework/Character.h"
 #include "GameplayAbilitySpec.h"
+#include "GameplayEffectTypes.h"
 #include "TimerManager.h"
 
 namespace
@@ -41,7 +44,7 @@ void UASBossSpiderWebTrapAbility::ActivateAbility(const FGameplayAbilitySpecHand
     FASMonsterPatternEntry PatternSnapshot;
     if (!IsValid(Monster) || !IsValid(Target)
         || !ResolveWebTrapConfig(ConfigSnapshot, PatternSnapshot)
-        || !ConfigSnapshot.TrapActorClass || !ConfigSnapshot.WebBoundEffectClass
+        || !ConfigSnapshot.TrapActorClass || !ConfigSnapshot.IndicatorClass || !ConfigSnapshot.WebBoundEffectClass
         || !IsTargetInActivationRange(*Monster, *Target, PatternSnapshot))
     {
         FinishComboStep(true);
@@ -60,6 +63,11 @@ void UASBossSpiderWebTrapAbility::ActivateAbility(const FGameplayAbilitySpecHand
     LockedFacing = InitialFacing;
     bHasActiveConfig = true;
     bCleanupComplete = false;
+    bProjectilesLaunched = false;
+    bProjectileFlightComplete = false;
+    bRecoveryComplete = false;
+    LockedTrapLocations.Reset();
+    ActiveIndicators.Reset();
     StopAIMovement();
     ApplyLockedFacing();
     if (ActivePattern.FacingPolicy != EASMonsterPatternFacingPolicy::None)
@@ -67,14 +75,15 @@ void UASBossSpiderWebTrapAbility::ActivateAbility(const FGameplayAbilitySpecHand
         Monster->GetWorldTimerManager().SetTimer(FacingTimerHandle, this, &ThisClass::ApplyLockedFacing, 0.02f, true);
     }
 
+    StartWindupPresentation();
     OnWebTrapCastStarted();
     if (ActiveConfig.CastWindupTime <= 0.0f)
     {
-        SpawnWebTraps();
+        LaunchWebProjectiles();
         return;
     }
 
-    Monster->GetWorldTimerManager().SetTimer(WindupTimerHandle, this, &ThisClass::SpawnWebTraps,
+    Monster->GetWorldTimerManager().SetTimer(WindupTimerHandle, this, &ThisClass::LaunchWebProjectiles,
         ActiveConfig.CastWindupTime, false);
 }
 
@@ -84,6 +93,11 @@ void UASBossSpiderWebTrapAbility::EndAbility(const FGameplayAbilitySpecHandle Ha
 {
     CleanupWebTrap(bWasCancelled);
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
+}
+
+void UASBossSpiderWebTrapAbility::StartWindupPresentation()
+{
+    PlayPresentationMontage();
 }
 
 bool UASBossSpiderWebTrapAbility::ResolveWebTrapConfig(FASBossSpiderWebTrapConfig& OutConfig,
@@ -127,20 +141,53 @@ bool UASBossSpiderWebTrapAbility::IsTargetInActivationRange(const AASMonsterChar
     return SurfaceDistance >= MinRange && SurfaceDistance <= MaxRange;
 }
 
-void UASBossSpiderWebTrapAbility::SpawnWebTraps()
+void UASBossSpiderWebTrapAbility::LaunchWebProjectiles()
 {
-    if (!IsActive() || !bHasActiveConfig)
+    if (!IsActive() || !bHasActiveConfig || bProjectilesLaunched)
+    {
+        return;
+    }
+
+    AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
+    if (!IsValid(Monster) || !LockTargetLocations())
     {
         CancelWebTrap();
         return;
     }
 
+    bProjectilesLaunched = true;
+    SpawnFlightIndicators();
+
+    FGameplayCueParameters CueParameters;
+    CueParameters.Location = Monster->GetActorLocation();
+    CueParameters.Normal = FVector::UpVector;
+    CueParameters.RawMagnitude = static_cast<float>(LockedTrapLocations.Num());
+    ExecutePresentationCue(ASBossSpiderPresentationTags::WebTrap_Cast, CueParameters);
+
+    const float FlightTime = FMath::Max(0.0f, ActiveConfig.ProjectileFlightTime);
+    if (FlightTime <= 0.0f)
+    {
+        SpawnWebTraps();
+    }
+    else
+    {
+        Monster->GetWorldTimerManager().SetTimer(ProjectileFlightTimerHandle, this,
+            &ThisClass::SpawnWebTraps, FlightTime, false);
+    }
+
+    if (IsActive())
+    {
+        BeginRecovery();
+    }
+}
+
+bool UASBossSpiderWebTrapAbility::LockTargetLocations()
+{
     AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
     UWorld* World = Monster ? Monster->GetWorld() : nullptr;
     if (!IsValid(Monster) || !World)
     {
-        CancelWebTrap();
-        return;
+        return false;
     }
 
     TArray<AASPlayerCharacter*> Players;
@@ -158,16 +205,111 @@ void UASBossSpiderWebTrapAbility::SpawnWebTraps()
             < FVector::DistSquared2D(Monster->GetActorLocation(), Right.GetActorLocation());
     });
 
-    int32 SpawnedTrapCount = 0;
-    const int32 MaxTrapCount = FMath::Max(1, ActiveConfig.MaxTrapCount);
+    LockedTrapLocations.Reset();
+    const int32 MaxTrapCount = FMath::Clamp(ActiveConfig.MaxTrapCount, 1, 3);
     for (AASPlayerCharacter* Player : Players)
     {
-        if (SpawnedTrapCount >= MaxTrapCount)
+        if (LockedTrapLocations.Num() >= MaxTrapCount)
         {
             break;
         }
 
-        const FTransform SpawnTransform(FRotator::ZeroRotator, Player->GetActorLocation());
+        FVector GroundLocation;
+        if (ResolveGroundLocation(*Player, GroundLocation))
+        {
+            LockedTrapLocations.Add(GroundLocation);
+        }
+    }
+
+    return !LockedTrapLocations.IsEmpty();
+}
+
+bool UASBossSpiderWebTrapAbility::ResolveGroundLocation(const AASPlayerCharacter& Player,
+    FVector& OutLocation) const
+{
+    const AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
+    UWorld* World = Monster ? Monster->GetWorld() : nullptr;
+    if (!IsValid(Monster) || !World)
+    {
+        return false;
+    }
+
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BossSpiderWebTrapGround), false, Monster);
+    QueryParams.AddIgnoredActor(&Player);
+    const FVector PlayerLocation = Player.GetActorLocation();
+    FHitResult FloorHit;
+    if (!World->LineTraceSingleByChannel(FloorHit, PlayerLocation + FVector::UpVector * 1200.0f,
+        PlayerLocation - FVector::UpVector * 2400.0f, ECC_WorldStatic, QueryParams)
+        || FloorHit.ImpactNormal.Z < 0.5f)
+    {
+        return false;
+    }
+
+    OutLocation = FloorHit.ImpactPoint;
+    return true;
+}
+
+void UASBossSpiderWebTrapAbility::SpawnFlightIndicators()
+{
+    AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
+    UWorld* World = Monster ? Monster->GetWorld() : nullptr;
+    if (!IsValid(Monster) || !World || !ActiveConfig.IndicatorClass)
+    {
+        return;
+    }
+
+    ActiveIndicators.Reset();
+    for (const FVector& Location : LockedTrapLocations)
+    {
+        const FTransform SpawnTransform(FRotator::ZeroRotator, Location);
+        AASMonsterAttackIndicatorActor* Indicator = World->SpawnActorDeferred<AASMonsterAttackIndicatorActor>(
+            ActiveConfig.IndicatorClass, SpawnTransform, Monster, nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        if (!Indicator)
+        {
+            continue;
+        }
+
+        Indicator->InitializeIndicator(EASMonsterAttackIndicatorShape::Circle, ActiveConfig.TrapRadius,
+            0.0f, 0.0f, ActiveConfig.ProjectileFlightTime);
+        Indicator->FinishSpawning(SpawnTransform);
+        ActiveIndicators.Add(Indicator);
+    }
+}
+
+void UASBossSpiderWebTrapAbility::DestroyFlightIndicators()
+{
+    for (const TWeakObjectPtr<AASMonsterAttackIndicatorActor>& IndicatorPtr : ActiveIndicators)
+    {
+        if (AASMonsterAttackIndicatorActor* Indicator = IndicatorPtr.Get())
+        {
+            Indicator->Destroy();
+        }
+    }
+    ActiveIndicators.Reset();
+}
+
+void UASBossSpiderWebTrapAbility::SpawnWebTraps()
+{
+    if (!IsActive() || !bHasActiveConfig)
+    {
+        CancelWebTrap();
+        return;
+    }
+
+    AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
+    UWorld* World = Monster ? Monster->GetWorld() : nullptr;
+    if (!IsValid(Monster) || !World)
+    {
+        CancelWebTrap();
+        return;
+    }
+
+    DestroyFlightIndicators();
+    int32 SpawnedTrapCount = 0;
+    for (const FVector& TrapLocation : LockedTrapLocations)
+    {
+        const FTransform SpawnTransform(FRotator::ZeroRotator, TrapLocation);
         AASBossSpiderWebTrap* Trap = World->SpawnActorDeferred<AASBossSpiderWebTrap>(ActiveConfig.TrapActorClass,
             SpawnTransform, Monster, Monster, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
         if (!Trap)
@@ -177,11 +319,18 @@ void UASBossSpiderWebTrapAbility::SpawnWebTraps()
 
         Trap->InitializeTrap(Monster, ActiveConfig);
         Trap->FinishSpawning(SpawnTransform);
+
+        FGameplayCueParameters CueParameters;
+        CueParameters.Location = TrapLocation;
+        CueParameters.Normal = FVector::UpVector;
+        CueParameters.RawMagnitude = ActiveConfig.TrapRadius;
+        ExecutePresentationCue(ASBossSpiderPresentationTags::WebTrap_Spawn, CueParameters);
         ++SpawnedTrapCount;
     }
 
     OnWebTrapsSpawned(SpawnedTrapCount);
-    BeginRecovery();
+    bProjectileFlightComplete = true;
+    TryFinishWebTrap();
 }
 
 void UASBossSpiderWebTrapAbility::BeginRecovery()
@@ -195,12 +344,31 @@ void UASBossSpiderWebTrapAbility::BeginRecovery()
 
     if (ActiveConfig.RecoveryTime <= 0.0f)
     {
-        FinishWebTrap();
+        CompleteRecovery();
         return;
     }
 
-    Monster->GetWorldTimerManager().SetTimer(RecoveryTimerHandle, this, &ThisClass::FinishWebTrap,
+    Monster->GetWorldTimerManager().SetTimer(RecoveryTimerHandle, this, &ThisClass::CompleteRecovery,
         ActiveConfig.RecoveryTime, false);
+}
+
+void UASBossSpiderWebTrapAbility::CompleteRecovery()
+{
+    if (!IsActive())
+    {
+        return;
+    }
+
+    bRecoveryComplete = true;
+    TryFinishWebTrap();
+}
+
+void UASBossSpiderWebTrapAbility::TryFinishWebTrap()
+{
+    if (IsActive() && bProjectileFlightComplete && bRecoveryComplete)
+    {
+        FinishWebTrap();
+    }
 }
 
 void UASBossSpiderWebTrapAbility::FinishWebTrap()
@@ -232,14 +400,20 @@ void UASBossSpiderWebTrapAbility::CleanupWebTrap(const bool bWasCancelled)
         if (UWorld* World = Monster->GetWorld())
         {
             World->GetTimerManager().ClearTimer(WindupTimerHandle);
+            World->GetTimerManager().ClearTimer(ProjectileFlightTimerHandle);
             World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
             World->GetTimerManager().ClearTimer(FacingTimerHandle);
         }
     }
 
+    DestroyFlightIndicators();
+    LockedTrapLocations.Reset();
     RestoreCharacterMovement();
     RestoreAIFacing();
     bHasActiveConfig = false;
+    bProjectilesLaunched = false;
+    bProjectileFlightComplete = false;
+    bRecoveryComplete = false;
     OnWebTrapCastFinished(bWasCancelled);
 }
 

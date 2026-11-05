@@ -77,9 +77,13 @@ struct FASBossSpiderChargeConfig : public FASMonsterPatternRuntimeConfig
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Charge", meta = (ClampMin = "0.0", Units = "s"))
     float WindupTime = 0.6f;
 
+    /** Action Montage의 Launch 시작 뒤 실제 C++ 이동과 타격 판정을 시작하기까지의 지연이다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Charge", meta = (ClampMin = "0.0", Units = "s"))
+    float MovementStartDelay = 0.27f;
+
     /** 이동이 끝난 뒤 방향을 고정한 채 유지하는 Ability 내부 후딜. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Charge", meta = (ClampMin = "0.0", Units = "s"))
-    float RecoveryTime = 0.35f;
+    float RecoveryTime = 1.2f;
 
     /** 타깃과 가까워도 유지할 최소 실제 이동 거리. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Charge", meta = (ClampMin = "0.0", Units = "cm"))
@@ -174,11 +178,19 @@ struct FASBossSpiderFanConfig : public FASMonsterPatternRuntimeConfig
 
     /** 부채꼴 예고와 방향 잠금 시간이다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Fan", meta = (ClampMin = "0.0", Units = "s"))
-    float WindupTime = 0.65f;
+    float WindupTime = 1.8f;
+
+    /** Action Section 시작 뒤 실제 Cone 피해와 Impact Cue를 실행하기까지의 지연이다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Fan", meta = (ClampMin = "0.0", Units = "s"))
+    float ActionHitDelay = 0.15f;
+
+    /** Action Section 전체 길이. 이 시간이 끝난 뒤 Native Recovery 단계로 전환한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Fan", meta = (ClampMin = "0.0", Units = "s"))
+    float ActionDuration = 0.9f;
 
     /** 타격 뒤 방향을 유지하는 Ability 내부 후딜이다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Fan", meta = (ClampMin = "0.0", Units = "s"))
-    float RecoveryTime = 0.25f;
+    float RecoveryTime = 0.55f;
 
     /** 실제 Cone 피해 판정과 Sector Indicator의 반경이다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Fan", meta = (ClampMin = "1.0", Units = "cm"))
@@ -222,9 +234,15 @@ struct FASBossSpiderWebTrapConfig : public FASMonsterPatternRuntimeConfig
 {
     GENERATED_BODY()
 
+    /** Tail Montage 재생 시작부터 거미줄을 위로 발사하는 프레임까지의 시간이다. Indicator 시간은 아니다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap", meta = (ClampMin = "0.0", Units = "s"))
-    float CastWindupTime = 0.0f;
+    float CastWindupTime = 0.9f;
 
+    /** 발사 시 잠근 위치에 거미줄이 도착하기까지의 시간이며 Indicator 지속시간과 같다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap", meta = (ClampMin = "0.05", Units = "s"))
+    float ProjectileFlightTime = 0.9f;
+
+    /** 발사 뒤 보스의 동작 후딜이다. 발사체 비행과 동시에 진행한다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap", meta = (ClampMin = "0.0", Units = "s"))
     float RecoveryTime = 0.25f;
 
@@ -251,8 +269,8 @@ struct FASBossSpiderWebTrapConfig : public FASMonsterPatternRuntimeConfig
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap|Bound", meta = (ClampMin = "1"))
     int32 RequiredEscapeInputs = 5;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap|Spawn", meta = (ClampMin = "1", ClampMax = "4"))
-    int32 MaxTrapCount = 4;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap|Spawn", meta = (ClampMin = "1", ClampMax = "3"))
+    int32 MaxTrapCount = 3;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap|Bound")
     TSubclassOf<UGameplayEffect> WebBoundEffectClass;
@@ -260,6 +278,10 @@ struct FASBossSpiderWebTrapConfig : public FASMonsterPatternRuntimeConfig
     /** 복제 및 서버 Gameplay를 담당하는 Native Trap Actor 또는 그 BP Cosmetic 자식이다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap|Spawn")
     TSubclassOf<AASBossSpiderWebTrap> TrapActorClass;
+
+    /** 발사 시 잠근 각 위치에 비행 시간 동안 표시할 원형 Indicator다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Web Trap|Spawn")
+    TSubclassOf<AASMonsterAttackIndicatorActor> IndicatorClass;
 };
 
 /** 보스 스파이더의 알 생성·부화·엘리트 소환 규칙의 단일 원본이다. */
@@ -269,10 +291,18 @@ struct FASBossSpiderEggSummonConfig : public FASMonsterPatternRuntimeConfig
     GENERATED_BODY()
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon", meta = (ClampMin = "0.0", Units = "s"))
-    float CastWindupTime = 0.0f;
+    float CastWindupTime = 0.8f;
+
+    /** Action Section 시작 뒤 꼬리 충격 Cue와 알 하강을 시작하기까지의 지연이다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon", meta = (ClampMin = "0.0", Units = "s"))
+    float ActionSpawnDelay = 0.133f;
+
+    /** Action Section 전체 길이. 끝나면 Recovery Section으로 전환한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon", meta = (ClampMin = "0.0", Units = "s"))
+    float ActionDuration = 0.533f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon", meta = (ClampMin = "0.0", Units = "s"))
-    float RecoveryTime = 0.25f;
+    float RecoveryTime = 0.8f;
 
     /** 한 명의 플레이어를 상대로 만드는 기본 알 수다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon|Count", meta = (ClampMin = "1", ClampMax = "6"))
@@ -297,6 +327,10 @@ struct FASBossSpiderEggSummonConfig : public FASMonsterPatternRuntimeConfig
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon|Hatch", meta = (ClampMin = "0.05", Units = "s"))
     float HatchDelay = 4.0f;
+
+    /** 생성된 알이 천장에서 지면으로 내려오는 시간. 착지 전에는 피해를 받지 않는다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon|Hatch", meta = (ClampMin = "0.0", Units = "s"))
+    float EggDescentDuration = 0.8f;
 
     /** 부화 VFX/SFX를 보여 준 뒤 Native Egg Actor를 제거하기까지의 시간이다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Egg Summon|Hatch", meta = (ClampMin = "0.0", Units = "s"))

@@ -87,6 +87,11 @@ EDataValidationResult UASBossSpiderPatternSet::IsDataValid(FDataValidationContex
                 AddError(FString::Printf(TEXT("WebTrap pattern '%s' requires TrapActorClass."),
                     *Entry.PatternId.ToString()));
             }
+            if (!WebTrapConfig->IndicatorClass)
+            {
+                AddError(FString::Printf(TEXT("WebTrap pattern '%s' requires IndicatorClass."),
+                    *Entry.PatternId.ToString()));
+            }
             if (!WebTrapConfig->WebBoundEffectClass)
             {
                 AddError(FString::Printf(TEXT("WebTrap pattern '%s' requires WebBoundEffectClass."),
@@ -98,9 +103,15 @@ EDataValidationResult UASBossSpiderPatternSet::IsDataValid(FDataValidationContex
                 AddError(FString::Printf(TEXT("WebTrap pattern '%s' has BoundDuration shorter than its escape window plus grace."),
                     *Entry.PatternId.ToString()));
             }
-            if (WebTrapConfig->MaxTrapCount < 1 || WebTrapConfig->MaxTrapCount > 4)
+            if (WebTrapConfig->MaxTrapCount < 1 || WebTrapConfig->MaxTrapCount > 3)
             {
-                AddError(FString::Printf(TEXT("WebTrap pattern '%s' MaxTrapCount must be in [1, 4]."),
+                AddError(FString::Printf(TEXT("WebTrap pattern '%s' MaxTrapCount must be in [1, 3]."),
+                    *Entry.PatternId.ToString()));
+            }
+            if (WebTrapConfig->CastWindupTime <= 0.0f
+                || WebTrapConfig->ProjectileFlightTime <= 0.0f || WebTrapConfig->RecoveryTime <= 0.0f)
+            {
+                AddError(FString::Printf(TEXT("WebTrap pattern '%s' requires positive Windup, Flight, and Recovery durations."),
                     *Entry.PatternId.ToString()));
             }
         }
@@ -132,6 +143,17 @@ EDataValidationResult UASBossSpiderPatternSet::IsDataValid(FDataValidationContex
             if (EggConfig->MinEggSpacing <= 0.0f || EggConfig->HatchDelay <= 0.0f)
             {
                 AddError(FString::Printf(TEXT("EggSummon pattern '%s' requires positive MinEggSpacing and HatchDelay."),
+                    *Entry.PatternId.ToString()));
+            }
+            if (EggConfig->CastWindupTime <= 0.0f || EggConfig->ActionDuration <= 0.0f
+                || EggConfig->RecoveryTime <= 0.0f || EggConfig->EggDescentDuration <= 0.0f)
+            {
+                AddError(FString::Printf(TEXT("EggSummon pattern '%s' requires positive Windup, Action, Recovery, and EggDescent durations."),
+                    *Entry.PatternId.ToString()));
+            }
+            if (EggConfig->ActionSpawnDelay < 0.0f || EggConfig->ActionSpawnDelay > EggConfig->ActionDuration)
+            {
+                AddError(FString::Printf(TEXT("EggSummon pattern '%s' ActionSpawnDelay must be within ActionDuration."),
                     *Entry.PatternId.ToString()));
             }
         }

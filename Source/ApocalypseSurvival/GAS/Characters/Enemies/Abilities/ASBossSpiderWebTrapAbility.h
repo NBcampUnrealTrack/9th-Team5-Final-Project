@@ -6,7 +6,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ASBossSpiderWebTrapAbility.generated.h"
 
+class AASMonsterAttackIndicatorActor;
 class AASMonsterCharacter;
+class AASPlayerCharacter;
 
 /** 보스가 살아 있는 플레이어 위치에 C++ 복제 WebTrap을 생성하는 Director 전용 패턴이다. */
 UCLASS(Abstract, Blueprintable)
@@ -23,6 +25,8 @@ public:
         bool bReplicatedEndAbility, bool bWasCancelled) override;
 
 protected:
+    virtual void StartWindupPresentation() override;
+
     UFUNCTION(BlueprintImplementableEvent, Category = "Boss Spider|Web Trap|Cosmetic")
     void OnWebTrapCastStarted();
 
@@ -36,8 +40,15 @@ private:
     bool ResolveWebTrapConfig(FASBossSpiderWebTrapConfig& OutConfig, FASMonsterPatternEntry& OutPattern) const;
     bool IsTargetInActivationRange(const AASMonsterCharacter& Monster, const AActor& Target,
         const FASMonsterPatternEntry& Pattern) const;
+    void LaunchWebProjectiles();
+    bool LockTargetLocations();
+    bool ResolveGroundLocation(const AASPlayerCharacter& Player, FVector& OutLocation) const;
+    void SpawnFlightIndicators();
+    void DestroyFlightIndicators();
     void SpawnWebTraps();
     void BeginRecovery();
+    void CompleteRecovery();
+    void TryFinishWebTrap();
     void FinishWebTrap();
     void CancelWebTrap();
     void CleanupWebTrap(bool bWasCancelled);
@@ -49,7 +60,10 @@ private:
     FASBossSpiderWebTrapConfig ActiveConfig;
     FASMonsterPatternEntry ActivePattern;
     FVector LockedFacing = FVector::ForwardVector;
+    TArray<FVector> LockedTrapLocations;
+    TArray<TWeakObjectPtr<AASMonsterAttackIndicatorActor>> ActiveIndicators;
     FTimerHandle WindupTimerHandle;
+    FTimerHandle ProjectileFlightTimerHandle;
     FTimerHandle RecoveryTimerHandle;
     FTimerHandle FacingTimerHandle;
     TEnumAsByte<EMovementMode> PreviousMovementMode = MOVE_Walking;
@@ -57,4 +71,7 @@ private:
     bool bHasActiveConfig = false;
     bool bMovementModeChanged = false;
     bool bCleanupComplete = true;
+    bool bProjectilesLaunched = false;
+    bool bProjectileFlightComplete = false;
+    bool bRecoveryComplete = false;
 };

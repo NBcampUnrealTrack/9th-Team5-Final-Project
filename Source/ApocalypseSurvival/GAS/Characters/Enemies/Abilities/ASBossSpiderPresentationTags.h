@@ -1,0 +1,32 @@
+#pragma once
+
+#include "NativeGameplayTags.h"
+
+/** Boss Spider Native Ability가 복제 연출을 요청할 때 사용하는 GameplayCue 태그. */
+namespace ASBossSpiderPresentationTags
+{
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Fan_Impact);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Charge_Move);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Charge_Impact);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Charge_Stop);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(CaptureCharge_Impact);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(CaptureCharge_WebBreak);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(WebTrap_Cast);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(WebTrap_Spawn);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(WebTrap_Capture);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(WebTrap_Break);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(WebBound);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Egg_Spawn);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Egg_Crack);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Egg_Hatch);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Egg_Destroy);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(CeilingSlam_Rise);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(CeilingSlam_Fall);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(CeilingSlam_Land);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(CeilingSlam_Shockwave);
+}

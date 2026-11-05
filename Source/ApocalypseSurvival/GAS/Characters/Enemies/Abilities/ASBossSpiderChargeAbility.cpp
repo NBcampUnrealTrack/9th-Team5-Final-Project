@@ -23,6 +23,9 @@ UASBossSpiderChargeAbility::UASBossSpiderChargeAbility()
 {
     bStopMovementWhileCasting = false;
     bUseTargetDistance = false;
+    WindupPresentationMontage.StartSection = TEXT("WindupStart");
+    ActionPresentationMontage.StartSection = TEXT("Launch");
+    RecoveryPresentationMontage.StartSection = TEXT("Recovery");
 }
 
 void UASBossSpiderChargeAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -74,6 +77,7 @@ void UASBossSpiderChargeAbility::ActivateAbility(const FGameplayAbilitySpecHandl
         FMath::Max(0.005f, Config->StepInterval), true);
 
     SpawnChargeIndicator(*Config, *Monster);
+    StartWindupPresentation();
     OnChargeWindupStarted();
     if (Config->WindupTime <= 0.0f)
     {
@@ -91,6 +95,27 @@ void UASBossSpiderChargeAbility::EndAbility(const FGameplayAbilitySpecHandle Han
 {
     CleanupCharge(bWasCancelled);
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicatedEndAbility, bWasCancelled);
+}
+
+void UASBossSpiderChargeAbility::StartWindupPresentation()
+{
+    PlayPresentationMontage(WindupPresentationMontage);
+}
+
+void UASBossSpiderChargeAbility::StartActionPresentation()
+{
+    if (!PlayPresentationMontage(ActionPresentationMontage))
+    {
+        StopPresentationMontage();
+    }
+}
+
+void UASBossSpiderChargeAbility::StartRecoveryPresentation()
+{
+    if (!PlayPresentationMontage(RecoveryPresentationMontage))
+    {
+        StopPresentationMontage();
+    }
 }
 
 AActor* UASBossSpiderChargeAbility::ResolveChargeTarget() const
@@ -155,6 +180,33 @@ void UASBossSpiderChargeAbility::BeginChargeMovement()
     SuspendOverlapGuard(*Config, *Monster);
     DestroyChargeIndicator();
     Monster->ForceNetUpdate();
+    StartActionPresentation();
+
+    if (Config->MovementStartDelay <= 0.0f)
+    {
+        StartChargeMovement();
+        return;
+    }
+
+    Monster->GetWorldTimerManager().SetTimer(MovementStartDelayTimerHandle, this,
+        &UASBossSpiderChargeAbility::StartChargeMovement, Config->MovementStartDelay, false);
+}
+
+void UASBossSpiderChargeAbility::StartChargeMovement()
+{
+    if (!IsActive())
+    {
+        return;
+    }
+
+    AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(GetOwnerCharacter());
+    const FASBossSpiderChargeConfig* Config = bHasActiveConfig ? &ActiveConfig : nullptr;
+    if (!IsValid(Monster) || !Config || !IsChargeTargetValid(LockedTarget.Get()))
+    {
+        CancelCharge();
+        return;
+    }
+
     OnChargeMovementStarted();
     Monster->GetWorldTimerManager().SetTimer(MovementTimerHandle, this,
         &UASBossSpiderChargeAbility::TickChargeMovement, FMath::Max(0.005f, Config->StepInterval), true);
@@ -214,6 +266,7 @@ void UASBossSpiderChargeAbility::BeginRecovery()
     Monster->GetWorldTimerManager().ClearTimer(MovementTimeoutTimerHandle);
     ResolveEndOverlap(*Config, *Monster);
     Monster->ForceNetUpdate();
+    StartRecoveryPresentation();
     OnChargeRecoveryStarted();
     if (Config->RecoveryTime <= 0.0f)
     {
@@ -256,6 +309,7 @@ void UASBossSpiderChargeAbility::CleanupCharge(const bool bWasCancelled)
         if (World)
         {
             World->GetTimerManager().ClearTimer(WindupTimerHandle);
+            World->GetTimerManager().ClearTimer(MovementStartDelayTimerHandle);
             World->GetTimerManager().ClearTimer(MovementTimerHandle);
             World->GetTimerManager().ClearTimer(MovementTimeoutTimerHandle);
             World->GetTimerManager().ClearTimer(RecoveryTimerHandle);

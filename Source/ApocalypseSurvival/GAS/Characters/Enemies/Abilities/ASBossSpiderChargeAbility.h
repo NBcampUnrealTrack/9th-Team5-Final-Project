@@ -42,8 +42,13 @@ protected:
     /** 현재 AbilitySpec의 PatternId로 PatternSet RuntimeConfig를 찾아 실행 중 쓸 스냅샷을 만든다. */
     virtual bool ResolveChargeConfig(FASBossSpiderChargeConfig& OutConfig) const;
 
+    virtual void StartWindupPresentation() override;
+    virtual void StartActionPresentation() override;
+    virtual void StartRecoveryPresentation() override;
+
 private:
     void BeginChargeMovement();
+    void StartChargeMovement();
     void TickChargeMovement();
     void BeginRecovery();
     void FinishCharge();
@@ -81,6 +86,7 @@ private:
     TWeakObjectPtr<AASMonsterAttackIndicatorActor> ActiveIndicator;
 
     FTimerHandle WindupTimerHandle;
+    FTimerHandle MovementStartDelayTimerHandle;
     FTimerHandle MovementTimerHandle;
     FTimerHandle MovementTimeoutTimerHandle;
     FTimerHandle RecoveryTimerHandle;
@@ -95,6 +101,18 @@ private:
     bool bOverlapGuardTickWasEnabled = false;
 
 protected:
+    /** Indicator가 차는 동안 WindupStart와 WindupLoop를 재생한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Charge|Presentation")
+    FASMonsterPresentationMontage WindupPresentationMontage;
+
+    /** Indicator 완료 시 Launch로 시작하고, Montage 자산에서 Run Segment의 배율과 Loop를 구성한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Charge|Presentation")
+    FASMonsterPresentationMontage ActionPresentationMontage;
+
+    /** 실제 C++ 이동이 끝난 뒤 급정지 Recovery를 재생한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss Spider|Charge|Presentation")
+    FASMonsterPresentationMontage RecoveryPresentationMontage;
+
     /** GA Blueprint Shell은 Cosmetic 작업만 수행한다. 반환값이나 Timer 흐름에는 관여하지 않는다. */
     UFUNCTION(BlueprintImplementableEvent, Category = "Boss Spider|Charge|Cosmetic")
     void OnChargeWindupStarted();
