@@ -16,12 +16,14 @@ void UASUIManagerSubsystem::Deinitialize()
 {
 	FWorldDelegates::OnWorldCleanup.RemoveAll(this);
 	CloseAllScreens(false);
+	CloseAllHUDs();
 	Super::Deinitialize();
 }
 
 void UASUIManagerSubsystem::PlayerControllerChanged(APlayerController* NewPlayerController)
 {
 	if (ScreenController.Get() != NewPlayerController) CloseAllScreens(false);
+	if (HUDController.Get() != NewPlayerController) CloseAllHUDs();
 	Super::PlayerControllerChanged(NewPlayerController);
 }
 
@@ -55,6 +57,7 @@ UUserWidget* UASUIManagerSubsystem::ShowScreen(const FName ScreenName, UUserWidg
 	APlayerController* Player = GetLocalPlayer()->GetPlayerController(GetLocalPlayer()->GetWorld());
 	if (ScreenName.IsNone() || !IsValid(Widget) || !Player || !Player->IsLocalController()
 		|| Widget->GetOwningPlayer() != Player) return nullptr;
+	if (HUDs.FindKey(Widget)) return nullptr;
 	if (UUserWidget* Existing = GetScreen(ScreenName))
 	{
 		if (Existing != Widget) Widget->RemoveFromParent();
@@ -145,6 +148,93 @@ void UASUIManagerSubsystem::HandleWorldCleanup(UWorld* World, bool bSessionEnded
 			CloseAllScreens(false);
 			break;
 		}
+	}
+	for (const auto& Entry : HUDs)
+	{
+		if (Entry.Value && Entry.Value->GetWorld() == World)
+		{
+			CloseAllHUDs();
+			break;
+		}
+	}
+}
+
+UUserWidget* UASUIManagerSubsystem::GetHUD(const FName HUDName) const
+{
+	const TObjectPtr<UUserWidget>* Widget = HUDs.Find(HUDName);
+	return Widget && IsValid(Widget->Get()) && (*Widget)->IsInViewport() ? Widget->Get() : nullptr;
+}
+
+UUserWidget* UASUIManagerSubsystem::OpenHUD(const FName HUDName, TSubclassOf<UUserWidget> WidgetClass, const int32 ZOrder)
+{
+	APlayerController* Player = GetLocalPlayer()->GetPlayerController(GetLocalPlayer()->GetWorld());
+	if (HUDName.IsNone() || !WidgetClass || !Player || !Player->IsLocalController()) return nullptr;
+	if (UUserWidget* Existing = GetHUD(HUDName)) return Existing;
+	UUserWidget* Widget = CreateWidget<UUserWidget>(Player, WidgetClass);
+	return Widget ? ShowHUD(HUDName, Widget, ZOrder) : nullptr;
+}
+
+UUserWidget* UASUIManagerSubsystem::ShowHUD(const FName HUDName, UUserWidget* Widget, const int32 ZOrder)
+{
+	APlayerController* Player = GetLocalPlayer()->GetPlayerController(GetLocalPlayer()->GetWorld());
+	if (HUDName.IsNone() || !IsValid(Widget) || !Player || !Player->IsLocalController()
+		|| Widget->GetOwningPlayer() != Player || Screens.FindKey(Widget)) return nullptr;
+	if (const FName* Name = HUDs.FindKey(Widget); Name && *Name != HUDName) return nullptr;
+	if (UUserWidget* Existing = GetHUD(HUDName))
+	{
+		if (Existing != Widget) Widget->RemoveFromParent();
+		return Existing;
+	}
+	if (HUDs.Contains(HUDName)) CloseHUD(HUDName);
+	HUDController = Player;
+	HUDs.Add(HUDName, Widget);
+	// The HUD container passes pointer input through; its interactive children still work.
+	Widget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	Widget->OnNativeDestruct.AddUObject(this, &ThisClass::HandleHUDDestruct);
+	if (!Widget->IsInViewport() && !Widget->AddToPlayerScreen(ZOrder))
+	{
+		Widget->OnNativeDestruct.RemoveAll(this);
+		HUDs.Remove(HUDName);
+		if (HUDs.IsEmpty()) HUDController.Reset();
+		return nullptr;
+	}
+	return Widget;
+}
+
+void UASUIManagerSubsystem::CloseHUD(const FName HUDName)
+{
+	TObjectPtr<UUserWidget> Widget;
+	if (!HUDs.RemoveAndCopyValue(HUDName, Widget)) return;
+	if (IsValid(Widget))
+	{
+		Widget->OnNativeDestruct.RemoveAll(this);
+		Widget->RemoveFromParent();
+	}
+	if (HUDs.IsEmpty()) HUDController.Reset();
+}
+
+void UASUIManagerSubsystem::ShowHUDForWidget(UUserWidget* Widget, const FName HUDName, const int32 ZOrder)
+{
+	ULocalPlayer* Local = Widget ? Widget->GetOwningLocalPlayer() : nullptr;
+	if (UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr)
+	{
+		UI->ShowHUD(HUDName, Widget, ZOrder);
+	}
+}
+
+void UASUIManagerSubsystem::CloseAllHUDs()
+{
+	TArray<FName> Names;
+	HUDs.GetKeys(Names);
+	for (const FName Name : Names) CloseHUD(Name);
+}
+
+void UASUIManagerSubsystem::HandleHUDDestruct(UUserWidget* Widget)
+{
+	if (const FName* Name = HUDs.FindKey(Widget))
+	{
+		const FName HUDName = *Name;
+		CloseHUD(HUDName);
 	}
 }
 

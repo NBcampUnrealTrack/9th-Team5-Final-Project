@@ -45,7 +45,11 @@ void AASPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (ULocalPlayer* Local = GetLocalPlayer(); Local && Local->GetPlayerController(GetWorld()) == this)
 	{
-		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>()) UI->CloseAllScreens(false);
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseAllScreens(false);
+			UI->CloseAllHUDs();
+		}
 	}
 	if (IsLocalController())
 	{
@@ -63,7 +67,11 @@ void AASPlayerController::PreClientTravel(const FString& PendingURL, ETravelType
 {
 	if (ULocalPlayer* Local = GetLocalPlayer(); Local && Local->GetPlayerController(GetWorld()) == this)
 	{
-		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>()) UI->CloseAllScreens(false);
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseAllScreens(false);
+			UI->CloseAllHUDs();
+		}
 	}
 	Super::PreClientTravel(PendingURL, TravelType, bIsSeamlessTravel);
 }
