@@ -10,6 +10,8 @@
 #include "Items/Loot/ASLootDefinition.h"
 #include "Items/Loot/ASLootSettings.h"
 #include "Items/Loot/ASDroppedItem.h"
+#include "Core/Framework/ASPlayerState.h"
+#include "Relics/ASRelicComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GAS/ASAbilityTags.h"
@@ -56,6 +58,44 @@ void AASLootChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(AASLootChest, LootRarityColor);
 	DOREPLIFETIME(AASLootChest, LootRarityColorParameter);
 	DOREPLIFETIME(AASLootChest, LootDisplayName);
+	DOREPLIFETIME(AASLootChest, RelicReward);
+	DOREPLIFETIME(AASLootChest, bRelicRewardClaimed);
+}
+
+bool AASLootChest::HasUnclaimedRelicReward() const
+{
+	return IsValid(RelicReward) && !bRelicRewardClaimed;
+}
+
+bool AASLootChest::HasRemainingLoot() const
+{
+	return (IsValid(LootInventory) && LootInventory->GetUsedSlotCount() > 0)
+		|| HasUnclaimedRelicReward();
+}
+
+bool AASLootChest::ClaimRelicReward(APawn* Interactor, FString& OutError)
+{
+	OutError.Reset();
+	if (!HasAuthority() || !IsValid(Interactor) || !HasUnclaimedRelicReward()
+		|| !IsWithinInteractionRange(Interactor)
+		|| !IASInteractable::Execute_CanInteract(this, Interactor))
+	{
+		OutError = TEXT("This chest has no available relic reward or the player is out of range.");
+		return false;
+	}
+
+	AASPlayerState* PlayerState = Interactor->GetPlayerState<AASPlayerState>();
+	UASRelicComponent* RelicComponent = PlayerState ? PlayerState->GetRelicComponent() : nullptr;
+	if (!RelicComponent || !RelicComponent->EquipRelic(RelicReward, OutError))
+	{
+		if (OutError.IsEmpty()) OutError = TEXT("The player has no relic component.");
+		return false;
+	}
+
+	bRelicRewardClaimed = true;
+	ForceNetUpdate();
+	UpdateEmptyDespawnTimer();
+	return true;
 }
 
 void AASLootChest::SetLootRarityAppearance(const EASLootRarity Rarity, UStaticMesh* MeshOverride,
@@ -268,7 +308,7 @@ void AASLootChest::UpdateEmptyDespawnTimer()
 	}
 
 	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
-	if (LootInventory->GetUsedSlotCount() > 0)
+	if (HasRemainingLoot())
 	{
 		TimerManager.ClearTimer(EmptyDespawnTimerHandle);
 		return;
@@ -291,7 +331,7 @@ void AASLootChest::UpdateEmptyDespawnTimer()
 
 void AASLootChest::DespawnIfStillEmpty()
 {
-	if (HasAuthority() && IsValid(LootInventory) && LootInventory->GetUsedSlotCount() == 0 && !IsActorBeingDestroyed())
+	if (HasAuthority() && IsValid(LootInventory) && !HasRemainingLoot() && !IsActorBeingDestroyed())
 	{
 		Destroy();
 	}
@@ -299,7 +339,7 @@ void AASLootChest::DespawnIfStillEmpty()
 
 bool AASLootChest::CanInteract_Implementation(AActor* Interactor) const
 {
-	return IsValid(Interactor) && IsValid(LootInventory) && LootInventory->GetUsedSlotCount() > 0;
+	return IsValid(Interactor) && HasRemainingLoot();
 }
 
 void AASLootChest::Interact_Implementation(AActor* Interactor)

@@ -18,6 +18,7 @@
 #include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/Loot/ASLootChest.h"
 #include "GameFramework/PlayerController.h"
+#include "Relics/Data/ASRelicDefinition.h"
 
 UASLootWidget::UASLootWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -62,8 +63,25 @@ void UASLootWidget::NativeConstruct()
 	{
 		CloseButton->OnClicked.AddUniqueDynamic(this, &UASLootWidget::HandleCloseClicked);
 	}
+	// Older loot widget Blueprints do not have a relic button yet, so add one to the item grid.
+	if (!IsValid(RelicClaimButton) && IsValid(WidgetTree) && IsValid(ItemList))
+	{
+		RelicClaimButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("RelicClaimButton"));
+		RelicClaimButton->SetBackgroundColor(FLinearColor(0.35f, 0.16f, 0.12f, 1.0f));
+		RelicClaimText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("RelicClaimText"));
+		RelicClaimText->SetAutoWrapText(true);
+		RelicClaimButton->AddChild(RelicClaimText);
+		RelicClaimButton->SetVisibility(ESlateVisibility::Collapsed);
+		bRelicClaimButtonGenerated = true;
+	}
+	if (IsValid(RelicClaimButton))
+	{
+		RelicClaimButton->OnClicked.AddUniqueDynamic(this, &UASLootWidget::HandleRelicClaimClicked);
+	}
 
 	if (HeaderCloseButton) HeaderCloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	// SetLootContext may render the item grid before NativeConstruct creates this fallback button.
+	if (bRelicClaimButtonGenerated) RenderedSlotCount = INDEX_NONE;
 	BindLootInventory();
 	RefreshLootHeader();
 	RefreshLoot();
@@ -77,6 +95,10 @@ void UASLootWidget::NativeDestruct()
 	if (IsValid(CloseButton))
 	{
 		CloseButton->OnClicked.RemoveDynamic(this, &UASLootWidget::HandleCloseClicked);
+	}
+	if (IsValid(RelicClaimButton))
+	{
+		RelicClaimButton->OnClicked.RemoveDynamic(this, &UASLootWidget::HandleRelicClaimClicked);
 	}
 
 	Super::NativeDestruct();
@@ -172,23 +194,59 @@ void UASLootWidget::RefreshLootHeader()
 void UASLootWidget::RefreshLoot()
 {
 	RefreshLootHeader();
-	if (!ItemList || !ViewModel || RenderedSlotCount == ViewModel->ContainerSlots.Num()) return;
-	ItemList->ClearChildren();
-	RenderedSlotCount = ViewModel->ContainerSlots.Num();
-	const TSubclassOf<UASLootEntryWidget> EntryClass = EntryWidgetClass ? EntryWidgetClass.Get() : DefaultEntryWidgetClass.LoadSynchronous();
-	if (!EntryClass) return;
-	for (UASItemSlotViewModel* SlotModel : ViewModel->ContainerSlots)
+	if (!ItemList || !ViewModel)	
 	{
-		UASLootEntryWidget* Entry = CreateWidget<UASLootEntryWidget>(GetOwningPlayer(), EntryClass);
-		if (!Entry || !SlotModel) continue;
-		Entry->SetViewModel(SlotModel);
-		Entry->SetLootSource(this);
+		RefreshRelicRewardButton();
+		return;
+	}
+
+	const int32 CurrentSlotCount = ViewModel->ContainerSlots.Num();
+	const bool bRebuildItemList = RenderedSlotCount != CurrentSlotCount;
+	if (bRebuildItemList)
+	{
+		ItemList->ClearChildren();
+		RenderedSlotCount = CurrentSlotCount;
+		const TSubclassOf<UASLootEntryWidget> EntryClass = EntryWidgetClass ? EntryWidgetClass.Get() : DefaultEntryWidgetClass.LoadSynchronous();
+		if (EntryClass)
+		{
+			for (UASItemSlotViewModel* SlotModel : ViewModel->ContainerSlots)
+			{
+				UASLootEntryWidget* Entry = CreateWidget<UASLootEntryWidget>(GetOwningPlayer(), EntryClass);
+				if (!Entry || !SlotModel) continue;
+				Entry->SetViewModel(SlotModel);
+				Entry->SetLootSource(this);
+				if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(ItemList))
+				{
+					UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(Entry,
+						SlotModel->GetSlotIndex() / FMath::Max(1, Columns),
+						SlotModel->GetSlotIndex() % FMath::Max(1, Columns));
+					GridSlot->SetHorizontalAlignment(HAlign_Fill);
+					GridSlot->SetVerticalAlignment(VAlign_Fill);
+				}
+				else
+				{
+					ItemList->AddChild(Entry);
+				}
+			}
+		}
+	}
+
+	RefreshRelicRewardButton();
+	if (bRebuildItemList && bRelicClaimButtonGenerated && IsValid(RelicClaimButton)
+		&& LootChest.IsValid() && LootChest->HasUnclaimedRelicReward())
+	{
 		if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(ItemList))
 		{
-			UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(Entry, SlotModel->GetSlotIndex() / FMath::Max(1, Columns), SlotModel->GetSlotIndex() % FMath::Max(1, Columns));
-			GridSlot->SetHorizontalAlignment(HAlign_Fill); GridSlot->SetVerticalAlignment(VAlign_Fill);
+			const int32 ButtonSlot = ViewModel->ContainerSlots.Num();
+			UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(RelicClaimButton,
+				ButtonSlot / FMath::Max(1, Columns), ButtonSlot % FMath::Max(1, Columns));
+			GridSlot->SetHorizontalAlignment(HAlign_Fill);
+			GridSlot->SetVerticalAlignment(VAlign_Fill);
 		}
-		else ItemList->AddChild(Entry);
+		else
+		{
+			ItemList->AddChild(RelicClaimButton);
+		}
 	}
 }
 
@@ -214,7 +272,46 @@ void UASLootWidget::UnbindLootInventory()
 	RenderedSlotCount = INDEX_NONE;
 }
 
+void UASLootWidget::RefreshRelicRewardButton()
+{
+	if (!IsValid(RelicClaimButton)) return;
+	const AASLootChest* Chest = LootChest.Get();
+	if (!IsValid(Chest) || !Chest->HasUnclaimedRelicReward())
+	{
+		RelicClaimButton->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	RelicClaimButton->SetVisibility(ESlateVisibility::Visible);
+	if (IsValid(RelicClaimText))
+	{
+		const UASRelicDefinition* Relic = Chest->GetRelicReward();
+		FText Label = FText::FromString(TEXT("유물 획득"));
+		if (Relic && !Relic->DisplayName.IsEmpty() && !Relic->Description.IsEmpty())
+		{
+			Label = FText::Format(FText::FromString(TEXT("{0}\n{1}\n[획득]")),
+				Relic->DisplayName, Relic->Description);
+		}
+		else if (Relic && !Relic->DisplayName.IsEmpty())
+		{
+			Label = FText::Format(FText::FromString(TEXT("유물 획득: {0}")), Relic->DisplayName);
+		}
+		RelicClaimText->SetText(Label);
+	}
+}
+
 void UASLootWidget::HandleCloseClicked()
 {
 	RemoveFromParent();
+}
+
+void UASLootWidget::HandleRelicClaimClicked()
+{
+	APlayerController* PC = GetOwningPlayer();
+	UASItemInteractionComponent* Interaction = PC ? PC->FindComponentByClass<UASItemInteractionComponent>() : nullptr;
+	if (Interaction && LootChest.IsValid())
+	{
+		Interaction->RequestClaimRelic(LootChest.Get());
+		Interaction->CloseLoot();
+	}
 }

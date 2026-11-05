@@ -16,6 +16,7 @@ class UStaticMeshComponent;
 class UMaterialInterface;
 class APawn;
 class AASDroppedItem;
+class UASRelicDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FASLootInteractionRequestedSignature,
@@ -34,6 +35,17 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Loot")
 	UASInventoryComponent* GetLootInventory() const { return LootInventory; }
+
+	/** Optional relic offered by this chest. The offer is shared and can be claimed once. */
+	UFUNCTION(BlueprintPure, Category = "Loot|Relic")
+	UASRelicDefinition* GetRelicReward() const { return RelicReward; }
+
+	UFUNCTION(BlueprintPure, Category = "Loot|Relic")
+	bool HasUnclaimedRelicReward() const;
+
+	/** Server-only. Equips this chest's optional relic offer to the interacting player's run. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Loot|Relic")
+	bool ClaimRelicReward(APawn* Interactor, FString& OutError);
 
 	/** Replace default contents before FinishSpawning/BeginPlay. Empty explicitly spawns an empty chest.
 	 * Server-only. Returns false for invalid grants or after initialization has begun.
@@ -93,6 +105,7 @@ protected:
 
 private:
 	bool IsWithinInteractionRange(const AActor* Interactor) const;
+	bool HasRemainingLoot() const;
 	void ApplyLootRarityAppearance();
 	void UpdateEmptyDespawnTimer();
 	void DespawnIfStillEmpty();
@@ -114,6 +127,13 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASInventoryComponent> LootInventory;
+
+	/** Optional build reward. A chest's relic can be claimed by one player. */
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Loot|Relic", meta = (AllowPrivateAccess = "true", ExposeOnSpawn = "true"))
+	TObjectPtr<UASRelicDefinition> RelicReward;
+
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Loot|Relic", meta = (AllowPrivateAccess = "true"))
+	bool bRelicRewardClaimed = false;
 
 	/** Spawn input overrides the Blueprint defaults; applied once on the server before Blueprint BeginPlay. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot", meta = (AllowPrivateAccess = "true", ExposeOnSpawn = "true"))
