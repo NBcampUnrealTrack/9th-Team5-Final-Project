@@ -9,6 +9,8 @@
 | `DebugGod` | 플레이어 피해 무적 ON/OFF 토글 |
 | `DebugGiveWeapon <무기 이름>` | 지정한 무기를 인벤토리에 1개 지급 |
 | `DebugGiveWeapon` | 사용법과 지원 무기 이름 표시 |
+| `DebugGiveItem <아이템 이름> <수량>` | 지정한 일반 아이템을 인벤토리에 지급. 수량 생략 시 1개 |
+| `DebugGiveItem` | 사용법과 지원 아이템 이름 표시 |
 
 **플레이어 무적**
 
@@ -53,6 +55,20 @@ DebugGiveWeapon SniperRifle
 | `[DebugGiveWeapon] Inventory is not ready. Nothing was granted.` | 인벤토리를 사용할 수 없어 지급하지 않음 |
 | `[DebugGiveWeapon] Could not load weapon '...'. Nothing was granted.` | 무기 자산 로드 또는 종류 검증 실패 |
 | `[DebugGiveWeapon] Could not add the weapon. Nothing was granted.` | 인벤토리 추가 실패 |
+
+**일반 아이템 지급**
+
+```text
+DebugGiveItem Medkit 5
+DebugGiveItem Grenade 3
+DebugGiveItem Ammo 100
+```
+
+지원 이름: `Medkit`, `ManaPotion`, `Grenade`, `Ammo`, `Barricade`, `Cloth`, `Gunpowder`, `Herbs`, `Polymer`, `ScrapMetal`, `WeaponParts`.
+
+이름은 대소문자를 구분하지 않는다. 바닥에 생성하지 않고 자신의 인벤토리에 지급한다. 수량은 양의 정수만 허용하며, 무기는 기존 `DebugGiveWeapon`을 사용한다.
+
+기존 묶음부터 채운 뒤 빈 슬롯에 추가한다. 공간이 부족하면 들어가는 수량만 지급하고 실제 지급량과 요청량을 출력한다. 잘못된 이름, 수량, 인벤토리 미준비 또는 에셋 로드 실패 시 지급하지 않는다. Shipping에서는 동작하지 않는다.
 
 **새 치트 추가 시**
 

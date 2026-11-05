@@ -34,6 +34,66 @@ namespace ASCheatManagerPrivate
 }
 #endif
 
+void UASCheatManager::DebugGiveItem(FName ItemName, int32 Quantity)
+{
+#if !UE_BUILD_SHIPPING
+	if (AASPlayerController* PlayerController = Cast<AASPlayerController>(GetOuter()))
+	{
+		PlayerController->ServerDebugGiveItem(ItemName, Quantity);
+	}
+#endif
+}
+
+void UASCheatManager::GiveItemToPlayer(AASPlayerController* PlayerController, FName ItemName, int32 Quantity)
+{
+#if !UE_BUILD_SHIPPING
+	using namespace ASCheatManagerPrivate;
+	if (!IsValid(PlayerController) || !PlayerController->HasAuthority()) return;
+
+	// Resolve only known definition names, never an arbitrary client-supplied asset path.
+	static const FName ItemNames[] = {
+		TEXT("Medkit"), TEXT("ManaPotion"), TEXT("Grenade"), TEXT("Ammo"), TEXT("Barricade"),
+		TEXT("Cloth"), TEXT("Gunpowder"), TEXT("Herbs"), TEXT("Polymer"), TEXT("ScrapMetal"), TEXT("WeaponParts")
+	};
+	FName SelectedName = NAME_None;
+	TArray<FString> SupportedNames;
+	for (const FName Name : ItemNames)
+	{
+		SupportedNames.Add(Name.ToString());
+		if (Name == ItemName) SelectedName = Name;
+	}
+	if (SelectedName.IsNone())
+	{
+		Report(PlayerController, FString::Printf(TEXT("[DebugGiveItem] Usage: DebugGiveItem <Name> <Quantity>. Items: %s"),
+			*FString::Join(SupportedNames, TEXT(", "))));
+		return;
+	}
+	if (Quantity <= 0)
+	{
+		Report(PlayerController, TEXT("[DebugGiveItem] Quantity must be greater than zero. Nothing was granted."));
+		return;
+	}
+	UASInventoryComponent* Inventory = PlayerController->GetInventoryComponent();
+	if (!IsValid(Inventory))
+	{
+		Report(PlayerController, TEXT("[DebugGiveItem] Inventory is not ready. Nothing was granted."));
+		return;
+	}
+	const FString AssetPath = FString::Printf(TEXT("/Game/ApocalypseSurvival/Items/Definitions/PDA_Item_%s.PDA_Item_%s"),
+		*SelectedName.ToString(), *SelectedName.ToString());
+	UASItemDefinition* Definition = LoadObject<UASItemDefinition>(nullptr, *AssetPath);
+	if (!IsValid(Definition) || Definition->ItemType == EASItemType::Weapon)
+	{
+		Report(PlayerController, TEXT("[DebugGiveItem] Could not load the item. Nothing was granted."));
+		return;
+	}
+	// AddItem also fills existing stacks when every inventory slot is occupied.
+	const int32 Added = Inventory->AddItem(Definition, Quantity);
+	Report(PlayerController, FString::Printf(TEXT("[DebugGiveItem] Granted %s x%d (requested %d)."),
+		*SelectedName.ToString(), Added, Quantity));
+#endif
+}
+
 void UASCheatManager::DebugGod()
 {
 #if !UE_BUILD_SHIPPING

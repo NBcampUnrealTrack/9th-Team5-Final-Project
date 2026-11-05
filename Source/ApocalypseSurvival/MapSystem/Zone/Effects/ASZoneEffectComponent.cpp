@@ -368,9 +368,16 @@ int32 UASZoneEffectComponent::GetAppliedDangerLevel(const AActor* Actor) const
 	UAbilitySystemComponent* ASC = ASMapAbilityUtils::FindAbilitySystemComponent(Actor);
 	const FEntry* Entry = IsValid(ASC) ? Entries.Find(ASC) : nullptr;
 	const APawn* QueriedPawn = Cast<APawn>(Actor);
-	return Entry && Entry->Pawn.IsValid() && ASC->GetAvatarActor() == Entry->Pawn.Get()
-		&& (!QueriedPawn || QueriedPawn == Entry->Pawn.Get())
-		&& ASC->GetActiveGameplayEffect(Entry->DangerEffect.Handle) ? Entry->DangerEffect.DangerLevel : 0;
+	if (!Entry || !Entry->Pawn.IsValid() || ASC->GetAvatarActor() != Entry->Pawn.Get()
+		|| (QueriedPawn && QueriedPawn != Entry->Pawn.Get()))
+	{
+		return 0;
+	}
+	if (ASC->GetActiveGameplayEffect(Entry->DangerEffect.Handle))
+	{
+		return Entry->DangerEffect.DangerLevel;
+	}
+	return ASC->GetActiveGameplayEffect(Entry->ZoneEffect.Handle) ? Entry->ZoneEffect.DangerLevel : 0;
 }
 
 FName UASZoneEffectComponent::GetAppliedZoneEffectZone(const AActor* Actor) const

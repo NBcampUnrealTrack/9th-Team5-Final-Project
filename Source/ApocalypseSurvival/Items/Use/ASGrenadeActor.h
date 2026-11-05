@@ -17,6 +17,7 @@ class USoundBase;
 class USphereComponent;
 class UStaticMeshComponent;
 class APawn;
+class UStaticMesh;
 
 /** Server-simulated bouncing grenade. Its fuse applies one explosion to every team, including the thrower. */
 UCLASS(Blueprintable)
@@ -56,6 +57,8 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Visual")
+	TSoftObjectPtr<UStaticMesh> MeshAsset;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade", meta = (ClampMin = "0.01", Units = "s"))
 	float FuseTime = 1.5f;
@@ -66,22 +69,22 @@ protected:
 
 	/** Must use the project's negative Data.Damage contract to also damage Mass monsters. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
+	TSoftClassPtr<UGameplayEffect> DamageEffectClass;
 
 	/** Played once at the thrower's location after item consumption succeeds. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
-	TObjectPtr<USoundBase> PinPullSound;
+	TSoftObjectPtr<USoundBase> PinPullSound;
 
 	/** Cloth/air movement at release, layered independently from the pin sound. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
-	TObjectPtr<USoundBase> ThrowSound;
+	TSoftObjectPtr<USoundBase> ThrowSound;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
-	TObjectPtr<USoundBase> BounceSound;
+	TSoftObjectPtr<USoundBase> BounceSound;
 
 	/** Optional shared 3D attenuation override. Null uses the individual sound's attenuation. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
-	TObjectPtr<USoundAttenuation> SoundAttenuation;
+	TSoftObjectPtr<USoundAttenuation> SoundAttenuation;
 
 	/** Normal impact speed below this value makes no bounce sound. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio", meta = (ClampMin = "0.0", Units = "cm/s"))
@@ -93,17 +96,17 @@ protected:
 
 	/** A world-space ribbon/smoke system attached to the moving grenade; deactivated when it rests or explodes. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Visual")
-	TObjectPtr<UNiagaraSystem> TrailEffect;
+	TSoftObjectPtr<UNiagaraSystem> TrailEffect;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Visual")
-	TObjectPtr<UNiagaraSystem> ExplosionEffect;
+	TSoftObjectPtr<UNiagaraSystem> ExplosionEffect;
 
 	/** Radius of the authored effect at scale 1. The effect must support component scaling. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Visual", meta = (ClampMin = "1.0", Units = "cm"))
 	float ExplosionEffectReferenceRadius = 100.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Audio")
-	TObjectPtr<USoundBase> ExplosionSound;
+	TSoftObjectPtr<USoundBase> ExplosionSound;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Grenade|Visual")
 	bool bDrawDebugExplosion = false;
@@ -111,6 +114,7 @@ protected:
 private:
 	void ConfigureCollision();
 	void UpdateFlightFeedback();
+	void ApplyLoadedResources();
 
 	UFUNCTION()
 	void OnRepFlightState();
@@ -137,6 +141,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> TrailComponent;
 	FASItemAssetRequest MeshAssetRequest;
+	FASItemAssetRequest ResourceRequest;
 
 	/** Snapshot of the item PDA at throw time. */
 	UPROPERTY(Replicated)

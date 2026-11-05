@@ -201,7 +201,7 @@ bool AASRifleBurstSequence::IsBurstStillValid() const
 		|| !IsValid(CurrentWeapon) || !IsValid(CurrentProfile)
 		|| CurrentInventory->GetEquippedItem() != CurrentWeapon
 		|| CurrentWeapon->GetItemDefinition() == nullptr
-		|| CurrentWeapon->GetItemDefinition()->AttackProfile != CurrentProfile)
+		|| CurrentWeapon->GetItemDefinition()->AttackProfile.Get() != CurrentProfile)
 	{
 		return false;
 	}
@@ -334,8 +334,8 @@ bool AASRifleBurstSequence::SpawnDirectionalShot(const int32 ShotIndex)
 
 	const FVector SpawnLocation = ResolveSpawnLocation(Direction);
 	const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
-	UClass* ProjectileClass = CurrentProfile->DirectionalProjectileClass
-		&& CurrentProfile->DirectionalProjectileClass->IsChildOf(AASRifleBurstDirectionalProjectile::StaticClass())
+	UClass* ProjectileClass = CurrentProfile->DirectionalProjectileClass.Get()
+		&& CurrentProfile->DirectionalProjectileClass.Get()->IsChildOf(AASRifleBurstDirectionalProjectile::StaticClass())
 		? CurrentProfile->DirectionalProjectileClass.Get()
 		: AASRifleBurstDirectionalProjectile::StaticClass();
 	AASRifleBurstDirectionalProjectile* Projectile = World->SpawnActorDeferred<AASRifleBurstDirectionalProjectile>(
@@ -375,8 +375,8 @@ bool AASRifleBurstSequence::SpawnHomingShot(const int32 ShotIndex)
 	}
 	const FVector SpawnLocation = ResolveSpawnLocation(Direction);
 	const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
-	UClass* ProjectileClass = CurrentProfile->HomingProjectileClass
-		&& CurrentProfile->HomingProjectileClass->IsChildOf(AASRifleBurstHomingProjectile::StaticClass())
+	UClass* ProjectileClass = CurrentProfile->HomingProjectileClass.Get()
+		&& CurrentProfile->HomingProjectileClass.Get()->IsChildOf(AASRifleBurstHomingProjectile::StaticClass())
 		? CurrentProfile->HomingProjectileClass.Get()
 		: AASRifleBurstHomingProjectile::StaticClass();
 	AASRifleBurstHomingProjectile* Projectile = World->SpawnActorDeferred<AASRifleBurstHomingProjectile>(

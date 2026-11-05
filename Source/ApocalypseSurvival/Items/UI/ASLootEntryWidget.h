@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/DragDropOperation.h"
-#include "Items/Data/ASItemAssetLoading.h"
 #include "ASLootEntryWidget.generated.h"
 
 class UASItemInstance;
@@ -11,8 +10,11 @@ class UButton;
 class UImage;
 class UTextBlock;
 class UASItemRarityBackground;
+class UBorder;
 class UASLootWidget;
 class AASLootChest;
+class UASItemSlotViewModel;
+class UASInventoryViewModel;
 
 /** A loot drag only requests a discard when an explicit world drop target accepts it. */
 UCLASS()
@@ -23,6 +25,7 @@ public:
 	TWeakObjectPtr<UASLootWidget> SourceLoot;
 	TWeakObjectPtr<AASLootChest> Chest;
 	FGuid ItemId;
+	TWeakObjectPtr<UASInventoryViewModel> ViewModel;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASLootItemClickedSignature, UASItemInstance*, ItemInstance);
@@ -37,6 +40,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void SetItemInstance(UASItemInstance* InItemInstance);
 	void SetLootSource(UASLootWidget* InLootWidget);
+	UFUNCTION(BlueprintCallable, Category="Loot|ViewModel")
+	void SetViewModel(UASItemSlotViewModel* Model);
+	UFUNCTION(BlueprintPure, Category="Loot|ViewModel")
+	UASItemSlotViewModel* GetViewModel() const { return ViewModel; }
 
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void RefreshEntry();
@@ -45,7 +52,7 @@ public:
 	FASLootItemClickedSignature OnItemClicked;
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
@@ -53,7 +60,6 @@ protected:
 	virtual void NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation) override;
 
 private:
-	void BuildDefaultWidgetTree();
 
 	UFUNCTION()
 	void HandleItemButtonClicked();
@@ -61,21 +67,25 @@ private:
 	UPROPERTY(BlueprintReadWrite, meta = (AllowPrivateAccess = "true", ExposeOnSpawn = "true"), Category = "Loot")
 	TObjectPtr<UASItemInstance> ItemInstance;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UButton> ItemButton;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UImage> ItemIcon;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UASItemRarityBackground> RarityBackground;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> ItemNameText;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UTextBlock> QuantityText;
-	FASItemAssetRequest IconAssetRequest;
+	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
+	TObjectPtr<UBorder> QuantityBadge;
+	void ApplyPresentation();
+	UPROPERTY(Transient)
+	TObjectPtr<UASItemSlotViewModel> ViewModel;
 	TWeakObjectPtr<UASLootWidget> LootSource;
 	FGuid PressedItem;
 	bool bPressed = false;

@@ -51,6 +51,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "1", UIMin = "1"))
 	int32 MaxStackSize = 1;
 
+	/** Additional storage granted only while this particular bag item is equipped. Quick slots stay at ten. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Bag",
+		meta = (ClampMin = "0", ClampMax = "256", EditCondition = "ItemType == EASItemType::Bag", EditConditionHides))
+	int32 BagAdditionalSlots = 8;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Visual")
 	TSoftObjectPtr<UTexture2D> Icon;
 
@@ -76,7 +81,7 @@ public:
 	/** Defines melee/ranged cost, hit behavior, and attack animation for the character-owned attack GA. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon|Attack",
 		meta = (EditCondition = "ItemType == EASItemType::Weapon", EditConditionHides))
-	TObjectPtr<UASWeaponAttackProfile> AttackProfile;
+	TSoftObjectPtr<UASWeaponAttackProfile> AttackProfile;
 
 	/** Must derive from ASItemUseAbility; CommitAbility consumes UseQuantity. Null uses the default data-driven ability. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable|GAS",

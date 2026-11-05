@@ -1,6 +1,7 @@
 ﻿#include "MapSystem/UI/ASMapWidget.h"
 
 #include "AbilitySystemComponent.h"
+#include "Characters/Enemy/ASMonsterCharacter.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -554,6 +555,11 @@ void UASMapWidget::DrawVisibilityMarkers(const FPaintContext& Context, const UAS
 	{
 		const AActor* Owner = Target->GetOwner();
 		if (!Owner || !Target->ShouldShowOnMap() || !Target->IsVisibleToTeam(LocalTeam))
+		{
+			continue;
+		}
+
+		if (const AASMonsterCharacter* Monster = Cast<AASMonsterCharacter>(Owner); Monster && Monster->IsDead())
 		{
 			continue;
 		}

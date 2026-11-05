@@ -88,9 +88,9 @@ namespace ASWeaponAttackExecutionPrivate
 		}
 
 		const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
-		UClass* ProjectileClass = Profile.DirectionalProjectileClass
+		UClass* ProjectileClass = Profile.DirectionalProjectileClass.Get()
 			? Profile.DirectionalProjectileClass.Get()
-			: (Profile.ProjectileClass
+			: (Profile.ProjectileClass.Get()
 				? Profile.ProjectileClass.Get()
 				: AASSkillProjectileActor::StaticClass());
 		AASSkillProjectileActor* Projectile = World->SpawnActorDeferred<AASSkillProjectileActor>(
@@ -115,7 +115,7 @@ namespace ASWeaponAttackExecutionPrivate
 	const FASCombatTargetRef& Target)
 	{
 		UWorld* World = Context.Avatar ? Context.Avatar->GetWorld() : nullptr;
-		if (!World || !Profile.HomingProjectileClass)
+		if (!World || !Profile.HomingProjectileClass.Get())
 		{
 			return;
 		}
@@ -143,7 +143,7 @@ namespace ASWeaponAttackExecutionPrivate
 
 		const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
 		AASWeaponProjectile* Projectile = World->SpawnActorDeferred<AASWeaponProjectile>(
-			Profile.HomingProjectileClass, SpawnTransform, Context.Avatar, Context.Avatar,
+			Profile.HomingProjectileClass.Get(), SpawnTransform, Context.Avatar, Context.Avatar,
 			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 		if (!Projectile)
 		{
@@ -162,7 +162,7 @@ bool UASMeleeAttackExecution::CanPayCost(const FASWeaponAttackExecutionContext& 
 	return Profile
 		&& Context.Definition && Context.Definition->WeaponType == EASWeaponType::Melee
 		&& IsValid(Context.AbilitySystem)
-		&& Profile->StaminaCostEffect
+		&& Profile->StaminaCostEffect.Get()
 		&& Context.AbilitySystem->GetNumericAttribute(UASPlayerAttributeSet::GetStaminaAttribute())
 			>= ASWeaponAttackExecutionPrivate::GetStaminaCost(Context);
 }
@@ -175,7 +175,7 @@ bool UASMeleeAttackExecution::CommitCost(const FASWeaponAttackExecutionContext& 
 	FGameplayEffectContextHandle EffectContext = Context.AbilitySystem->MakeEffectContext();
 	EffectContext.AddSourceObject(Context.Weapon);
 	const FGameplayEffectSpecHandle CostSpec = Context.AbilitySystem->MakeOutgoingSpec(
-		Profile->StaminaCostEffect, 1.0f, EffectContext);
+		Profile->StaminaCostEffect.Get(), 1.0f, EffectContext);
 	if (!CostSpec.IsValid()) return false;
 	const FGameplayTag StaminaCostTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Data.StaminaCost")), false);
 	if (!StaminaCostTag.IsValid()) return false;
@@ -183,10 +183,10 @@ bool UASMeleeAttackExecution::CommitCost(const FASWeaponAttackExecutionContext& 
 	Context.AbilitySystem->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
 
 	if (ASWeaponAttackExecutionPrivate::GetStaminaCost(Context) > 0.0f
-		&& Profile->StaminaRegenDelayEffect)
+		&& Profile->StaminaRegenDelayEffect.Get())
 	{
 		const FGameplayEffectSpecHandle DelaySpec = Context.AbilitySystem->MakeOutgoingSpec(
-			Profile->StaminaRegenDelayEffect, 1.0f, EffectContext);
+			Profile->StaminaRegenDelayEffect.Get(), 1.0f, EffectContext);
 		if (DelaySpec.IsValid())
 		{
 			Context.AbilitySystem->ApplyGameplayEffectSpecToSelf(*DelaySpec.Data.Get());
@@ -327,7 +327,7 @@ void UASRangedAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 		}
 
 		// 유도 투사체: 대상만 정하고, 피해는 투사체가 닿을 때 준다.
-		if (Profile->HomingProjectileClass)
+		if (Profile->HomingProjectileClass.Get())
 		{
 			FASCombatTargetRef TargetRef;
 			bool bFoundTarget = false;
@@ -545,7 +545,7 @@ void UASSniperAttackExecution::ExecuteHit(const FASWeaponAttackExecutionContext&
 	}
 
 	const FTransform SpawnTransform(Direction.Rotation(), SpawnLocation);
-	UClass* ProjectileClass = SniperProfile->SniperProjectileClass
+	UClass* ProjectileClass = SniperProfile->SniperProjectileClass.Get()
 		? SniperProfile->SniperProjectileClass.Get()
 		: AASSniperPiercingProjectile::StaticClass();
 	AASSniperPiercingProjectile* Projectile = World->SpawnActorDeferred<AASSniperPiercingProjectile>(

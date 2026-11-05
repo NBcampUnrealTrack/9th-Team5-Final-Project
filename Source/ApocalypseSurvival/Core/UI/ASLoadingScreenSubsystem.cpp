@@ -1,22 +1,19 @@
 #include "Core/UI/ASLoadingScreenSubsystem.h"
 
 #include "Core/UI/SASLoadingScreen.h"
+#include "Core/Loading/ASLoadingFlowSubsystem.h"
 #include "Core/Framework/ASSessionSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Engine/NetDriver.h"
+#include "GameFramework/PlayerController.h"
 #include "Framework/Application/SlateApplication.h"
-#include "MoviePlayer.h"
-#include "UObject/UObjectGlobals.h"
 
 void UASLoadingScreenSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	FCoreUObjectDelegates::PreLoadMapWithContext.AddUObject(this, &ThisClass::HandlePreLoadMap);
-	FWorldDelegates::OnSeamlessTravelStart.AddUObject(this, &ThisClass::HandleSeamlessTravelStart);
-	FWorldDelegates::OnWorldPostActorTick.AddUObject(this, &ThisClass::HandleWorldPostActorTick);
 	if (GEngine)
 	{
 		GEngine->OnNetworkFailure().AddUObject(this, &ThisClass::HandleNetworkFailure);
@@ -26,9 +23,6 @@ void UASLoadingScreenSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UASLoadingScreenSubsystem::Deinitialize()
 {
-	FCoreUObjectDelegates::PreLoadMapWithContext.RemoveAll(this);
-	FWorldDelegates::OnSeamlessTravelStart.RemoveAll(this);
-	FWorldDelegates::OnWorldPostActorTick.RemoveAll(this);
 	if (GEngine)
 	{
 		GEngine->OnNetworkFailure().RemoveAll(this);
@@ -40,57 +34,50 @@ void UASLoadingScreenSubsystem::Deinitialize()
 
 void UASLoadingScreenSubsystem::ShowLoadingScreen(const FSimpleDelegate& OnCancel)
 {
+	const auto* Flow = GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>();
+	if (!GetWorld() || !Flow || !Flow->IsLoadingLevelMap(GetWorld()->GetOutermost()->GetName())) return;
 	if (ViewportScreen.IsValid() || IsRunningDedicatedServer() || IsRunningCommandlet() || !FSlateApplication::IsInitialized()) return;
 	UGameViewportClient* Viewport = GetGameInstance()->GetGameViewportClient();
 	if (!Viewport) return;
-	SourceWorld = GetWorld();
 	LoadingViewport = Viewport;
-	ViewportScreen = SNew(SASLoadingScreen).OnCancel(OnCancel);
+	if (!ScreenModel) ScreenModel = MakeShared<FASLoadingScreenModel, ESPMode::ThreadSafe>();
+	ViewportScreen = SNew(SASLoadingScreen).Model(ScreenModel).OnCancel(OnCancel)
+		.OnReturnToMenu(FSimpleDelegate::CreateWeakLambda(this, [this]()
+		{ GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>()->ReturnToMainMenu(); }));
 	Viewport->AddViewportWidgetContent(ViewportScreen.ToSharedRef(), 10000);
 	UE_LOG(LogTemp, Log, TEXT("[Loading] Show"));
 }
 
 void UASLoadingScreenSubsystem::HideLoadingScreen()
 {
+	if (ViewportScreen.IsValid()) UE_LOG(LogTemp, Log, TEXT("[Loading] Hide"));
+	if (APlayerController* PC = ErrorController.Get()) PC->bShowMouseCursor = bPreviousMouseCursor;
+	ErrorController.Reset();
 	if (UGameViewportClient* Viewport = LoadingViewport.Get(); Viewport && ViewportScreen.IsValid())
 	{
 		Viewport->RemoveViewportWidgetContent(ViewportScreen.ToSharedRef());
 	}
-	if (bOwnsMovieScreen && IsMoviePlayerEnabled()) GetMoviePlayer()->StopMovie();
-	bOwnsMovieScreen = false;
 	ViewportScreen.Reset();
 	LoadingViewport.Reset();
-	SourceWorld.Reset();
 }
 
-void UASLoadingScreenSubsystem::HandlePreLoadMap(const FWorldContext& Context, const FString& MapName)
+void UASLoadingScreenSubsystem::UpdateLoadingStatus(const FASLoadingStatus& Status)
 {
-	if (Context.OwningGameInstance != GetGameInstance() || IsRunningDedicatedServer() || IsRunningCommandlet()) return;
-	ShowLoadingScreen();
-	// PIE shares the movie player across instances. Its viewport overlay remains independent.
-	if (Context.WorldType == EWorldType::PIE || !IsMoviePlayerEnabled()) return;
-	FLoadingScreenAttributes Attributes;
-	Attributes.bAutoCompleteWhenLoadingCompletes = true;
-	Attributes.bMoviesAreSkippable = false;
-	Attributes.WidgetLoadingScreen = SNew(SASLoadingScreen);
-	GetMoviePlayer()->SetupLoadingScreen(Attributes);
-	bOwnsMovieScreen = true;
-}
-
-void UASLoadingScreenSubsystem::HandleSeamlessTravelStart(UWorld* World, const FString& MapName)
-{
-	if (World && World->GetGameInstance() == GetGameInstance()) ShowLoadingScreen();
-}
-
-void UASLoadingScreenSubsystem::HandleWorldPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds)
-{
-	if (!ViewportScreen.IsValid() || !World || World != GetWorld() || World == SourceWorld.Get()) return;
-	// Do not uncover the intermediate seamless-travel world or a client waiting for BeginPlay.
-	if (World->HasBegunPlay() && !World->IsInSeamlessTravel())
+	if (!ScreenModel) ScreenModel = MakeShared<FASLoadingScreenModel, ESPMode::ThreadSafe>();
+	ScreenModel->Update(Status);
+	if (Status.Phase == EASLoadingPhase::Failed && !ErrorController.IsValid())
 	{
-		UE_LOG(LogTemp, Log, TEXT("[Loading] Ready: %s"), *World->GetMapName());
-		HideLoadingScreen();
+		if (APlayerController* PC = GetGameInstance()->GetFirstLocalPlayerController())
+		{
+			ErrorController = PC;
+			bPreviousMouseCursor = PC->bShowMouseCursor;
+			PC->bShowMouseCursor = true;
+		}
 	}
+	if (Status.Phase != EASLoadingPhase::Completed && Status.Phase != EASLoadingPhase::Cancelled
+		&& Status.Phase != EASLoadingPhase::Idle)
+		ShowLoadingScreen();
+	else HideLoadingScreen();
 }
 
 void UASLoadingScreenSubsystem::HandleNetworkFailure(UWorld* World, UNetDriver* Driver, ENetworkFailure::Type FailureType, const FString& Error)
@@ -100,11 +87,16 @@ void UASLoadingScreenSubsystem::HandleNetworkFailure(UWorld* World, UNetDriver* 
 	if (World && World->GetGameInstance() == GetGameInstance()
 		&& (World->GetNetMode() != NM_ListenServer || UASSessionSubsystem::ShouldEndHostSessionForNetworkFailure(FailureType)))
 	{
+		GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>()->AbortForTravelFailure();
 		HideLoadingScreen();
 	}
 }
 
 void UASLoadingScreenSubsystem::HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& Error)
 {
-	if (World && World->GetGameInstance() == GetGameInstance()) HideLoadingScreen();
+	if (World && World->GetGameInstance() == GetGameInstance())
+	{
+		GetGameInstance()->GetSubsystem<UASLoadingFlowSubsystem>()->AbortForTravelFailure();
+		HideLoadingScreen();
+	}
 }

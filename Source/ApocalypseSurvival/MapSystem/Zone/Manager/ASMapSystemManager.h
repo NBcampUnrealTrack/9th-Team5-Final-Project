@@ -82,8 +82,6 @@ public:
 	FASManagerMapReadySignature OnMapReady;
 
 protected:
-	/** 게임 상태를 처리하지 않고 콘솔 디버그 표시만 갱신한다. */
-	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
@@ -96,7 +94,6 @@ private:
 	void CollectLevelZones() const;
 	/** 등록된 액터의 구역 설정을 만든다. 연결은 양방향 합집합으로 병합한다. */
 	void BuildZoneConfigs(TArray<FASZoneConfig>& OutConfigs) const;
-	void DrawDebug() const;
 	/** 호출 시점의 구역별 생존 몬스터 수와 플레이어 존재를 서버에서 센다. */
 	TMap<FName, FASZonePhaseCounts> BuildPhaseCounts() const;
 

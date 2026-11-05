@@ -9,6 +9,8 @@ class UInputMappingContext;
 class UASLocalSettingsSaveGame;
 class USoundMix;
 
+DECLARE_MULTICAST_DELEGATE(FASKeyMappingsChanged);
+
 UCLASS()
 class APOCALYPSESURVIVAL_API UASLocalSettingsSubsystem : public ULocalPlayerSubsystem
 {
@@ -23,12 +25,17 @@ public:
 	bool SetMappedKey(UInputMappingContext* Source, int32 MappingIndex, FKey Key, FText& Error);
 	float GetMasterVolume() const;
 	void SetMasterVolume(float Volume);
+	float GetBGMVolume() const;
+	void SetBGMVolume(float Volume);
+	float GetSFXVolume() const;
+	void SetSFXVolume(float Volume);
 	UFUNCTION(BlueprintPure, Category = "Settings|Gameplay")
 	bool IsRightClickAttackEnabled() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Settings|Gameplay")
 	void SetRightClickAttackEnabled(bool bEnabled);
 	void ResetMappedKeys(UInputMappingContext* Source);
+	FASKeyMappingsChanged OnKeyMappingsChanged;
 
 private:
 	FString GetMappingId(const UInputMappingContext* Source, int32 MappingIndex) const;
