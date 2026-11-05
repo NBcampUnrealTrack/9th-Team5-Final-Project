@@ -251,6 +251,36 @@ void UASItemInteractionComponent::ServerDropLoot_Implementation(AASLootChest* Ch
 	Chest->DropLoot(PC->GetPawn(), InstanceId);
 }
 
+void UASItemInteractionComponent::RequestClaimRelic(AASLootChest* Chest)
+{
+	AASPlayerController* PC = GetASController();
+	if (PC && PC->IsLocalController() && IsLootOpen() && IsValid(Chest)
+		&& Chest == OpenChest.Get())
+	{
+		ServerClaimRelic(Chest);
+	}
+}
+
+void UASItemInteractionComponent::ServerClaimRelic_Implementation(AASLootChest* Chest)
+{
+	AASPlayerController* PC = GetASController();
+	if (!PC || !IsValid(Chest) || Chest != ServerOpenChest.Get()
+		|| ServerLootPawn.Get() != PC->GetPawn() || !CanReachTarget(Chest))
+	{
+		return;
+	}
+
+	FString Error;
+	if (Chest->ClaimRelicReward(PC->GetPawn(), Error))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Relic Reward] Claim succeeded for %s."), *GetNameSafe(PC->GetPawn()));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Relic Reward] Claim failed: %s"), *Error);
+	}
+}
+
 void UASItemInteractionComponent::RequestUseItem(const FGuid InstanceId)
 {
 	if (GetASController() && GetASController()->IsLocalController() && InstanceId.IsValid()) ServerUseItem(InstanceId);

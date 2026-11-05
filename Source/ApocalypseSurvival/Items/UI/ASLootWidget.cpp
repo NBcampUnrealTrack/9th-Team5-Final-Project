@@ -26,6 +26,7 @@
 #include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/Loot/ASLootChest.h"
 #include "GameFramework/PlayerController.h"
+#include "Relics/Data/ASRelicDefinition.h"
 
 TSharedRef<SWidget> UASLootWidget::RebuildWidget()
 {
@@ -85,6 +86,13 @@ void UASLootWidget::BuildDefaultWidgetTree()
 	UTextBlock* CloseButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CloseButtonText"));
 	CloseButtonText->SetText(FText::FromString(TEXT("Close")));
 	CloseButton->SetBackgroundColor(FLinearColor(0.10f, 0.17f, 0.22f, 1.0f));
+	RelicClaimButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("RelicClaimButton"));
+	RelicClaimButton->SetBackgroundColor(FLinearColor(0.35f, 0.16f, 0.12f, 1.0f));
+	RelicClaimText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("RelicClaimText"));
+	RelicClaimText->SetText(FText::FromString(TEXT("유물 획득")));
+	RelicClaimText->SetAutoWrapText(true);
+	RelicClaimButton->AddChild(RelicClaimText);
+	RelicClaimButton->SetVisibility(ESlateVisibility::Collapsed);
 
 	LootPanelSlot = RootCanvas->AddChildToCanvas(LootPanel);
 	LootPanelSlot->SetAnchors(FAnchors(0.0f, 0.0f));
@@ -98,6 +106,7 @@ void UASLootWidget::BuildDefaultWidgetTree()
 	ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	LootScrollBox->AddChild(ItemGrid);
 	RootColumn->AddChildToVerticalBox(EmptyText)->SetPadding(FMargin(0.0f, 10.0f));
+	RootColumn->AddChildToVerticalBox(RelicClaimButton)->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
 	RootColumn->AddChildToVerticalBox(CloseButton)->SetPadding(FMargin(0.0f, 12.0f, 0.0f, 0.0f));
 	CloseButton->AddChild(CloseButtonText);
 	WidgetTree->RootWidget = RootCanvas;
@@ -128,6 +137,10 @@ void UASLootWidget::NativeConstruct()
 	{
 		CloseButton->OnClicked.AddUniqueDynamic(this, &UASLootWidget::HandleCloseClicked);
 	}
+	if (IsValid(RelicClaimButton))
+	{
+		RelicClaimButton->OnClicked.AddUniqueDynamic(this, &UASLootWidget::HandleRelicClaimClicked);
+	}
 
 	BindLootInventory();
 	RefreshLootHeader();
@@ -141,6 +154,10 @@ void UASLootWidget::NativeDestruct()
 	if (IsValid(CloseButton))
 	{
 		CloseButton->OnClicked.RemoveDynamic(this, &UASLootWidget::HandleCloseClicked);
+	}
+	if (IsValid(RelicClaimButton))
+	{
+		RelicClaimButton->OnClicked.RemoveDynamic(this, &UASLootWidget::HandleRelicClaimClicked);
 	}
 
 	Super::NativeDestruct();
@@ -263,6 +280,7 @@ void UASLootWidget::RefreshLoot()
 	}
 
 	ItemList->ClearChildren();
+	RefreshRelicRewardButton();
 
 	if (!IsValid(LootInventory))
 	{
@@ -369,7 +387,46 @@ void UASLootWidget::HandleItemClicked(UASItemInstance* ItemInstance)
 	}
 }
 
+void UASLootWidget::RefreshRelicRewardButton()
+{
+	if (!IsValid(RelicClaimButton)) return;
+	const AASLootChest* Chest = LootChest.Get();
+	if (!IsValid(Chest) || !Chest->HasUnclaimedRelicReward())
+	{
+		RelicClaimButton->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	RelicClaimButton->SetVisibility(ESlateVisibility::Visible);
+	if (IsValid(RelicClaimText))
+	{
+		const UASRelicDefinition* Relic = Chest->GetRelicReward();
+		FText Label = FText::FromString(TEXT("유물 획득"));
+		if (Relic && !Relic->DisplayName.IsEmpty() && !Relic->Description.IsEmpty())
+		{
+			Label = FText::Format(FText::FromString(TEXT("{0}\n{1}\n[획득]")),
+				Relic->DisplayName, Relic->Description);
+		}
+		else if (Relic && !Relic->DisplayName.IsEmpty())
+		{
+			Label = FText::Format(FText::FromString(TEXT("유물 획득: {0}")), Relic->DisplayName);
+		}
+		RelicClaimText->SetText(Label);
+	}
+}
+
 void UASLootWidget::HandleCloseClicked()
 {
 	RemoveFromParent();
+}
+
+void UASLootWidget::HandleRelicClaimClicked()
+{
+	APlayerController* PC = GetOwningPlayer();
+	UASItemInteractionComponent* Interaction = PC ? PC->FindComponentByClass<UASItemInteractionComponent>() : nullptr;
+	if (Interaction && LootChest.IsValid())
+	{
+		Interaction->RequestClaimRelic(LootChest.Get());
+		Interaction->CloseLoot();
+	}
 }

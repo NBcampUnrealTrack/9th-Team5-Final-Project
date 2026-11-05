@@ -52,6 +52,11 @@ private:
 	void HandleItemClicked(UASItemInstance* ItemInstance);
 
 	UFUNCTION()
+	void HandleRelicClaimClicked();
+
+	void RefreshRelicRewardButton();
+
+	UFUNCTION()
 	void HandleCloseClicked();
 
 	UPROPERTY(BlueprintReadWrite, meta = (AllowPrivateAccess = "true", ExposeOnSpawn = "true"), Category = "Loot")
@@ -68,6 +73,12 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CloseButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> RelicClaimButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RelicClaimText;
 
 	/** Transparent hit area behind LootPanel so outside mouse input reaches this widget. */
 	UPROPERTY(meta = (BindWidgetOptional))
