@@ -37,6 +37,11 @@ bool FASUIManagerLifecycleTest::RunTest(const FString& Parameters)
 		UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>();
 		if (TestNotNull(TEXT("Local UI manager"), UI))
 		{
+			UUserWidget* HUD = UI->OpenHUD(TEXT("GameHUD"), UASInGameMenuWidget::StaticClass());
+			TestNotNull(TEXT("HUD opens"), HUD);
+			TestFalse(TEXT("Opening HUD does not show cursor"), Player->bShowMouseCursor);
+			TestEqual(TEXT("Repeated HUD open reuses the instance"), UI->OpenHUD(TEXT("GameHUD"), UASInGameMenuWidget::StaticClass()), HUD);
+			if (HUD) TestEqual(TEXT("HUD container does not intercept pointer input"), HUD->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
 			UUserWidget* Menu = UI->OpenScreen(TEXT("Menu"), UASInGameMenuWidget::StaticClass(), 20);
 			if (TestNotNull(TEXT("Menu opens"), Menu))
 			{
@@ -53,6 +58,7 @@ bool FASUIManagerLifecycleTest::RunTest(const FString& Parameters)
 					UI->OpenScreen(TEXT("Popup"), UASLeaveRoomConfirmationWidget::StaticClass(), 200);
 				}
 				UI->CloseScreen(TEXT("Menu"));
+				TestEqual(TEXT("Closing menu leaves HUD displayed"), UI->GetHUD(TEXT("GameHUD")), HUD);
 				TestNull(TEXT("Closing root closes menu"), UI->GetScreen(TEXT("Menu")));
 				TestNull(TEXT("Closing root closes its popups"), UI->GetScreen(TEXT("Popup")));
 				TestFalse(TEXT("Last close restores cursor state"), Player->bShowMouseCursor);
@@ -61,6 +67,8 @@ bool FASUIManagerLifecycleTest::RunTest(const FString& Parameters)
 				TestTrue(TEXT("Travel/result cleanup leaves input owner untouched"), Player->bShowMouseCursor);
 				UI->OpenScreen(TEXT("Menu"), UASInGameMenuWidget::StaticClass());
 				UI->PlayerControllerChanged(nullptr);
+				TestNull(TEXT("Controller change clears HUD"), UI->GetHUD(TEXT("GameHUD")));
+				HUD = UI->OpenHUD(TEXT("GameHUD"), UASInGameMenuWidget::StaticClass());
 				TestNull(TEXT("Controller change clears old UI"), UI->GetScreen(TEXT("Menu")));
 				UUserWidget* MainMenu = UASUIManagerSubsystem::OpenScreenForPlayer(Player, TEXT("MainMenu"), UASInGameMenuWidget::StaticClass());
 				TestNotNull(TEXT("HUD entry point opens a local managed menu"), MainMenu);
@@ -74,11 +82,25 @@ bool FASUIManagerLifecycleTest::RunTest(const FString& Parameters)
 				UI->OpenScreen(TEXT("Menu"), UASInGameMenuWidget::StaticClass());
 				UUserWidget* Result = CreateWidget<UUserWidget>(Player, UASInGameMenuWidget::StaticClass());
 				UASUIManagerSubsystem::ShowResultScreen(Result);
+				TestEqual(TEXT("Result transition preserves the underlying HUD"), UI->GetHUD(TEXT("GameHUD")), HUD);
 				TestNull(TEXT("Result replaces the open menu"), UI->GetScreen(TEXT("Menu")));
 				TestEqual(TEXT("Result is managed"), UI->GetScreen(TEXT("GameResult")), Result);
 				Player->bShowMouseCursor = false;
 				UI->CloseAllScreens();
 				TestFalse(TEXT("Closing result does not restore gameplay or override external cursor changes"), Player->bShowMouseCursor);
+				UI->CloseHUD(TEXT("GameHUD"));
+				TestNull(TEXT("HUD closes independently"), UI->GetHUD(TEXT("GameHUD")));
+				TestFalse(TEXT("Closing HUD does not change cursor"), Player->bShowMouseCursor);
+				HUD = UI->OpenHUD(TEXT("GameHUD"), UASInGameMenuWidget::StaticClass());
+				if (HUD) HUD->RemoveFromParent();
+				TestNull(TEXT("Self-removed HUD is unregistered"), UI->GetHUD(TEXT("GameHUD")));
+				UUserWidget* ExistingHUD = CreateWidget<UUserWidget>(Player, UASInGameMenuWidget::StaticClass());
+				ExistingHUD->AddToPlayerScreen();
+				UASUIManagerSubsystem::ShowHUDForWidget(ExistingHUD, TEXT("GameHUD"));
+				TestEqual(TEXT("Existing HUD can be adopted through the Blueprint entry point"), UI->GetHUD(TEXT("GameHUD")), ExistingHUD);
+				UI->CloseAllHUDs();
+				TestFalse(TEXT("HUD cleanup removes adopted HUD"), ExistingHUD->IsInViewport());
+				TestFalse(TEXT("HUD cleanup leaves cursor unchanged"), Player->bShowMouseCursor);
 			}
 		}
 	}
