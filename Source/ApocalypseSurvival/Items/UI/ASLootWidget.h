@@ -87,6 +87,8 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> RelicClaimText;
 
+	bool bRelicClaimButtonGenerated = false;
+
 	/** Transparent hit area behind LootPanel so outside mouse input reaches this widget. */
 	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UButton> OutsideCloseButton;

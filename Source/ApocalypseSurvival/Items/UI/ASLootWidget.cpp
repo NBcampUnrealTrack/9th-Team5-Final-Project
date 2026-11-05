@@ -80,6 +80,8 @@ void UASLootWidget::NativeConstruct()
 	}
 
 	if (HeaderCloseButton) HeaderCloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	// SetLootContext may render the item grid before NativeConstruct creates this fallback button.
+	if (bRelicClaimButtonGenerated) RenderedSlotCount = INDEX_NONE;
 	BindLootInventory();
 	RefreshLootHeader();
 	RefreshLoot();
