@@ -4,6 +4,8 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Core/Framework/ASLobbyGameMode.h"
 #include "Core/Framework/ASLobbyGameState.h"
+#include "Core/UI/ASUIManagerSubsystem.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Characters/Player/UI/ASCharacterSelectWidget.h"
 
@@ -28,7 +30,9 @@ void AASLobbyPlayerController::InitializeLobbyUI()
 
 	GetWorld()->GameStateSetEvent.RemoveAll(this);
 	GetWorld()->GameStateSetEvent.AddUObject(this, &ThisClass::HandleGameStateSet);
-	if (LobbyWidgetClass)
+	ULocalPlayer* Local = GetLocalPlayer();
+	UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	if (LobbyWidgetClass && UI && !CharacterSelectWidget)
 	{
 		// Reuse the screen if an existing BP BeginPlay already created it.
 		TArray<UUserWidget*> ExistingWidgets;
@@ -39,24 +43,11 @@ void AASLobbyPlayerController::InitializeLobbyUI()
 			if (!LobbyWidget) LobbyWidget = ExistingWidget;
 			else ExistingWidget->RemoveFromParent();
 		}
-		if (!LobbyWidget) LobbyWidget = CreateWidget<UUserWidget>(this, LobbyWidgetClass);
-		ShowWidget(LobbyWidget);
+		LobbyWidget = LobbyWidget
+			? UI->ShowScreen(TEXT("Lobby"), LobbyWidget)
+			: UI->OpenScreen(TEXT("Lobby"), LobbyWidgetClass, 0);
 	}
 	HandleGameStateSet(GetWorld()->GetGameState());
-}
-
-void AASLobbyPlayerController::ShowWidget(UUserWidget* Widget)
-{
-	if (!Widget)
-	{
-		return;
-	}
-	if (!Widget->IsInViewport()) Widget->AddToViewport();
-	FInputModeUIOnly InputMode;
-	if (Widget->IsFocusable()) InputMode.SetWidgetToFocus(Widget->TakeWidget());
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	SetInputMode(InputMode);
-	bShowMouseCursor = true;
 }
 
 void AASLobbyPlayerController::HandleGameStateSet(AGameStateBase* State)
@@ -71,17 +62,21 @@ void AASLobbyPlayerController::HandleLobbyPhaseChanged()
 {
 	if (!IsLocalController() || !BoundLobbyState
 		|| BoundLobbyState->LobbyPhase != EASLobbyPhase::CharacterSelection || !BoundLobbyState->CharacterRoster) return;
-	if (CharacterSelectWidget) return;
+	if (CharacterSelectWidget && CharacterSelectWidget->IsInViewport()) return;
 	if (!CharacterSelectWidgetClass)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[CharacterSelect] Set CharacterSelectWidgetClass on the lobby PlayerController."));
 		return;
 	}
+	ULocalPlayer* Local = GetLocalPlayer();
+	UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	if (!UI) return;
 	CharacterSelectWidget = CreateWidget<UASCharacterSelectWidget>(this, CharacterSelectWidgetClass);
 	if (!CharacterSelectWidget) return;
+	UI->CloseScreen(TEXT("Lobby"), false);
 	RemoveOwnedWidgets(LobbyWidgetClass);
 	LobbyWidget = nullptr;
-	ShowWidget(CharacterSelectWidget);
+	UI->ShowScreen(TEXT("CharacterSelection"), CharacterSelectWidget);
 }
 
 void AASLobbyPlayerController::RemoveOwnedWidgets(const TSubclassOf<UUserWidget> WidgetClass)
@@ -97,6 +92,19 @@ void AASLobbyPlayerController::RemoveOwnedWidgets(const TSubclassOf<UUserWidget>
 
 void AASLobbyPlayerController::ClearLobbyScreens()
 {
+	if (ULocalPlayer* Local = GetLocalPlayer())
+	{
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			for (const FName Name : { FName(TEXT("Lobby")), FName(TEXT("CharacterSelection")) })
+			{
+				if (UUserWidget* Screen = UI->GetScreen(Name); Screen && Screen->GetOwningPlayer() == this)
+				{
+					UI->CloseScreen(Name, false);
+				}
+			}
+		}
+	}
 	RemoveOwnedWidgets(LobbyWidgetClass);
 	RemoveOwnedWidgets(CharacterSelectWidgetClass);
 	if (LobbyWidget) LobbyWidget->RemoveFromParent();

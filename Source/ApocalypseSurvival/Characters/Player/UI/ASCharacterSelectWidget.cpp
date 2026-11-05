@@ -16,6 +16,8 @@
 #include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
 #include "Core/UI/ASLeaveRoomConfirmationWidget.h"
+#include "Core/UI/ASUIManagerSubsystem.h"
+#include "Engine/LocalPlayer.h"
 #include "Core/Framework/ASSessionSubsystem.h"
 
 void UASCharacterSelectWidget::NativeConstruct()
@@ -294,11 +296,14 @@ void UASCharacterSelectWidget::LeaveRoom()
 	const AASLobbyGameState* State = GetWorld() ? GetWorld()->GetGameState<AASLobbyGameState>() : nullptr;
 	if (State && State->LobbyPhase == EASLobbyPhase::Travelling) return;
 	if (LeaveConfirmation && LeaveConfirmation->IsInViewport()) return;
+	ULocalPlayer* Local = GetOwningLocalPlayer();
+	UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	if (!UI) return;
 	LeaveConfirmation = CreateWidget<UASLeaveRoomConfirmationWidget>(GetOwningPlayer());
 	if (!LeaveConfirmation) return;
 	LeaveConfirmation->SetReturnFocusWidget(this);
 	LeaveConfirmation->OnConfirmed.BindUObject(this, &ThisClass::ConfirmLeaveRoom);
-	LeaveConfirmation->AddToViewport(200);
+	UI->ShowScreen(TEXT("LeaveRoomConfirmation"), LeaveConfirmation, 200);
 	SetIsEnabled(false);
 	LeaveConfirmation->SetKeyboardFocus();
 }

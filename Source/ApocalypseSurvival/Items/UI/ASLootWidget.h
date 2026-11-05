@@ -53,6 +53,11 @@ private:
 	int32 RenderedSlotCount = INDEX_NONE;
 
 	UFUNCTION()
+	void HandleRelicClaimClicked();
+
+	void RefreshRelicRewardButton();
+
+	UFUNCTION()
 	void HandleCloseClicked();
 
 	UPROPERTY(BlueprintReadWrite, meta = (AllowPrivateAccess = "true", ExposeOnSpawn = "true"), Category = "Loot")
@@ -75,6 +80,14 @@ private:
 	TObjectPtr<UButton> CloseButton;
 	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UButton> HeaderCloseButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> RelicClaimButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RelicClaimText;
+
+	bool bRelicClaimButtonGenerated = false;
 
 	/** Transparent hit area behind LootPanel so outside mouse input reaches this widget. */
 	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))

@@ -64,6 +64,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	void RequestDropLoot(AASLootChest* Chest, FGuid InstanceId);
 
+	UFUNCTION(BlueprintCallable, Category = "Loot|Relic")
+	void RequestClaimRelic(AASLootChest* Chest);
+
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	void RequestUseItem(FGuid InstanceId);
 
@@ -125,6 +128,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerDropLoot(AASLootChest* Chest, FGuid InstanceId);
+
+	UFUNCTION(Server, Reliable)
+	void ServerClaimRelic(AASLootChest* Chest);
 
 	UFUNCTION(Server, Reliable)
 	void ServerUseItem(FGuid InstanceId);

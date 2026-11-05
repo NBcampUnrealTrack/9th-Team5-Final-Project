@@ -17,6 +17,7 @@
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
 #include "Core/Framework/ASGameState.h"
 #include "Core/UI/ASInGameMenuWidget.h"
+#include "Core/UI/ASUIManagerSubsystem.h"
 #include "InputCoreTypes.h"
 #include "InputKeyEventArgs.h"
 #include "GAS/ASAbilitySystemComponent.h"
@@ -42,6 +43,14 @@
 
 void AASPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (ULocalPlayer* Local = GetLocalPlayer(); Local && Local->GetPlayerController(GetWorld()) == this)
+	{
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseAllScreens(false);
+			UI->CloseAllHUDs();
+		}
+	}
 	if (IsLocalController())
 	{
 		TArray<UUserWidget*> Widgets;
@@ -52,6 +61,19 @@ void AASPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+void AASPlayerController::PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel)
+{
+	if (ULocalPlayer* Local = GetLocalPlayer(); Local && Local->GetPlayerController(GetWorld()) == this)
+	{
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseAllScreens(false);
+			UI->CloseAllHUDs();
+		}
+	}
+	Super::PreClientTravel(PendingURL, TravelType, bIsSeamlessTravel);
 }
 
 AASPlayerController::AASPlayerController()
@@ -527,7 +549,9 @@ void AASPlayerController::PlayerTick(const float DeltaTime)
 
 bool AASPlayerController::IsInGameMenuOpen() const
 {
-	return InGameMenuWidget && InGameMenuWidget->IsInViewport();
+	const ULocalPlayer* Local = GetLocalPlayer();
+	const UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	return UI && UI->GetScreen(TEXT("InGameMenu"));
 }
 
 bool AASPlayerController::IsResultPhase() const
@@ -546,11 +570,11 @@ void AASPlayerController::ToggleInGameMenu()
 		return;
 	}
 	if (IsResultPhase() || !InGameMenuWidgetClass) return;
+	ULocalPlayer* Local = GetLocalPlayer();
+	UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	if (!UI) return;
 	ItemInteractionComponent->CloseInventory();
 	CraftingComponent->CloseCrafting();
-	InGameMenuWidget = CreateWidget<UASInGameMenuWidget>(this, InGameMenuWidgetClass);
-	if (!InGameMenuWidget) return;
-	bCursorVisibleBeforeMenu = bShowMouseCursor;
 	OnMoveCompleted();
 	OnStop();
 	bHasPendingAttackMoveRequest = false;
@@ -567,27 +591,20 @@ void AASPlayerController::ToggleInGameMenu()
 			}
 		}
 	}
-	InGameMenuWidget->AddToViewport(20);
-	FInputModeUIOnly InputMode;
-	InputMode.SetWidgetToFocus(InGameMenuWidget->TakeWidget());
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	SetInputMode(InputMode);
-	bShowMouseCursor = true;
+	UI->OpenScreen(TEXT("InGameMenu"), InGameMenuWidgetClass, 20);
 }
 
 void AASPlayerController::CloseInGameMenu()
 {
-	if (!IsLocalController() || !InGameMenuWidget) return;
-	InGameMenuWidget->RemoveFromParent();
-	InGameMenuWidget = nullptr;
-	// The result screen owns focus once the match has ended.
-	if (IsResultPhase()) return;
-	FInputModeGameAndUI InputMode;
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
-	InputMode.SetHideCursorDuringCapture(false);
-	SetInputMode(InputMode);
-	bShowMouseCursor = bCursorVisibleBeforeMenu;
-	UWidgetBlueprintLibrary::SetFocusToGameViewport();
+	if (!IsLocalController()) return;
+	if (ULocalPlayer* Local = GetLocalPlayer())
+	{
+		// The result screen owns focus once the match has ended.
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseScreen(TEXT("InGameMenu"), !IsResultPhase());
+		}
+	}
 }
 
 AASPlayerCameraManager* AASPlayerController::GetASPlayerCameraManager() const

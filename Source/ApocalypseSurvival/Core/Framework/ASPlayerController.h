@@ -51,6 +51,7 @@ public:
 	void ServerAcknowledgeBossIntro(AASBossEncounter* Encounter);
 	void SetBossIntroInputBlocked(bool bBlocked);
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ToggleInGameMenu();
 	UFUNCTION(BlueprintCallable, Category = "Menu")
@@ -158,9 +159,6 @@ private:
 	TSubclassOf<UASInGameMenuWidget> InGameMenuWidgetClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UASSettingsWidget> InGameSettingsWidgetClass;
-	UPROPERTY(Transient)
-	TObjectPtr<UASInGameMenuWidget> InGameMenuWidget;
-	bool bCursorVisibleBeforeMenu = true;
 	/**
 	 * 조종하는 폰이 바뀌었을 때. 서버와 클라이언트 양쪽에서 불린다.
 	 * 다이나믹 델리게이트에 연결하려면 UFUNCTION 이어야 한다.
