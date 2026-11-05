@@ -9,6 +9,8 @@ class UASItemSlotViewModel;
 class UASItemInteractionComponent;
 class APlayerController;
 class AASLootChest;
+class UASQuestComponent;
+class UASItemInstance;
 
 USTRUCT(BlueprintType)
 struct FASInventoryPresentation
@@ -37,6 +39,7 @@ public:
 	UASInventoryComponent* GetInventory() const { return Inventory.Get(); }
 	FText GetQuickSlotKeyText(int32 Index) const;
 	AASLootChest* GetLootChest() const;
+	bool IsLootItemVisible(const UASItemInstance* Item) const;
 	UFUNCTION(BlueprintCallable, Category="Inventory|ViewModel") void ActivateSlot(int32 Slot, FGuid Expected);
 	UFUNCTION(BlueprintCallable, Category="Inventory|ViewModel") void DropSlot(int32 Slot, FGuid Expected, bool bSingle = false);
 	UFUNCTION(BlueprintCallable, Category="Inventory|ViewModel") void MoveSlot(int32 From, int32 To, FGuid ExpectedFrom, FGuid ExpectedTo);
@@ -59,5 +62,6 @@ private:
 	TWeakObjectPtr<UASInventoryComponent> Inventory;
 	TWeakObjectPtr<APlayerController> Player;
 	TWeakObjectPtr<UASItemInteractionComponent> Interaction;
+	TWeakObjectPtr<UASQuestComponent> Quests;
 	UPROPERTY(Transient) TMap<int32, TObjectPtr<UASItemSlotViewModel>> SlotModels;
 };

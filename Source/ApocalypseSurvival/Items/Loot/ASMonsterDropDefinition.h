@@ -15,13 +15,17 @@ struct APOCALYPSESURVIVAL_API FASMonsterDropGroupRow : public FTableRowBase
 {
 	GENERATED_BODY()
 
-	/** 이 그룹 자체가 발동할 확률. 실패하면 어떤 아이템도 생성하지 않는다. */
+	/** 이 그룹 자체가 발동할 확률. 실패하면 아이템을 생성하지 않는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Drop", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DropChance = 1.0f;
 
-	/** 확률과 관계없이 항상 추가하는 아이템. */
+	/** 일반 드롭 확률을 통과하면 항상 추가하는 아이템. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Drop|Fixed")
 	TArray<FASItemGrant> FixedItems;
+
+	/** Legacy serialized field, ignored. Configure direct quest-bag grants in quest objectives instead. */
+	UPROPERTY()
+	TArray<FASItemGrant> QuestItems;
 
 	/** 가중치 기반 랜덤 후보. 기존 FASLootPoolEntry DataTable을 재사용한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Drop|Random",

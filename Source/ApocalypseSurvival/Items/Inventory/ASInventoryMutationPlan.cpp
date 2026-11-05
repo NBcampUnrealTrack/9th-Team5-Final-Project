@@ -12,14 +12,16 @@ EASInventoryExchangeResult FASInventoryMutationPlan::Build(const TArray<TObjectP
 	TMap<UASItemDefinition*, int64> Required;
 	for (const FASItemGrant& Cost : Costs)
 	{
-		if (!IsValid(Cost.ItemDefinition) || Cost.Quantity <= 0 || Cost.ItemDefinition->MaxStackSize < 1)
+		if (!IsValid(Cost.ItemDefinition) || Cost.Quantity <= 0 || Cost.ItemDefinition->MaxStackSize < 1
+			|| Cost.ItemDefinition->ItemType == EASItemType::Quest)
 			return EASInventoryExchangeResult::InvalidRequest;
 		int64& Total = Required.FindOrAdd(Cost.ItemDefinition);
 		Total += Cost.Quantity;
 		if (Total > MAX_int32) return EASInventoryExchangeResult::InvalidRequest;
 	}
 	for (const FASItemGrant& Reward : Rewards)
-		if (!IsValid(Reward.ItemDefinition) || Reward.Quantity <= 0 || Reward.ItemDefinition->MaxStackSize < 1)
+		if (!IsValid(Reward.ItemDefinition) || Reward.Quantity <= 0 || Reward.ItemDefinition->MaxStackSize < 1
+			|| Reward.ItemDefinition->ItemType == EASItemType::Quest)
 			return EASInventoryExchangeResult::InvalidRequest;
 
 	TSet<int32> Occupied;

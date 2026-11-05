@@ -4,6 +4,11 @@
 
 namespace ASGameplayTags
 {
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Event_FinalBossDefeated);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Target_ExpeditionDiary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Target_ExpeditionIdCards);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Target_Laboratory);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Target_ExperimentRecord);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Event_EnemyKilled);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Event_ItemCollected);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Quest_Event_ZoneEntered);

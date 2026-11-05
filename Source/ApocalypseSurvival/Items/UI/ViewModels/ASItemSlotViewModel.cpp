@@ -40,6 +40,10 @@ void UASItemSlotViewModel::Refresh()
 	UASItemInstance* Item = ResolveItem();
 	const UASItemDefinition* Definition = Item ? Item->GetItemDefinition() : nullptr;
 	if (!IsValid(Definition) || !Item->IsValidItemInstance()) { Item = nullptr; Definition = nullptr; }
+	if (Definition && Inventory.IsValid() && Inventory->GetLootChest() && !Inventory->IsLootItemVisible(Item))
+	{
+		Item = nullptr; Definition = nullptr;
+	}
 	const FSoftObjectPath IconPath = Definition ? Definition->Icon.ToSoftObjectPath() : FSoftObjectPath();
 	if (RequestedIcon != IconPath)
 	{
@@ -62,7 +66,7 @@ void UASItemSlotViewModel::Refresh()
 		Value.ItemType = Definition->ItemType;
 		Value.bHasItem = true;
 		Value.bEquipped = bWeapon || bBag;
-		Value.bCanDrag = SlotIndex >= 0 || bBag;
+		Value.bCanDrag = Definition->ItemType != EASItemType::Quest && (SlotIndex >= 0 || bBag);
 		Value.Equipped = Value.bEquipped ? FText::FromString(TEXT("E")) : FText::GetEmpty();
 		Value.Tooltip = Definition->ItemType == EASItemType::Bag
 			? FText::Format(NSLOCTEXT("Items", "BagCapacityTooltip", "{0}\n장착 시 보관함 +{1}칸"), Definition->DisplayName, FText::AsNumber(Definition->BagAdditionalSlots))

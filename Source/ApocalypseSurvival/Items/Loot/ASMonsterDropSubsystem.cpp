@@ -39,7 +39,6 @@ bool UASMonsterDropSubsystem::SpawnDrops(const FDataTableRowHandle& DropGroup, c
 	}
 
 	FRandomStream Random(FMath::Rand());
-	// 0%는 절대 드랍하지 않고, 100%는 항상 드랍한다.
 	if (Group->DropChance <= 0.0f || Random.FRand() >= Group->DropChance)
 	{
 		return true;

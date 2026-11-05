@@ -47,6 +47,8 @@ int32 UASInventoryComponent::AddItem(UASItemDefinition* ItemDefinition, const in
 	{
 		return 0;
 	}
+	if (ItemDefinition->ItemType == EASItemType::Quest && GetOwner()
+		&& (GetOwner()->IsA<APawn>() || GetOwner()->IsA<AController>() || GetOwner()->IsA<APlayerState>())) return 0;
 
 	RemoveEmptyAndInvalidInstances();
 
@@ -179,6 +181,9 @@ int32 UASInventoryComponent::TransferItemTo(
 	}
 
 	TargetInventory->RemoveEmptyAndInvalidInstances();
+	if (ItemInstance->GetItemDefinition()->ItemType == EASItemType::Quest && TargetInventory->GetOwner()
+		&& (TargetInventory->GetOwner()->IsA<APawn>() || TargetInventory->GetOwner()->IsA<AController>()
+			|| TargetInventory->GetOwner()->IsA<APlayerState>())) return 0;
 
 	const int32 QuantityToTransfer = FMath::Min(RequestedQuantity, ItemInstance->GetQuantity());
 	int32 RemainingQuantity = QuantityToTransfer;

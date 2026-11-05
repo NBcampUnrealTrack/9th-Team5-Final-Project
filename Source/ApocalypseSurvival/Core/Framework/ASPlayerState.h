@@ -15,6 +15,9 @@ class UASCharacterDefinition;
 class UASProgressionComponent;
 
 class UASModuleComponent;
+class UASQuestComponent;
+class UASQuestDialogueComponent;
+class UASPlayerProfileComponent;
 
 /**
  * 플레이어의 어빌리티 시스템을 소유한다.
@@ -98,6 +101,12 @@ public:
 	UASProgressionComponent* GetProgressionComponent() const { return ProgressionComponent; }
 
 private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Quest", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASQuestComponent> QuestComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Quest|Dialogue", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASQuestDialogueComponent> QuestDialogueComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Profile", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASPlayerProfileComponent> PlayerProfileComponent;
 	// 클라이언트 -> 서버. 고른 캐릭터 정의를 보낸다. 고르지 않았으면 nullptr
 	UFUNCTION(Server, Reliable)
 	void ServerSubmitCharacterSelection(const UASCharacterDefinition* InDefinition);

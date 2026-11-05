@@ -17,6 +17,7 @@ public:
 	virtual void RefreshSlots() override;
 
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void BuildSlotWidgets() override;
 	virtual UWidget* GetInventoryBounds() const override;
 	virtual void NativeConstruct() override;
@@ -25,6 +26,11 @@ protected:
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 
 private:
+	UFUNCTION() void ShowInventoryTab();
+	UFUNCTION() void ShowQuestTab();
+	UPROPERTY(Transient) TObjectPtr<class UWidgetSwitcher> TabContent;
+	UPROPERTY(Transient) TObjectPtr<UButton> InventoryTabButton;
+	UPROPERTY(Transient) TObjectPtr<UButton> QuestTabButton;
 	UFUNCTION()
 	void Close();
 	UFUNCTION()
