@@ -1,4 +1,6 @@
 #include "Items/Loot/ASDroppedItem.h"
+#include "Quests/ASQuestComponent.h"
+#include "GameFramework/PlayerState.h"
 
 #include "AbilitySystemComponent.h"
 #include "Blueprint/WidgetTree.h"
@@ -40,6 +42,9 @@ void UASDroppedItemNameComponent::TickComponent(float DeltaTime, ELevelTick Tick
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	if (bAddedToScreen) TransitionWidget.Reset();
+	const AASDroppedItem* Drop = Cast<AASDroppedItem>(GetOwner());
+	if (Drop && Drop->GetDroppedItem() && Drop->GetDroppedItem()->GetItemDefinition()->ItemType == EASItemType::Quest)
+		if (UASDroppedItemNameWidget* Label = Cast<UASDroppedItemNameWidget>(GetUserWidgetObject())) Label->RefreshVisibility();
 }
 
 TSharedRef<SWidget> UASDroppedItemNameWidget::RebuildWidget()
@@ -96,8 +101,14 @@ void UASDroppedItemNameWidget::SetItem(AASDroppedItem* InItem)
 void UASDroppedItemNameWidget::RefreshVisibility()
 {
 	UASItemInteractionComponent* Interaction = GetLocalInteraction();
-	const bool bVisible = ItemActor.IsValid() && ItemActor->GetDroppedItem()
+	bool bVisible = ItemActor.IsValid() && ItemActor->GetDroppedItem()
 		&& (!Interaction || Interaction->AreDroppedItemNamesVisible());
+	if (bVisible && ItemActor->GetDroppedItem()->GetItemDefinition()->ItemType == EASItemType::Quest)
+	{
+		const APlayerController* PC = Interaction ? Cast<APlayerController>(Interaction->GetOwner()) : nullptr;
+		const UASQuestComponent* Quests = PC && PC->PlayerState ? PC->PlayerState->FindComponentByClass<UASQuestComponent>() : nullptr;
+		bVisible = Quests && Quests->GetCollectibleQuestItemCount(ItemActor->GetDroppedItem()->GetItemDefinition()) > 0;
+	}
 	if (!bVisible)
 	{
 		if (Interaction) Interaction->SetHoveredDroppedItemLabel(ItemActor.Get(), false);
@@ -290,6 +301,13 @@ int32 AASDroppedItem::Pickup(APawn* Interactor, UASInventoryComponent* TargetInv
 	UAbilitySystemComponent* ASC = UASItemAbilityLibrary::ResolveInventoryAbilitySystem(TargetInventory, Interactor);
 	UASItemInstance* Item = GetDroppedItem();
 	if (!ASC || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead) || !Item) return 0;
+	if (Item->GetItemDefinition()->ItemType == EASItemType::Quest)
+	{
+		if (TargetInventory->GetOwner() != Interactor && TargetInventory->GetOwner() != Interactor->GetController()
+			&& TargetInventory->GetOwner() != Interactor->GetPlayerState()) return 0;
+		UASQuestComponent* Quests = Interactor->GetPlayerState() ? Interactor->GetPlayerState()->FindComponentByClass<UASQuestComponent>() : nullptr;
+		return Quests ? Quests->CollectQuestItem(Item->GetItemDefinition(), Item->GetQuantity()) : 0;
+	}
 	return DroppedInventory->TransferItemTo(TargetInventory, Item, Item->GetQuantity());
 }
 

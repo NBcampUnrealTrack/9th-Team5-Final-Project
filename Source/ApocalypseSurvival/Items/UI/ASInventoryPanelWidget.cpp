@@ -1,4 +1,9 @@
 #include "Items/UI/ASInventoryPanelWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/HorizontalBox.h"
+#include "Components/VerticalBox.h"
+#include "Components/WidgetSwitcher.h"
+#include "Quests/UI/ASQuestInventoryWidget.h"
 
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -57,6 +62,7 @@ void UASInventoryPanelWidget::NativeConstruct()
 	if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Close);
 	if (CraftingButton) CraftingButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenCrafting);
 	if (GetViewModel()) GetViewModel()->ClearFeedback();
+	ShowInventoryTab();
 }
 
 void UASInventoryPanelWidget::NativeDestruct()
@@ -90,4 +96,51 @@ void UASInventoryPanelWidget::Close()
 void UASInventoryPanelWidget::OpenCrafting()
 {
 	if (GetViewModel()) GetViewModel()->OpenCrafting();
+}
+
+TSharedRef<SWidget> UASInventoryPanelWidget::RebuildWidget()
+{
+	if (!IsDesignTime() && WindowFrame && !TabContent && WindowFrame->GetContent())
+	{
+		UWidget* InventoryBody = WindowFrame->GetContent();
+		WindowFrame->SetContent(nullptr);
+		UVerticalBox* Shell = WidgetTree->ConstructWidget<UVerticalBox>();
+		UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>();
+		Shell->AddChildToVerticalBox(Header);
+		const auto Button = [&](const TCHAR* Label)
+		{
+			UButton* Result = WidgetTree->ConstructWidget<UButton>();
+			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>();
+			Text->SetText(FText::FromString(Label)); Text->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
+			Result->SetContent(Text); Header->AddChildToHorizontalBox(Result); return Result;
+		};
+		InventoryTabButton = Button(TEXT("  인벤토리  "));
+		InventoryTabButton->OnClicked.AddDynamic(this, &ThisClass::ShowInventoryTab);
+		Button(TEXT("  제작  "))->OnClicked.AddDynamic(this, &ThisClass::OpenCrafting);
+		QuestTabButton = Button(TEXT("  퀘스트  "));
+		QuestTabButton->OnClicked.AddDynamic(this, &ThisClass::ShowQuestTab);
+		UButton* Module = Button(TEXT("  모듈  "));
+		Module->SetIsEnabled(false); Module->SetToolTipText(FText::FromString(TEXT("모듈 설정 화면 연결 예정")));
+		Button(TEXT("  닫기  "))->OnClicked.AddDynamic(this, &ThisClass::Close);
+		TabContent = WidgetTree->ConstructWidget<UWidgetSwitcher>();
+		TabContent->AddChild(InventoryBody);
+		TabContent->AddChild(CreateWidget<UASQuestInventoryWidget>(GetOwningPlayer()));
+		Shell->AddChildToVerticalBox(TabContent);
+		WindowFrame->SetContent(Shell);
+	}
+	return Super::RebuildWidget();
+}
+
+void UASInventoryPanelWidget::ShowInventoryTab()
+{
+	if (TabContent) TabContent->SetActiveWidgetIndex(0);
+	if (InventoryTabButton) InventoryTabButton->SetBackgroundColor(FLinearColor(.4f,.8f,1.f));
+	if (QuestTabButton) QuestTabButton->SetBackgroundColor(FLinearColor::White);
+}
+
+void UASInventoryPanelWidget::ShowQuestTab()
+{
+	if (TabContent) TabContent->SetActiveWidgetIndex(1);
+	if (QuestTabButton) QuestTabButton->SetBackgroundColor(FLinearColor(.4f,.8f,1.f));
+	if (InventoryTabButton) InventoryTabButton->SetBackgroundColor(FLinearColor::White);
 }

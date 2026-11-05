@@ -1,9 +1,12 @@
 #include "Items/UI/ViewModels/ASInventoryViewModel.h"
+#include "Quests/ASQuestComponent.h"
+#include "GameFramework/PlayerState.h"
 
 #include "Items/UI/ViewModels/ASItemSlotViewModel.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/Interaction/ASItemInteractionComponent.h"
 #include "Items/ASItemInstance.h"
+#include "Items/Data/ASItemDefinition.h"
 #include "Items/Loot/ASLootChest.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
@@ -20,6 +23,8 @@ void UASInventoryViewModel::Initialize(UASInventoryComponent* Source, APlayerCon
 	Shutdown();
 	Inventory = Source;
 	Player = Controller;
+	Quests = Controller && Controller->PlayerState ? Controller->PlayerState->FindComponentByClass<UASQuestComponent>() : nullptr;
+	if (Quests.IsValid()) Quests->OnQuestsChanged.AddUniqueDynamic(this, &ThisClass::Refresh);
 	if (ULocalPlayer* Local = Controller ? Controller->GetLocalPlayer() : nullptr)
 		if (UASLocalSettingsSubsystem* Settings = Local->GetSubsystem<UASLocalSettingsSubsystem>())
 			Settings->OnKeyMappingsChanged.AddUObject(this, &ThisClass::Refresh);
@@ -31,6 +36,8 @@ void UASInventoryViewModel::Initialize(UASInventoryComponent* Source, APlayerCon
 
 void UASInventoryViewModel::Shutdown()
 {
+	if (Quests.IsValid()) Quests->OnQuestsChanged.RemoveDynamic(this, &ThisClass::Refresh);
+	Quests.Reset();
 	if (ULocalPlayer* Local = Player.IsValid() ? Player->GetLocalPlayer() : nullptr)
 		if (UASLocalSettingsSubsystem* Settings = Local->GetSubsystem<UASLocalSettingsSubsystem>())
 			Settings->OnKeyMappingsChanged.RemoveAll(this);
@@ -90,6 +97,11 @@ void UASInventoryViewModel::Refresh()
 	{
 		Value.StorageSlotCount = Inventory->GetStorageSlotCount();
 		Value.ItemCount = Inventory->GetItems().Num();
+		if (GetLootChest())
+		{
+			Value.ItemCount = 0;
+			for (const UASItemInstance* Item : Inventory->GetItems()) if (IsLootItemVisible(Item)) ++Value.ItemCount;
+		}
 		Value.Capacity = FText::Format(NSLOCTEXT("ASInventory", "Capacity", "보관함 {0}칸 + 퀵슬롯 10칸  ·  사용 중 {1}칸"),
 			FText::AsNumber(Value.StorageSlotCount), FText::AsNumber(Inventory->GetUsedSlotCount()));
 		if (IsPlayerSource())
@@ -183,3 +195,11 @@ void UASInventoryViewModel::HandleActionFailed(FText Message)
 	UE_MVVM_SET_PROPERTY_VALUE(Presentation, Value);
 }
 void UASInventoryViewModel::ClearFeedback() { HandleActionFailed(FText::GetEmpty()); }
+
+bool UASInventoryViewModel::IsLootItemVisible(const UASItemInstance* Item) const
+{
+	if (!Item || !Item->GetItemDefinition()) return false;
+	const UASItemDefinition* Definition = Item->GetItemDefinition();
+	return Definition->ItemType != EASItemType::Quest
+		|| (Quests.IsValid() && Quests->GetCollectibleQuestItemCount(Definition) > 0);
+}

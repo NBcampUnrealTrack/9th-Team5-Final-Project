@@ -1,4 +1,7 @@
 #include "Core/Framework/ASPlayerState.h"
+#include "Quests/ASQuestComponent.h"
+#include "Quests/Dialogue/ASQuestDialogueComponent.h"
+#include "Modules/Persistence/ASPlayerProfileComponent.h"
 
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
@@ -23,6 +26,9 @@
 
 AASPlayerState::AASPlayerState()
 {
+	QuestComponent = CreateDefaultSubobject<UASQuestComponent>(TEXT("QuestComponent"));
+	QuestDialogueComponent = CreateDefaultSubobject<UASQuestDialogueComponent>(TEXT("QuestDialogueComponent"));
+	PlayerProfileComponent = CreateDefaultSubobject<UASPlayerProfileComponent>(TEXT("PlayerProfileComponent"));
 	AbilitySystemComponent = CreateDefaultSubobject<UASAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	ModuleComponent = CreateDefaultSubobject<UASModuleComponent>(TEXT("ModuleComponent"));
 	RelicComponent = CreateDefaultSubobject<UASRelicComponent>(TEXT("RelicComponent"));

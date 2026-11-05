@@ -44,6 +44,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	EASItemType ItemType = EASItemType::Weapon;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Quest", meta = (Categories = "Quest.Target"))
+	FGameplayTag QuestTargetTag;
+
 	/** Authored per definition; independent of the chest that drops this item. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	EASLootRarity Rarity = EASLootRarity::Uncommon;

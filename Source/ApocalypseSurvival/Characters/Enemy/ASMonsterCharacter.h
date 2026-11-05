@@ -60,6 +60,9 @@ public:
     /** 서버에서 Definition 적용과 GAS 초기화가 끝난 직후 한 번 불린다. AI 컨트롤러가 이걸 기다린다. */
     FSimpleMulticastDelegate OnMonsterInitialized;
 
+    /** Server death notification, emitted once before game-mode victory reporting. */
+    FSimpleMulticastDelegate OnMonsterDied;
+
     /** 서버 전용. 클라이언트에서는 항상 false 다. */
     bool IsMonsterInitialized() const { return bMonsterInitialized; }
 

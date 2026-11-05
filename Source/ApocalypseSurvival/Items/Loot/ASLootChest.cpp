@@ -1,4 +1,5 @@
 #include "Items/Loot/ASLootChest.h"
+#include "Quests/ASQuestComponent.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
@@ -381,6 +382,12 @@ int32 AASLootChest::TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInv
 			&& TargetInventory->GetOwner() != Interactor->GetController())
 		|| !IsWithinInteractionRange(Interactor) || !IASInteractable::Execute_CanInteract(this, Interactor)) return 0;
 	UASItemInstance* Item = LootInventory->FindItemById(InstanceId);
+	if (Item && Item->GetItemDefinition()->ItemType == EASItemType::Quest)
+	{
+		UASQuestComponent* Quests = Interactor->GetPlayerState() ? Interactor->GetPlayerState()->FindComponentByClass<UASQuestComponent>() : nullptr;
+		// Quest contents are personal entitlements. Leave the shared template for other players.
+		return Quests ? Quests->CollectQuestItem(Item->GetItemDefinition(), FMath::Min(Quantity, Item->GetQuantity())) : 0;
+	}
 	return Item ? LootInventory->TransferItemTo(TargetInventory, Item, Quantity) : 0;
 }
 
@@ -394,6 +401,7 @@ AASDroppedItem* AASLootChest::DropLoot(APawn* Interactor, const FGuid InstanceId
 		ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Interactor->GetPlayerState(), true);
 	if (!IsValid(ASC) || ASC->GetAvatarActor() != Interactor || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)) return nullptr;
 	UASItemInstance* Item = LootInventory->FindItemById(InstanceId);
+	if (Item && Item->GetItemDefinition()->ItemType == EASItemType::Quest) return nullptr;
 	if (!Item) return nullptr;
 	FVector Location = Interactor->GetActorLocation() + Interactor->GetActorForwardVector() * 100.0f;
 	FHitResult Ground;

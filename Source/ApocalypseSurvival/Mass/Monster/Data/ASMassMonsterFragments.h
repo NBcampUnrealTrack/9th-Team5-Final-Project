@@ -14,6 +14,7 @@ class AASMassMonsterProjectile;
 class AASMonsterAttackIndicatorActor;
 class UMassEntityConfigAsset;
 class UASMonsterStatDefinition;
+class UASMonsterDefinition;
 
 /** Entity마다 독립적으로 보유하는 현재 체력. 최대 체력은 종류별 공유 설정에 둔다. */
 USTRUCT()
@@ -241,6 +242,10 @@ USTRUCT()
 struct APOCALYPSESURVIVAL_API FASMassMonsterConfigFragment : public FMassConstSharedFragment
 {
 	GENERATED_BODY()
+
+	/** Original definition retained from the existing trait for gameplay identity notifications. */
+	UPROPERTY()
+	TObjectPtr<UASMonsterDefinition> SourceMonsterDefinition;
 
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FName MonsterTypeId = NAME_None;
