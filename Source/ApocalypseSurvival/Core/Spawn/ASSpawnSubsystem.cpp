@@ -22,6 +22,8 @@ namespace
 		EASMonsterSpawnBackend SpawnBackend = EASMonsterSpawnBackend::Actor;
 		TSubclassOf<AASMonsterCharacter> MonsterClass;
 		UMassEntityConfigAsset* MassEntityConfig = nullptr;
+		/** 설정되면 스폰포인트 로컬 좌표의 고정 배치, 없으면 무작위 산개. */
+		TOptional<FVector> LocalOffset;
 	};
 }
 
@@ -202,11 +204,49 @@ int32 UASSpawnSubsystem::SpawnDayGroup(const FASDayMonsterGroupSelectionEntry& G
 
 		for (int32 UnitIndex = 0; UnitIndex < Unit.Count; ++UnitIndex)
 		{
+			ResolvedSpawn.LocalOffset.Reset();
+			if (Unit.LocalOffsets.IsValidIndex(UnitIndex))
+			{
+				ResolvedSpawn.LocalOffset = Unit.LocalOffsets[UnitIndex];
+			}
 			PendingMonsters.Add(ResolvedSpawn);
 		}
 	}
 
-	const TArray<FVector> SpawnLocations = FindDistributedSpawnLocations(SpawnPoint, PendingMonsters.Num());
+	// 고정 오프셋 개체는 스폰포인트 트랜스폼을 따라 먼저 자리를 잡고, 나머지는 그 자리들을 피해 무작위 산개한다.
+	const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	const FTransform SpawnPointTransform = SpawnPoint.GetActorTransform();
+	TArray<FVector> SpawnLocations;
+	SpawnLocations.SetNum(PendingMonsters.Num());
+	TArray<FVector> FixedLocations;
+	int32 RandomCount = 0;
+	for (int32 Index = 0; Index < PendingMonsters.Num(); ++Index)
+	{
+		if (!PendingMonsters[Index].LocalOffset.IsSet())
+		{
+			++RandomCount;
+			continue;
+		}
+
+		FVector Location = SpawnPointTransform.TransformPosition(PendingMonsters[Index].LocalOffset.GetValue());
+		FNavLocation NavLocation;
+		if (NavSys && NavSys->ProjectPointToNavigation(Location, NavLocation, FVector(100.0f, 100.0f, 500.0f)))
+		{
+			Location = NavLocation.Location;
+		}
+		SpawnLocations[Index] = Location;
+		FixedLocations.Add(Location);
+	}
+
+	const TArray<FVector> RandomLocations = FindDistributedSpawnLocations(SpawnPoint, RandomCount, FixedLocations);
+	for (int32 Index = 0, RandomIndex = 0; Index < PendingMonsters.Num(); ++Index)
+	{
+		if (!PendingMonsters[Index].LocalOffset.IsSet() && RandomLocations.IsValidIndex(RandomIndex))
+		{
+			SpawnLocations[Index] = RandomLocations[RandomIndex++];
+		}
+	}
+
 	int32 SpawnedCount = 0;
 	TMap<UMassEntityConfigAsset*, TArray<FTransform>> MassSpawnTransforms;
 	for (int32 Index = 0; Index < PendingMonsters.Num() && Index < SpawnLocations.Num(); ++Index)
@@ -521,7 +561,8 @@ TArray<AASMonsterSpawnPoint*> UASSpawnSubsystem::SelectPlacedSpawnPoints(int32 C
 	return Candidates;
 }
 
-TArray<FVector> UASSpawnSubsystem::FindDistributedSpawnLocations(const AASMonsterSpawnPoint& SpawnPoint, int32 Count) const
+TArray<FVector> UASSpawnSubsystem::FindDistributedSpawnLocations(const AASMonsterSpawnPoint& SpawnPoint, int32 Count,
+	TConstArrayView<FVector> ReservedLocations) const
 {
 	TArray<FVector> Locations;
 	if (Count <= 0)
@@ -558,8 +599,12 @@ TArray<FVector> UASSpawnSubsystem::FindDistributedSpawnLocations(const AASMonste
 			{
 				NearestDistance = FMath::Min(NearestDistance, FVector::Dist2D(Candidate, ExistingLocation));
 			}
+			for (const FVector& ReservedLocation : ReservedLocations)
+			{
+				NearestDistance = FMath::Min(NearestDistance, FVector::Dist2D(Candidate, ReservedLocation));
+			}
 
-			if (Locations.IsEmpty() || NearestDistance >= MinSpacing)
+			if ((Locations.IsEmpty() && ReservedLocations.IsEmpty()) || NearestDistance >= MinSpacing)
 			{
 				BestCandidate = Candidate;
 				break;
