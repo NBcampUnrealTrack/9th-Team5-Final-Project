@@ -10,6 +10,7 @@
 #include "Items/UI/ASInventoryBarWidget.h"
 #include "Items/UI/ASItemRarityBackground.h"
 #include "Items/UI/ASItemViewBinding.h"
+#include "Items/UI/ASMenuStyle.h"
 
 void UASInventorySlotDragDrop::Drop_Implementation(const FPointerEvent& PointerEvent)
 {
@@ -39,6 +40,12 @@ void UASInventorySlotWidget::NativePreConstruct()
 void UASInventorySlotWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (SlotBorder) SlotBorder->SetBrushColor(ASMenuStyle::Surface);
+	DefaultSlotColor = ASMenuStyle::Surface; bCapturedSlotColor = true;
+	ASMenuStyle::StyleText(KeyText, 10, ASMenuStyle::Muted);
+	ASMenuStyle::StyleText(ItemNameText, 11, ASMenuStyle::Text);
+	ASMenuStyle::StyleText(QuantityText, 12, ASMenuStyle::Text);
+	ASMenuStyle::StyleText(EquippedText, 10, ASMenuStyle::Accent);
 	SetIsFocusable(false);
 	RefreshSlot();
 }
@@ -148,7 +155,7 @@ void UASInventorySlotWidget::ApplyPresentation()
 	if (SlotBorder)
 	{
 		if (!bCapturedSlotColor) { DefaultSlotColor = SlotBorder->GetBrushColor(); bCapturedSlotColor = true; }
-		SlotBorder->SetBrushColor(P.bEquipped ? EquippedSlotColor : DefaultSlotColor);
+		SlotBorder->SetBrushColor(P.bEquipped ? FLinearColor(.15f, .135f, .085f) : DefaultSlotColor);
 	}
 	SetToolTipText(P.Tooltip);
 }

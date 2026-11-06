@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Items/UI/ASPlayerMenuTabsWidget.h"
 #include "ASCraftingWidget.generated.h"
 
 class UPanelWidget;
@@ -22,10 +23,14 @@ public:
 	UFUNCTION(BlueprintPure, Category="Crafting|ViewModel")
 	UASCraftingViewModel* GetViewModel() const { return ViewModel; }
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 private:
+	UFUNCTION() void SelectMenuTab(EASPlayerMenuTab Tab);
+	UPROPERTY(Transient) TObjectPtr<UASPlayerMenuTabsWidget> MenuTabs;
 	UFUNCTION() void Refresh();
 	UFUNCTION() void Craft();
 	UFUNCTION() void Close();

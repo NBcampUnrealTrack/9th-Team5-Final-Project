@@ -13,6 +13,7 @@ class UASInventoryBarWidget;
 class UInputComponent;
 class UASInventoryPanelWidget;
 class UASInventoryViewModel;
+enum class EASPlayerMenuTab : uint8;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FASInventoryActionFailedSignature, FText, Message);
 
@@ -35,6 +36,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
 	void ToggleInventory();
+	/** Open a requested shared-menu page without toggling an already-open inventory closed. */
+	void OpenInventoryMenuTab(EASPlayerMenuTab Tab);
 	UFUNCTION(BlueprintCallable, Category = "Item|Inventory")
 	void CloseInventory();
 	UFUNCTION(BlueprintPure, Category = "Item|Inventory")

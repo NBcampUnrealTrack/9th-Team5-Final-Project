@@ -12,6 +12,8 @@
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/UI/ASCraftingWidget.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Core/Framework/ASPlayerController.h"
 
 namespace
 {
@@ -178,12 +180,25 @@ void UASCraftingComponent::ToggleCrafting()
 	if (!Controller || !Controller->IsLocalController()) return;
 	if (CraftingWidget && CraftingWidget->IsInViewport()) { CloseCrafting(); return; }
 	if (!CraftingWidget) CraftingWidget = CreateWidget<UASCraftingWidget>(Controller, CraftingWidgetClass ? CraftingWidgetClass.Get() : DefaultCraftingWidgetClass.LoadSynchronous());
-	if (CraftingWidget) CraftingWidget->AddToViewport(15);
+	if (CraftingWidget)
+	{
+		CraftingWidget->AddToViewport(15);
+		FInputModeGameAndUI Mode;
+		Mode.SetWidgetToFocus(CraftingWidget->TakeWidget());
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
+		Mode.SetHideCursorDuringCapture(false);
+		Controller->SetInputMode(Mode);
+	}
 }
 
 void UASCraftingComponent::CloseCrafting()
 {
-	if (CraftingWidget) CraftingWidget->RemoveFromParent();
+	if (!IsCraftingOpen()) return;
+	CraftingWidget->RemoveFromParent();
+	AASPlayerController* Controller = Cast<AASPlayerController>(GetOwner());
+	if (!Controller || !GetWorld() || GetWorld()->bIsTearingDown || Controller->IsInGameMenuOpen()) return;
+	if (const AASGameState* State = GetWorld()->GetGameState<AASGameState>(); State && State->IsGameEnded()) return;
+	UWidgetBlueprintLibrary::SetFocusToGameViewport();
 }
 
 bool UASCraftingComponent::IsCraftingOpen() const

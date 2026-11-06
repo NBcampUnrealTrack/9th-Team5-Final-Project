@@ -16,6 +16,13 @@ bool UASItemInteractionComponent::IsInventoryOpen() const
 	return InventoryPanel && InventoryPanel->IsInViewport();
 }
 
+void UASItemInteractionComponent::OpenInventoryMenuTab(EASPlayerMenuTab Tab)
+{
+	if (!IsInventoryOpen())
+		if (AASPlayerController* PC = GetASController()) PC->ToggleInventory();
+	if (IsInventoryOpen()) InventoryPanel->SelectMenuTab(Tab);
+}
+
 void UASItemInteractionComponent::ToggleInventory()
 {
 	AASPlayerController* PC = GetASController();
