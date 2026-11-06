@@ -31,10 +31,27 @@ bool UASCraftingRecipeDefinition::ValidateRecipe(FString& OutError) const
 			return false;
 		}
 	}
-	if (!IsValid(Result.ItemDefinition) || Result.Quantity != 1
-		|| Result.ItemDefinition->ItemType != EASItemType::Weapon || Result.ItemDefinition->MaxStackSize != 1)
+	if (!IsValid(Result.ItemDefinition) || Result.Quantity <= 0 || Result.ItemDefinition->MaxStackSize < 1)
 	{
-		OutError = TEXT("The result must be one weapon with MaxStackSize=1.");
+		OutError = TEXT("The result requires an item definition and positive quantity/stack size.");
+		return false;
+	}
+	switch (Result.ItemDefinition->ItemType)
+	{
+	case EASItemType::Weapon:
+	case EASItemType::Bag:
+		if (Result.ItemDefinition->MaxStackSize != 1)
+		{
+			OutError = TEXT("Crafted weapons and bags require MaxStackSize=1.");
+			return false;
+		}
+		break;
+	case EASItemType::CraftingMaterial:
+	case EASItemType::Ammo:
+	case EASItemType::Consumable:
+		break;
+	default:
+		OutError = TEXT("Crafting results must be weapons, bags, crafting materials, ammo, or consumables.");
 		return false;
 	}
 	return true;

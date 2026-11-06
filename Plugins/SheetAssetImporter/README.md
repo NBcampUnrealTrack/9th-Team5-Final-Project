@@ -48,13 +48,13 @@ Auto Map Columns가 켜져 있으면 직접 매핑하지 않은 열 중 시트 �
 
 ## 제작 레시피: 에셋 경로 대신 ItemId로 참조하기
 
-레시피 시트의 무기와 재료는 아이템 정의에 저장된 `ItemId`로 참조할 수 있습니다. 에셋 파일 이름이나 화면 표시 이름은 ID가 아닙니다. 아래 예시는 `ItemId`가 각각 `Iron`, `Wood`, `Rifle`인 아이템 정의가 이미 존재한다고 가정합니다.
+레시피 시트의 결과 아이템과 재료는 아이템 정의에 저장된 `ItemId`로 참조할 수 있습니다. 에셋 파일 이름이나 화면 표시 이름은 ID가 아닙니다. 아래 예시는 `ItemId`가 각각 `Iron`, `Wood`, `Rifle`인 아이템 정의가 이미 존재한다고 가정합니다.
 
 | Name | RecipeId | DisplayName | Result | Ingredients |
 | --- | --- | --- | --- | --- |
 | Rifle | Craft_Rifle | 소총 제작 | Rifle | `[{"ItemDefinition":"Iron","Quantity":3},{"ItemDefinition":"Wood","Quantity":2}]` |
 
-`Ingredients`의 배열 전체를 하나의 셀에 입력합니다. 배열을 다시 가져오면 기존 재료 목록 전체를 대체합니다. 재료는 `CraftingMaterial`, 결과는 `Weapon`이어야 하며 현재 제작 시스템은 결과 무기 1개만 지원합니다.
+`Ingredients`의 배열 전체를 하나의 셀에 입력합니다. 배열을 다시 가져오면 기존 재료 목록 전체를 대체합니다. 재료는 `CraftingMaterial`, 결과는 `Weapon`, `Bag`, `CraftingMaterial`, `Ammo`, `Consumable`을 지원합니다. 무기와 가방의 `MaxStackSize`는 1이어야 합니다. 제작 수량은 `Result`에 `{"ItemDefinition":"Ammo","Quantity":20}`처럼 입력하며, 중첩 한도보다 많은 양도 여러 묶음으로 지급할 수 있습니다.
 
 1. `SheetImportProfile`의 생성 방식을 `DataAssets`, 클래스를 `ASCraftingRecipeDefinition`으로 설정합니다.
 2. 출력 폴더는 기존 레시피 폴더, 접두사는 `DA_Recipe_`, 식별자 열은 `Name`으로 지정합니다. 예시 행은 `DA_Recipe_Rifle`을 생성·갱신합니다.

@@ -119,12 +119,37 @@ void UASCraftingViewModel::HandlePhaseChanged(EGamePhase NewPhase)
 
 namespace
 {
+enum class ECraftingCategory : uint8 { Melee, Ranged, OtherWeapon, Bag, Material, Ammo, Consumable, Other };
+
+ECraftingCategory CategoryOf(const UASItemDefinition* Item)
+{
+	if (!Item) return ECraftingCategory::Other;
+	switch (Item->ItemType)
+	{
+	case EASItemType::Weapon:
+		return Item->WeaponType == EASWeaponType::Melee ? ECraftingCategory::Melee
+			: Item->WeaponType == EASWeaponType::Ranged ? ECraftingCategory::Ranged : ECraftingCategory::OtherWeapon;
+	case EASItemType::Bag: return ECraftingCategory::Bag;
+	case EASItemType::CraftingMaterial: return ECraftingCategory::Material;
+	case EASItemType::Ammo: return ECraftingCategory::Ammo;
+	case EASItemType::Consumable: return ECraftingCategory::Consumable;
+	default: return ECraftingCategory::Other;
+	}
+}
+
 FText CategoryFor(const UASItemDefinition* Item)
 {
-	if (!Item) return FText::GetEmpty();
-	if (Item->WeaponType == EASWeaponType::Melee) return NSLOCTEXT("ASCrafting", "Melee", "근접 무기");
-	if (Item->WeaponType == EASWeaponType::Ranged) return NSLOCTEXT("ASCrafting", "Ranged", "원거리 무기");
-	return NSLOCTEXT("ASCrafting", "Other", "기타 무기");
+	switch (CategoryOf(Item))
+	{
+	case ECraftingCategory::Melee: return NSLOCTEXT("ASCrafting", "Melee", "근접 무기");
+	case ECraftingCategory::Ranged: return NSLOCTEXT("ASCrafting", "Ranged", "원거리 무기");
+	case ECraftingCategory::OtherWeapon: return NSLOCTEXT("ASCrafting", "Other", "기타 무기");
+	case ECraftingCategory::Bag: return NSLOCTEXT("ASCrafting", "Bags", "가방");
+	case ECraftingCategory::Material: return NSLOCTEXT("ASCrafting", "CraftingMaterials", "제작 재료");
+	case ECraftingCategory::Ammo: return NSLOCTEXT("ASCrafting", "Ammo", "탄약");
+	case ECraftingCategory::Consumable: return NSLOCTEXT("ASCrafting", "Consumables", "소모품");
+	default: return NSLOCTEXT("ASCrafting", "OtherItems", "기타");
+	}
 }
 }
 
@@ -132,16 +157,17 @@ void UASCraftingViewModel::BuildRecipeEntries()
 {
 	TArray<TObjectPtr<UASCraftingEntryViewModel>> Entries;
 	const auto Available = Crafting.IsValid() ? Crafting->GetAvailableRecipes() : TArray<UASCraftingRecipeDefinition*>();
-	for (EASWeaponType Type : {EASWeaponType::Melee, EASWeaponType::Ranged, EASWeaponType::None})
+	for (ECraftingCategory Category : {ECraftingCategory::Melee, ECraftingCategory::Ranged, ECraftingCategory::OtherWeapon,
+		ECraftingCategory::Bag, ECraftingCategory::Material, ECraftingCategory::Ammo, ECraftingCategory::Consumable, ECraftingCategory::Other})
 	{
 		bool bFirst = true;
 		for (const UASCraftingRecipeDefinition* Recipe : Available)
 		{
 			UASItemDefinition* Item = Recipe->Result.ItemDefinition;
-			const EASWeaponType ItemType = Item ? Item->WeaponType : EASWeaponType::None;
-			if (ItemType != Type) continue;
+			if (CategoryOf(Item) != Category) continue;
 			auto* Entry = NewObject<UASCraftingEntryViewModel>(this);
-			const FText Name = !Recipe->DisplayName.IsEmpty() ? Recipe->DisplayName : Item && !Item->DisplayName.IsEmpty() ? Item->DisplayName : FText::FromName(Recipe->RecipeId);
+			FText Name = !Recipe->DisplayName.IsEmpty() ? Recipe->DisplayName : Item && !Item->DisplayName.IsEmpty() ? Item->DisplayName : FText::FromName(Recipe->RecipeId);
+			if (Recipe->Result.Quantity > 1) Name = FText::Format(NSLOCTEXT("ASCrafting", "ResultNameQuantity", "{0} × {1}"), Name, FText::AsNumber(Recipe->Result.Quantity));
 			Entry->Initialize(this, Item, Recipe->RecipeId, Name, bFirst ? CategoryFor(Item) : FText::GetEmpty());
 			Entries.Add(Entry); bFirst = false;
 		}
@@ -200,15 +226,19 @@ void UASCraftingViewModel::Refresh()
 		MaterialEntries[Index]->Update(FText::Format(NSLOCTEXT("ASCrafting", "MaterialQuantity", "{0} / {1}"), FText::AsNumber(Owned), FText::AsNumber(RequiredQuantities[Index])), Owned >= RequiredQuantities[Index], true);
 	}
 	UASItemDefinition* Item = Recipe ? Recipe->Result.ItemDefinition.Get() : nullptr;
-	const FText Name = Recipe ? Item && !Item->DisplayName.IsEmpty() ? Item->DisplayName : !Recipe->DisplayName.IsEmpty() ? Recipe->DisplayName : FText::FromName(SelectedRecipe) : NSLOCTEXT("ASCrafting", "NoSelection", "제작할 무기를 선택하세요");
+	const FText Name = Recipe ? Item && !Item->DisplayName.IsEmpty() ? Item->DisplayName : !Recipe->DisplayName.IsEmpty() ? Recipe->DisplayName : FText::FromName(SelectedRecipe) : NSLOCTEXT("ASCrafting", "NoItemSelection", "제작할 아이템을 선택하세요");
 	UE_MVVM_SET_PROPERTY_VALUE(SelectedName, Name);
 	UE_MVVM_SET_PROPERTY_VALUE(SelectedCategory, CategoryFor(Item));
 	UE_MVVM_SET_PROPERTY_VALUE(Details, Item ? Item->Description : NSLOCTEXT("ASCrafting", "Empty", "등록된 제작 레시피가 없습니다."));
 	FText Stats;
-	if (Item)
+	if (Item && Item->ItemType == EASItemType::Weapon)
 		Stats = FText::Format(NSLOCTEXT("ASCrafting", "WeaponStats", "기본 공격력   {0}\n공격 간격   {1}초\n사거리   {2}m"), FText::AsNumber(Item->BaseDamage), FText::AsNumber(Item->AttackInterval), FText::AsNumber(Item->AttackRange / 100.0f));
+	else if (Item && Item->ItemType == EASItemType::Bag)
+		Stats = FText::Format(NSLOCTEXT("ASCrafting", "BagStats", "추가 보관 공간   +{0}칸"), FText::AsNumber(Item->BagAdditionalSlots));
+	else if (Item)
+		Stats = FText::Format(NSLOCTEXT("ASCrafting", "StackStats", "최대 중첩   {0}개"), FText::AsNumber(Item->MaxStackSize));
 	UE_MVVM_SET_PROPERTY_VALUE(WeaponStats, Stats);
-	UE_MVVM_SET_PROPERTY_VALUE(OwnedResultText, FText::Format(NSLOCTEXT("ASCrafting", "Owned", "인벤토리 내 아이템: {0}"), FText::AsNumber(Preview.GetItemCount(Item))));
+	UE_MVVM_SET_PROPERTY_VALUE(OwnedResultText, Recipe ? FText::Format(NSLOCTEXT("ASCrafting", "OutputAndOwned", "제작 수량: {0}개\n보유 수량: {1}개"), FText::AsNumber(Recipe->Result.Quantity), FText::AsNumber(Preview.GetItemCount(Item))) : FText::GetEmpty());
 	UTexture2D* Icon = nullptr;
 	for (UASCraftingEntryViewModel* Entry : RecipeEntries) if (Entry->GetRecipeId() == SelectedRecipe) { Icon = Entry->Presentation.Icon; break; }
 	UE_MVVM_SET_PROPERTY_VALUE(ResultIcon, TObjectPtr<UTexture2D>(Icon));
