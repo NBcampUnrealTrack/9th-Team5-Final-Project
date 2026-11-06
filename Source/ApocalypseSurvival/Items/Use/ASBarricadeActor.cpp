@@ -7,7 +7,6 @@
 #include "GameFramework/Pawn.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NavAreas/NavArea_Null.h"
-#include "UObject/ConstructorHelpers.h"
 
 AASBarricadeActor::AASBarricadeActor()
 {
@@ -26,13 +25,33 @@ AASBarricadeActor::AASBarricadeActor()
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	MeshComponent->SetCanEverAffectNavigation(false);
 	MeshComponent->SetRelativeScale3D(FVector(0.4f, 2.0f, 1.2f));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (Cube.Succeeded()) MeshComponent->SetStaticMesh(Cube.Object);
+	MeshAsset = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	MeshComponent->SetVisibility(false);
 	// Barricades are normal combat objectives in open areas and temporary blockers when they obstruct a route.
 	SetDefaultMonsterTargetProfile(
 		EASMonsterTargetCapability::PrimaryTarget | EASMonsterTargetCapability::BlockingTarget,
 		20.0f);
+}
+
+void AASBarricadeActor::BeginPlay()
+{
+	Super::BeginPlay();
+	ResourceRequest.Request(ASItemAssetLoading::GatherObject(*this),
+		FStreamableDelegate::CreateWeakLambda(this, [this]() { ApplyLoadedResources(); }));
+	ResourceRequest.TrackLoadingScreen(this, NSLOCTEXT("ASItemLoading", "BarricadeResources", "Preparing barricade resources..."));
+	ApplyLoadedResources();
+}
+
+void AASBarricadeActor::ApplyLoadedResources()
+{
+	if (IsActorBeingDestroyed()) return;
+	if (UStaticMesh* Mesh = MeshAsset.Get()) MeshComponent->SetStaticMesh(Mesh);
+}
+
+void AASBarricadeActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ResourceRequest.Reset();
+	Super::EndPlay(EndPlayReason);
 }
 
 bool AASBarricadeActor::TryGetPlacementTransform(const APawn* Placer, const FVector& DesiredLocation,
@@ -91,11 +110,11 @@ void AASBarricadeActor::SetPlacementPreview(const bool bCanPlace)
 {
 	check(!GetIsReplicated());
 	MeshComponent->SetVisibility(true);
-	if (PreviewMaterials.IsEmpty() && PreviewMaterial)
+	if (PreviewMaterials.IsEmpty() && PreviewMaterial.Get())
 	{
 		for (int32 Slot = 0; Slot < MeshComponent->GetNumMaterials(); ++Slot)
 		{
-			PreviewMaterials.Add(MeshComponent->CreateDynamicMaterialInstance(Slot, PreviewMaterial));
+			PreviewMaterials.Add(MeshComponent->CreateDynamicMaterialInstance(Slot, PreviewMaterial.Get()));
 		}
 	}
 	for (UMaterialInstanceDynamic* Material : PreviewMaterials)

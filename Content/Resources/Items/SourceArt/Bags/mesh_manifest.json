@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Bag01",
+    "vertices": 1804,
+    "triangles": 3596,
+    "material_slots": 1,
+    "materials_before_atlas": 4
+  },
+  {
+    "name": "Bag02",
+    "vertices": 2782,
+    "triangles": 5256,
+    "material_slots": 1,
+    "materials_before_atlas": 5
+  },
+  {
+    "name": "Bag03",
+    "vertices": 3906,
+    "triangles": 7532,
+    "material_slots": 1,
+    "materials_before_atlas": 6
+  },
+  {
+    "name": "Bag04",
+    "vertices": 5970,
+    "triangles": 11008,
+    "material_slots": 1,
+    "materials_before_atlas": 6
+  }
+]

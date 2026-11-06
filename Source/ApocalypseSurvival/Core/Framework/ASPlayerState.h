@@ -15,6 +15,10 @@ class UASCharacterDefinition;
 class UASProgressionComponent;
 
 class UASModuleComponent;
+class UASRelicComponent;
+class UASQuestComponent;
+class UASQuestDialogueComponent;
+class UASPlayerProfileComponent;
 
 /**
  * 플레이어의 어빌리티 시스템을 소유한다.
@@ -53,6 +57,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Modules")
 	UASModuleComponent* GetModuleComponent() const { return ModuleComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Relics")
+	UASRelicComponent* GetRelicComponent() const { return RelicComponent; }
 
 	/**
 	 * 서버 전용. 캐릭터 기본 어빌리티 세트를 한 번만 부여한다.
@@ -98,6 +105,12 @@ public:
 	UASProgressionComponent* GetProgressionComponent() const { return ProgressionComponent; }
 
 private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Quest", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASQuestComponent> QuestComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Quest|Dialogue", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASQuestDialogueComponent> QuestDialogueComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Profile", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASPlayerProfileComponent> PlayerProfileComponent;
 	// 클라이언트 -> 서버. 고른 캐릭터 정의를 보낸다. 고르지 않았으면 nullptr
 	UFUNCTION(Server, Reliable)
 	void ServerSubmitCharacterSelection(const UASCharacterDefinition* InDefinition);
@@ -108,6 +121,9 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Modules", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASModuleComponent> ModuleComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Relics", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASRelicComponent> RelicComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASAbilitySystemComponent> AbilitySystemComponent;
@@ -150,4 +166,5 @@ private:
 	/* 레벨, 경험치, 스킬포인트. PlayerState에 있어서 리스폰 시 유지 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Progression", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASProgressionComponent> ProgressionComponent;
+	
 };

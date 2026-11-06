@@ -12,6 +12,7 @@
 void UASMassMonsterTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildContext, const UWorld& World) const
 {
 	FASMassMonsterConfigFragment Config = Parameters;
+	Config.SourceMonsterDefinition = MonsterDefinition;
 	Config.StatDefinition = StatDefinition;
 	if (MonsterDefinition)
 	{

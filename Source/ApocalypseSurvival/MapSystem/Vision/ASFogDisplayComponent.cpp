@@ -16,6 +16,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "RHI.h"
+#include "TextureResource.h"
 
 UASFogDisplayComponent::UASFogDisplayComponent()
 {
@@ -159,10 +160,13 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition, const FV
 
 		const int32 CellCount = ResolutionX * ResolutionY;
 		VisibleCells.Init(0, CellCount);
+		UploadedVisibleCells.Init(0, CellCount);
 		MassVisibilityBufferCells.Init(0, CellCount);
 		MassVisibilityDistanceScratch.Reset();
 		DisplayCells.Init(0, CellCount);
+		TeamDisplayCells.Init(0, CellCount);
 		OthersCells.Init(0, CellCount);
+		OthersVisibleCells.Init(0, CellCount);
 		ExploredCells.Init(0, CellCount);
 		RawAlpha.Init(0, CellCount);
 		TargetAlpha.SetNumUninitialized(CellCount);
@@ -185,9 +189,12 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition, const FV
 		LocalRegion = FIntRect(0, 0, 0, 0);
 		RawChangedRegions.Reset();
 		RawChangedRegions.Reserve(TilesX * TilesY);
+		LogicalChangedRegions.Reset();
+		LogicalChangedRegions.Reserve(TilesX * TilesY);
 		ShownChangedRegions.Reset();
 		ShownChangedRegions.Reserve(TilesX * TilesY);
 		OcclusionPoints.Reserve(512);
+		DisplayOcclusionPoints.Reserve(512);
 		ExtendedOcclusionPoints.Reserve(512);
 		bMaskDirty = true;
 		bHasLocalVisionMask = false;
@@ -203,6 +210,17 @@ void UASFogDisplayComponent::Configure(UASVisionDefinition* Definition, const FV
 				FogTexture->Filter = TF_Bilinear;
 				FogTexture->AddressX = TA_Clamp;
 				FogTexture->AddressY = TA_Clamp;
+				const uint8 Unexplored = VisionDefinition->UnexploredAlpha;
+				FTexture2DMipMap& Mip = FogTexture->GetPlatformData()->Mips[0];
+				uint8* Pixels = static_cast<uint8*>(Mip.BulkData.Lock(LOCK_READ_WRITE));
+				for (int32 Index = 0; Index < CellCount; ++Index)
+				{
+					Pixels[Index * 4] = 0;
+					Pixels[Index * 4 + 1] = Unexplored;
+					Pixels[Index * 4 + 2] = Unexplored;
+					Pixels[Index * 4 + 3] = Unexplored;
+				}
+				Mip.BulkData.Unlock();
 				FogTexture->UpdateResource();
 			}
 		}
@@ -351,6 +369,7 @@ void UASFogDisplayComponent::UpdateLocalMask()
 	const bool bFullRecompute = RebuildRawAlpha(PreviousLocalRegion, bLocalRegionChanged);
 	if (!bFullRecompute && RawChangedRegions.IsEmpty() && !bLocalRegionChanged)
 	{
+		UploadLogicalChanges();
 		// 래스터 결과가 동일한 경우에는 이 Snapshot도 같은 텍스처 상태로 취급할 수 있다.
 		LocalVisionCenter = Context.LocalCenter;
 		LocalVisionRadius = Context.LocalRadius;
@@ -383,6 +402,7 @@ void UASFogDisplayComponent::UpdateLocalMask()
 		UploadTexture(ImmediateUploadRegions);
 	}
 	StartLocalFade(VisionDefinition->Settings.FogFadeSeconds);
+	UploadLogicalChanges();
 
 	// 위에서 업로드한 FogTexture와 완전히 같은 시점의 원점/반경만 Material에 전달한다.
 	LocalVisionCenter = Context.LocalCenter;
@@ -417,7 +437,9 @@ void UASFogDisplayComponent::ClearPreviousVisibleCells()
 			const int32 Start = Y * ResolutionX + Region.Min.X;
 			FMemory::Memzero(VisibleCells.GetData() + Start, Region.Width());
 			FMemory::Memzero(DisplayCells.GetData() + Start, Region.Width());
+			FMemory::Memzero(TeamDisplayCells.GetData() + Start, Region.Width());
 			FMemory::Memzero(OthersCells.GetData() + Start, Region.Width());
+			FMemory::Memzero(OthersVisibleCells.GetData() + Start, Region.Width());
 		}
 	}
 }
@@ -454,6 +476,7 @@ void UASFogDisplayComponent::TraceSource(const UASVisionEvaluatorComponent& Eval
 	const FASVisionSettings& Settings = VisionDefinition->Settings;
 	const int32 RayCount = FMath::Clamp(Settings.OcclusionRayCount, 16, 512);
 	OcclusionPoints.Reset();
+	DisplayOcclusionPoints.Reset();
 	ExtendedOcclusionPoints.Reset();
 	for (int32 RayIndex = 0; RayIndex < RayCount; ++RayIndex)
 	{
@@ -462,15 +485,18 @@ void UASFogDisplayComponent::TraceSource(const UASVisionEvaluatorComponent& Eval
 		const FVector End = Origin + Direction * DisplayRadius;
 		// 확장 반경까지 한 번만 추적한다.
 		FHitResult Hit;
-		float Distance = DisplayRadius;
+		float Distance = Radius;
+		float DisplayDistance = DisplayRadius;
 		if (Evaluator.TraceVisionWall(Hit, Origin, End, Source->GetOwner()))
 		{
-			Distance = FMath::Min(DisplayRadius, static_cast<float>(Hit.Distance) + Settings.WallRevealPadding);
+			Distance = FMath::Min(Radius, static_cast<float>(Hit.Distance));
+			DisplayDistance = FMath::Min(DisplayRadius, static_cast<float>(Hit.Distance) + Settings.WallRevealPadding);
 		}
-		OcclusionPoints.Add(WorldToGrid(Origin + Direction * FMath::Min(Radius, Distance)));
+		OcclusionPoints.Add(WorldToGrid(Origin + Direction * Distance));
+		DisplayOcclusionPoints.Add(WorldToGrid(Origin + Direction * FMath::Min(Radius, DisplayDistance)));
 		if (Source == LocalSource)
 		{
-			ExtendedOcclusionPoints.Add(WorldToGrid(Origin + Direction * Distance));
+			ExtendedOcclusionPoints.Add(WorldToGrid(Origin + Direction * DisplayDistance));
 		}
 	}
 }
@@ -493,12 +519,15 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 		{
 			const FVector2D Radii(Radius / Context.WorldSize.Y * ResolutionX, Radius / Context.WorldSize.X * ResolutionY);
 			RasterizeEllipse(OthersCells, CenterGrid, Radii);
+			RasterizeEllipse(OthersVisibleCells, CenterGrid, Radii);
 			continue;
 		}
 		TraceSource(Evaluator, Source, Origin, Radius, Radius, Context.LocalSource);
 		for (int32 Index = 0; Index < OcclusionPoints.Num(); ++Index)
 		{
-			RasterizeTriangle(OthersCells, CenterGrid, OcclusionPoints[Index], OcclusionPoints[(Index + 1) % OcclusionPoints.Num()]);
+			const int32 Next = (Index + 1) % OcclusionPoints.Num();
+			RasterizeTriangle(OthersVisibleCells, CenterGrid, OcclusionPoints[Index], OcclusionPoints[Next]);
+			RasterizeTriangle(OthersCells, CenterGrid, DisplayOcclusionPoints[Index], DisplayOcclusionPoints[Next]);
 		}
 	}
 
@@ -558,7 +587,8 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 		for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
 		{
 			const int32 Start = Y * ResolutionX + Region.Min.X;
-			FMemory::Memcpy(VisibleCells.GetData() + Start, OthersCells.GetData() + Start, Region.Width());
+			FMemory::Memcpy(VisibleCells.GetData() + Start, OthersVisibleCells.GetData() + Start, Region.Width());
+			FMemory::Memcpy(TeamDisplayCells.GetData() + Start, OthersCells.GetData() + Start, Region.Width());
 			FMemory::Memcpy(DisplayCells.GetData() + Start, OthersCells.GetData() + Start, Region.Width());
 		}
 	}
@@ -567,6 +597,7 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 		if (!Context.bWallOcclusion)
 		{
 			RasterizeEllipse(VisibleCells, LocalCenter, LocalRadii);
+			RasterizeEllipse(TeamDisplayCells, LocalCenter, LocalRadii);
 			RasterizeEllipse(DisplayCells, LocalCenter, DisplayRadii);
 		}
 		else
@@ -575,6 +606,7 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 			{
 				const int32 Next = (Index + 1) % OcclusionPoints.Num();
 				RasterizeTriangle(VisibleCells, LocalCenter, OcclusionPoints[Index], OcclusionPoints[Next]);
+				RasterizeTriangle(TeamDisplayCells, LocalCenter, DisplayOcclusionPoints[Index], DisplayOcclusionPoints[Next]);
 				RasterizeTriangle(DisplayCells, LocalCenter, ExtendedOcclusionPoints[Index], ExtendedOcclusionPoints[Next]);
 			}
 		}
@@ -585,6 +617,7 @@ FIntRect UASFogDisplayComponent::RasterizeTeamSources(const UASVisionWorldSubsys
 bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion, bool bLocalRegionChanged)
 {
 	RawChangedRegions.Reset();
+	LogicalChangedRegions.Reset();
 	const uint8 Explored = VisionDefinition->ExploredAlpha;
 	const uint8 Unexplored = VisionDefinition->UnexploredAlpha;
 	for (int32 TileIndex = 0; TileIndex < PreviousVisibleTiles.Num(); ++TileIndex)
@@ -597,6 +630,7 @@ bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion
 		{
 			continue;
 		}
+		bool bLogicalChanged = false;
 		int32 ChangedMinX = Region.Max.X;
 		int32 ChangedMinY = Region.Max.Y;
 		int32 ChangedMaxX = Region.Min.X;
@@ -608,10 +642,11 @@ bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion
 				const int32 Index = Y * ResolutionX + X;
 				if (CurrentVisibleTiles[TileIndex])
 				{
-					ExploredCells[Index] |= VisibleCells[Index];
+					ExploredCells[Index] |= TeamDisplayCells[Index];
 				}
+				bLogicalChanged |= UploadedVisibleCells[Index] != VisibleCells[Index];
 				const uint8 BaseAlpha = ExploredCells[Index] ? Explored : Unexplored;
-				const uint8 Alpha = VisibleCells[Index] ? 0 : BaseAlpha;
+				const uint8 Alpha = TeamDisplayCells[Index] ? 0 : BaseAlpha;
 				bool bLocalChanged = false;
 				if (X >= LocalTileRegion.Min.X && X < LocalTileRegion.Max.X && Y >= LocalTileRegion.Min.Y && Y < LocalTileRegion.Max.Y)
 				{
@@ -630,6 +665,10 @@ bool UASFogDisplayComponent::RebuildRawAlpha(const FIntRect& PreviousLocalRegion
 				}
 				RawAlpha[Index] = Alpha;
 			}
+		}
+		if (bLogicalChanged)
+		{
+			LogicalChangedRegions.Add(Region);
 		}
 		if (ChangedMinX < ChangedMaxX && ChangedMinY < ChangedMaxY)
 		{
@@ -1089,6 +1128,33 @@ void UASFogDisplayComponent::RasterizeTriangle(TArray<uint8>& Cells, const FVect
 	}
 }
 
+void UASFogDisplayComponent::UploadLogicalChanges()
+{
+	if (bDebugMapRevealed)
+	{
+		return;
+	}
+
+	// 앞선 업로드로 동기화된 타일은 제외한다.
+	LogicalChangedRegions.RemoveAll([this](const FIntRect& Region)
+	{
+		for (int32 Y = Region.Min.Y; Y < Region.Max.Y; ++Y)
+		{
+			const int32 Start = Y * ResolutionX + Region.Min.X;
+			if (!UploadedVisibleCells.IsValidIndex(Start + Region.Width() - 1)
+				|| FMemory::Memcmp(UploadedVisibleCells.GetData() + Start, VisibleCells.GetData() + Start, Region.Width()) != 0)
+			{
+				return false;
+			}
+		}
+		return true;
+	});
+	if (!LogicalChangedRegions.IsEmpty())
+	{
+		UploadTexture(LogicalChangedRegions);
+	}
+}
+
 void UASFogDisplayComponent::UploadTexture(const TArray<FIntRect>& DirtyRegions)
 {
 	if (!FogTexture || ResolutionX <= 0 || ResolutionY <= 0 || DirtyRegions.IsEmpty())
@@ -1129,6 +1195,10 @@ void UASFogDisplayComponent::UploadTexture(const TArray<FIntRect>& DirtyRegions)
 				// B: 현재 로컬 팀 논리 시야 (0 = 시야 밖, 255 = 현재 시야).
 				// G/R/A: 기존 월드 안개와 미니맵의 페이드된 알파 표현.
 				Pixel[0] = VisibleCells.IsValidIndex(Index) && VisibleCells[Index] ? 255 : 0;
+				if (UploadedVisibleCells.IsValidIndex(Index))
+				{
+					UploadedVisibleCells[Index] = Pixel[0] ? 1 : 0;
+				}
 				const bool bLocal = GridX >= LocalRegion.Min.X && GridX < LocalRegion.Max.X
 					&& GridY >= LocalRegion.Min.Y && GridY < LocalRegion.Max.Y;
 				Pixel[1] = bLocal ? DisplayShownAlpha[Index] : ShownAlpha[Index]; // G

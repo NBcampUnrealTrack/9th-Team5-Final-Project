@@ -75,9 +75,9 @@ public:
 	void ResetExploredForAllPlayers();
 
 	/**
-	 * B는 현재 로컬 팀 논리 시야(0: 시야 밖, 255: 현재 시야)다.
-	 * G/R/A는 로컬 팀이 현재 보는 곳은 투명, 탐색한 곳은 시야 정의의 ExploredAlpha,
-	 * 그 외는 시야 정의의 UnexploredAlpha인 기존 안개 표현이다. 맵 정의의 MapWorldMin..Max를 덮는다.
+	 * B는 현재 로컬 팀 논리 시야(0/255), A는 페이드된 팀 시야 안개 알파다.
+	 * G는 A에 로컬 플레이어 주변의 확장 표시 시야를 더하고,
+	 * R은 A에서 로컬 플레이어 주변의 자기 시야를 제외해 팀원 시야만 반영한다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	UTexture2D* GetFogTexture() const;

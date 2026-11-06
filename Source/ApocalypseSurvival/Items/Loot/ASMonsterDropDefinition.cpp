@@ -56,10 +56,19 @@ bool FASMonsterDropGroupRow::Validate(FString& OutError) const
 		return false;
 	}
 	if (!FASLootValidation::ValidateGrants(FixedItems, OutError)) return false;
+	for (const FASItemGrant& Grant : FixedItems)
+	{
+		if (Grant.ItemDefinition->ItemType == EASItemType::Quest)
+		{
+			OutError = TEXT("Configure quest item grants in quest objectives, not monster drop tables.");
+			return false;
+		}
+	}
 	for (const auto& Weight : CategoryWeights)
 	{
 		if ((Weight.Key != EASItemType::Weapon && Weight.Key != EASItemType::Ammo
-			&& Weight.Key != EASItemType::Consumable && Weight.Key != EASItemType::CraftingMaterial)
+			&& Weight.Key != EASItemType::Consumable && Weight.Key != EASItemType::CraftingMaterial
+			&& Weight.Key != EASItemType::Bag)
 			|| !FMath::IsFinite(Weight.Value) || Weight.Value < 0.0f)
 		{
 			OutError = TEXT("Category weights require a valid category and finite nonnegative multiplier.");
@@ -84,6 +93,11 @@ bool FASMonsterDropGroupRow::Validate(FString& OutError) const
 	}
 	for (const FASLootPoolEntry& Entry : Entries)
 	{
+		if (Entry.ItemDefinition->ItemType == EASItemType::Quest)
+		{
+			OutError = TEXT("Configure quest item grants in quest objectives, not monster drop tables.");
+			return false;
+		}
 		const UASItemDefinition* const* Existing = ItemIds.Find(Entry.ItemDefinition->ItemId);
 		if (Existing && *Existing != Entry.ItemDefinition)
 		{

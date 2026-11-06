@@ -1,4 +1,6 @@
 #include "Core/Framework/ASGameMode.h"
+#include "Quests/ASQuestComponent.h"
+#include "Quests/Data/ASQuestTags.h"
 #include "Core/Framework/ASGameState.h"
 #include "Core/Framework/ASBossEncounter.h"
 #include "Characters/Enemy/ASMonsterCharacter.h"
@@ -255,6 +257,14 @@ void AASGameMode::TryEndNightEarly()
 void AASGameMode::EndGame(bool bVictory)
 {
 	if (!HasAuthority() || IsGameEnded()) return;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		if (PC && PC->PlayerState)
+		{
+			if (UASQuestComponent* Quests = PC->PlayerState->FindComponentByClass<UASQuestComponent>()) Quests->EndQuestRun();
+		}
+	}
 	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
 	if (UASSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<UASSpawnSubsystem>())
 	{
@@ -377,6 +387,16 @@ void AASGameMode::OnBossDefeated()
 	// 마지막 보스 날이면 승리
 	if (IsFinalBossDay(Day))
 	{
+		FASQuestEvent Event;
+		Event.EventTag = ASGameplayTags::Quest_Event_FinalBossDefeated;
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			APlayerController* PC = It->Get();
+			if (PC && PC->PlayerState)
+			{
+				if (UASQuestComponent* Quests = PC->PlayerState->FindComponentByClass<UASQuestComponent>()) Quests->HandleQuestEvent(Event);
+			}
+		}
 		UE_LOG(LogTemp, Log, TEXT("[GameMode] %d일차 최종 보스 처치"), Day);
 		EndGame(true);
 		return;

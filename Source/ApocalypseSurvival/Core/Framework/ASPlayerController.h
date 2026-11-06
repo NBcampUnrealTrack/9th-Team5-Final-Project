@@ -11,6 +11,7 @@ class UASAbilitySystemComponent;
 class UASPlayerAttackMoveComponent;
 class UASInputConfig;
 class UASInventoryComponent;
+class UASCraftingComponent;
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraSystem;
@@ -50,6 +51,7 @@ public:
 	void ServerAcknowledgeBossIntro(AASBossEncounter* Encounter);
 	void SetBossIntroInputBlocked(bool bBlocked);
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void ToggleInGameMenu();
 	UFUNCTION(BlueprintCallable, Category = "Menu")
@@ -76,6 +78,20 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UASInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Crafting")
+	UASCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }
+
+	/** Also callable from the console while testing without an input asset. */
+	UFUNCTION(BlueprintCallable, Exec, Category = "Crafting")
+	void ToggleCrafting();
+
+	UFUNCTION(BlueprintCallable, Exec, Category = "Inventory")
+	void ToggleInventory();
+
+	/** UI closes with the same remapped action key used to open it. */
+	bool IsInventoryToggleKey(FKey Key) const;
+	FKey GetQuickSlotKey(int32 SlotIndex) const;
 
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	UASPlayerAttackMoveComponent* GetAttackMoveComponent() const { return AttackMoveComponent; }
@@ -115,6 +131,9 @@ public:
 	/** CheatManager가 요청한 무기 1개를 서버에서 검증 후 지급한다. */
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveWeapon(FName WeaponName);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGiveItem(FName ItemName, int32 Quantity);
 	
 	/** 테스트용: 콘솔에서 우클릭 공격 설정을 바꾼다. 예) DebugSetRightClickAttack 0 */
 	UFUNCTION(Exec)
@@ -140,9 +159,6 @@ private:
 	TSubclassOf<UASInGameMenuWidget> InGameMenuWidgetClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UASSettingsWidget> InGameSettingsWidgetClass;
-	UPROPERTY(Transient)
-	TObjectPtr<UASInGameMenuWidget> InGameMenuWidget;
-	bool bCursorVisibleBeforeMenu = true;
 	/**
 	 * 조종하는 폰이 바뀌었을 때. 서버와 클라이언트 양쪽에서 불린다.
 	 * 다이나믹 델리게이트에 연결하려면 UFUNCTION 이어야 한다.
@@ -159,6 +175,9 @@ private:
 	void OnCameraCenterCompleted();
 	void OnCameraZoom(const FInputActionValue& Value);
 	void OnToggleMap();
+	void OnQuickSlotPressed(int32 SlotIndex);
+	void OnToggleItemNames();
+	TArray<FKey> GetMappedActionKeys(const UInputAction* Action) const;
 
 	/** 어빌리티 입력. 태그는 AbilityInputConfig 의 항목에서 바인딩할 때 같이 넘어온다. */
 	void OnAbilityInputPressed(FGameplayTag InputTag);
@@ -184,6 +203,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UASInventoryComponent> InventoryComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UASCraftingComponent> CraftingComponent;
 
 	/** A + 클릭 명령을 해석한다. 공격 피해·비용은 GAS가 계속 담당한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
@@ -225,6 +247,16 @@ private:
 	/** 확장 맵을 열고 닫는다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> ToggleMapAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Inventory")
+	TObjectPtr<UInputAction> ToggleInventoryAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Inventory")
+	TObjectPtr<UInputAction> ToggleItemNamesAction;
+
+	/** Ordered by inventory slot index; keys are assigned in the mapping context. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Inventory", meta = (EditFixedSize))
+	TArray<TObjectPtr<UInputAction>> QuickSlotActions;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TEnumAsByte<ECollisionChannel> CursorTraceChannel = ECC_Visibility;

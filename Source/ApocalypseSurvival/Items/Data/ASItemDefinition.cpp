@@ -27,15 +27,20 @@ EDataValidationResult UASItemDefinition::IsDataValid(FDataValidationContext& Con
 	if (ItemId.IsNone()) Error(TEXT("ItemId must be set."));
 	if (!IsValidLootRarity(Rarity)) Error(TEXT("Rarity must be Uncommon, Rare, Epic, or Legendary."));
 	if (MaxStackSize < 1) Error(TEXT("MaxStackSize must be positive."));
+	if (ItemType == EASItemType::Bag)
+	{
+		if (MaxStackSize != 1) Error(TEXT("Bags must have MaxStackSize=1."));
+		if (BagAdditionalSlots < 0 || BagAdditionalSlots > 256) Error(TEXT("BagAdditionalSlots must be between 0 and 256."));
+	}
 	if (ItemType == EASItemType::Weapon)
 	{
 		if (MaxStackSize != 1) Error(TEXT("Weapons must have MaxStackSize=1 to keep equipped instances independent."));
 		if (WeaponType == EASWeaponType::None) Error(TEXT("WeaponType must be Melee or Ranged."));
-		if (!IsValid(AttackProfile))
+		if (!IsValid(AttackProfile.LoadSynchronous()))
 		{
 			Error(TEXT("Weapons require an AttackProfile."));
 		}
-		else if (AttackProfile->ValidateForItem(*this, Context) == EDataValidationResult::Invalid)
+		else if (AttackProfile.LoadSynchronous()->ValidateForItem(*this, Context) == EDataValidationResult::Invalid)
 		{
 			bValid = false;
 		}

@@ -1,18 +1,16 @@
 #include "Items/UI/ASInventorySlotWidget.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Image.h"
-#include "Components/Overlay.h"
-#include "Components/OverlaySlot.h"
-#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "InputCoreTypes.h"
-#include "Items/ASItemInstance.h"
-#include "Items/Data/ASItemDefinition.h"
+#include "Items/UI/ViewModels/ASItemSlotViewModel.h"
+#include "Items/UI/ViewModels/ASInventoryViewModel.h"
 #include "Items/Inventory/ASInventoryComponent.h"
 #include "Items/UI/ASInventoryBarWidget.h"
 #include "Items/UI/ASItemRarityBackground.h"
+#include "Items/UI/ASItemViewBinding.h"
+#include "Items/UI/ASMenuStyle.h"
 
 void UASInventorySlotDragDrop::Drop_Implementation(const FPointerEvent& PointerEvent)
 {
@@ -26,70 +24,28 @@ void UASInventorySlotDragDrop::DragCancelled_Implementation(const FPointerEvent&
 	Super::DragCancelled_Implementation(PointerEvent);
 }
 
-TSharedRef<SWidget> UASInventorySlotWidget::RebuildWidget()
+void UASInventorySlotWidget::NativePreConstruct()
 {
-	if (WidgetTree && !WidgetTree->RootWidget)
+	if (IsDesignTime())
 	{
-		USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
-		Size->SetWidthOverride(72.0f);
-		Size->SetHeightOverride(76.0f);
-		SlotBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotBorder"));
-		SlotBorder->SetPadding(FMargin(1.0f));
-		UOverlay* Overlay = WidgetTree->ConstructWidget<UOverlay>();
-		Overlay->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-		RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
-		RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
-		Overlay->AddChildToOverlay(RarityBackground);
-		ItemIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ItemIcon"));
-		ItemIcon->SetDesiredSizeOverride(FVector2D(70.0f));
-		UOverlaySlot* IconSlot = Overlay->AddChildToOverlay(ItemIcon);
-		IconSlot->SetHorizontalAlignment(HAlign_Fill);
-		IconSlot->SetVerticalAlignment(VAlign_Fill);
-		auto AddText = [&](const TCHAR* Name, EHorizontalAlignment Horizontal, EVerticalAlignment Vertical)
-		{
-			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), FName(Name));
-			FSlateFontInfo Font = Text->GetFont();
-			Font.Size = 11;
-			Text->SetFont(Font);
-			Text->SetVisibility(ESlateVisibility::HitTestInvisible);
-			UOverlaySlot* Slot = Overlay->AddChildToOverlay(Text);
-			Slot->SetHorizontalAlignment(Horizontal);
-			Slot->SetVerticalAlignment(Vertical);
-			return Text;
-		};
-		KeyText = AddText(TEXT("KeyText"), HAlign_Left, VAlign_Top);
-		ItemNameText = AddText(TEXT("ItemNameText"), HAlign_Center, VAlign_Center);
-		QuantityText = AddText(TEXT("QuantityText"), HAlign_Right, VAlign_Bottom);
-		EquippedText = AddText(TEXT("EquippedText"), HAlign_Left, VAlign_Bottom);
-		SlotBorder->SetContent(Overlay);
-		Size->SetContent(SlotBorder);
-		WidgetTree->RootWidget = Size;
+		if (ItemNameText) ItemNameText->SetText(NSLOCTEXT("ASInventory", "PreviewItem", "아이템"));
+		if (QuantityText) QuantityText->SetText(FText::AsNumber(12));
+		if (KeyText) KeyText->SetText(SlotIndex == UASInventoryComponent::WeaponSlotIndex ? NSLOCTEXT("Items", "WeaponSlot", "무기")
+			: SlotIndex == UASInventoryComponent::BagSlotIndex ? NSLOCTEXT("Items", "BagSlot", "가방")
+			: SlotIndex >= 0 && SlotIndex < UASInventoryComponent::QuickSlotCount ? FText::AsNumber((SlotIndex + 1) % 10) : FText::GetEmpty());
 	}
-	// Support authored slot layouts that already contain an icon overlay.
-	if (WidgetTree && !RarityBackground && ItemIcon)
-	{
-		if (UOverlay* Overlay = Cast<UOverlay>(ItemIcon->GetParent()))
-		{
-			RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
-			RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
-			Overlay->InsertChildAt(0, RarityBackground);
-		}
-	}
-	for (UWidget* Layer : { static_cast<UWidget*>(RarityBackground.Get()), static_cast<UWidget*>(ItemIcon.Get()) })
-	{
-		if (UOverlaySlot* LayerSlot = Layer ? Cast<UOverlaySlot>(Layer->Slot) : nullptr)
-		{
-			LayerSlot->SetPadding(FMargin(0.0f));
-			LayerSlot->SetHorizontalAlignment(HAlign_Fill);
-			LayerSlot->SetVerticalAlignment(VAlign_Fill);
-		}
-	}
-	return Super::RebuildWidget();
+	Super::NativePreConstruct();
 }
 
 void UASInventorySlotWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (SlotBorder) SlotBorder->SetBrushColor(ASMenuStyle::Surface);
+	DefaultSlotColor = ASMenuStyle::Surface; bCapturedSlotColor = true;
+	ASMenuStyle::StyleText(KeyText, 10, ASMenuStyle::Muted);
+	ASMenuStyle::StyleText(ItemNameText, 11, ASMenuStyle::Text);
+	ASMenuStyle::StyleText(QuantityText, 12, ASMenuStyle::Text);
+	ASMenuStyle::StyleText(EquippedText, 10, ASMenuStyle::Accent);
 	SetIsFocusable(false);
 	RefreshSlot();
 }
@@ -103,42 +59,20 @@ void UASInventorySlotWidget::InitializeSlot(UASInventoryBarWidget* InBar, const 
 
 void UASInventorySlotWidget::NativeDestruct()
 {
-	IconAssetRequest.Reset();
+	if (ViewModel) ViewModel->RemoveAllFieldValueChangedDelegates(this);
 	Super::NativeDestruct();
-}
-
-UASItemInstance* UASInventorySlotWidget::GetItem() const
-{
-	UASInventoryComponent* Inventory = Bar ? Bar->GetInventory() : nullptr;
-	return IsValid(Inventory) ? Inventory->GetItemAtSlot(SlotIndex) : nullptr;
 }
 
 void UASInventorySlotWidget::RefreshSlot()
 {
-	UASItemInstance* Item = GetItem();
-	const UASItemDefinition* Definition = Item ? Item->GetItemDefinition() : nullptr;
-	IconAssetRequest.Request(Definition ? Definition->Icon.ToSoftObjectPath() : FSoftObjectPath(),
-		FStreamableDelegate::CreateWeakLambda(this, [this] { RefreshSlot(); }));
-	UTexture2D* Icon = Definition ? Definition->Icon.Get() : nullptr;
-	const bool bWeaponSlot = SlotIndex == UASInventoryComponent::WeaponSlotIndex;
-	const bool bEquipped = Item && bWeaponSlot;
-	if (RarityBackground)
-	{
-		if (Definition) RarityBackground->SetRarity(Definition->Rarity);
-		RarityBackground->SetVisibility(Definition ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	}
-	if (KeyText) KeyText->SetText(bWeaponSlot ? NSLOCTEXT("Items", "WeaponSlot", "Weapon") : FText::AsNumber((SlotIndex + 1) % 10));
-	if (ItemIcon)
-	{
-		ItemIcon->SetBrushFromTexture(Icon);
-		ItemIcon->SetDesiredSizeOverride(FVector2D(70.0f));
-		ItemIcon->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	}
-	if (ItemNameText) ItemNameText->SetText(Definition && !Icon ? Definition->DisplayName : FText::GetEmpty());
-	if (QuantityText) QuantityText->SetText(Item && Item->GetQuantity() > 1 ? FText::AsNumber(Item->GetQuantity()) : FText::GetEmpty());
-	if (EquippedText) EquippedText->SetText(bEquipped ? FText::FromString(TEXT("E")) : FText::GetEmpty());
-	if (SlotBorder) SlotBorder->SetBrushColor(bEquipped ? FLinearColor(0.15f, 0.4f, 0.65f, 0.95f) : FLinearColor(0.08f, 0.1f, 0.13f, 0.95f));
-	SetToolTipText(Definition ? Definition->DisplayName : FText::GetEmpty());
+	UASItemSlotViewModel* Model = Bar && Bar->GetViewModel() ? Bar->GetViewModel()->GetSlot(SlotIndex) : nullptr;
+	if (ViewModel) ViewModel->RemoveAllFieldValueChangedDelegates(this);
+	ViewModel = Model;
+	if (ViewModel) ViewModel->AddFieldValueChangedDelegate(UASItemSlotViewModel::FFieldNotificationClassDescriptor::Presentation,
+		INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateWeakLambda(this,
+			[this](UObject*, UE::FieldNotification::FFieldId) { ApplyPresentation(); }));
+	ASItemViewBinding::Set(this, TEXT("SlotVM"), ViewModel);
+	ApplyPresentation();
 }
 
 FReply UASInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -147,17 +81,17 @@ FReply UASInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& Geometry
 	{
 		if (Event.IsControlDown() && Bar && SlotIndex >= 0)
 		{
-			if (UASItemInstance* Item = GetItem())
-				Bar->DropOneFromSlot(SlotIndex, Item->GetInstanceId());
+			if (ViewModel && ViewModel->Presentation.bHasItem)
+				Bar->DropOneFromSlot(SlotIndex, ViewModel->Presentation.ItemId);
 		}
 		// All right clicks over slots belong to the UI, including empty and weapon slots.
 		return FReply::Handled();
 	}
 	if (Event.GetEffectingButton() != EKeys::LeftMouseButton) return Super::NativeOnMouseButtonDown(Geometry, Event);
 	bPressed = true;
-	PressedItem = GetItem() ? GetItem()->GetInstanceId() : FGuid();
+	PressedItem = ViewModel ? ViewModel->Presentation.ItemId : FGuid();
 	FReply Reply = FReply::Handled().CaptureMouse(TakeWidget());
-	return PressedItem.IsValid() && SlotIndex >= 0 ? Reply.DetectDrag(TakeWidget(), EKeys::LeftMouseButton) : Reply;
+	return ViewModel && ViewModel->Presentation.bCanDrag ? Reply.DetectDrag(TakeWidget(), EKeys::LeftMouseButton) : Reply;
 }
 
 FReply UASInventorySlotWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event)
@@ -173,40 +107,18 @@ FReply UASInventorySlotWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, 
 void UASInventorySlotWidget::NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation)
 {
 	bPressed = false;
-	UASItemInstance* Item = GetItem();
-	if (!Bar || !Item || SlotIndex < 0 || Item->GetInstanceId() != PressedItem) return;
+	if (!Bar || !ViewModel || !ViewModel->Presentation.bCanDrag || ViewModel->Presentation.ItemId != PressedItem) return;
 	UASInventorySlotDragDrop* Drag = NewObject<UASInventorySlotDragDrop>();
 	Drag->Inventory = Bar->GetInventory();
+	Drag->ViewModel = Bar->GetViewModel();
 	Drag->SourceBar = Bar;
 	Drag->FromSlot = SlotIndex;
 	Drag->ItemId = PressedItem;
-	UImage* Visual = NewObject<UImage>(Drag);
-	UTexture2D* Icon = Item->GetItemDefinition()->Icon.Get();
-	Visual->SetBrushFromTexture(Icon);
-	Visual->SetDesiredSizeOverride(FVector2D(56.0f));
-	Visual->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	USizeBox* DragSize = NewObject<USizeBox>(Drag);
-	DragSize->SetWidthOverride(56.0f);
-	DragSize->SetHeightOverride(56.0f);
-	DragSize->SetVisibility(ESlateVisibility::HitTestInvisible);
-	UOverlay* DragOverlay = NewObject<UOverlay>(Drag);
-	UASItemRarityBackground* DragBackground = NewObject<UASItemRarityBackground>(Drag);
-	DragBackground->SetRarity(Item->GetItemDefinition()->Rarity);
-	UOverlaySlot* DragBackgroundSlot = DragOverlay->AddChildToOverlay(DragBackground);
-	DragBackgroundSlot->SetHorizontalAlignment(HAlign_Fill);
-	DragBackgroundSlot->SetVerticalAlignment(VAlign_Fill);
-	UOverlaySlot* DragIconSlot = DragOverlay->AddChildToOverlay(Visual);
-	DragIconSlot->SetHorizontalAlignment(HAlign_Fill);
-	DragIconSlot->SetVerticalAlignment(VAlign_Fill);
-	if (!Icon)
-	{
-		UTextBlock* LoadingName = NewObject<UTextBlock>(Drag);
-		LoadingName->SetText(Item->GetItemDefinition()->DisplayName);
-		LoadingName->SetVisibility(ESlateVisibility::HitTestInvisible);
-		DragOverlay->AddChildToOverlay(LoadingName);
-	}
-	DragSize->SetContent(DragOverlay);
-	Drag->DefaultDragVisual = DragSize;
+	UASInventorySlotWidget* Visual = CreateWidget<UASInventorySlotWidget>(GetOwningPlayer(), GetClass());
+	if (!Visual) return;
+	Visual->InitializeSlot(Bar, SlotIndex);
+	Visual->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Drag->DefaultDragVisual = Visual;
 	Drag->Pivot = EDragPivot::CenterCenter;
 	Bar->BeginItemDrag();
 	Operation = Drag;
@@ -221,14 +133,29 @@ void UASInventorySlotWidget::NativeOnDragCancelled(const FDragDropEvent& Event, 
 bool UASInventorySlotWidget::NativeOnDrop(const FGeometry& Geometry, const FDragDropEvent& Event, UDragDropOperation* Operation)
 {
 	UASInventorySlotDragDrop* Drag = Cast<UASInventorySlotDragDrop>(Operation);
-	if (!Drag || !Bar || Drag->Inventory != Bar->GetInventory() || Drag->FromSlot == SlotIndex) return false;
-	if (SlotIndex == UASInventoryComponent::WeaponSlotIndex)
-	{
-		UASItemInstance* Source = Bar->GetInventory()->GetItemAtSlot(Drag->FromSlot);
-		if (Source && Source->GetInstanceId() == Drag->ItemId && Source->GetItemDefinition()->ItemType == EASItemType::Weapon)
-			Bar->ActivateSlot(Drag->FromSlot, Drag->ItemId);
-		return true;
-	}
-	Bar->SwapSlots(Drag->FromSlot, SlotIndex, Drag->ItemId, GetItem() ? GetItem()->GetInstanceId() : FGuid());
+	if (!Drag || !Bar || !ViewModel || Drag->ViewModel != Bar->GetViewModel() || Drag->FromSlot == SlotIndex) return false;
+	Bar->SwapSlots(Drag->FromSlot, SlotIndex, Drag->ItemId, ViewModel->Presentation.ItemId);
 	return true;
+}
+
+void UASInventorySlotWidget::ApplyPresentation()
+{
+	const FASItemSlotPresentation P = ViewModel ? ViewModel->Presentation : FASItemSlotPresentation();
+	if (RarityBackground) { RarityBackground->SetRarity(P.Rarity); RarityBackground->SetVisibility(P.bHasItem ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed); }
+	const bool bAuthoredBindings = ASItemViewBinding::HasView(this);
+	if (!bAuthoredBindings && KeyText) KeyText->SetText(P.Key);
+	if (ItemIcon) { ItemIcon->SetBrushFromTexture(P.Icon); ItemIcon->SetVisibility(P.Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed); }
+	if (ItemNameText)
+	{
+		if (!bAuthoredBindings) ItemNameText->SetText(P.Name);
+		ItemNameText->SetVisibility(P.Icon ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
+	if (!bAuthoredBindings && QuantityText) QuantityText->SetText(P.Quantity);
+	if (!bAuthoredBindings && EquippedText) EquippedText->SetText(P.Equipped);
+	if (SlotBorder)
+	{
+		if (!bCapturedSlotColor) { DefaultSlotColor = SlotBorder->GetBrushColor(); bCapturedSlotColor = true; }
+		SlotBorder->SetBrushColor(P.bEquipped ? FLinearColor(.15f, .135f, .085f) : DefaultSlotColor);
+	}
+	SetToolTipText(P.Tooltip);
 }

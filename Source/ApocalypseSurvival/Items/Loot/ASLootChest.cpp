@@ -1,4 +1,5 @@
 #include "Items/Loot/ASLootChest.h"
+#include "Quests/ASQuestComponent.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
@@ -10,6 +11,8 @@
 #include "Items/Loot/ASLootDefinition.h"
 #include "Items/Loot/ASLootSettings.h"
 #include "Items/Loot/ASDroppedItem.h"
+#include "Core/Framework/ASPlayerState.h"
+#include "Relics/ASRelicComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GAS/ASAbilityTags.h"
@@ -56,6 +59,44 @@ void AASLootChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(AASLootChest, LootRarityColor);
 	DOREPLIFETIME(AASLootChest, LootRarityColorParameter);
 	DOREPLIFETIME(AASLootChest, LootDisplayName);
+	DOREPLIFETIME(AASLootChest, RelicReward);
+	DOREPLIFETIME(AASLootChest, bRelicRewardClaimed);
+}
+
+bool AASLootChest::HasUnclaimedRelicReward() const
+{
+	return IsValid(RelicReward) && !bRelicRewardClaimed;
+}
+
+bool AASLootChest::HasRemainingLoot() const
+{
+	return (IsValid(LootInventory) && LootInventory->GetUsedSlotCount() > 0)
+		|| HasUnclaimedRelicReward();
+}
+
+bool AASLootChest::ClaimRelicReward(APawn* Interactor, FString& OutError)
+{
+	OutError.Reset();
+	if (!HasAuthority() || !IsValid(Interactor) || !HasUnclaimedRelicReward()
+		|| !IsWithinInteractionRange(Interactor)
+		|| !IASInteractable::Execute_CanInteract(this, Interactor))
+	{
+		OutError = TEXT("This chest has no available relic reward or the player is out of range.");
+		return false;
+	}
+
+	AASPlayerState* PlayerState = Interactor->GetPlayerState<AASPlayerState>();
+	UASRelicComponent* RelicComponent = PlayerState ? PlayerState->GetRelicComponent() : nullptr;
+	if (!RelicComponent || !RelicComponent->EquipRelic(RelicReward, OutError))
+	{
+		if (OutError.IsEmpty()) OutError = TEXT("The player has no relic component.");
+		return false;
+	}
+
+	bRelicRewardClaimed = true;
+	ForceNetUpdate();
+	UpdateEmptyDespawnTimer();
+	return true;
 }
 
 void AASLootChest::SetLootRarityAppearance(const EASLootRarity Rarity, UStaticMesh* MeshOverride,
@@ -268,7 +309,7 @@ void AASLootChest::UpdateEmptyDespawnTimer()
 	}
 
 	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
-	if (LootInventory->GetUsedSlotCount() > 0)
+	if (HasRemainingLoot())
 	{
 		TimerManager.ClearTimer(EmptyDespawnTimerHandle);
 		return;
@@ -291,7 +332,7 @@ void AASLootChest::UpdateEmptyDespawnTimer()
 
 void AASLootChest::DespawnIfStillEmpty()
 {
-	if (HasAuthority() && IsValid(LootInventory) && LootInventory->GetUsedSlotCount() == 0 && !IsActorBeingDestroyed())
+	if (HasAuthority() && IsValid(LootInventory) && !HasRemainingLoot() && !IsActorBeingDestroyed())
 	{
 		Destroy();
 	}
@@ -299,7 +340,7 @@ void AASLootChest::DespawnIfStillEmpty()
 
 bool AASLootChest::CanInteract_Implementation(AActor* Interactor) const
 {
-	return IsValid(Interactor) && IsValid(LootInventory) && LootInventory->GetUsedSlotCount() > 0;
+	return IsValid(Interactor) && HasRemainingLoot();
 }
 
 void AASLootChest::Interact_Implementation(AActor* Interactor)
@@ -341,6 +382,12 @@ int32 AASLootChest::TakeLoot(APawn* Interactor, UASInventoryComponent* TargetInv
 			&& TargetInventory->GetOwner() != Interactor->GetController())
 		|| !IsWithinInteractionRange(Interactor) || !IASInteractable::Execute_CanInteract(this, Interactor)) return 0;
 	UASItemInstance* Item = LootInventory->FindItemById(InstanceId);
+	if (Item && Item->GetItemDefinition()->ItemType == EASItemType::Quest)
+	{
+		UASQuestComponent* Quests = Interactor->GetPlayerState() ? Interactor->GetPlayerState()->FindComponentByClass<UASQuestComponent>() : nullptr;
+		// Quest contents are personal entitlements. Leave the shared template for other players.
+		return Quests ? Quests->CollectQuestItem(Item->GetItemDefinition(), FMath::Min(Quantity, Item->GetQuantity())) : 0;
+	}
 	return Item ? LootInventory->TransferItemTo(TargetInventory, Item, Quantity) : 0;
 }
 
@@ -354,6 +401,7 @@ AASDroppedItem* AASLootChest::DropLoot(APawn* Interactor, const FGuid InstanceId
 		ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Interactor->GetPlayerState(), true);
 	if (!IsValid(ASC) || ASC->GetAvatarActor() != Interactor || ASC->HasMatchingGameplayTag(ASGameplayTags::State_Dead)) return nullptr;
 	UASItemInstance* Item = LootInventory->FindItemById(InstanceId);
+	if (Item && Item->GetItemDefinition()->ItemType == EASItemType::Quest) return nullptr;
 	if (!Item) return nullptr;
 	FVector Location = Interactor->GetActorLocation() + Interactor->GetActorForwardVector() * 100.0f;
 	FHitResult Ground;

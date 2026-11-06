@@ -252,7 +252,7 @@ void UASMonsterSniperBeamAbility::DestroyTelegraph()
 {
 	if (AASMonsterBeamTelegraphActor* ActiveTelegraph = Telegraph.Get())
 	{
-		ActiveTelegraph->Destroy();
+		ActiveTelegraph->ReleaseAfterFeedback();
 	}
 
 	Telegraph.Reset();

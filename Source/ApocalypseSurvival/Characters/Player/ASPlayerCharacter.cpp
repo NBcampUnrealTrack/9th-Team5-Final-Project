@@ -256,16 +256,14 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 
 	AASPlayerState* ASPlayerState = GetPlayerState<AASPlayerState>();
 
-	// 첫 빙의면 캐릭터 정의의 기본 스탯을 넣고(한 번만), 리스폰이면 이전 캐릭터의 사망 상태를 걷어 낸다.
-	// ASC 연결보다 먼저 해야 한다. 연결할 때 이동 속도를 읽어 가고, 연결 직후 "이미 죽어 있나" 검사가 돈다.
+	// 캐릭터 기본 스탯과 리스폰 상태를 먼저 정리한다.
 	if (IsValid(ASPlayerState))
 	{
-		// 다른 곳(나중의 캐릭터 선택)에서 이미 정해 줬으면 그 값을 쓴다.
 		if (!ASPlayerState->GetCharacterDefinition())
 		{
 			ASPlayerState->SetCharacterDefinition(CharacterDefinition);
 		}
-		
+
 		ASPlayerState->ApplyCharacterDefinitionOnce();
 		ASPlayerState->ResetForRespawn();
 	}
@@ -276,13 +274,10 @@ void AASPlayerCharacter::PossessedBy(AController* NewController)
 	{
 		ASPlayerState->GrantDefaultAbilitySetOnce(DefaultAbilitySet);
 		ASPlayerState->GrantCharacterAbilitySetOnce();
-		ASPlayerState->GetModuleComponent()->InitializeForAvatar();
-	}
 
-	// 리스폰이면 PlayerState 에 장착 기록이 남아 있다. 옛 몸과 함께 사라진 무기를 새 몸에 다시 단다.
-	// ASC 연결 뒤여야 공격 어빌리티를 부여할 수 있어서 맨 마지막에 한다.
-	if (IsValid(ASPlayerState))
-	{
+		ASPlayerState->GetModuleComponent()->InitializeForAvatar();
+
+		// 리스폰이면 PlayerState에 기록된 무기를 새 캐릭터에 다시 장착한다.
 		if (UASItemInstance* EquippedItem = ASPlayerState->GetEquippedItemRecord())
 		{
 			EquipmentComponent->EquipItem(EquippedItem);

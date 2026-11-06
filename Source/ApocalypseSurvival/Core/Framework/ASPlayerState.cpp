@@ -1,4 +1,7 @@
 #include "Core/Framework/ASPlayerState.h"
+#include "Quests/ASQuestComponent.h"
+#include "Quests/Dialogue/ASQuestDialogueComponent.h"
+#include "Modules/Persistence/ASPlayerProfileComponent.h"
 
 #include "GAS/ASAbilitySystemComponent.h"
 #include "GAS/ASAbilityTags.h"
@@ -16,14 +19,19 @@
 #include "Characters/Player/Data/ASCharacterDefinition.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Modules/ASModuleComponent.h"
+#include "Relics/ASRelicComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/GameInstance.h"
 #include "Characters/Player/ASPlayerCharacter.h"
 
 AASPlayerState::AASPlayerState()
 {
+	QuestComponent = CreateDefaultSubobject<UASQuestComponent>(TEXT("QuestComponent"));
+	QuestDialogueComponent = CreateDefaultSubobject<UASQuestDialogueComponent>(TEXT("QuestDialogueComponent"));
+	PlayerProfileComponent = CreateDefaultSubobject<UASPlayerProfileComponent>(TEXT("PlayerProfileComponent"));
 	AbilitySystemComponent = CreateDefaultSubobject<UASAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	ModuleComponent = CreateDefaultSubobject<UASModuleComponent>(TEXT("ModuleComponent"));
+	RelicComponent = CreateDefaultSubobject<UASRelicComponent>(TEXT("RelicComponent"));
 
 	// Mixed: 본인 클라이언트는 효과 정보를 전부 받는다(예측과 UI 에 필요하다).
 	// 다른 클라이언트는 태그·연출·어트리뷰트 값만 받는다.
@@ -253,6 +261,7 @@ void AASPlayerState::ResetForNewMatch()
 	if (!HasAuthority()) return;
 	AbilitySystemComponent->CancelAllAbilities();
 	ModuleComponent->ResetForNextRun();
+	RelicComponent->ResetForNewMatch();
 	CharacterAbilityHandles.TakeFromAbilitySystem(AbilitySystemComponent);
 	DefaultAbilityHandles.TakeFromAbilitySystem(AbilitySystemComponent);
 	AbilitySystemComponent->ClearAllAbilities();

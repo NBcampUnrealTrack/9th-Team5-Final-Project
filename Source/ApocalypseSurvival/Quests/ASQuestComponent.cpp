@@ -7,11 +7,33 @@
 #include "Modules/Persistence/ASPlayerProfileComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Quests/Data/ASQuestDefinition.h"
+#include "Quests/Data/ASQuestCatalog.h"
+#include "Quests/Data/ASQuestSettings.h"
+#include "Quests/Data/ASQuestTags.h"
 
 UASQuestComponent::UASQuestComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+	bWantsInitializeComponent = true;
+}
+
+void UASQuestComponent::InitializeComponent()
+{
+	Super::InitializeComponent();
+	QuestCatalog.Reset();
+	CatalogLoadError.Reset();
+	const TSoftObjectPtr<UASQuestCatalog>& CatalogAsset = GetDefault<UASQuestSettings>()->Catalog;
+	if (!CatalogAsset.IsNull())
+	{
+		if (const UASQuestCatalog* Catalog = CatalogAsset.LoadSynchronous())
+		{
+			if (Catalog->ValidateCatalog(CatalogLoadError))
+				for (UASQuestDefinition* Definition : Catalog->Quests) QuestCatalog.AddUnique(Definition);
+		}
+		else CatalogLoadError = FString::Printf(TEXT("Could not load quest catalog %s."), *CatalogAsset.ToString());
+	}
+	else CatalogLoadError = TEXT("Set Project Settings -> Quests -> Catalog before loading a profile.");
 }
 
 void UASQuestComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -47,14 +69,12 @@ bool UASQuestComponent::IsPersistenceReady() const
 
 bool UASQuestComponent::AcceptQuest(UASQuestDefinition* Definition)
 {
-	if (!HasQuestAuthority() || !bPersistenceReady || !IsValid(Definition) || Quests.Num() >= ASQuestLimits::MaxQuests
+	FScopedQuestChange Change(*this);
+	if (!HasQuestAuthority() || !CanAcceptQuest(Definition) || Quests.Num() >= ASQuestLimits::MaxQuests
 		|| Definition->Objectives.Num() > ASQuestLimits::MaxObjectives)
 	{
 		return false;
 	}
-	// Reject configuration mistakes now instead of writing a quest that cannot load next run.
-	if (!QuestCatalog.Contains(Definition) && !StartingQuests.Contains(Definition)) return false;
-
 	FString Error;
 	if (!Definition->ValidateDefinition(Error))
 	{
@@ -80,8 +100,27 @@ bool UASQuestComponent::AcceptQuest(UASQuestDefinition* Definition)
 	return true;
 }
 
+bool UASQuestComponent::CanAcceptQuest(const UASQuestDefinition* Definition) const
+{
+	if (!bPersistenceReady || !IsValid(Definition)
+		|| !QuestCatalog.Contains(Definition)) return false;
+	FASQuestProgress Existing;
+	if (GetQuestProgress(Definition->QuestId, Existing)) return false;
+	for (FName Required : Definition->PrerequisiteQuestIds)
+	{
+		if (!GetQuestProgress(Required, Existing) || Existing.Status != EASQuestStatus::RewardClaimed) return false;
+	}
+	return true;
+}
+
 bool UASQuestComponent::HandleQuestEvent(const FASQuestEvent& Event)
 {
+	return ApplyQuestEvent(Event, nullptr);
+}
+
+bool UASQuestComponent::ApplyQuestEvent(const FASQuestEvent& Event, const UASItemDefinition* CollectedItem)
+{
+	FScopedQuestChange Change(*this);
 	if (!HasQuestAuthority() || !bPersistenceReady || !Event.EventTag.IsValid() || Event.Amount <= 0)
 	{
 		return false;
@@ -90,27 +129,26 @@ bool UASQuestComponent::HandleQuestEvent(const FASQuestEvent& Event)
 	bool bChanged = false;
 	for (FASQuestProgress& Quest : Quests)
 	{
-		if (Quest.Status != EASQuestStatus::InProgress || !IsValid(Quest.Definition)
-			|| Quest.Objectives.Num() != Quest.Definition->Objectives.Num())
+		if (Quest.Status != EASQuestStatus::InProgress || !Quest.HasValidObjectives())
 		{
 			continue;
 		}
 
-		bool bAllComplete = true;
-		for (int32 Index = 0; Index < Quest.Objectives.Num(); ++Index)
+		// Compute eligibility before mutation so one event cannot unlock and advance the next step.
+		for (int32 Index : Quest.GetEligibleObjectiveIndices())
 		{
 			FASQuestObjectiveProgress& Progress = Quest.Objectives[Index];
 			const FASQuestObjectiveDefinition& Objective = Quest.Definition->Objectives[Index];
-			if (Progress.CurrentCount < Objective.RequiredCount && Event.EventTag.MatchesTag(Objective.EventTag)
-				&& (!Objective.TargetTag.IsValid() || Event.TargetTag.MatchesTag(Objective.TargetTag)))
+			if (ASQuestRules::MatchesObjective(Objective, Event, CollectedItem, GetOwner()))
 			{
 				// Limit the delta before addition so a large batch cannot overflow int32.
 				Progress.CurrentCount += FMath::Min(Event.Amount, Objective.RequiredCount - Progress.CurrentCount);
 				bChanged = true;
 			}
-			bAllComplete &= Progress.CurrentCount >= Objective.RequiredCount;
 		}
-		if (bAllComplete)
+		// Completion is a run-clear receipt, never just a consequence of filling objective counters.
+		// An earlier boss kill cannot be banked and consumed by a later objective event.
+		if (Quest.AreObjectivesComplete() && Event.EventTag == ASGameplayTags::Quest_Event_FinalBossDefeated)
 		{
 			Quest.Status = EASQuestStatus::ReadyToTurnIn;
 			bChanged = true;
@@ -126,6 +164,12 @@ bool UASQuestComponent::HandleQuestEvent(const FASQuestEvent& Event)
 
 bool UASQuestComponent::ClaimReward(FName QuestId)
 {
+	return ClaimRewardInternal(QuestId, NAME_None);
+}
+
+bool UASQuestComponent::ClaimRewardInternal(FName QuestId, FName NpcId)
+{
+	FScopedQuestChange Change(*this);
 	if (!HasQuestAuthority() || !bPersistenceReady)
 	{
 		return false;
@@ -136,6 +180,8 @@ bool UASQuestComponent::ClaimReward(FName QuestId)
 	{
 		return false;
 	}
+
+	if (Quest->Definition->TurnInNpcId != NpcId) return false;
 
 	const int32 Experience = Quest->Definition->ExperienceReward;
 	UASProgressionComponent* Progression = nullptr;
@@ -163,6 +209,7 @@ bool UASQuestComponent::ClaimReward(FName QuestId)
 		// Existing progression policy discards experience at max level.
 		Progression->AddExperience(Experience);
 	}
+	// Reporting unlocks the next offer; accepting it is a separate NPC interaction.
 	NotifyQuestsChanged();
 	return true;
 }
@@ -182,6 +229,24 @@ bool UASQuestComponent::GetQuestProgress(FName QuestId, FASQuestProgress& OutPro
 
 void UASQuestComponent::NotifyQuestsChanged()
 {
+	bQuestChangePending = true;
+	if (QuestChangeDepth == 0) FlushQuestChanges();
+}
+
+UASQuestComponent::FScopedQuestChange::FScopedQuestChange(UASQuestComponent& InOwner) : Owner(InOwner)
+{
+	++Owner.QuestChangeDepth;
+}
+
+UASQuestComponent::FScopedQuestChange::~FScopedQuestChange()
+{
+	if (--Owner.QuestChangeDepth == 0) Owner.FlushQuestChanges();
+}
+
+void UASQuestComponent::FlushQuestChanges()
+{
+	if (!bQuestChangePending) return;
+	bQuestChangePending = false;
 	GetOwner()->ForceNetUpdate();
 	OnQuestsChanged.Broadcast();
 }
@@ -195,12 +260,17 @@ FASQuestSaveData UASQuestComponent::ExportSaveData() const
 		Record.QuestId = Quest.QuestId;
 		Record.Status = Quest.Status;
 		Record.Objectives = Quest.Objectives;
+		if (Quest.Definition && Quest.Definition->bRunBoundObjectives && Quest.Status == EASQuestStatus::InProgress)
+		{
+			for (FASQuestObjectiveProgress& Objective : Record.Objectives) Objective.CurrentCount = 0;
+		}
 	}
 	return Data;
 }
 
 bool UASQuestComponent::RestoreSaveData(const FASQuestSaveData& Data, FString& OutError)
 {
+	FScopedQuestChange Change(*this);
 	OutError.Reset();
 	if (!HasQuestAuthority())
 	{
@@ -208,25 +278,11 @@ bool UASQuestComponent::RestoreSaveData(const FASQuestSaveData& Data, FString& O
 		return false;
 	}
 	if (!Data.Validate(OutError)) return false;
+	if (!CatalogLoadError.IsEmpty()) { OutError = CatalogLoadError; return false; }
+	if (!UASQuestCatalog::ValidateDefinitions(QuestCatalog, OutError)) return false;
 
 	TMap<FName, UASQuestDefinition*> Definitions;
-	const auto RegisterDefinition = [&Definitions, &OutError](UASQuestDefinition* Definition)
-	{
-		if (!IsValid(Definition) || !Definition->ValidateDefinition(OutError))
-		{
-			if (OutError.IsEmpty()) OutError = TEXT("Quest catalog contains a missing asset.");
-			return false;
-		}
-		if (UASQuestDefinition** Existing = Definitions.Find(Definition->QuestId); Existing && *Existing != Definition)
-		{
-			OutError = FString::Printf(TEXT("Duplicate QuestId in catalog: %s"), *Definition->QuestId.ToString());
-			return false;
-		}
-		Definitions.Add(Definition->QuestId, Definition);
-		return true;
-	};
-	for (UASQuestDefinition* Definition : QuestCatalog) if (!RegisterDefinition(Definition)) return false;
-	for (UASQuestDefinition* Definition : StartingQuests) if (!RegisterDefinition(Definition)) return false;
+	for (UASQuestDefinition* Definition : QuestCatalog) Definitions.Add(Definition->QuestId, Definition);
 
 	TArray<FASQuestProgress> Restored;
 	for (const FASQuestSaveRecord& Saved : Data.Quests)
@@ -240,7 +296,6 @@ bool UASQuestComponent::RestoreSaveData(const FASQuestSaveData& Data, FString& O
 		FASQuestProgress Progress;
 		Progress.QuestId = Saved.QuestId;
 		Progress.Definition = *Definition;
-		bool bAllComplete = true;
 		for (const FASQuestObjectiveDefinition& Objective : (*Definition)->Objectives)
 		{
 			const FASQuestObjectiveProgress* Previous = Saved.Objectives.FindByPredicate(
@@ -248,37 +303,55 @@ bool UASQuestComponent::RestoreSaveData(const FASQuestSaveData& Data, FString& O
 			FASQuestObjectiveProgress& Current = Progress.Objectives.AddDefaulted_GetRef();
 			Current.ObjectiveId = Objective.ObjectiveId;
 			Current.CurrentCount = Previous ? FMath::Min(Previous->CurrentCount, Objective.RequiredCount) : 0;
-			bAllComplete &= Current.CurrentCount >= Objective.RequiredCount;
 		}
 		// A design update must never make a previously claimed reward claimable again.
 		Progress.Status = Saved.Status == EASQuestStatus::RewardClaimed ? EASQuestStatus::RewardClaimed
-			: (bAllComplete ? EASQuestStatus::ReadyToTurnIn : EASQuestStatus::InProgress);
+			: (Saved.Status == EASQuestStatus::ReadyToTurnIn && Progress.AreObjectivesComplete()
+				? EASQuestStatus::ReadyToTurnIn : EASQuestStatus::InProgress);
 		Restored.Add(MoveTemp(Progress));
-	}
-	for (UASQuestDefinition* Definition : StartingQuests)
-	{
-		if (Restored.ContainsByPredicate([Definition](const FASQuestProgress& Quest) { return Quest.QuestId == Definition->QuestId; })) continue;
-		FASQuestProgress& Progress = Restored.AddDefaulted_GetRef();
-		Progress.QuestId = Definition->QuestId;
-		Progress.Definition = Definition;
-		for (const FASQuestObjectiveDefinition& Objective : Definition->Objectives)
-		{
-			FASQuestObjectiveProgress& Current = Progress.Objectives.AddDefaulted_GetRef();
-			Current.ObjectiveId = Objective.ObjectiveId;
-		}
 	}
 	if (Restored.Num() > ASQuestLimits::MaxQuests)
 	{
-		OutError = TEXT("Restored and starting quests exceed the maximum of 256 quests.");
+		OutError = TEXT("Restored quests exceed the maximum of 256 quests.");
 		return false;
 	}
 	Quests = MoveTemp(Restored);
 	bPersistenceReady = true;
+	AcceptAvailableAutomaticQuests();
 	NotifyQuestsChanged();
 	return true;
+}
+
+bool UASQuestComponent::IsAutomaticQuest(const UASQuestDefinition* Definition) const
+{
+	return Definition && Definition->PrerequisiteQuestIds.IsEmpty() && Definition->bAutoAccept;
+}
+
+void UASQuestComponent::AcceptAvailableAutomaticQuests()
+{
+	for (UASQuestDefinition* Definition : QuestCatalog)
+		if (IsAutomaticQuest(Definition) && CanAcceptQuest(Definition))
+			AcceptQuest(Definition);
 }
 
 void UASQuestComponent::OnRep_Quests()
 {
 	OnQuestsChanged.Broadcast();
+}
+
+void UASQuestComponent::EndQuestRun()
+{
+	FScopedQuestChange Change(*this);
+	if (!HasQuestAuthority()) return;
+	bool bChanged = false;
+	for (FASQuestProgress& Quest : Quests)
+	{
+		if (!Quest.Definition || !Quest.Definition->bRunBoundObjectives || Quest.Status != EASQuestStatus::InProgress) continue;
+		for (FASQuestObjectiveProgress& Objective : Quest.Objectives)
+		{
+			bChanged |= Objective.CurrentCount != 0;
+			Objective.CurrentCount = 0;
+		}
+	}
+	if (bChanged) NotifyQuestsChanged();
 }

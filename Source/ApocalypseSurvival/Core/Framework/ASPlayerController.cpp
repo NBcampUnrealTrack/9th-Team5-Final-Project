@@ -17,6 +17,7 @@
 #include "Core/Settings/ASLocalSettingsSubsystem.h"
 #include "Core/Framework/ASGameState.h"
 #include "Core/UI/ASInGameMenuWidget.h"
+#include "Core/UI/ASUIManagerSubsystem.h"
 #include "InputCoreTypes.h"
 #include "InputKeyEventArgs.h"
 #include "GAS/ASAbilitySystemComponent.h"
@@ -25,12 +26,14 @@
 #include "Items/ASItemInstance.h"
 #include "Items/Data/ASItemDefinition.h"
 #include "Items/Inventory/ASInventoryComponent.h"
+#include "Items/Crafting/ASCraftingComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Framework/Application/SlateApplication.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "MapSystem/UI/ASMapViewModel.h"
 #include "MapSystem/UI/ASMapViewModelSubsystem.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -40,6 +43,14 @@
 
 void AASPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (ULocalPlayer* Local = GetLocalPlayer(); Local && Local->GetPlayerController(GetWorld()) == this)
+	{
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseAllScreens(false);
+			UI->CloseAllHUDs();
+		}
+	}
 	if (IsLocalController())
 	{
 		TArray<UUserWidget*> Widgets;
@@ -52,11 +63,25 @@ void AASPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void AASPlayerController::PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel)
+{
+	if (ULocalPlayer* Local = GetLocalPlayer(); Local && Local->GetPlayerController(GetWorld()) == this)
+	{
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseAllScreens(false);
+			UI->CloseAllHUDs();
+		}
+	}
+	Super::PreClientTravel(PendingURL, TravelType, bIsSeamlessTravel);
+}
+
 AASPlayerController::AASPlayerController()
 {
 	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("PathFollowingComponent"));
 	ItemInteractionComponent = CreateDefaultSubobject<UASItemInteractionComponent>(TEXT("ItemInteractionComponent"));
 	InventoryComponent = CreateDefaultSubobject<UASInventoryComponent>(TEXT("InventoryComponent"));
+	CraftingComponent = CreateDefaultSubobject<UASCraftingComponent>(TEXT("CraftingComponent"));
 	AttackMoveComponent = CreateDefaultSubobject<UASPlayerAttackMoveComponent>(TEXT("AttackMoveComponent"));
 	PlayerCameraManagerClass = AASPlayerCameraManager::StaticClass();
 	InGameMenuWidgetClass = UASInGameMenuWidget::StaticClass();
@@ -65,6 +90,27 @@ AASPlayerController::AASPlayerController()
 
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Default;
+	QuickSlotActions.SetNum(UASInventoryComponent::QuickSlotCount);
+}
+
+void AASPlayerController::ToggleCrafting()
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen()) return;
+	if (!CraftingComponent->IsCraftingOpen())
+	{
+		OnStop();
+		OnMoveCompleted();
+		ItemInteractionComponent->CloseLoot();
+	}
+	ItemInteractionComponent->CloseInventory();
+	CraftingComponent->ToggleCrafting();
+}
+
+void AASPlayerController::ToggleInventory()
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen()) return;
+	OnMoveCompleted();
+	ItemInteractionComponent->ToggleInventory();
 }
 
 void AASPlayerController::PostInitializeComponents()
@@ -79,6 +125,8 @@ void AASPlayerController::PostInitializeComponents()
 
 void AASPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
 {
+	ItemInteractionComponent->CloseInventory();
+	CraftingComponent->CloseCrafting();
 	AttackMoveComponent->CancelAttackMove();
 	ItemInteractionComponent->CancelPendingInteraction();
 	ItemInteractionComponent->CloseLoot();
@@ -138,6 +186,16 @@ void AASPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(ToggleMapAction, ETriggerEvent::Started, this, &AASPlayerController::OnToggleMap);
 	}
 
+	if (ToggleInventoryAction)
+		EnhancedInputComponent->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &ThisClass::ToggleInventory);
+	if (ToggleItemNamesAction)
+		EnhancedInputComponent->BindAction(ToggleItemNamesAction, ETriggerEvent::Started, this, &ThisClass::OnToggleItemNames);
+	for (int32 Index = 0; Index < FMath::Min(QuickSlotActions.Num(), UASInventoryComponent::QuickSlotCount); ++Index)
+	{
+		if (QuickSlotActions[Index])
+			EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Started, this, &ThisClass::OnQuickSlotPressed, Index);
+	}
+
 	// 어빌리티 입력은 목록을 돌며 건다. 키마다 함수를 만들지 않고, 태그를 인자로 같이 넘긴다.
 	// Started 는 누른 순간 한 번이라 "한 번 누름 = 한 번 발동"이 된다.
 	if (IsValid(AbilityInputConfig))
@@ -161,14 +219,64 @@ bool AASPlayerController::InputKey(const FInputKeyEventArgs& Params)
 	if (bBossIntroInputBlocked) return true;
 	if (IsLocalController() && Params.Key == EKeys::Escape && Params.Event == IE_Pressed && !IsResultPhase())
 	{
+		if (ItemInteractionComponent->IsInventoryOpen())
+		{
+			ItemInteractionComponent->CloseInventory();
+			return true;
+		}
+		if (CraftingComponent->IsCraftingOpen())
+		{
+			CraftingComponent->CloseCrafting();
+			return true;
+		}
 		ToggleInGameMenu();
 		return true;
 	}
 	return Super::InputKey(Params);
 }
 
+TArray<FKey> AASPlayerController::GetMappedActionKeys(const UInputAction* Action) const
+{
+	TArray<FKey> Keys;
+	if (!Action || !DefaultMappingContext) return Keys;
+	const UASLocalSettingsSubsystem* Settings = GetLocalPlayer() ? GetLocalPlayer()->GetSubsystem<UASLocalSettingsSubsystem>() : nullptr;
+	const TArray<FEnhancedActionKeyMapping>& Mappings = DefaultMappingContext->GetMappings();
+	for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+	{
+		if (Mappings[Index].Action == Action)
+			Keys.AddUnique(Settings ? Settings->GetMappedKey(DefaultMappingContext, Index) : Mappings[Index].Key);
+	}
+	return Keys;
+}
+
+bool AASPlayerController::IsInventoryToggleKey(FKey Key) const
+{
+	return GetMappedActionKeys(ToggleInventoryAction).Contains(Key);
+}
+
+FKey AASPlayerController::GetQuickSlotKey(int32 SlotIndex) const
+{
+	if (!QuickSlotActions.IsValidIndex(SlotIndex)) return FKey();
+	for (const FKey& Key : GetMappedActionKeys(QuickSlotActions[SlotIndex]))
+		if (Key.IsValid() && !Key.IsGamepadKey()) return Key;
+	return FKey();
+}
+
+void AASPlayerController::OnQuickSlotPressed(int32 SlotIndex)
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen() || CraftingComponent->IsCraftingOpen()) return;
+	ItemInteractionComponent->ActivateSlotFromKey(SlotIndex);
+}
+
+void AASPlayerController::OnToggleItemNames()
+{
+	if (bBossIntroInputBlocked || IsResultPhase() || IsInGameMenuOpen()) return;
+	ItemInteractionComponent->ToggleDroppedItemNames();
+}
+
 void AASPlayerController::OnAbilityInputPressed(const FGameplayTag InputTag)
 {
+	if (CraftingComponent->IsCraftingOpen() || ItemInteractionComponent->IsInventoryOpen()) return;
 	if (bBossIntroInputBlocked || IsResultPhase()) return;
 	if (IsInGameMenuOpen()) return;
 	// 현재 Ability Set에 장착된 일반 공격 GA 하나만 A 입력을 받는다.
@@ -413,12 +521,21 @@ void AASPlayerController::ServerDebugGiveWeapon_Implementation(FName WeaponName)
 #endif
 }
 
+void AASPlayerController::ServerDebugGiveItem_Implementation(FName ItemName, int32 Quantity)
+{
+#if !UE_BUILD_SHIPPING
+	UASCheatManager::GiveItemToPlayer(this, ItemName, Quantity);
+#endif
+}
+
 void AASPlayerController::PlayerTick(const float DeltaTime)
 {
 	if (bBossIntroInputBlocked) return;
 	Super::PlayerTick(DeltaTime);
 	if (IsResultPhase())
 	{
+		ItemInteractionComponent->CloseInventory();
+		CraftingComponent->CloseCrafting();
 		if (IsInGameMenuOpen()) CloseInGameMenu();
 		return;
 	}
@@ -427,12 +544,14 @@ void AASPlayerController::PlayerTick(const float DeltaTime)
 		return;
 	}
 
-	UpdateCameraEdgeScroll(DeltaTime);
+	if (!CraftingComponent->IsCraftingOpen() && !ItemInteractionComponent->IsInventoryOpen()) UpdateCameraEdgeScroll(DeltaTime);
 }
 
 bool AASPlayerController::IsInGameMenuOpen() const
 {
-	return InGameMenuWidget && InGameMenuWidget->IsInViewport();
+	const ULocalPlayer* Local = GetLocalPlayer();
+	const UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	return UI && UI->GetScreen(TEXT("InGameMenu"));
 }
 
 bool AASPlayerController::IsResultPhase() const
@@ -451,9 +570,11 @@ void AASPlayerController::ToggleInGameMenu()
 		return;
 	}
 	if (IsResultPhase() || !InGameMenuWidgetClass) return;
-	InGameMenuWidget = CreateWidget<UASInGameMenuWidget>(this, InGameMenuWidgetClass);
-	if (!InGameMenuWidget) return;
-	bCursorVisibleBeforeMenu = bShowMouseCursor;
+	ULocalPlayer* Local = GetLocalPlayer();
+	UASUIManagerSubsystem* UI = Local ? Local->GetSubsystem<UASUIManagerSubsystem>() : nullptr;
+	if (!UI) return;
+	ItemInteractionComponent->CloseInventory();
+	CraftingComponent->CloseCrafting();
 	OnMoveCompleted();
 	OnStop();
 	bHasPendingAttackMoveRequest = false;
@@ -470,27 +591,20 @@ void AASPlayerController::ToggleInGameMenu()
 			}
 		}
 	}
-	InGameMenuWidget->AddToViewport(20);
-	FInputModeUIOnly InputMode;
-	InputMode.SetWidgetToFocus(InGameMenuWidget->TakeWidget());
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	SetInputMode(InputMode);
-	bShowMouseCursor = true;
+	UI->OpenScreen(TEXT("InGameMenu"), InGameMenuWidgetClass, 20);
 }
 
 void AASPlayerController::CloseInGameMenu()
 {
-	if (!IsLocalController() || !InGameMenuWidget) return;
-	InGameMenuWidget->RemoveFromParent();
-	InGameMenuWidget = nullptr;
-	// The result screen owns focus once the match has ended.
-	if (IsResultPhase()) return;
-	FInputModeGameAndUI InputMode;
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
-	InputMode.SetHideCursorDuringCapture(false);
-	SetInputMode(InputMode);
-	bShowMouseCursor = bCursorVisibleBeforeMenu;
-	UWidgetBlueprintLibrary::SetFocusToGameViewport();
+	if (!IsLocalController()) return;
+	if (ULocalPlayer* Local = GetLocalPlayer())
+	{
+		// The result screen owns focus once the match has ended.
+		if (UASUIManagerSubsystem* UI = Local->GetSubsystem<UASUIManagerSubsystem>())
+		{
+			UI->CloseScreen(TEXT("InGameMenu"), !IsResultPhase());
+		}
+	}
 }
 
 AASPlayerCameraManager* AASPlayerController::GetASPlayerCameraManager() const
@@ -570,6 +684,7 @@ void AASPlayerController::ServerAcknowledgeBossIntro_Implementation(AASBossEncou
 void AASPlayerController::SetBossIntroInputBlocked(bool bBlocked)
 {
 	if (bBossIntroInputBlocked == bBlocked) return;
+	if (bBlocked) { CraftingComponent->CloseCrafting(); ItemInteractionComponent->CloseInventory(); }
 	if (bBlocked)
 	{
 		bFullTickBeforeBossIntro = bShouldPerformFullTickWhenPaused;
@@ -585,6 +700,7 @@ void AASPlayerController::SetBossIntroInputBlocked(bool bBlocked)
 
 void AASPlayerController::OnMoveStarted()
 {
+	if (CraftingComponent->IsCraftingOpen() || ItemInteractionComponent->IsInventoryOpen()) return;
 	if (IsInGameMenuOpen()) return;
 	bInteractionClickHeld = false;
 	if (IsPawnDead() || ItemInteractionComponent->IsLootOpen()) return;
@@ -646,6 +762,7 @@ void AASPlayerController::DebugSetRightClickAttack(const bool bEnabled)
 
 void AASPlayerController::OnMoveHeld()
 {
+	if (CraftingComponent->IsCraftingOpen() || ItemInteractionComponent->IsInventoryOpen()) return;
 	if (IsInGameMenuOpen()) return;
 	if (AttackMoveComponent->HasActiveCommand()) return;
 	if (IsPawnDead() || bInteractionClickHeld || ItemInteractionComponent->HasPendingInteraction() || ItemInteractionComponent->IsLootOpen()) return;
@@ -714,6 +831,10 @@ void AASPlayerController::DebugUnlockZoom(bool bEnabled)
 
 void AASPlayerController::OnCameraZoom(const FInputActionValue& Value)
 {
+	// GameAndUI can forward unhandled wheel input from the UI to gameplay.
+	if (ItemInteractionComponent->IsInventoryOpen() || ItemInteractionComponent->IsLootOpen()
+		|| CraftingComponent->IsCraftingOpen() || IsInGameMenuOpen()) return;
+
 	if (AASPlayerCameraManager* CameraManager = GetASPlayerCameraManager())
 	{
 		CameraManager->AddZoomInput(Value.Get<float>());

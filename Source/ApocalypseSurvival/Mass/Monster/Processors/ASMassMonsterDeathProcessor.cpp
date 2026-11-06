@@ -10,6 +10,8 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "Items/Loot/ASMonsterDropSubsystem.h"
+#include "Quests/ASQuestEventLibrary.h"
+#include "Characters/Enemy/Data/ASMonsterDefinition.h"
 #include "MassCommonFragments.h"
 #include "Mass/Monster/Subsystems/ASMonsterTargetSubsystem.h"
 #include "MassCommonTypes.h"
@@ -28,6 +30,11 @@ namespace
 		FDataTableRowHandle DropGroup;
 		FVector Location = FVector::ZeroVector;
 		TWeakObjectPtr<AController> KillerController;
+	};
+	struct FASPendingQuestKill
+	{
+		TWeakObjectPtr<UASMonsterDefinition> Definition;
+		TWeakObjectPtr<AController> Killer;
 	};
 }
 
@@ -67,10 +74,11 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 	int32 NewlyDeadCount = 0;
 	TMap<TWeakObjectPtr<AController>, int32> ExperienceByController;
 	TArray<FASPendingMonsterDrop> PendingDrops;
+	TArray<FASPendingQuestKill> PendingQuestKills;
 	const UASMonsterTargetSubsystem* MonsterTargets = GetWorld()
 		? GetWorld()->GetSubsystem<UASMonsterTargetSubsystem>()
 		: nullptr;
-	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount, &ExperienceByController, &PendingDrops, MonsterTargets](FMassExecutionContext& Context)
+	NewlyDeadQuery.ForEachEntityChunk(Context, [&NewlyDeadCount, &ExperienceByController, &PendingDrops, &PendingQuestKills, MonsterTargets](FMassExecutionContext& Context)
 	{
 		const TArrayView<FASMassMonsterHealthFragment> Healths = Context.GetMutableFragmentView<FASMassMonsterHealthFragment>();
 		const TConstArrayView<FTransformFragment> Transforms = Context.GetFragmentView<FTransformFragment>();
@@ -81,7 +89,7 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
 			FASMassMonsterHealthFragment& Health = Healths[EntityIt];
-			if (Health.CurrentHealth > 0.0f)
+			if (Health.CurrentHealth > 0.0f || Health.bDeathTimerStarted)
 			{
 				continue;
 			}
@@ -89,6 +97,8 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 			Health.CurrentHealth = 0.0f;
 			Health.DeathTimeRemaining = Config.DeathDespawnDelay;
 			Health.bDeathTimerStarted = true;
+			FASPendingQuestKill& QuestKill = PendingQuestKills.AddDefaulted_GetRef();
+			QuestKill.Definition = Config.SourceMonsterDefinition.Get();
 			if (MonsterTargets)
 			{
 				FASTargetSnapshot KillerSnapshot;
@@ -97,6 +107,7 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 					APawn* KillerPawn = Cast<APawn>(KillerSnapshot.Actor.Get());
 					if (AController* KillerController = KillerPawn ? KillerPawn->GetController() : nullptr)
 					{
+						QuestKill.Killer = KillerController;
 						if (Config.ExperienceReward > 0)
 						{
 							ExperienceByController.FindOrAdd(TWeakObjectPtr<AController>(KillerController)) += Config.ExperienceReward;
@@ -118,16 +129,20 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 		}
 	});
 
+	// Broadcast outside Mass processing: quest callbacks may change gameplay or entity state.
 	if (NewlyDeadCount > 0)
 	{
 		if (UWorld* World = GetWorld())
 		{
-			if (AASGameMode* GameMode = World->GetAuthGameMode<AASGameMode>())
-			{
-				// Mass 실행 중에는 밤 종료가 Entity Fragment를 즉시 변경할 수 없으므로 다음 틱에 집계한다.
-				World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
-					GameMode, [GameMode, NewlyDeadCount, ExperienceByController = MoveTemp(ExperienceByController),
-						PendingDrops = MoveTemp(PendingDrops)]()
+			const TWeakObjectPtr<AASGameMode> WeakMode = World->GetAuthGameMode<AASGameMode>();
+			// One callback guarantees quest receipts exist before kill accounting can end the run.
+			World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
+				World, [World, WeakMode, NewlyDeadCount, ExperienceByController = MoveTemp(ExperienceByController),
+					PendingDrops = MoveTemp(PendingDrops), PendingQuestKills = MoveTemp(PendingQuestKills)]()
+				{
+					for (const FASPendingQuestKill& Kill : PendingQuestKills)
+						FASQuestEventLibrary::ReportMonsterDefeated(World, Kill.Definition.Get(), Kill.Killer.Get());
+					if (AASGameMode* GameMode = WeakMode.Get())
 					{
 						GameMode->OnEnemiesKilled(NewlyDeadCount);
 						for (const TPair<TWeakObjectPtr<AController>, int32>& Entry : ExperienceByController)
@@ -148,8 +163,8 @@ void UASMassMonsterDeathProcessor::Execute(FMassEntityManager& EntityManager, FM
 									PendingDrop.KillerController.Get());
 							}
 						}
-					}));
-			}
+					}
+				}));
 		}
 	}
 

@@ -30,6 +30,7 @@
 #include "GAS/Attributes/ASHealthAttributeSet.h"
 #include "Characters/Player/Components/ASProgressionComponent.h"
 #include "Items/Loot/ASMonsterDropSubsystem.h"
+#include "Quests/ASQuestEventLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "MapSystem/Vision/ASVisibilityComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -587,6 +588,9 @@ void AASMonsterCharacter::HandleDeath()
     }
 
     OwnedAbilitySystemComponent->AddMinimalReplicationGameplayTag(ASGameplayTags::State_Monster_Dead);
+    // Record quest progress before the final boss can end the run and save the profile.
+    FASQuestEventLibrary::ReportMonsterDefeated(GetWorld(), MonsterDefinition, LastDamageKillerController.Get());
+    OnMonsterDied.Broadcast();
 #if !UE_BUILD_SHIPPING
     const AASGameMode* GameMode = GetWorld()->GetAuthGameMode<AASGameMode>();
     if (GameMode && GameMode->IsActiveBoss(this))

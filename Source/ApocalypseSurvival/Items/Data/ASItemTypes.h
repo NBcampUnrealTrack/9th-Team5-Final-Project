@@ -38,7 +38,11 @@ enum class EASItemType : uint8
 	Ammo UMETA(DisplayName = "Ammo"),
 	Consumable UMETA(DisplayName = "Consumable"),
 	/** Stackable crafting ingredient; it is neither equipped nor used directly. */
-	CraftingMaterial UMETA(DisplayName = "Crafting Material")
+	CraftingMaterial UMETA(DisplayName = "Crafting Material"),
+	/** Equip in the inventory's bag position to extend storage according to rarity. */
+	Bag UMETA(DisplayName = "Bag"),
+	/** Personal quest storage only; never occupies a backpack/quick slot. */
+	Quest UMETA(DisplayName = "Quest Item")
 };
 
 /** Weapon behavior category. Only meaningful when ItemType is Weapon. */

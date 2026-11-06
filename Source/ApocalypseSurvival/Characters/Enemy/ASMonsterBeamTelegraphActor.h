@@ -35,6 +35,7 @@ public:
 	void UpdateTrackingTransform(const FVector& InStartLocation, const FVector& InDirection, float InLength);
 	void SetPhase(EASMonsterBeamTelegraphPhase InPhase);
 	void NotifyBeamFired();
+	void ReleaseAfterFeedback();
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|SniperBeam")
 	float GetLength() const { return Length; }
@@ -59,6 +60,9 @@ protected:
 	void BP_OnBeamFired();
 
 private:
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastBeamFired(FVector_NetQuantize Location, FRotator Rotation);
+
 	UFUNCTION()
 	void OnRep_BeamConfig();
 
@@ -87,4 +91,5 @@ private:
 	EASMonsterBeamTelegraphPhase Phase = EASMonsterBeamTelegraphPhase::Tracking;
 
 	bool bInitialized = false;
+	bool bFiredFeedbackPlayed = false;
 };

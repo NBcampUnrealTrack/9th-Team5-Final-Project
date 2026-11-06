@@ -206,6 +206,11 @@ namespace
 				Output.AddProperty(GET_MEMBER_NAME_CHECKED(USheetImportProfile, AssetNamePrefix)).DisplayName(NSLOCTEXT("SheetAssetImporter", "Prefix", "에셋 이름 접두사"));
 			}
 			Output.AddProperty(GET_MEMBER_NAME_CHECKED(USheetImportProfile, bSaveAssets));
+			Output.AddProperty(GET_MEMBER_NAME_CHECKED(USheetImportProfile, ReferenceIdProperty));
+			Output.AddProperty(GET_MEMBER_NAME_CHECKED(USheetImportProfile, ReferenceSearchPath));
+			Output.AddCustomRow(FText()).WholeRowContent()[SNew(STextBlock)
+				.Text(NSLOCTEXT("SheetAssetImporter", "ReferenceIdHelp", "아이템을 ID로 참조하려면 에셋 참조 ID 속성에 ItemId를 입력하세요. 시트의 에셋 참조 칸과 JSON 배열 안에도 ID를 쓸 수 있습니다. 빈 값이면 기존 경로 방식을 사용합니다."))
+				.AutoWrapText(true)];
 
 			IDetailCategoryBuilder& Run = Builder.EditCategory(TEXT("SheetRun"), NSLOCTEXT("SheetAssetImporter", "RunSection", "3. 실행 / 결과"), ECategoryPriority::Important);
 			Run.AddCustomRow(FText()).WholeRowContent()
@@ -241,7 +246,7 @@ namespace
 						&& (WeakProfile->Target == ESheetImportTarget::DataTable || It->HasAnyPropertyFlags(CPF_Edit))) Names.AddUnique(It->GetAuthoredName());
 				return FString::Join(Names, TEXT(","));
 			};
-			Help.AddCustomRow(FText()).WholeRowContent()[SNew(STextBlock).Text(NSLOCTEXT("SheetAssetImporter", "ColumnHelp", "Name / ID / ItemId 또는 첫 번째 열이 식별자입니다. 필요한 열만 사용하세요. 같은 이름의 필드는 자동 연결되고, 배열·구조체·맵의 JSON도 자동 인식합니다.")).AutoWrapText(true)];
+			Help.AddCustomRow(FText()).WholeRowContent()[SNew(STextBlock).Text(NSLOCTEXT("SheetAssetImporter", "ColumnHelp", "Name / ID / ItemId 또는 첫 번째 열이 식별자입니다. Auto Map Columns를 켜면 명시한 매핑을 우선하고 나머지 같은 이름의 열을 자동 연결합니다. 배열·구조체·맵의 JSON을 자동 인식하며, 레시피 Result에는 아이템 ID 하나만 입력할 수도 있습니다.")).AutoWrapText(true)];
 			Help.AddCustomRow(FText()).WholeRowContent()[SNew(STextBlock).Text_Lambda([ColumnNames]() { return FText::FromString(ColumnNames()); }).AutoWrapText(true)];
 			Help.AddCustomRow(FText()).WholeRowContent()[SNew(SButton).Text(NSLOCTEXT("SheetAssetImporter", "CopyHeaders", "열 이름 복사"))
 				.OnClicked_Lambda([ColumnNames]() { FPlatformApplicationMisc::ClipboardCopy(*ColumnNames()); return FReply::Handled(); })];

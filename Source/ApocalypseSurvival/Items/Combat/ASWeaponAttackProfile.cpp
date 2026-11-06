@@ -79,7 +79,7 @@ EDataValidationResult UASWeaponAttackProfile::ValidateForItem(
 		ASWeaponAttackProfileValidation::AddError(Context, bValid, Message);
 	};
 
-	if (!ExecutionClass)
+	if (!ExecutionClass.LoadSynchronous())
 	{
 		Error(TEXT("AttackProfile requires an ExecutionClass."));
 	}
@@ -100,7 +100,7 @@ EDataValidationResult UASMeleeAttackProfile::ValidateForItem(
 		ASWeaponAttackProfileValidation::AddError(Context, bValid, Message);
 	};
 
-	if (ExecutionClass && !ExecutionClass->IsChildOf(UASMeleeAttackExecution::StaticClass()))
+	if (ExecutionClass.LoadSynchronous() && !ExecutionClass.LoadSynchronous()->IsChildOf(UASMeleeAttackExecution::StaticClass()))
 	{
 		Error(TEXT("MeleeAttackProfile ExecutionClass must derive from UASMeleeAttackExecution."));
 	}
@@ -108,7 +108,7 @@ EDataValidationResult UASMeleeAttackProfile::ValidateForItem(
 	{
 		Error(TEXT("MeleeAttackProfile requires a positive finite StaminaCost."));
 	}
-	if (!StaminaCostEffect)
+	if (!StaminaCostEffect.LoadSynchronous())
 	{
 		Error(TEXT("MeleeAttackProfile requires a StaminaCostEffect."));
 	}
@@ -129,12 +129,12 @@ EDataValidationResult UASRangedAttackProfile::ValidateForItem(
 		ASWeaponAttackProfileValidation::AddError(Context, bValid, Message);
 	};
 
-	if (ExecutionClass && !ExecutionClass->IsChildOf(UASRangedAttackExecution::StaticClass()))
+	if (ExecutionClass.LoadSynchronous() && !ExecutionClass.LoadSynchronous()->IsChildOf(UASRangedAttackExecution::StaticClass()))
 	{
 		Error(TEXT("RangedAttackProfile ExecutionClass must derive from UASRangedAttackExecution."));
 	}
-	if (!IsValid(AmmoDefinition) || AmmoDefinition == &ItemDefinition
-		|| AmmoDefinition->ItemType != EASItemType::Ammo)
+	if (!IsValid(AmmoDefinition.LoadSynchronous()) || AmmoDefinition.LoadSynchronous() == &ItemDefinition
+		|| AmmoDefinition.LoadSynchronous()->ItemType != EASItemType::Ammo)
 	{
 		Error(TEXT("RangedAttackProfile requires an Ammo item definition."));
 	}
@@ -153,7 +153,7 @@ EDataValidationResult UASRangedAttackProfile::ValidateForItem(
 	}
 	if (!bUseAttackMoveTargeting)
 	{
-		if (!ProjectileClass && !DirectionalProjectileClass)
+		if (!ProjectileClass.LoadSynchronous() && !DirectionalProjectileClass.LoadSynchronous())
 		{
 			Error(TEXT("Directional projectile attacks require a ProjectileClass or DirectionalProjectileClass."));
 		}
@@ -162,7 +162,7 @@ EDataValidationResult UASRangedAttackProfile::ValidateForItem(
 			Error(TEXT("Directional projectile attacks require a positive finite ProjectileSpeed."));
 		}
 	}
-	if (DirectionalProjectileClass && (!FMath::IsFinite(ProjectileSpeed) || ProjectileSpeed <= 0.0f))
+	if (DirectionalProjectileClass.LoadSynchronous() && (!FMath::IsFinite(ProjectileSpeed) || ProjectileSpeed <= 0.0f))
 	{
 		Error(TEXT("DirectionalProjectileClass requires a positive finite ProjectileSpeed."));
 	}
@@ -179,7 +179,7 @@ EDataValidationResult UASRifleBurstAttackProfile::ValidateForItem(
 		ASWeaponAttackProfileValidation::AddError(Context, bValid, Message);
 	};
 
-	if (ExecutionClass && !ExecutionClass->IsChildOf(UASRifleBurstAttackExecution::StaticClass()))
+	if (ExecutionClass.LoadSynchronous() && !ExecutionClass.LoadSynchronous()->IsChildOf(UASRifleBurstAttackExecution::StaticClass()))
 	{
 		Error(TEXT("RifleBurstAttackProfile ExecutionClass must derive from UASRifleBurstAttackExecution."));
 	}
@@ -203,13 +203,13 @@ EDataValidationResult UASRifleBurstAttackProfile::ValidateForItem(
 	{
 		Error(TEXT("RifleBurstAttackProfile projectiles must not pierce."));
 	}
-	if (DirectionalProjectileClass
-		&& !DirectionalProjectileClass->IsChildOf(AASRifleBurstDirectionalProjectile::StaticClass()))
+	if (DirectionalProjectileClass.LoadSynchronous()
+		&& !DirectionalProjectileClass.LoadSynchronous()->IsChildOf(AASRifleBurstDirectionalProjectile::StaticClass()))
 	{
 		Error(TEXT("Rifle DirectionalProjectileClass must derive from AASRifleBurstDirectionalProjectile."));
 	}
-	if (HomingProjectileClass
-		&& !HomingProjectileClass->IsChildOf(AASRifleBurstHomingProjectile::StaticClass()))
+	if (HomingProjectileClass.LoadSynchronous()
+		&& !HomingProjectileClass.LoadSynchronous()->IsChildOf(AASRifleBurstHomingProjectile::StaticClass()))
 	{
 		Error(TEXT("Rifle HomingProjectileClass must derive from AASRifleBurstHomingProjectile."));
 	}
@@ -226,7 +226,7 @@ EDataValidationResult UASShotgunAttackProfile::ValidateForItem(
 		ASWeaponAttackProfileValidation::AddError(Context, bValid, Message);
 	};
 
-	if (ExecutionClass && !ExecutionClass->IsChildOf(UASShotgunAttackExecution::StaticClass()))
+	if (ExecutionClass.LoadSynchronous() && !ExecutionClass.LoadSynchronous()->IsChildOf(UASShotgunAttackExecution::StaticClass()))
 	{
 		Error(TEXT("ShotgunAttackProfile ExecutionClass must derive from UASShotgunAttackExecution."));
 	}
@@ -242,8 +242,8 @@ EDataValidationResult UASShotgunAttackProfile::ValidateForItem(
 	{
 		Error(TEXT("ShotgunAttackProfile KnockbackDistance must be finite and nonnegative."));
 	}
-	if (!PelletProjectileClass
-		|| !PelletProjectileClass->IsChildOf(AASShotgunPelletProjectile::StaticClass()))
+	if (!PelletProjectileClass.LoadSynchronous()
+		|| !PelletProjectileClass.LoadSynchronous()->IsChildOf(AASShotgunPelletProjectile::StaticClass()))
 	{
 		Error(TEXT("ShotgunAttackProfile PelletProjectileClass must derive from AASShotgunPelletProjectile."));
 	}
@@ -264,7 +264,7 @@ EDataValidationResult UASSniperAttackProfile::ValidateForItem(
 		ASWeaponAttackProfileValidation::AddError(Context, bValid, Message);
 	};
 
-	if (ExecutionClass && !ExecutionClass->IsChildOf(UASSniperAttackExecution::StaticClass()))
+	if (ExecutionClass.LoadSynchronous() && !ExecutionClass.LoadSynchronous()->IsChildOf(UASSniperAttackExecution::StaticClass()))
 	{
 		Error(TEXT("SniperAttackProfile ExecutionClass must derive from UASSniperAttackExecution."));
 	}
@@ -292,8 +292,8 @@ EDataValidationResult UASSniperAttackProfile::ValidateForItem(
 			PreviousMultiplier = Multiplier;
 		}
 	}
-	if (!SniperProjectileClass
-		|| !SniperProjectileClass->IsChildOf(AASSniperPiercingProjectile::StaticClass()))
+	if (!SniperProjectileClass.LoadSynchronous()
+		|| !SniperProjectileClass.LoadSynchronous()->IsChildOf(AASSniperPiercingProjectile::StaticClass()))
 	{
 		Error(TEXT("SniperAttackProfile SniperProjectileClass must derive from AASSniperPiercingProjectile."));
 	}

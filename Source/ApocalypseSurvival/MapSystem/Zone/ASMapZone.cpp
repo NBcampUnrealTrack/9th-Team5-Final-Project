@@ -1,8 +1,11 @@
 ﻿#include "MapSystem/Zone/ASMapZone.h"
 
 #include "ApocalypseSurvival.h"
+#include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/SphereComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -85,6 +88,31 @@ bool AASMapZone::ValidateArea(TArray<FString>& OutErrors) const
 		if (!AreaComponent || AreaComponent->ComponentHasTag(TEXT("NotArea")))
 		{
 			continue;
+		}
+		const FVector Scale = AreaComponent->GetComponentTransform().GetScale3D();
+		if (FMath::IsNearlyZero(FMath::Abs(Scale.X)) || FMath::IsNearlyZero(FMath::Abs(Scale.Y)))
+		{
+			OutErrors.Add(FString::Printf(TEXT("Zone '%s', component '%s': World X and Y scale must not be nearly zero."),
+				*ZoneId.ToString(), *AreaComponent->GetName()));
+		}
+		bool bInvalidSize = false;
+		if (const UBoxComponent* Box = Cast<UBoxComponent>(AreaComponent))
+		{
+			const FVector Extent = Box->GetUnscaledBoxExtent();
+			bInvalidSize = Extent.X <= 0.0 || Extent.Y <= 0.0;
+		}
+		else if (const USphereComponent* Sphere = Cast<USphereComponent>(AreaComponent))
+		{
+			bInvalidSize = Sphere->GetUnscaledSphereRadius() <= 0.0f;
+		}
+		else if (const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(AreaComponent))
+		{
+			bInvalidSize = Capsule->GetUnscaledCapsuleRadius() <= 0.0f;
+		}
+		if (bInvalidSize)
+		{
+			OutErrors.Add(FString::Printf(TEXT("Zone '%s', component '%s': Unscaled box X/Y extent or sphere/capsule radius must be greater than zero."),
+				*ZoneId.ToString(), *AreaComponent->GetName()));
 		}
 		const FRotator Rotation = AreaComponent->GetComponentRotation();
 		if (FMath::Abs(Rotation.Pitch) > 0.1 || FMath::Abs(Rotation.Roll) > 0.1)

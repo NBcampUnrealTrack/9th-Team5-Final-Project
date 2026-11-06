@@ -18,7 +18,7 @@ class APOCALYPSESURVIVAL_API UASMonsterDropSubsystem : public UWorldSubsystem
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
-	/** 유효한 플레이어가 처치한 경우에만 그룹을 추첨해 월드 아이템을 생성한다. */
+	/** 유효한 플레이어가 처치한 경우에만 그룹을 추첨해 일반 월드 아이템을 생성한다. */
 	bool SpawnDrops(const FDataTableRowHandle& DropGroup, const FVector& DeathLocation, AController* KillerController);
 
 private:

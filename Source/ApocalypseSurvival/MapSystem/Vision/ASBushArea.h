@@ -7,6 +7,7 @@
 class UBoxComponent;
 class USceneComponent;
 class UPrimitiveComponent;
+class UASVisionDefinition;
 
 /**
  * 은폐 영역. 수풀 안의 대상은 같은 수풀에 시야 소스가 있는
@@ -29,11 +30,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AS|Vision")
 	bool ContainsLocation(const FVector& Location) const;
 
+	void ValidateVisionWalls(const UASVisionDefinition& Definition);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	bool bVisionWallsValidated = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bush", meta = (AllowPrivateAccess = "true"))
 	FName BushId;
 

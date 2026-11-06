@@ -120,7 +120,7 @@ AActor* UASEquipmentComponent::SpawnEquippedActor(const UASItemDefinition& Defin
 		return nullptr;
 	}
 
-	UClass* ActorClass = Definition.EquippedActorClass.LoadSynchronous();
+	UClass* ActorClass = Definition.EquippedActorClass.Get();
 	AActor* Owner = GetOwner();
 	if (!ActorClass)
 	{

@@ -1,106 +1,62 @@
 #include "Items/UI/ASLootEntryWidget.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
-#include "Components/ButtonSlot.h"
-#include "Components/HorizontalBox.h"
 #include "Components/Image.h"
-#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
-#include "Components/VerticalBox.h"
+#include "Components/Border.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
-#include "Components/Border.h"
-#include "Items/ASItemInstance.h"
-#include "Items/Data/ASItemDefinition.h"
+#include "Components/ScaleBox.h"
+#include "Components/SizeBox.h"
+#include "Engine/Texture2D.h"
+#include "Items/UI/ViewModels/ASItemSlotViewModel.h"
+#include "Items/UI/ViewModels/ASInventoryViewModel.h"
 #include "Items/UI/ASItemRarityBackground.h"
 #include "Items/UI/ASLootWidget.h"
-#include "Items/Inventory/ASInventoryComponent.h"
+#include "Items/UI/ASItemViewBinding.h"
 #include "Items/Loot/ASLootChest.h"
 #include "InputCoreTypes.h"
 
 TSharedRef<SWidget> UASLootEntryWidget::RebuildWidget()
 {
-	BuildDefaultWidgetTree();
-	// Insert before rebuilding Slate so existing BP overlays also get the background.
-	if (WidgetTree && !RarityBackground && ItemIcon)
+	if (EntrySize)
+	{
+		// Constrain the visible card without changing the grid's desired row height during scrolling.
+		EntrySize->SetMinAspectRatio(1.f);
+		EntrySize->SetMaxAspectRatio(1.f);
+	}
+	// Keep the authored icon binding and layer order, but fit its texture inside the cell.
+	if (ItemIcon && WidgetTree)
 	{
 		if (UOverlay* Overlay = Cast<UOverlay>(ItemIcon->GetParent()))
 		{
-			RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
-			RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
-			Overlay->InsertChildAt(0, RarityBackground);
-		}
-	}
-	// Button padding and Overlay's default left/top alignment leave uncolored margins.
-	if (ItemButton && ItemButton->GetContent())
-	{
-		FButtonStyle Style = ItemButton->GetStyle();
-		Style.NormalPadding = FMargin(0.0f);
-		Style.PressedPadding = FMargin(0.0f);
-		ItemButton->SetStyle(Style);
-		if (UButtonSlot* ContentSlot = Cast<UButtonSlot>(ItemButton->GetContent()->Slot))
-		{
-			ContentSlot->SetPadding(FMargin(0.0f));
-			ContentSlot->SetHorizontalAlignment(HAlign_Fill);
-			ContentSlot->SetVerticalAlignment(VAlign_Fill);
-		}
-	}
-	for (UWidget* Layer : { static_cast<UWidget*>(RarityBackground.Get()), static_cast<UWidget*>(ItemIcon.Get()) })
-	{
-		if (UOverlaySlot* LayerSlot = Layer ? Cast<UOverlaySlot>(Layer->Slot) : nullptr)
-		{
-			LayerSlot->SetPadding(FMargin(0.0f));
-			LayerSlot->SetHorizontalAlignment(HAlign_Fill);
-			LayerSlot->SetVerticalAlignment(VAlign_Fill);
+			const int32 IconIndex = Overlay->GetChildIndex(ItemIcon);
+			const UOverlaySlot* OldSlot = CastChecked<UOverlaySlot>(ItemIcon->Slot);
+			const FMargin IconPadding = OldSlot->GetPadding();
+			ItemIcon->RemoveFromParent();
+			UScaleBox* IconScale = WidgetTree->ConstructWidget<UScaleBox>();
+			IconScale->SetStretch(EStretch::ScaleToFit);
+			IconScale->SetStretchDirection(EStretchDirection::Both);
+			IconScale->SetContent(ItemIcon);
+			UOverlaySlot* IconSlot = CastChecked<UOverlaySlot>(Overlay->InsertChildAt(IconIndex, IconScale));
+			IconSlot->SetPadding(IconPadding);
+			IconSlot->SetHorizontalAlignment(HAlign_Fill);
+			IconSlot->SetVerticalAlignment(VAlign_Fill);
 		}
 	}
 	return Super::RebuildWidget();
 }
 
-void UASLootEntryWidget::BuildDefaultWidgetTree()
+void UASLootEntryWidget::NativePreConstruct()
 {
-	if (!IsValid(WidgetTree) || IsValid(WidgetTree->RootWidget))
+	if (IsDesignTime())
 	{
-		return;
+		if (ItemNameText) { ItemNameText->SetText(NSLOCTEXT("ASInventory", "PreviewItem", "아이템")); ItemNameText->SetVisibility(ESlateVisibility::HitTestInvisible); }
+		if (QuantityText) { QuantityText->SetText(FText::AsNumber(12)); QuantityText->SetVisibility(ESlateVisibility::HitTestInvisible); }
+		if (QuantityBadge) QuantityBadge->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
-
-	USizeBox* EntrySize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("EntrySize"));
-	EntrySize->SetWidthOverride(80.0f);
-	EntrySize->SetHeightOverride(80.0f);
-
-	ItemButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ItemButton"));
-	ItemButton->SetBackgroundColor(FLinearColor(0.045f, 0.055f, 0.065f, 1.0f));
-	UOverlay* EntryOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("EntryOverlay"));
-	RarityBackground = WidgetTree->ConstructWidget<UASItemRarityBackground>(UASItemRarityBackground::StaticClass(), TEXT("RarityBackground"));
-	RarityBackground->SetVisibility(ESlateVisibility::HitTestInvisible);
-	EntryOverlay->AddChildToOverlay(RarityBackground);
-	ItemIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("ItemIcon"));
-	ItemIcon->SetDesiredSizeOverride(FVector2D(80.0f, 80.0f));
-	ItemIcon->SetColorAndOpacity(FLinearColor::White);
-	ItemNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ItemNameText"));
-	QuantityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuantityText"));
-	ItemNameText->SetVisibility(ESlateVisibility::Collapsed);
-	QuantityText->SetColorAndOpacity(FSlateColor(FLinearColor(0.94f, 0.96f, 0.98f, 1.0f)));
-	FSlateFontInfo QuantityFont = QuantityText->GetFont();
-	QuantityFont.Size = 11;
-	QuantityText->SetFont(QuantityFont);
-	QuantityText->SetVisibility(ESlateVisibility::Collapsed);
-	UBorder* QuantityBadge = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("QuantityBadge"));
-	QuantityBadge->SetPadding(FMargin(2.0f, 0.0f));
-	QuantityBadge->SetBrushColor(FLinearColor(0.015f, 0.025f, 0.04f, 0.6f));
-	QuantityBadge->SetVisibility(ESlateVisibility::Collapsed);
-	QuantityBadge->AddChild(QuantityText);
-
-	EntrySize->AddChild(ItemButton);
-	ItemButton->AddChild(EntryOverlay);
-	EntryOverlay->AddChildToOverlay(ItemIcon);
-	UOverlaySlot* BadgeSlot = EntryOverlay->AddChildToOverlay(QuantityBadge);
-	BadgeSlot->SetHorizontalAlignment(HAlign_Right);
-	BadgeSlot->SetVerticalAlignment(VAlign_Bottom);
-	BadgeSlot->SetPadding(FMargin(0.0f, 0.0f, 3.0f, 3.0f));
-	EntryOverlay->AddChildToOverlay(ItemNameText);
-	WidgetTree->RootWidget = EntrySize;
+	Super::NativePreConstruct();
 }
 
 void UASLootEntryWidget::NativeConstruct()
@@ -118,7 +74,7 @@ void UASLootEntryWidget::NativeConstruct()
 void UASLootEntryWidget::NativeDestruct()
 {
 	bPressed = false;
-	IconAssetRequest.Reset();
+	if (ViewModel) ViewModel->RemoveAllFieldValueChangedDelegates(this);
 	if (IsValid(ItemButton))
 	{
 		ItemButton->OnClicked.RemoveDynamic(this, &UASLootEntryWidget::HandleItemButtonClicked);
@@ -131,7 +87,9 @@ void UASLootEntryWidget::SetItemInstance(UASItemInstance* InItemInstance)
 {
 	if (ItemInstance != InItemInstance) bPressed = false;
 	ItemInstance = InItemInstance;
-	RefreshEntry();
+	UASItemSlotViewModel* Model = NewObject<UASItemSlotViewModel>(this);
+	Model->SetStandaloneItem(InItemInstance);
+	SetViewModel(Model);
 }
 
 void UASLootEntryWidget::SetLootSource(UASLootWidget* InLootWidget)
@@ -142,11 +100,11 @@ void UASLootEntryWidget::SetLootSource(UASLootWidget* InLootWidget)
 FReply UASLootEntryWidget::NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)
 {
 	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !LootSource.IsValid()
-		|| !IsValid(ItemInstance) || !ItemInstance->IsValidItemInstance())
+		|| !ViewModel || !ViewModel->Presentation.bHasItem)
 		return Super::NativeOnPreviewMouseButtonDown(Geometry, Event);
 	// Intercept before the child button captures the mouse, preserving click-on-release below.
 	bPressed = true;
-	PressedItem = ItemInstance->GetInstanceId();
+	PressedItem = ViewModel->Presentation.ItemId;
 	return FReply::Handled().CaptureMouse(TakeWidget()).DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
 }
 
@@ -155,7 +113,7 @@ FReply UASLootEntryWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 	if (Event.GetEffectingButton() != EKeys::LeftMouseButton || !bPressed)
 		return Super::NativeOnMouseButtonUp(Geometry, Event);
 	bPressed = false;
-	if (IsValid(ItemInstance) && ItemInstance->GetInstanceId() == PressedItem
+	if (ViewModel && ViewModel->Presentation.ItemId == PressedItem
 		&& Geometry.IsUnderLocation(Event.GetScreenSpacePosition())) HandleItemButtonClicked();
 	return FReply::Handled().ReleaseMouseCapture();
 }
@@ -163,118 +121,68 @@ FReply UASLootEntryWidget::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 void UASLootEntryWidget::NativeOnDragDetected(const FGeometry& Geometry, const FPointerEvent& Event, UDragDropOperation*& Operation)
 {
 	bPressed = false;
-	UASInventoryComponent* Inventory = IsValid(ItemInstance) ? ItemInstance->GetTypedOuter<UASInventoryComponent>() : nullptr;
-	AASLootChest* Chest = Inventory ? Cast<AASLootChest>(Inventory->GetOwner()) : nullptr;
-	if (!LootSource.IsValid() || !LootSource->IsInViewport() || !IsValid(Chest)
-		|| !ItemInstance->IsValidItemInstance() || ItemInstance->GetInstanceId() != PressedItem
-		|| Inventory->FindItemById(PressedItem) != ItemInstance) return;
+	UASInventoryViewModel* InventoryModel = ViewModel ? ViewModel->GetInventoryViewModel() : nullptr;
+	if (!LootSource.IsValid() || !LootSource->IsInViewport() || !InventoryModel || !InventoryModel->GetLootChest()
+		|| !ViewModel->Presentation.bHasItem || ViewModel->Presentation.ItemId != PressedItem) return;
 	UASLootItemDragDrop* Drag = NewObject<UASLootItemDragDrop>();
 	Drag->SourceLoot = LootSource;
-	Drag->Chest = Chest;
+	Drag->Chest = InventoryModel->GetLootChest();
+	Drag->ViewModel = InventoryModel;
 	Drag->ItemId = PressedItem;
-	USizeBox* Size = NewObject<USizeBox>(Drag);
-	Size->SetWidthOverride(80.0f);
-	Size->SetHeightOverride(80.0f);
-	Size->SetVisibility(ESlateVisibility::HitTestInvisible);
-	UOverlay* Overlay = NewObject<UOverlay>(Drag);
-	UASItemRarityBackground* Background = NewObject<UASItemRarityBackground>(Drag);
-	Background->SetRarity(ItemInstance->GetItemDefinition()->Rarity);
-	UOverlaySlot* BackgroundSlot = Overlay->AddChildToOverlay(Background);
-	BackgroundSlot->SetHorizontalAlignment(HAlign_Fill);
-	BackgroundSlot->SetVerticalAlignment(VAlign_Fill);
-	if (UTexture2D* Icon = ItemInstance->GetItemDefinition()->Icon.Get())
-	{
-		UImage* Image = NewObject<UImage>(Drag);
-		Image->SetBrushFromTexture(Icon);
-		UOverlaySlot* IconSlot = Overlay->AddChildToOverlay(Image);
-		IconSlot->SetHorizontalAlignment(HAlign_Fill);
-		IconSlot->SetVerticalAlignment(VAlign_Fill);
-	}
-	else
-	{
-		UTextBlock* Name = NewObject<UTextBlock>(Drag);
-		Name->SetText(ItemInstance->GetItemDefinition()->DisplayName);
-		Overlay->AddChildToOverlay(Name);
-	}
-	Size->SetContent(Overlay);
-	Drag->DefaultDragVisual = Size;
+	UASLootEntryWidget* Visual = CreateWidget<UASLootEntryWidget>(GetOwningPlayer(), GetClass());
+	if (!Visual) return;
+	Visual->SetViewModel(ViewModel);
+	Visual->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Drag->DefaultDragVisual = Visual;
 	Drag->Pivot = EDragPivot::CenterCenter;
 	Operation = Drag;
 }
 
+void UASLootEntryWidget::SetViewModel(UASItemSlotViewModel* Model)
+{
+	if (ViewModel) ViewModel->RemoveAllFieldValueChangedDelegates(this);
+	ViewModel = Model;
+	bPressed = false;
+	RefreshEntry();
+}
+
 void UASLootEntryWidget::RefreshEntry()
 {
-	const UASItemDefinition* Definition = IsValid(ItemInstance) && ItemInstance->IsValidItemInstance()
-		? ItemInstance->GetItemDefinition() : nullptr;
-	IconAssetRequest.Request(Definition ? Definition->Icon.ToSoftObjectPath() : FSoftObjectPath(),
-		FStreamableDelegate::CreateWeakLambda(this, [this] { RefreshEntry(); }));
-	if (RarityBackground)
+	if (!ViewModel && ItemInstance) { SetItemInstance(ItemInstance); return; }
+	if (ViewModel)
 	{
-		if (Definition) RarityBackground->SetRarity(Definition->Rarity);
-		RarityBackground->SetVisibility(Definition ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		ViewModel->RemoveAllFieldValueChangedDelegates(this);
+		ViewModel->AddFieldValueChangedDelegate(UASItemSlotViewModel::FFieldNotificationClassDescriptor::Presentation,
+			INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateWeakLambda(this,
+				[this](UObject*, UE::FieldNotification::FFieldId) { ApplyPresentation(); }));
 	}
-	const int32 Quantity = IsValid(ItemInstance) && IsValid(ItemInstance->GetItemDefinition())
-		? ItemInstance->GetQuantity() : 0;
-	const ESlateVisibility QuantityVisibility = Quantity > 1
-		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
-	if (IsValid(QuantityText))
-	{
-		QuantityText->SetText(Quantity > 1 ? FText::AsNumber(Quantity) : FText::GetEmpty());
-		QuantityText->SetVisibility(QuantityVisibility);
-	}
-	if (IsValid(WidgetTree))
-	{
-		if (USizeBox* EntrySize = Cast<USizeBox>(WidgetTree->FindWidget(TEXT("EntrySize"))))
-		{
-			EntrySize->SetWidthOverride(80.0f);
-			EntrySize->SetHeightOverride(80.0f);
-		}
-		if (UBorder* QuantityBadge = Cast<UBorder>(WidgetTree->FindWidget(TEXT("QuantityBadge"))))
-		{
-			QuantityBadge->SetVisibility(QuantityVisibility);
-		}
-	}
-	if (IsValid(ItemIcon))
-	{
-		ItemIcon->SetDesiredSizeOverride(FVector2D(80.0f, 80.0f));
-		ItemIcon->SetColorAndOpacity(FLinearColor::White);
-	}
+	ASItemViewBinding::Set(this, TEXT("SlotVM"), ViewModel);
+	ApplyPresentation();
+}
 
-	if (!Definition)
+void UASLootEntryWidget::ApplyPresentation()
+{
+	const FASItemSlotPresentation P = ViewModel ? ViewModel->Presentation : FASItemSlotPresentation();
+	const bool bAuthoredBindings = ASItemViewBinding::HasView(this);
+	const ESlateVisibility QuantityVisibility = P.Quantity.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
+	if (QuantityText) { if (!bAuthoredBindings) QuantityText->SetText(P.Quantity); QuantityText->SetVisibility(QuantityVisibility); }
+	if (RarityBackground) { RarityBackground->SetRarity(P.Rarity); RarityBackground->SetVisibility(P.bHasItem ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed); }
+	if (ItemNameText) { if (!bAuthoredBindings) ItemNameText->SetText(P.Name); ItemNameText->SetVisibility(!P.Name.IsEmpty() && !P.Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed); }
+	if (ItemButton) { ItemButton->SetToolTipText(P.Tooltip); ItemButton->SetIsEnabled(P.bHasItem); }
+	if (ItemIcon)
 	{
-		if (ItemIcon) ItemIcon->SetBrushFromTexture(nullptr);
-		if (ItemNameText) ItemNameText->SetText(FText::GetEmpty());
-		if (ItemButton) ItemButton->SetToolTipText(FText::GetEmpty());
-		return;
+		ItemIcon->SetBrushFromTexture(P.Icon, true);
+		// Authored MVVM bindings may already have assigned the texture before this refresh.
+		ItemIcon->SetDesiredSizeOverride(P.Icon ? FVector2D(P.Icon->GetSizeX(), P.Icon->GetSizeY()) : FVector2D::ZeroVector);
+		ItemIcon->SetVisibility(P.Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
-
-	const UASItemDefinition* ItemDefinition = Definition;
-
-	if (IsValid(ItemNameText))
-	{
-		ItemNameText->SetText(ItemDefinition->DisplayName);
-	}
-	if (IsValid(ItemButton)) ItemButton->SetToolTipText(ItemDefinition->DisplayName);
-
-	if (IsValid(ItemButton))
-	{
-		ItemButton->SetBackgroundColor(FLinearColor(0.045f, 0.055f, 0.065f, 1.0f));
-	}
-
-	if (IsValid(ItemIcon))
-	{
-		UTexture2D* Icon = ItemDefinition->Icon.Get();
-		ItemIcon->SetBrushFromTexture(Icon, false);
-		ItemIcon->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-		ItemIcon->SetColorAndOpacity(FLinearColor::White);
-		if (ItemNameText) ItemNameText->SetVisibility(Icon ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	}
+	if (QuantityBadge) QuantityBadge->SetVisibility(QuantityVisibility);
 }
 
 void UASLootEntryWidget::HandleItemButtonClicked()
 {
-	if (IsValid(ItemInstance) && ItemInstance->IsValidItemInstance())
-	{
-		OnItemClicked.Broadcast(ItemInstance);
-	}
+	if (!ViewModel || !ViewModel->Presentation.bHasItem) return;
+	// Retain the authored-entry event as a compatibility adapter. The native loot view uses the command.
+	if (UASInventoryViewModel* Source = ViewModel->GetInventoryViewModel()) Source->LootItem(ViewModel->Presentation.ItemId);
+	else OnItemClicked.Broadcast(ViewModel->ResolveItem());
 }

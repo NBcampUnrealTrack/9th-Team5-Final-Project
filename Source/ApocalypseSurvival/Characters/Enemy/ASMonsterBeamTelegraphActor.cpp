@@ -86,7 +86,34 @@ void AASMonsterBeamTelegraphActor::SetPhase(const EASMonsterBeamTelegraphPhase I
 
 void AASMonsterBeamTelegraphActor::NotifyBeamFired()
 {
+	if (!HasAuthority() || bFiredFeedbackPlayed) return;
+	MulticastBeamFired(GetActorLocation(), GetActorRotation());
+}
+
+void AASMonsterBeamTelegraphActor::MulticastBeamFired_Implementation(const FVector_NetQuantize Location, const FRotator Rotation)
+{
+	if (bFiredFeedbackPlayed) return;
+	bFiredFeedbackPlayed = true;
+	if (GetNetMode() == NM_DedicatedServer) return;
+	// The final tracking movement may not have replicated before this event.
+	SetActorLocationAndRotation(Location, Rotation);
 	BP_OnBeamFired();
+}
+
+void AASMonsterBeamTelegraphActor::ReleaseAfterFeedback()
+{
+	if (!HasAuthority()) return;
+	if (bFiredFeedbackPlayed)
+	{
+		SetActorTickEnabled(false);
+		SetActorHiddenInGame(true);
+		ForceNetUpdate();
+		SetLifeSpan(0.2f);
+	}
+	else
+	{
+		Destroy();
+	}
 }
 
 float AASMonsterBeamTelegraphActor::GetProgress() const
