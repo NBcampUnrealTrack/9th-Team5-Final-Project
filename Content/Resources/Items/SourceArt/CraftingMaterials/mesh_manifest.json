@@ -1,0 +1,101 @@
+[
+  {
+    "name": "SteelPlate",
+    "triangles": 1276,
+    "vertices": 3060,
+    "materials": [
+      "BlueBand",
+      "DarkSteel",
+      "Steel"
+    ],
+    "bounds_cm": {
+      "min": [
+        -11.552375154156866,
+        -9.545,
+        0.0
+      ],
+      "max": [
+        11.552375154156866,
+        9.545,
+        3.245
+      ]
+    }
+  },
+  {
+    "name": "ReinforcedFiber",
+    "triangles": 9312,
+    "vertices": 21616,
+    "materials": [
+      "Aramid",
+      "Cardboard",
+      "GraphiteFabric",
+      "Rubber",
+      "Thread",
+      "Webbing"
+    ],
+    "bounds_cm": {
+      "min": [
+        -12.65,
+        -7.7455,
+        0.0
+      ],
+      "max": [
+        12.65,
+        7.7455,
+        15.232000000000001
+      ]
+    }
+  },
+  {
+    "name": "PrecisionParts",
+    "triangles": 6368,
+    "vertices": 10406,
+    "materials": [
+      "Brass",
+      "Copper",
+      "DarkSteel",
+      "Gunmetal",
+      "Rubber",
+      "Steel"
+    ],
+    "bounds_cm": {
+      "min": [
+        -14.95,
+        -6.0,
+        0.0
+      ],
+      "max": [
+        14.95,
+        6.0,
+        4.999592921435211
+      ]
+    }
+  },
+  {
+    "name": "MutationCatalyst",
+    "triangles": 4702,
+    "vertices": 9754,
+    "materials": [
+      "Brass",
+      "Crystal",
+      "CrystalDark",
+      "DarkSteel",
+      "Glass",
+      "Gunmetal",
+      "SafetyYellow",
+      "Steel"
+    ],
+    "bounds_cm": {
+      "min": [
+        -5.0,
+        -5.0,
+        0
+      ],
+      "max": [
+        5.0,
+        5.0,
+        18.4375
+      ]
+    }
+  }
+]

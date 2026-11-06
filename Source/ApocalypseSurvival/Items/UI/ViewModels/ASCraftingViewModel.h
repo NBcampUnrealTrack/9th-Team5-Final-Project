@@ -32,6 +32,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") TArray<TObjectPtr<UASCraftingEntryViewModel>> MaterialEntries;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText SelectedName;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText SelectedCategory;
+	/** Type-specific item stats. Keep the field name for existing CraftingVM Blueprint bindings. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText WeaponStats;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText OwnedResultText;
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category="Crafting|ViewModel") FText AvailabilityText;

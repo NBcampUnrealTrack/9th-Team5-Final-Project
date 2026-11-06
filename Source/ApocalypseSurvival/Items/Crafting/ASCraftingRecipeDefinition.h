@@ -23,6 +23,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	TArray<FASItemGrant> Ingredients;
 
+	/** Ordinary inventory item and quantity per craft. Stackable results may span several stacks. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	FASItemGrant Result;
 

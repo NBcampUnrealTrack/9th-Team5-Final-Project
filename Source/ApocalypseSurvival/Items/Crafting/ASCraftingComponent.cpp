@@ -21,6 +21,7 @@ namespace
 	{
 		int64 EndQuantity;
 		int32 Slot;
+		int32 Quantity;
 	};
 	struct FMaterialContents
 	{
@@ -31,8 +32,9 @@ namespace
 	{
 		TMap<const UASItemDefinition*, FMaterialContents> Materials;
 		TMap<int32, int32> OccupantsPerSlot;
+		TMap<const UASItemDefinition*, int64> StackSpace;
 		int32 SlotLimit = 0;
-		bool bHasFreeSlot = true;
+		int32 FreeSlotCount = 0;
 
 		EASCraftingResult Evaluate(const UASCraftingRecipeDefinition& Recipe) const
 		{
@@ -43,21 +45,33 @@ namespace
 				const FMaterialContents* Contents = Materials.Find(Cost.Key);
 				if (!Contents || Contents->Quantity < Cost.Value) return EASCraftingResult::MissingMaterials;
 			}
-			if (bHasFreeSlot) return EASCraftingResult::Success;
+			if (SlotLimit <= 0) return EASCraftingResult::Success;
 
-			// Valid recipes grant one unstackable weapon. Only a free backpack slot is needed.
-			// Prefix quantities reproduce the transaction's stack consumption order without building a plan.
+			const UASItemDefinition* ResultItem = Recipe.Result.ItemDefinition;
+			int64 ResultSpace = StackSpace.FindRef(ResultItem);
+			int32 FreedSlots = 0;
+			// Match the exchange planner's input order. Consuming inputs can free slots and
+			// change merge capacity when the result is also one of the ingredients.
 			TMap<int32, int32> RemovedPerSlot;
 			for (const auto& Cost : Required)
 			{
 				for (const FMaterialStack& Stack : Materials.FindChecked(Cost.Key).Stacks)
 				{
-					if (Stack.EndQuantity > Cost.Value) break;
-					if (Stack.Slot < SlotLimit && ++RemovedPerSlot.FindOrAdd(Stack.Slot) == OccupantsPerSlot.FindChecked(Stack.Slot))
-						return EASCraftingResult::Success;
+					const int64 Consumed = FMath::Clamp<int64>(Cost.Value - (Stack.EndQuantity - Stack.Quantity), 0, Stack.Quantity);
+					if (Consumed == 0) break;
+					const int32 Remaining = Stack.Quantity - static_cast<int32>(Consumed);
+					if (Cost.Key == ResultItem)
+					{
+						ResultSpace -= FMath::Max(0, ResultItem->MaxStackSize - Stack.Quantity);
+						if (Remaining > 0) ResultSpace += FMath::Max(0, ResultItem->MaxStackSize - Remaining);
+					}
+					if (Remaining == 0 && Stack.Slot < SlotLimit
+						&& ++RemovedPerSlot.FindOrAdd(Stack.Slot) == OccupantsPerSlot.FindChecked(Stack.Slot)) ++FreedSlots;
 				}
 			}
-			return EASCraftingResult::InventoryFull;
+			const int64 Unstacked = FMath::Max<int64>(0, static_cast<int64>(Recipe.Result.Quantity) - ResultSpace);
+			const int64 RequiredSlots = (Unstacked + ResultItem->MaxStackSize - 1) / ResultItem->MaxStackSize;
+			return RequiredSlots <= FreeSlotCount + FreedSlots ? EASCraftingResult::Success : EASCraftingResult::InventoryFull;
 		}
 	};
 
@@ -130,16 +144,17 @@ FASCraftingPreview UASCraftingComponent::BuildPreview() const
 			Preview.OwnedCounts.FindOrAdd(Definition) += Item->GetQuantity();
 			if (Item->GetInventorySlot() < 0) continue;
 			++Contents.OccupantsPerSlot.FindOrAdd(Item->GetInventorySlot());
+			Contents.StackSpace.FindOrAdd(Definition) += FMath::Max(0, Definition->MaxStackSize - Item->GetQuantity());
 			if (Definition->ItemType == EASItemType::CraftingMaterial)
 			{
 				FMaterialContents& Material = Contents.Materials.FindOrAdd(Definition);
 				Material.Quantity += Item->GetQuantity();
-				Material.Stacks.Add({Material.Quantity, Item->GetInventorySlot()});
+				Material.Stacks.Add({Material.Quantity, Item->GetInventorySlot(), Item->GetQuantity()});
 			}
 		}
-		int32 FirstFree = 0;
-		while (Contents.OccupantsPerSlot.Contains(FirstFree)) ++FirstFree;
-		Contents.bHasFreeSlot = Contents.SlotLimit <= 0 || FirstFree < Contents.SlotLimit;
+		int32 OccupiedSlots = 0;
+		for (const auto& Slot : Contents.OccupantsPerSlot) if (Slot.Key < Contents.SlotLimit) ++OccupiedSlots;
+		Contents.FreeSlotCount = FMath::Max(0, Contents.SlotLimit - OccupiedSlots);
 	}
 	const bool bPlayerCanCraft = CanPlayerCraft();
 	for (const UASCraftingRecipeDefinition* Recipe : GetAvailableRecipes())
@@ -216,9 +231,9 @@ FText UASCraftingComponent::GetResultText(EASCraftingResult Result)
 {
 	switch (Result)
 	{
-	case EASCraftingResult::Success: return NSLOCTEXT("ASCrafting", "Success", "제작 완료! 무기가 가방에 추가되었습니다.");
+	case EASCraftingResult::Success: return NSLOCTEXT("ASCrafting", "ItemsCreated", "제작 완료! 아이템이 인벤토리에 추가되었습니다.");
 	case EASCraftingResult::MissingMaterials: return NSLOCTEXT("ASCrafting", "Materials", "재료가 부족합니다.");
-	case EASCraftingResult::InventoryFull: return NSLOCTEXT("ASCrafting", "Full", "무기를 보관할 가방 공간이 부족합니다.");
+	case EASCraftingResult::InventoryFull: return NSLOCTEXT("ASCrafting", "ResultInventoryFull", "제작 결과를 보관할 인벤토리 공간이 부족합니다.");
 	case EASCraftingResult::InvalidPlayer: return NSLOCTEXT("ASCrafting", "Player", "현재 제작할 수 없는 상태입니다.");
 	case EASCraftingResult::UnknownRecipe: return NSLOCTEXT("ASCrafting", "Unknown", "등록된 레시피를 선택해 주세요.");
 	default: return NSLOCTEXT("ASCrafting", "Invalid", "레시피 설정을 확인해 주세요.");

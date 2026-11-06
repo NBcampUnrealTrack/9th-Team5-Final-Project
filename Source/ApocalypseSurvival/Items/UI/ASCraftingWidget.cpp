@@ -53,7 +53,7 @@ TSharedRef<SWidget> UASCraftingWidget::RebuildWidget()
 				Parent->AddChildToVerticalBox(Block)->SetPadding(Spacing);
 			}
 		};
-		Body->AddChildToVerticalBox(Heading(TEXT("무기 제작"), 24, ASMenuStyle::Text))->SetPadding(FMargin(0.f, 0.f, 0.f, 24.f));
+		Body->AddChildToVerticalBox(Heading(TEXT("아이템 제작"), 24, ASMenuStyle::Text))->SetPadding(FMargin(0.f, 0.f, 0.f, 24.f));
 		UHorizontalBox* Columns = WidgetTree->ConstructWidget<UHorizontalBox>();
 		Body->AddChildToVerticalBox(Columns)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		USizeBox* RecipesWidth = WidgetTree->ConstructWidget<USizeBox>(); RecipesWidth->SetWidthOverride(228.f);

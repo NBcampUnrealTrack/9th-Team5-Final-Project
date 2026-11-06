@@ -1,0 +1,47 @@
+newmtl Aramid
+Kd 0.35 0.35 0.35
+
+newmtl BlueBand
+Kd 0.35 0.35 0.35
+
+newmtl Brass
+Kd 0.35 0.35 0.35
+
+newmtl Cardboard
+Kd 0.35 0.35 0.35
+
+newmtl Copper
+Kd 0.35 0.35 0.35
+
+newmtl Crystal
+Kd 0.35 0.35 0.35
+
+newmtl CrystalDark
+Kd 0.35 0.35 0.35
+
+newmtl DarkSteel
+Kd 0.35 0.35 0.35
+
+newmtl Glass
+Kd 0.35 0.35 0.35
+
+newmtl GraphiteFabric
+Kd 0.35 0.35 0.35
+
+newmtl Gunmetal
+Kd 0.35 0.35 0.35
+
+newmtl Rubber
+Kd 0.35 0.35 0.35
+
+newmtl SafetyYellow
+Kd 0.35 0.35 0.35
+
+newmtl Steel
+Kd 0.35 0.35 0.35
+
+newmtl Thread
+Kd 0.35 0.35 0.35
+
+newmtl Webbing
+Kd 0.35 0.35 0.35
