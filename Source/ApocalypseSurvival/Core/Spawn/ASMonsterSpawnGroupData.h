@@ -27,6 +27,14 @@ struct FASMonsterSpawnGroupUnitEntry
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Monster Spawn Group", meta = (ClampMin = "0"))
 	int32 Count = 0;
+
+	/**
+	 * 스폰포인트 기준 상대 위치(cm). 스폰포인트의 회전을 따른다 (+X가 정면).
+	 * i번째 개체는 LocalOffsets[i]에 생성되고, 오프셋이 없는 나머지 개체는 ScatterRadius 안에 무작위 배치된다.
+	 * 낮 스폰(스폰포인트 기반)에만 적용되며 밤 웨이브는 무시한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Monster Spawn Group")
+	TArray<FVector> LocalOffsets;
 };
 
 /**

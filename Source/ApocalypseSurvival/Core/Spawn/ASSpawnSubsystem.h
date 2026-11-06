@@ -56,7 +56,8 @@ private:
 
 	void CachePlacedSpawnPoints();
 	TArray<AASMonsterSpawnPoint*> SelectPlacedSpawnPoints(int32 Count) const;
-	TArray<FVector> FindDistributedSpawnLocations(const AASMonsterSpawnPoint& SpawnPoint, int32 Count) const;
+	TArray<FVector> FindDistributedSpawnLocations(const AASMonsterSpawnPoint& SpawnPoint, int32 Count,
+		TConstArrayView<FVector> ReservedLocations = {}) const;
 	const struct FASMonsterSpawnGroupDataRow* FindMonsterGroupData(UDataTable* MonsterSpawnGroupDataTable,
 		int32 GroupIndex) const;
 	bool FindWaveSpawnLocations(int32 EnemyCount, TArray<FVector>& OutLocations);
