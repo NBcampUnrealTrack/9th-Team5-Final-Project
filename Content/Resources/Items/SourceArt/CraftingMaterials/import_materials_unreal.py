@@ -1,7 +1,6 @@
 """Import the four authored material props and connect only Icon/WorldMesh on their item definitions."""
 from pathlib import Path
 import json
-import sys
 import unreal
 
 ROOT = Path(__file__).resolve().parent
@@ -86,7 +85,6 @@ def materials():
 
 def run():
     palette = materials()
-    reports = []
     for spec in json.loads((ROOT/'mesh_manifest.json').read_text(encoding='utf-8')):
         name = spec['name']
         icon = imported(PROJECT/('Content/Resources/Items/Icon/T_Icon_'+name+'.png'), ART+'/Icon', 'T_Icon_'+name, factory=unreal.TextureFactory())
@@ -129,31 +127,8 @@ def run():
         assert preserved == {k:str(item.get_editor_property(k)) for k in preserved}
         report = dict(name=name, icon=icon.get_path_name(), mesh=mesh.get_path_name(), item=item.get_path_name(),
                       material_slots=len(slots), lod_vertices=[MESHES.get_number_verts(mesh, i) for i in range(3)], size_cm=actual, preserved=preserved)
-        reports.append(report); unreal.log('CRAFT_ART_IMPORTED '+json.dumps(report, ensure_ascii=False))
-    (ROOT/'unreal_manifest.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
+        unreal.log('CRAFT_ART_IMPORTED '+json.dumps(report, ensure_ascii=False))
     unreal.log('CRAFT_ART_IMPORTED PASS items=4 icons=4 meshes=4')
 
 
-def verify():
-    """Read back saved assets in a fresh editor process without modifying them."""
-    for report in json.loads((ROOT/'unreal_manifest.json').read_text(encoding='utf-8')):
-        item = unreal.load_asset(report['item'])
-        icon = unreal.load_asset(report['icon'])
-        mesh = unreal.load_asset(report['mesh'])
-        assert item and isinstance(icon, unreal.Texture2D) and isinstance(mesh, unreal.StaticMesh)
-        assert item.get_editor_property('icon') == icon
-        assert item.get_editor_property('world_mesh') == mesh
-        assert report['preserved'] == {key:str(item.get_editor_property(key)) for key in report['preserved']}
-        assert icon.get_editor_property('lod_group') == unreal.TextureGroup.TEXTUREGROUP_UI
-        assert icon.get_editor_property('max_texture_size') == 512
-        assert MESHES.get_lod_count(mesh) == 3
-        assert MESHES.get_simple_collision_count(mesh) > 0
-        assert [MESHES.get_number_verts(mesh, i) for i in range(3)] == report['lod_vertices']
-        assert all(slot.get_editor_property('material_interface') for slot in mesh.get_editor_property('static_materials'))
-        unreal.log('CRAFT_ART_VERIFIED '+report['name'])
-    unreal.log('CRAFT_ART_VERIFIED PASS items=4 icons=4 meshes=4 lods=12')
-
-
-if __name__ == '__main__':
-    if '--verify-only' in sys.argv: verify()
-    else: run()
+if __name__ == '__main__': run()

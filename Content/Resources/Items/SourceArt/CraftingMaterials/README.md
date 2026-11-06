@@ -27,10 +27,8 @@
 - `Meshes/`: 편집 가능한 OBJ 4개와 재질 슬롯 목록 MTL
 - `build_meshes.py`: 외부 패키지 없이 Python 3으로 지오메트리·UV·법선 생성
 - `import_materials_unreal.py`: 언리얼 임포트·재질 연결·LOD·충돌·아이템 연결
-- `render_previews_unreal.py`: 별도의 언리얼 에디터 프로세스에서 실제 메시 렌더링
-- `Previews/`: 실제 언리얼 재질을 적용한 메시 미리보기
-- `mesh_manifest.json`, `unreal_manifest.json`: 지오메트리 정보와 저장된 에셋 연결 정보
+- `mesh_manifest.json`: 임포트 시 사용하는 지오메트리와 크기 정보
 
 `build_meshes.py`를 Python 3으로 실행한 뒤 언리얼 Python에서 `import_materials_unreal.py`를 실행하면 다시 가져올 수 있다. 이 과정은 해당 신규 에셋을 덮어쓰므로 수작업으로 수정한 메시가 있으면 먼저 원본을 보관한다.
 
-저장된 에셋의 연결·재질·LOD·충돌을 읽기 전용으로 검사하려면 언리얼 Python commandlet에서 import 스크립트에 `--verify-only`를 전달한다. 미리보기 스크립트는 별도 에디터를 `-RenderOffscreen -ExecutePythonScript=<스크립트 절대 경로>`로 실행하고 렌더링 후 해당 프로세스를 종료한다. 미리보기용 액터만 생성·삭제하며 레벨을 저장하지 않는다.
+제작 중 사용한 검수용 렌더 스크립트·미리보기 이미지·검증 결과 파일과 `--verify-only` 검증 코드는 작업 완료 후 정리했다.
