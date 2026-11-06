@@ -19,6 +19,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Crafting|ViewModel") void SetViewModel(UASCraftingEntryViewModel* Model);
 	UFUNCTION(BlueprintPure, Category="Crafting|ViewModel") UASCraftingEntryViewModel* GetViewModel() const { return ViewModel; }
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -38,4 +39,5 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category="Crafting|Appearance") FLinearColor MissingColor = FLinearColor(0.95f, 0.36f, 0.3f, 1);
 	FLinearColor DefaultColor;
 	bool bCapturedColor = false;
+	bool bMenuLayoutBuilt = false;
 };

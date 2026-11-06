@@ -11,6 +11,7 @@ class UImage;
 class UTextBlock;
 class UASItemRarityBackground;
 class UBorder;
+class USizeBox;
 class UASLootWidget;
 class AASLootChest;
 class UASItemSlotViewModel;
@@ -52,6 +53,7 @@ public:
 	FASLootItemClickedSignature OnItemClicked;
 
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -69,6 +71,8 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UButton> ItemButton;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<USizeBox> EntrySize;
 
 	UPROPERTY(BlueprintReadOnly, Category="UI", meta=(BindWidgetOptional, AllowPrivateAccess="true"))
 	TObjectPtr<UImage> ItemIcon;

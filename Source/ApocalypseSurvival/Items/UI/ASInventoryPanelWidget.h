@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Items/UI/ASInventoryBarWidget.h"
+#include "Items/UI/ASPlayerMenuTabsWidget.h"
 #include "ASInventoryPanelWidget.generated.h"
 
 class UTextBlock;
@@ -15,6 +16,8 @@ class APOCALYPSESURVIVAL_API UASInventoryPanelWidget : public UASInventoryBarWid
 public:
 	UASInventoryPanelWidget(const FObjectInitializer& ObjectInitializer);
 	virtual void RefreshSlots() override;
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Tabs")
+	void SelectMenuTab(EASPlayerMenuTab Tab);
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -26,11 +29,11 @@ protected:
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 
 private:
+	void RefreshMenuContent();
 	UFUNCTION() void ShowInventoryTab();
 	UFUNCTION() void ShowQuestTab();
 	UPROPERTY(Transient) TObjectPtr<class UWidgetSwitcher> TabContent;
-	UPROPERTY(Transient) TObjectPtr<UButton> InventoryTabButton;
-	UPROPERTY(Transient) TObjectPtr<UButton> QuestTabButton;
+	UPROPERTY(Transient) TObjectPtr<UASPlayerMenuTabsWidget> MenuTabs;
 	UFUNCTION()
 	void Close();
 	UFUNCTION()

@@ -58,4 +58,5 @@ private:
 	TObjectPtr<UASQuestDialogueWidget> DialogueWidget;
 	EASQuestDialogueMode DialogueMode = EASQuestDialogueMode::None;
 	int32 DialogueLine = 0;
+	FTimerHandle DialogueValidationTimer;
 };

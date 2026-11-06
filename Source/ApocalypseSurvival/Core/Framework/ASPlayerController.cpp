@@ -832,7 +832,8 @@ void AASPlayerController::DebugUnlockZoom(bool bEnabled)
 void AASPlayerController::OnCameraZoom(const FInputActionValue& Value)
 {
 	// GameAndUI can forward unhandled wheel input from the UI to gameplay.
-	if (ItemInteractionComponent->IsInventoryOpen() || CraftingComponent->IsCraftingOpen() || IsInGameMenuOpen()) return;
+	if (ItemInteractionComponent->IsInventoryOpen() || ItemInteractionComponent->IsLootOpen()
+		|| CraftingComponent->IsCraftingOpen() || IsInGameMenuOpen()) return;
 
 	if (AASPlayerCameraManager* CameraManager = GetASPlayerCameraManager())
 	{

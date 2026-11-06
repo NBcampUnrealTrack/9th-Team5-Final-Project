@@ -4,6 +4,14 @@
 #include "Components/VerticalBox.h"
 #include "Components/WidgetSwitcher.h"
 #include "Quests/UI/ASQuestInventoryWidget.h"
+#include "Modules/UI/ASModuleLoadoutWidget.h"
+#include "Items/UI/ASMenuStyle.h"
+#include "Items/UI/ViewModels/ASPlayerMenuViewModel.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/SizeBox.h"
+#include "Components/ScrollBox.h"
+#include "Components/Spacer.h"
 
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -34,7 +42,7 @@ void UASInventoryPanelWidget::BuildSlotWidgets()
 		Grid->AddChildToUniformGrid(Slot, Row, Column);
 	};
 	AddSlot(EquipmentPanel, UASInventoryComponent::WeaponSlotIndex, 0, 0);
-	AddSlot(EquipmentPanel, UASInventoryComponent::BagSlotIndex, 0, 1);
+	AddSlot(EquipmentPanel, UASInventoryComponent::BagSlotIndex, 1, 0);
 	for (int32 Index = 0; Index < RenderedStorageCount; ++Index)
 		AddSlot(SlotsPanel, UASInventoryComponent::QuickSlotCount + Index, Index / FMath::Max(1, StorageColumns), Index % FMath::Max(1, StorageColumns));
 	for (int32 Index = 0; Index < UASInventoryComponent::QuickSlotCount; ++Index)
@@ -59,14 +67,23 @@ void UASInventoryPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	SetIsFocusable(true);
-	if (CloseButton) CloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Close);
-	if (CraftingButton) CraftingButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenCrafting);
+	if (CloseButton) CloseButton->SetVisibility(ESlateVisibility::Collapsed);
+	if (CraftingButton) CraftingButton->SetVisibility(ESlateVisibility::Collapsed);
 	if (GetViewModel()) GetViewModel()->ClearFeedback();
+	if (MenuTabs && MenuTabs->GetViewModel())
+	{
+		UASPlayerMenuViewModel* Menu = MenuTabs->GetViewModel();
+		Menu->RemoveAllFieldValueChangedDelegates(this);
+		Menu->AddFieldValueChangedDelegate(UASPlayerMenuViewModel::FFieldNotificationClassDescriptor::Presentation,
+			INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateWeakLambda(this, [this](UObject*, UE::FieldNotification::FFieldId) { RefreshMenuContent(); }));
+	}
 	ShowInventoryTab();
+	RefreshMenuContent();
 }
 
 void UASInventoryPanelWidget::NativeDestruct()
 {
+	if (MenuTabs && MenuTabs->GetViewModel()) MenuTabs->GetViewModel()->RemoveAllFieldValueChangedDelegates(this);
 	if (CloseButton) CloseButton->OnClicked.RemoveDynamic(this, &ThisClass::Close);
 	if (CraftingButton) CraftingButton->OnClicked.RemoveDynamic(this, &ThisClass::OpenCrafting);
 	Super::NativeDestruct();
@@ -102,30 +119,55 @@ TSharedRef<SWidget> UASInventoryPanelWidget::RebuildWidget()
 {
 	if (!IsDesignTime() && WindowFrame && !TabContent && WindowFrame->GetContent())
 	{
-		UWidget* InventoryBody = WindowFrame->GetContent();
+		ASMenuStyle::StyleAuthoredTree(WidgetTree);
+		ASMenuStyle::StyleWindow(WindowFrame);
 		WindowFrame->SetContent(nullptr);
 		UVerticalBox* Shell = WidgetTree->ConstructWidget<UVerticalBox>();
-		UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>();
-		Shell->AddChildToVerticalBox(Header);
-		const auto Button = [&](const TCHAR* Label)
-		{
-			UButton* Result = WidgetTree->ConstructWidget<UButton>();
-			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>();
-			Text->SetText(FText::FromString(Label)); Text->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
-			Result->SetContent(Text); Header->AddChildToHorizontalBox(Result); return Result;
-		};
-		InventoryTabButton = Button(TEXT("  인벤토리  "));
-		InventoryTabButton->OnClicked.AddDynamic(this, &ThisClass::ShowInventoryTab);
-		Button(TEXT("  제작  "))->OnClicked.AddDynamic(this, &ThisClass::OpenCrafting);
-		QuestTabButton = Button(TEXT("  퀘스트  "));
-		QuestTabButton->OnClicked.AddDynamic(this, &ThisClass::ShowQuestTab);
-		UButton* Module = Button(TEXT("  모듈  "));
-		Module->SetIsEnabled(false); Module->SetToolTipText(FText::FromString(TEXT("모듈 설정 화면 연결 예정")));
-		Button(TEXT("  닫기  "))->OnClicked.AddDynamic(this, &ThisClass::Close);
+		MenuTabs = CreateWidget<UASPlayerMenuTabsWidget>(this);
+		MenuTabs->ConfigureScreen(EASPlayerMenuTab::Inventory);
+		Shell->AddChildToVerticalBox(MenuTabs);
 		TabContent = WidgetTree->ConstructWidget<UWidgetSwitcher>();
-		TabContent->AddChild(InventoryBody);
-		TabContent->AddChild(CreateWidget<UASQuestInventoryWidget>(GetOwningPlayer()));
-		Shell->AddChildToVerticalBox(TabContent);
+		UBorder* InventoryPage = WidgetTree->ConstructWidget<UBorder>();
+		InventoryPage->SetBrushColor(FLinearColor::Transparent); InventoryPage->SetPadding(FMargin(28.f, 24.f));
+		UVerticalBox* InventoryBody = WidgetTree->ConstructWidget<UVerticalBox>(); InventoryPage->SetContent(InventoryBody);
+		auto Heading = [&](const TCHAR* Label, int32 Size, FLinearColor Color)
+		{
+			UTextBlock* Block = WidgetTree->ConstructWidget<UTextBlock>(); Block->SetText(FText::FromString(Label));
+			ASMenuStyle::StyleText(Block, Size, Color, true); return Block;
+		};
+		InventoryBody->AddChildToVerticalBox(Heading(TEXT("인벤토리"), 24, ASMenuStyle::Text))->SetPadding(FMargin(0.f, 0.f, 0.f, 20.f));
+		UHorizontalBox* MainRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+		InventoryBody->AddChildToVerticalBox(MainRow)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		USizeBox* EquipmentWidth = WidgetTree->ConstructWidget<USizeBox>(); EquipmentWidth->SetWidthOverride(168.f);
+		UVerticalBox* EquipmentBody = WidgetTree->ConstructWidget<UVerticalBox>(); EquipmentWidth->SetContent(EquipmentBody);
+		MainRow->AddChildToHorizontalBox(EquipmentWidth)->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
+		EquipmentBody->AddChildToVerticalBox(Heading(TEXT("장비"), 12, ASMenuStyle::Accent))->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+		EquipmentPanel->RemoveFromParent(); EquipmentPanel->SetSlotPadding(FMargin(3.f));
+		EquipmentBody->AddChildToVerticalBox(EquipmentPanel)->SetHorizontalAlignment(HAlign_Left);
+		UVerticalBox* StorageBody = WidgetTree->ConstructWidget<UVerticalBox>();
+		MainRow->AddChildToHorizontalBox(StorageBody)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		StorageBody->AddChildToVerticalBox(Heading(TEXT("보관함"), 12, ASMenuStyle::Accent))->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		CapacityText->RemoveFromParent(); ASMenuStyle::StyleText(CapacityText, 12, ASMenuStyle::Muted);
+		StorageBody->AddChildToVerticalBox(CapacityText)->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		UScrollBox* StorageScroll = WidgetTree->ConstructWidget<UScrollBox>();
+		StorageBody->AddChildToVerticalBox(StorageScroll)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		SlotsPanel->RemoveFromParent(); SlotsPanel->SetSlotPadding(FMargin(3.f));
+		UHorizontalBox* GridAlign = WidgetTree->ConstructWidget<UHorizontalBox>(); GridAlign->AddChildToHorizontalBox(SlotsPanel); StorageScroll->AddChild(GridAlign);
+		InventoryBody->AddChildToVerticalBox(Heading(TEXT("퀵슬롯"), 12, ASMenuStyle::Accent))->SetPadding(FMargin(0.f, 22.f, 0.f, 12.f));
+		QuickSlotsPanel->RemoveFromParent(); QuickSlotsPanel->SetSlotPadding(FMargin(3.f));
+		InventoryBody->AddChildToVerticalBox(QuickSlotsPanel)->SetHorizontalAlignment(HAlign_Left);
+		UTextBlock* Hint = Heading(TEXT("클릭: 사용·장착     드래그: 이동     Ctrl + 우클릭: 1개 버리기"), 11, ASMenuStyle::Muted);
+		InventoryBody->AddChildToVerticalBox(Hint)->SetPadding(FMargin(0.f, 14.f, 0.f, 0.f));
+		FeedbackText->RemoveFromParent(); ASMenuStyle::StyleText(FeedbackText, 12, ASMenuStyle::Danger);
+		InventoryBody->AddChildToVerticalBox(FeedbackText)->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+		TabContent->AddChild(InventoryPage);
+		for (UUserWidget* Page : {static_cast<UUserWidget*>(CreateWidget<UASQuestInventoryWidget>(this)), static_cast<UUserWidget*>(CreateWidget<UASModuleLoadoutWidget>(this))})
+		{
+			UBorder* PageFrame = WidgetTree->ConstructWidget<UBorder>();
+			PageFrame->SetBrushColor(FLinearColor::Transparent); PageFrame->SetPadding(FMargin(28.f, 24.f));
+			PageFrame->SetContent(Page); TabContent->AddChild(PageFrame);
+		}
+		Shell->AddChildToVerticalBox(TabContent)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		WindowFrame->SetContent(Shell);
 	}
 	return Super::RebuildWidget();
@@ -133,14 +175,22 @@ TSharedRef<SWidget> UASInventoryPanelWidget::RebuildWidget()
 
 void UASInventoryPanelWidget::ShowInventoryTab()
 {
-	if (TabContent) TabContent->SetActiveWidgetIndex(0);
-	if (InventoryTabButton) InventoryTabButton->SetBackgroundColor(FLinearColor(.4f,.8f,1.f));
-	if (QuestTabButton) QuestTabButton->SetBackgroundColor(FLinearColor::White);
+	SelectMenuTab(EASPlayerMenuTab::Inventory);
 }
 
 void UASInventoryPanelWidget::ShowQuestTab()
 {
-	if (TabContent) TabContent->SetActiveWidgetIndex(1);
-	if (QuestTabButton) QuestTabButton->SetBackgroundColor(FLinearColor(.4f,.8f,1.f));
-	if (InventoryTabButton) InventoryTabButton->SetBackgroundColor(FLinearColor::White);
+	SelectMenuTab(EASPlayerMenuTab::Quest);
+}
+
+void UASInventoryPanelWidget::SelectMenuTab(EASPlayerMenuTab Tab)
+{
+	if (MenuTabs && MenuTabs->GetViewModel()) MenuTabs->GetViewModel()->RequestTab(Tab);
+}
+
+void UASInventoryPanelWidget::RefreshMenuContent()
+{
+	if (!TabContent || !MenuTabs || !MenuTabs->GetViewModel()) return;
+	const int32 Index = MenuTabs->GetViewModel()->Presentation.ContentIndex;
+	if (Index >= 0 && Index < TabContent->GetNumWidgets()) TabContent->SetActiveWidgetIndex(Index);
 }

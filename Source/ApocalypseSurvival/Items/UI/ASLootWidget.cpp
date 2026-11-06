@@ -5,9 +5,14 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/PanelWidget.h"
+#include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
+#include "Components/SizeBox.h"
+#include "Components/WrapBox.h"
+#include "Components/WrapBoxSlot.h"
 #include "Core/Framework/ASPlayerController.h"
 #include "InputCoreTypes.h"
 #include "Items/UI/ViewModels/ASInventoryViewModel.h"
@@ -20,10 +25,47 @@
 #include "GameFramework/PlayerController.h"
 #include "Relics/Data/ASRelicDefinition.h"
 
+namespace
+{
+	constexpr float LootTileSize = 72.f;
+	constexpr float LootTileSpacing = 6.f;
+}
+
 UASLootWidget::UASLootWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	DefaultEntryWidgetClass = FSoftObjectPath(TEXT("/Game/ApocalypseSurvival/Items/UI/WBP_LootEntry.WBP_LootEntry_C"));
+}
+
+TSharedRef<SWidget> UASLootWidget::RebuildWidget()
+{
+	if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(ItemList))
+	{
+		if (UScrollBox* Scroll = Cast<UScrollBox>(Grid->GetParent()))
+		{
+			const FMargin ListPadding = CastChecked<UScrollBoxSlot>(Grid->Slot)->GetPadding();
+			Grid->RemoveFromParent();
+			// UniformGrid divides all allotted space between rows/columns. Fixed tiles instead
+			// wrap without distributing leftover space into the cards or their gaps.
+			UWrapBox* Tiles = WidgetTree->ConstructWidget<UWrapBox>();
+			Tiles->SetExplicitWrapSize(false);
+			Tiles->SetInnerSlotPadding(FVector2D(LootTileSpacing));
+			Tiles->SetHorizontalAlignment(HAlign_Left);
+			USizeBox* ListWidth = WidgetTree->ConstructWidget<USizeBox>();
+			const int32 MaxColumns = FMath::Max(1, Columns);
+			ListWidth->SetWidthOverride(MaxColumns * LootTileSize + (MaxColumns - 1) * LootTileSpacing);
+			ListWidth->SetContent(Tiles);
+			UScrollBoxSlot* ListSlot = CastChecked<UScrollBoxSlot>(Scroll->AddChild(ListWidth));
+			ListSlot->SetPadding(ListPadding);
+			ListSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			ListSlot->SetHorizontalAlignment(HAlign_Left);
+			ListSlot->SetVerticalAlignment(VAlign_Top);
+			ItemList = Tiles;
+			// SetLootContext may have already populated the authored grid.
+			RenderedSlotCount = INDEX_NONE;
+		}
+	}
+	return Super::RebuildWidget();
 }
 
 void UASLootWidget::NativePreConstruct()
@@ -37,6 +79,12 @@ void UASLootWidget::NativePreConstruct()
 			UASLootEntryWidget* Entry = NewObject<UASLootEntryWidget>(WidgetTree, Class);
 			Entry->SetDesignerFlags(GetDesignerFlags()); Entry->Initialize();
 			if (UUniformGridPanel* Grid = Cast<UUniformGridPanel>(ItemList)) Grid->AddChildToUniformGrid(Entry, Index / FMath::Max(1, Columns), Index % FMath::Max(1, Columns));
+			else if (UWrapBox* Tiles = Cast<UWrapBox>(ItemList))
+			{
+				USizeBox* Tile = WidgetTree->ConstructWidget<USizeBox>();
+				Tile->SetWidthOverride(LootTileSize); Tile->SetHeightOverride(LootTileSize); Tile->SetContent(Entry);
+				Tiles->AddChildToWrapBox(Tile);
+			}
 			else ItemList->AddChild(Entry);
 		}
 	}
@@ -46,6 +94,17 @@ void UASLootWidget::NativePreConstruct()
 void UASLootWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// Keep wheel input in the loot list, including at either end of the scroll range.
+	for (UWidget* Parent = ItemList ? ItemList->GetParent() : nullptr; Parent; Parent = Parent->GetParent())
+	{
+		if (UScrollBox* Scroll = Cast<UScrollBox>(Parent)) Scroll->SetConsumeMouseWheel(EConsumeMouseWheel::Always);
+	}
+	if (UScrollBoxSlot* ListSlot = ItemList ? Cast<UScrollBoxSlot>(ItemList->Slot) : nullptr)
+	{
+		// Scroll the grid at its desired row height instead of stretching rows to the viewport.
+		ListSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		ListSlot->SetVerticalAlignment(VAlign_Top);
+	}
 
 	if (UWidget* DimBackground = IsValid(WidgetTree) ? WidgetTree->FindWidget(TEXT("DimBackground")) : nullptr)
 	{
@@ -223,6 +282,12 @@ void UASLootWidget::RefreshLoot()
 					GridSlot->SetHorizontalAlignment(HAlign_Fill);
 					GridSlot->SetVerticalAlignment(VAlign_Fill);
 				}
+				else if (UWrapBox* Tiles = Cast<UWrapBox>(ItemList))
+				{
+					USizeBox* Tile = WidgetTree->ConstructWidget<USizeBox>();
+					Tile->SetWidthOverride(LootTileSize); Tile->SetHeightOverride(LootTileSize); Tile->SetContent(Entry);
+					Tiles->AddChildToWrapBox(Tile);
+				}
 				else
 				{
 					ItemList->AddChild(Entry);
@@ -242,6 +307,11 @@ void UASLootWidget::RefreshLoot()
 				ButtonSlot / FMath::Max(1, Columns), ButtonSlot % FMath::Max(1, Columns));
 			GridSlot->SetHorizontalAlignment(HAlign_Fill);
 			GridSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		else if (UWrapBox* Tiles = Cast<UWrapBox>(ItemList))
+		{
+			UWrapBoxSlot* RewardSlot = Tiles->AddChildToWrapBox(RelicClaimButton);
+			RewardSlot->SetFillSpanWhenLessThan(TNumericLimits<float>::Max());
 		}
 		else
 		{

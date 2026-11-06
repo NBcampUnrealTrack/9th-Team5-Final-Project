@@ -6,6 +6,8 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 UASQuestDialogueComponent::UASQuestDialogueComponent()
 {
@@ -31,6 +33,10 @@ void UASQuestDialogueComponent::BeginDialogue(AASQuestNpc* Npc)
 	DialoguePawn = Pawn;
 	DialogueQuest = Quests->FindQuestForNpc(Npc->GetNpcId());
 	DialogueLine = 0;
+	GetWorld()->GetTimerManager().SetTimer(DialogueValidationTimer, FTimerDelegate::CreateWeakLambda(this, [this]
+	{
+		if (!IsDialogueValid()) CloseDialogue();
+	}), .1f, true);
 	if (!DialogueQuest)
 	{
 		DialogueMode = EASQuestDialogueMode::Idle;
@@ -94,6 +100,7 @@ void UASQuestDialogueComponent::ServerAdvanceDialogue_Implementation()
 
 void UASQuestDialogueComponent::CloseDialogue()
 {
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(DialogueValidationTimer);
 	DialogueNpc.Reset();
 	DialoguePawn.Reset();
 	DialogueQuest = nullptr;
@@ -126,6 +133,7 @@ void UASQuestDialogueComponent::ClientCloseDialogue_Implementation()
 
 void UASQuestDialogueComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(DialogueValidationTimer);
 	if (DialogueWidget) DialogueWidget->RemoveFromParent();
 	Super::EndPlay(EndPlayReason);
 }
